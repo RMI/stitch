@@ -591,10 +591,6 @@ cli = [
 ]
 
 [package.dev-dependencies]
-cli = [
-    { name = "stitch-cli" },
-    { name = "stitch-validator" },
-]
 dev = [
     { name = "pytest" },
     { name = "ruff" },
@@ -608,10 +604,6 @@ requires-dist = [
 provides-extras = ["cli"]
 
 [package.metadata.requires-dev]
-cli = [
-    { name = "stitch-cli", editable = "dev/stitch-cli" },
-    { name = "stitch-validator", editable = "packages/schema" },
-]
 dev = [
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "ruff", specifier = ">=0.14.2" },
