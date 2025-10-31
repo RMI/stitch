@@ -1,0 +1,19 @@
+[project]
+name = "stitch-cli"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [{ name = "Michael Barlow", email = "mbarlow@rmi.org" }]
+requires-python = ">=3.12.12"
+dependencies = ["click>=8.3.0", "pluggy>=1.6.0"]
+
+[project.scripts]
+stitch = "stitch.cli.main:main"
+
+[build-system]
+requires = ["uv_build>=0.9.5,<0.10.0"]
+build-backend = "uv_build"
+
+
+[tool.uv.build-backend]
+module-name = "stitch.cli"

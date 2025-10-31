@@ -1,0 +1,20 @@
+[project]
+name = "stitch"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+cli = ["stitch-cli", "stitch-validator"]
+
+[tool.uv.workspace]
+members = ["packages/*", "dev/*", "deployments/*"]
+
+[tool.uv.sources]
+stitch-cli = { workspace = true }
+stitch-validator = { workspace = true }
+
+[dependency-groups]
+dev = ["pytest>=8.4.2", "ruff>=0.14.2"]
