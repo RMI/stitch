@@ -37,9 +37,5 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
 
-      - name: Make script executable
-        run: |
-          chmod +x bin/validate_schemas.sh
-
       - name: Validate Schemas
         run: ./bin/validate_schemas.sh
