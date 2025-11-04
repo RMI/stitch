@@ -6,7 +6,10 @@ various edge cases and realistic scenarios.
 
 from datetime import datetime, timezone
 
-from stitch.core.resources.domain.entities import ResourceEntityData
+from stitch.core.resources.domain.entities import (
+    ResourceEntityData,
+    MembershipEntityData,
+)
 
 # Resource test data - various scenarios and edge cases
 RESOURCE_DATA: dict[str, ResourceEntityData] = {
@@ -108,24 +111,29 @@ RESOURCE_DATA: dict[str, ResourceEntityData] = {
 }
 
 # Membership test data
-MEMBERSHIP_DATA: dict[str, ResourceEntityData] = {
+MEMBERSHIP_DATA: dict[str, MembershipEntityData] = {
     "gem_active": {
+        "resource_id": 0,
         "dataset": "gem",
         "source_pk": "GEM-2024-001",
     },
     "gem_inactive": {
+        "resource_id": 0,
         "dataset": "gem",
         "source_pk": "GEM-2024-002",
     },
     "woodmac_numeric": {
+        "resource_id": 0,
         "dataset": "woodmac",
         "source_pk": "12345",
     },
     "woodmac_alphanumeric": {
+        "resource_id": 0,
         "dataset": "woodmac",
         "source_pk": "WM-2024-ABC",
     },
     "duplicate_source_different_resource": {
+        "resource_id": 0,
         "dataset": "gem",
         "source_pk": "GEM-DUP-001",
     },

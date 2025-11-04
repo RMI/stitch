@@ -31,7 +31,6 @@ class TestResourceMembershipIntegration:
             resource_id=resource_id,
             source_name="gem",
             source_id="GEM-2024-001",
-            
         )
 
         # Create second membership for same resource
@@ -39,7 +38,6 @@ class TestResourceMembershipIntegration:
             resource_id=resource_id,
             source_name="woodmac",
             source_id="12345",
-            
         )
 
         assert membership_id_1 != membership_id_2
@@ -57,8 +55,8 @@ class TestResourceMembershipIntegration:
     ):
         """Test that the same source can belong to different resources.
 
-        This tests the scenario where we may have duplicate source records
-        that map to different resources (though ideally this shouldn't happen).
+        Since the design creates new memberships on merge, we **will** have a many-to-many
+        relationship between source rows and resources.
         """
         resource_repo = SQLResourceRepository(db_session)
         membership_repo = SQLMembershipRepository(db_session)
@@ -80,14 +78,12 @@ class TestResourceMembershipIntegration:
             resource_id=resource_id_1,
             source_name=membership_data["dataset"],
             source_id=membership_data["source_pk"],
-            
         )
 
         membership_id_2 = membership_repo.create(
             resource_id=resource_id_2,
             source_name=membership_data["dataset"],
             source_id=membership_data["source_pk"],
-            
         )
 
         # Both memberships should exist
@@ -109,7 +105,6 @@ class TestResourceMembershipIntegration:
                 resource_id=999999,  # Non-existent resource
                 source_name="gem",
                 source_id="GEM-INVALID",
-                
             )
             db_session.commit()
 
@@ -128,7 +123,6 @@ class TestResourceMembershipIntegration:
             resource_id=resource_id,
             source_name="gem",
             source_id="GEM-REL-TEST",
-            
         )
 
         # Access relationship
@@ -139,9 +133,7 @@ class TestResourceMembershipIntegration:
         assert related_resource.id == resource_id
         assert related_resource.name == resource_data["name"]
 
-    def test_get_resource_includes_memberships_relationship(
-        self, db_session: Session
-    ):
+    def test_get_resource_includes_memberships_relationship(self, db_session: Session):
         """Test that fetching a resource includes its memberships via relationship."""
         resource_repo = SQLResourceRepository(db_session)
         membership_repo = SQLMembershipRepository(db_session)
@@ -158,13 +150,11 @@ class TestResourceMembershipIntegration:
             resource_id=resource_id,
             source_name="gem",
             source_id="GEM-001",
-            
         )
         membership_repo.create(
             resource_id=resource_id,
             source_name="woodmac",
             source_id="WM-001",
-            
         )
 
         # Fetch resource and check memberships relationship

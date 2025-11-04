@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TypedDict
+from typing import Required, TypedDict
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -13,6 +13,14 @@ class MembershipEntity:
     created_by: str | None = None
     status: str | None = None
     created: datetime
+
+
+class MembershipEntityData(TypedDict, total=False):
+    resource_id: Required[int]
+    dataset: Required[str]
+    source_pk: Required[str]
+    created_by: str | None = None
+    status: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
