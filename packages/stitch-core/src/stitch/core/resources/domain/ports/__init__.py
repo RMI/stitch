@@ -16,20 +16,20 @@ from .repositories import (
     MembershipRepository,
 )
 from .sources import (
-    SourcePersistenceRepository,
-    SourceRecord,
-    SourceRegistry,
-    SourceRegistryFactory,
-    SourceRecordData,
+    DatasetRepository,
+    DatasetEntity,
+    DatasetRegistry,
+    DatasetRegistryFactory,
+    DatasetRecord,
 )
 
 __all__ = [
     "ResourceRepository",
     "TransactionContext",
-    "SourcePersistenceRepository",
-    "SourceRecord",
-    "SourceRegistry",
-    "SourceRegistryFactory",
+    "DatasetRepository",
+    "DatasetEntity",
+    "DatasetRegistry",
+    "DatasetRegistryFactory",
     "MembershipRepository",
-    "SourceRecordData",
+    "DatasetRecord",
 ]

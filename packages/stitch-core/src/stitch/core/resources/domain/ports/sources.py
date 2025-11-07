@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 
 @dataclass(frozen=True)
-class SourceRecord:
+class DatasetEntity:
     """Generic representation of a row/entity from a raw/external data source.
 
     Establishes a minimal structure (aligned with our `Resource` definition) that a
@@ -40,8 +40,8 @@ class SourceRecord:
     created: datetime
 
 
-class SourceRecordData(TypedDict, total=False):
-    """Convenience class for passing around `SourceRecord` data."""
+class DatasetRecord(TypedDict, total=False):
+    """Convenience class for passing around `DatasetEntity` data."""
 
     dataset: Required[str]
     name: Required[str]
@@ -51,7 +51,9 @@ class SourceRecordData(TypedDict, total=False):
     longitude: float | None
 
 
-class SourcePersistenceRepository(Protocol):
+# TODO: consider making this Generic where the type, `T`, corresponds to the
+# entity type, e.g. `GemEntity` or `WoodmacFieldEntity`
+class DatasetRepository(Protocol):
     """Abstract interface for interacting with unknown source data stores.
 
     Domain-specific implementations can handle their own storage mechanisms and schemas
@@ -65,35 +67,35 @@ class SourcePersistenceRepository(Protocol):
 
     def write(
         self,
-        entity_data: SourceRecordData | None = None,
+        entity_data: DatasetRecord | None = None,
         /,
-        **kwargs: Unpack[SourceRecordData],
+        **kwargs: Unpack[DatasetRecord],
     ) -> str:
         """Persist record and return new id"""
 
-    def fetch(self, source_id: str) -> SourceRecord | None:
+    def fetch(self, source_id: str) -> DatasetEntity | None:
         """Retrieve entity record by id. Return `None` if it doesn't exist."""
         pass
 
-    def fecth_many(self, source_ids: list[str]) -> Sequence[SourceRecord]:
+    def fecth_many(self, source_ids: list[str]) -> Sequence[DatasetEntity]:
         """Retrieve multiple source entities"""
 
-    def row_to_record_data(self, data: Mapping[str, Any]) -> SourceRecordData:
+    def row_to_record_data(self, data: Mapping[str, Any]) -> DatasetRecord:
         """Translate source data to record data structure."""
 
 
-class SourceRegistry(Protocol):
-    """Interface for getting and checking references to external `Source` data storage features."""
+class DatasetRegistry(Protocol):
+    """Interface for getting and checking references to external `DatasetRepository` implementations."""
 
-    def is_source(self, name: str) -> bool:
-        """Check if a name exist as a source."""
+    def is_dataset(self, name: str) -> bool:
+        """Check if a name exists as a dataset in the registry."""
 
-    def get_source_repository(self, source_name: str) -> SourcePersistenceRepository:
-        """Fetch a source data access repository"""
+    def get_dataset_repository(self, dataset: str) -> DatasetRepository:
+        """Fetch a `DatasetRepository` for the specified identifier."""
 
 
-class SourceRegistryFactory(Protocol):
+class DatasetRegistryFactory(Protocol):
     """Generic representation of any callable that returns a valid `SourceRegistry` instance."""
 
-    def __call__(self, session: Session) -> SourceRegistry:
+    def __call__(self, session: Session) -> DatasetRegistry:
         pass

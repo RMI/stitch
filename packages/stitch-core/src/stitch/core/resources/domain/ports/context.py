@@ -8,7 +8,7 @@ from stitch.core.resources.domain.ports.repositories import (
     ResourceRepository,
 )
 from stitch.core.resources.domain.ports.sources import (
-    SourceRegistry,
+    DatasetRegistry,
 )
 
 
@@ -20,12 +20,12 @@ class TransactionContext(Protocol):
     Attributes:
         resources: Resource data/persistence operations interface
         memberships: Membership data/persistence operations interface
-        source_registry: primary interface for interacting with unspecified Source data
+        source_registry: primary interface for interacting with unspecified/unknown dataset storage mechanisms
     """
 
     resources: ResourceRepository
     memberships: MembershipRepository
-    source_registry: SourceRegistry
+    source_registry: DatasetRegistry
 
     def __enter__(self) -> TransactionContext:
         """Begin transaction"""
