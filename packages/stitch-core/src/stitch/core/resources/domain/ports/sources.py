@@ -14,11 +14,26 @@ from sqlalchemy.orm import Session
 
 @dataclass(frozen=True)
 class SourceRecord:
+    """Generic representation of a row/entity from a raw/external data source.
+
+    Establishes a minimal structure (aligned with our `Resource` definition) that a
+    `SourceRepositry` implementation can fulfill.
+
+    Attributes:
+        id: the unique record identifier within the source collection/table
+        dataset: the collection/table identifier (e.g. "gem", "woodmac", or other domain-specific string)
+        name: the entity/record name
+        country: ISO 3166-1 country code
+        latitude: optional latitude
+        longitude: optional longitude
+        payload: the underlying source data with an unspecified structure/schema
+        created: creation timestamp
+    """
+
     id: int
     dataset: str
-    name: str | None
-    country_iso3: str | None
-    operator_name: str | None
+    name: str
+    country: str
     latitude: float | None
     longitude: float | None
     payload: object | Mapping[str, Any]
@@ -26,16 +41,24 @@ class SourceRecord:
 
 
 class SourceRecordData(TypedDict, total=False):
+    """Convenience class for passing around `SourceRecord` data."""
+
     dataset: Required[str]
+    name: Required[str]
     payload: Required[object | Mapping[str, Any]]
-    name: str | None
-    country_iso3: str | None
-    operator: str | None
+    country: Required[str]
     latitude: float | None
     longitude: float | None
 
 
 class SourcePersistenceRepository(Protocol):
+    """Abstract interface for interacting with unknown source data stores.
+
+    Domain-specific implementations can handle their own storage mechanisms and schemas
+    so long as they abide by this contract. This allows the `resources` package to
+    coordinate storage operations without any specific knowledge of the underlying details.
+    """
+
     @property
     def source_name(self) -> str:
         """Unique collection/table identifier."""
@@ -60,6 +83,8 @@ class SourcePersistenceRepository(Protocol):
 
 
 class SourceRegistry(Protocol):
+    """Interface for getting and checking references to external `Source` data storage features."""
+
     def is_source(self, name: str) -> bool:
         """Check if a name exist as a source."""
 
@@ -68,5 +93,7 @@ class SourceRegistry(Protocol):
 
 
 class SourceRegistryFactory(Protocol):
+    """Generic representation of any callable that returns a valid `SourceRegistry` instance."""
+
     def __call__(self, session: Session) -> SourceRegistry:
         pass

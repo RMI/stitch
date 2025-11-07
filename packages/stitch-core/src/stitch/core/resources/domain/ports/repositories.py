@@ -3,6 +3,7 @@ from collections.abc import Sequence
 
 from stitch.core.resources.domain.entities import (
     ResourceEntity,
+    UserPlaceholder,
 )
 from stitch.core.resources.domain.entities import MembershipEntity
 
@@ -20,8 +21,9 @@ class ResourceRepository(Protocol):
         repointed_id: int | None = None,
         latitude: float | None = None,
         longitude: float | None = None,
+        created_by: UserPlaceholder | None = None,
     ) -> int:
-        """Create new Resource return unique resource identifier"""
+        """Create new Resource and return unique resource identifier"""
 
     def get_by_id(self, resource_id: int) -> ResourceEntity | None:
         """Retrieve resource by identifier
@@ -75,7 +77,12 @@ class MembershipRepository(Protocol):
         pass
 
     def create(
-        self, resource_id: int, source_name: str, source_id: str, active: bool = True
+        self,
+        resource_id: int,
+        dataset: str,
+        source_pk: str,
+        status: str | None = None,
+        created_by: UserPlaceholder | None = None,
     ) -> ResourceEntity:
         pass
 

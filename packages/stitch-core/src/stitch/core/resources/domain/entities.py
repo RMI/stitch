@@ -2,7 +2,7 @@ from __future__ import annotations
 from ast import TypeAlias
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TypedDict
+from typing import Required, TypedDict
 
 UserPlaceholder: TypeAlias = str
 
@@ -12,7 +12,9 @@ class ResourceEntity:
     """Minimal object to relate resources to one another.
 
     Attributes:
-        id: unique identifier
+        resource_id: unique identifier
+        name: the resource name
+        country: ISO 3166-1 country code
         repointed_id: `id` field for the new parent/aggregate resource, None if not merged
         created: creation timestamp
         updated: last update timestamp
@@ -22,11 +24,12 @@ class ResourceEntity:
     resource_id: int
     name: str
     country: str
-    latitude: float
-    longitude: float
+    latitude: float | None = None
+    longitude: float | None = None
     repointed_id: int | None = None
     created: datetime
     created_by: UserPlaceholder | None = None
+    last_updated: datetime
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, ResourceEntity):
