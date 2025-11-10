@@ -22,22 +22,22 @@ class TestResourceMembershipIntegration:
         self, db_session: Session, create_resource
     ):
         """Test creating multiple memberships for the same resource."""
-        resource_id = create_resource(dataset="gem", source_pk="GEM-MULTI")
+        resource_id = create_resource()
 
         membership_repo = SQLMembershipRepository(db_session)
 
         # Create first membership
         membership_id_1 = membership_repo.create(
             resource_id=resource_id,
-            source_name="gem",
-            source_id="GEM-2024-001",
+            source="gem",
+            source_pk="GEM-2024-001",
         )
 
         # Create second membership for same resource
         membership_id_2 = membership_repo.create(
             resource_id=resource_id,
-            source_name="woodmac",
-            source_id="12345",
+            source="woodmac",
+            source_pk="12345",
         )
 
         assert membership_id_1 != membership_id_2
@@ -47,8 +47,8 @@ class TestResourceMembershipIntegration:
         m2 = db_session.get(MembershipModel, membership_id_2)
         assert m1.resource_id == resource_id
         assert m2.resource_id == resource_id
-        assert m1.dataset == "gem"
-        assert m2.dataset == "woodmac"
+        assert m1.source == "gem"
+        assert m2.source == "woodmac"
 
     def test_create_membership_different_resources_same_source(
         self, db_session: Session
@@ -62,28 +62,22 @@ class TestResourceMembershipIntegration:
         membership_repo = SQLMembershipRepository(db_session)
 
         # Create two different resources
-        resource_id_1 = resource_repo.create(
-            dataset="gem",
-            source_pk="RESOURCE-1",
-        )
-        resource_id_2 = resource_repo.create(
-            dataset="gem",
-            source_pk="RESOURCE-2",
-        )
+        resource_id_1 = resource_repo.create()
+        resource_id_2 = resource_repo.create()
 
         membership_data = MEMBERSHIP_DATA["duplicate_source_different_resource"]
 
         # Create memberships with same source but different resources
         membership_id_1 = membership_repo.create(
             resource_id=resource_id_1,
-            source_name=membership_data["dataset"],
-            source_id=membership_data["source_pk"],
+            source=membership_data["source"],
+            source_pk=membership_data["source_pk"],
         )
 
         membership_id_2 = membership_repo.create(
             resource_id=resource_id_2,
-            source_name=membership_data["dataset"],
-            source_id=membership_data["source_pk"],
+            source=membership_data["source"],
+            source_pk=membership_data["source_pk"],
         )
 
         # Both memberships should exist
@@ -93,7 +87,7 @@ class TestResourceMembershipIntegration:
         assert m1.resource_id == resource_id_1
         assert m2.resource_id == resource_id_2
         assert m1.source_pk == m2.source_pk  # Same source
-        assert m1.dataset == m2.dataset
+        assert m1.source == m2.source
 
     def test_create_membership_foreign_key_constraint(self, db_session: Session):
         """Test that creating a membership with non-existent resource_id fails."""
@@ -103,8 +97,8 @@ class TestResourceMembershipIntegration:
         with pytest.raises(IntegrityError):
             membership_repo.create(
                 resource_id=999999,  # Non-existent resource
-                source_name="gem",
-                source_id="GEM-INVALID",
+                source="gem",
+                source_pk="GEM-INVALID",
             )
             db_session.commit()
 
@@ -113,16 +107,16 @@ class TestResourceMembershipIntegration:
         resource_repo = SQLResourceRepository(db_session)
         resource_data = RESOURCE_DATA["gem_full"]
         resource_id = resource_repo.create(
-            dataset=resource_data["dataset"],
-            source_pk=resource_data["source_pk"],
             name=resource_data["name"],
+            operator=resource_data["operator"],
+            country=resource_data["country"],
         )
 
         membership_repo = SQLMembershipRepository(db_session)
         membership_id = membership_repo.create(
             resource_id=resource_id,
-            source_name="gem",
-            source_id="GEM-REL-TEST",
+            source="gem",
+            source_pk="GEM-REL-TEST",
         )
 
         # Access relationship
@@ -140,21 +134,19 @@ class TestResourceMembershipIntegration:
 
         # Create resource
         resource_id = resource_repo.create(
-            dataset="gem",
-            source_pk="REL-TEST",
             name="Test Resource",
         )
 
         # Create memberships for it
         membership_repo.create(
             resource_id=resource_id,
-            source_name="gem",
-            source_id="GEM-001",
+            source="gem",
+            source_pk="GEM-001",
         )
         membership_repo.create(
             resource_id=resource_id,
-            source_name="woodmac",
-            source_id="WM-001",
+            source="woodmac",
+            source_pk="WM-001",
         )
 
         # Fetch resource and check memberships relationship

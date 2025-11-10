@@ -39,7 +39,7 @@ class PostgresConfig(BaseSettings, cli_parse_args=False):
         )
 
 
-class SqlitConfig(BaseSettings):
+class SqliteConfig(BaseSettings):
     db_path: Path
 
     def to_url(self) -> URL:

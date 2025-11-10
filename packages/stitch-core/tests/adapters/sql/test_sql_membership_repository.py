@@ -20,15 +20,15 @@ class TestSQLMembershipRepositoryCreate:
 
     def test_create_membership_basic(self, db_session: Session, create_resource):
         """Test creating a basic membership."""
-        resource_id = create_resource(dataset="gem", source_pk="GEM-2024-001")
+        resource_id = create_resource()
 
         membership_repo = SQLMembershipRepository(db_session)
         membership_data = MEMBERSHIP_DATA["gem_active"]
 
         membership_id = membership_repo.create(
             resource_id=resource_id,
-            source_name=membership_data["dataset"],
-            source_id=membership_data["source_pk"],
+            source=membership_data["source"],
+            source_pk=membership_data["source_pk"],
         )
 
         assert membership_id is not None
@@ -38,7 +38,7 @@ class TestSQLMembershipRepositoryCreate:
         saved_membership = db_session.get(MembershipModel, membership_id)
         assert saved_membership is not None
         assert saved_membership.resource_id == resource_id
-        assert saved_membership.dataset == membership_data["dataset"]
+        assert saved_membership.source == membership_data["source"]
         assert saved_membership.source_pk == membership_data["source_pk"]
         assert saved_membership.created is not None
         assert isinstance(saved_membership.created, datetime)
@@ -47,20 +47,21 @@ class TestSQLMembershipRepositoryCreate:
         self, db_session: Session, create_resource
     ):
         """Test that create() automatically sets created timestamp via database default."""
-        resource_id = create_resource(dataset="gem", source_pk="TIMESTAMP-TEST")
+        resource_id = create_resource()
 
         membership_repo = SQLMembershipRepository(db_session)
 
         membership_id = membership_repo.create(
             resource_id=resource_id,
-            source_name="gem",
-            source_id="GEM-TIMESTAMP",
+            source="gem",
+            source_pk="GEM-TIMESTAMP",
         )
 
         saved_membership = db_session.get(MembershipModel, membership_id)
         assert saved_membership.created is not None
         # Verify it's a recent timestamp
         from datetime import timezone, timedelta
+
         now = datetime.now(timezone.utc)
 
         # Handle both timezone-aware and naive datetimes
@@ -76,14 +77,14 @@ class TestSQLMembershipRepositoryCreate:
         self, db_session: Session, create_resource
     ):
         """Test creating a membership without created_by and status (nullable fields)."""
-        resource_id = create_resource(dataset="gem", source_pk="NULLABLE-TEST")
+        resource_id = create_resource()
 
         membership_repo = SQLMembershipRepository(db_session)
 
         membership_id = membership_repo.create(
             resource_id=resource_id,
-            source_name="gem",
-            source_id="GEM-NULLABLE",
+            source="gem",
+            source_pk="GEM-NULLABLE",
         )
 
         saved_membership = db_session.get(MembershipModel, membership_id)
@@ -91,22 +92,21 @@ class TestSQLMembershipRepositoryCreate:
         assert saved_membership.created_by is None
         assert saved_membership.status is None
 
-
     def test_membership_unique_constraint_prevents_duplicates(
         self, db_session: Session, create_resource
     ):
-        """Test that unique constraint prevents duplicate (resource_id, dataset, source_pk)."""
+        """Test that unique constraint prevents duplicate (resource_id, source, source_pk)."""
         from sqlalchemy.exc import IntegrityError
 
-        resource_id = create_resource(dataset="gem", source_pk="UNIQUE-TEST")
+        resource_id = create_resource()
 
         membership_repo = SQLMembershipRepository(db_session)
 
         # Create first membership
         membership_repo.create(
             resource_id=resource_id,
-            source_name="gem",
-            source_id="GEM-UNIQUE",
+            source="gem",
+            source_pk="GEM-UNIQUE",
         )
         db_session.commit()
 
@@ -114,8 +114,8 @@ class TestSQLMembershipRepositoryCreate:
         with pytest.raises(IntegrityError):
             membership_repo.create(
                 resource_id=resource_id,
-                source_name="gem",
-                source_id="GEM-UNIQUE",
+                source="gem",
+                source_pk="GEM-UNIQUE",
             )
             db_session.commit()
 
@@ -125,13 +125,13 @@ class TestSQLMembershipRepositoryGet:
 
     def test_get_membership_by_id(self, db_session: Session, create_resource):
         """Test fetching a membership by ID."""
-        resource_id = create_resource(dataset="gem", source_pk="GET-TEST")
+        resource_id = create_resource()
 
         membership_repo = SQLMembershipRepository(db_session)
         membership_id = membership_repo.create(
             resource_id=resource_id,
-            source_name="gem",
-            source_id="GEM-GET",
+            source="gem",
+            source_pk="GEM-GET",
         )
         db_session.commit()
 
@@ -141,7 +141,7 @@ class TestSQLMembershipRepositoryGet:
         assert entity is not None
         assert entity.id == membership_id
         assert entity.resource_id == resource_id
-        assert entity.dataset == "gem"
+        assert entity.source == "gem"
         assert entity.source_pk == "GEM-GET"
 
     def test_get_membership_nonexistent_returns_none(self, db_session: Session):

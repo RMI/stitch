@@ -24,7 +24,7 @@ class TestResourceMembershipRelationships:
         # Arrange
         mock_source_repo.row_to_record_data.return_value = {
             "name": "Test Resource",
-            "country_iso3": "USA",
+            "country": "USA",
             "operator": "TestCo",
             "latitude": 30.0,
             "longitude": -95.0,
@@ -53,7 +53,7 @@ class TestResourceMembershipRelationships:
         # Arrange
         mock_source_repo.row_to_record_data.return_value = {
             "name": "Relationship Test",
-            "country_iso3": "CAN",
+            "country": "CAN",
             "operator": "CanadaCo",
             "latitude": 45.0,
             "longitude": -75.0,
@@ -67,16 +67,14 @@ class TestResourceMembershipRelationships:
 
         # Load MembershipModel directly to test relationship
         membership = (
-            db_session.query(MembershipModel)
-            .filter_by(resource_id=resource_id)
-            .first()
+            db_session.query(MembershipModel).filter_by(resource_id=resource_id).first()
         )
 
         # Assert - access resource relationship (triggers lazy load)
         resource = membership.resource
         assert resource.id == resource_id
         assert resource.name == "Relationship Test"
-        assert resource.country_iso3 == "CAN"
+        assert resource.country == "CAN"
         assert resource.operator == "CanadaCo"
         assert resource.dataset == "woodmac"
 
@@ -87,7 +85,7 @@ class TestResourceMembershipRelationships:
         # Arrange - create resource with first membership
         mock_source_repo.row_to_record_data.return_value = {
             "name": "Multi-Source Field",
-            "country_iso3": "USA",
+            "country": "USA",
             "operator": "MultiCo",
             "latitude": 35.0,
             "longitude": -100.0,
@@ -104,7 +102,7 @@ class TestResourceMembershipRelationships:
         member_repo = SQLMembershipRepository(repo_session)
 
         member_repo.create(
-            resource_id=resource_id, source_name="woodmac", source_id="second_999"
+            resource_id=resource_id, source="woodmac", source_id="second_999"
         )
         repo_session.commit()
 

@@ -1,37 +1,47 @@
-from datetime import datetime
 from sqlalchemy import (
-    DateTime,
     ForeignKey,
     Integer,
     String,
     UniqueConstraint,
-    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from .base import Base
+
+# TODO: determine a convention around imports
+# fully qualified? explicit but verbose
+# relative? succint and package contents can move with the package without updates
+# mix of both? i.e. within a package directory, use relative, when reaching outside, use full
+from stitch.core.resources.domain.entities import MembershipEntity
+from .base import Base, TimestampMixin
 
 
-class MembershipModel(Base):
+class MembershipModel(Base, TimestampMixin):
     __tablename__ = "memberships"
 
     __table_args__ = (
         UniqueConstraint(
             "resource_id",
-            "dataset",
+            "source",
             "source_pk",
-            name="uq_dataset_source_pk",
+            name="uc_source_source_pk",
         ),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     resource_id: Mapped[int] = mapped_column(ForeignKey("resources.id"), nullable=False)
-    dataset: Mapped[str] = mapped_column(String, nullable=False)  # "gem" | "woodmac"
+    source: Mapped[str] = mapped_column(String, nullable=False)  # "gem" | "woodmac"
     source_pk: Mapped[str] = mapped_column(String, nullable=False)
-    created_by: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str | None] = mapped_column(String, nullable=True)
-    created: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=text("CURRENT_TIMESTAMP"),
-    )
+    created_by: Mapped[str | None] = mapped_column(String, nullable=True)
 
     resource = relationship("ResourceModel", back_populates="memberships")
+
+    def as_entity(self) -> MembershipEntity:
+        return MembershipEntity(
+            id=self.id,
+            resource_id=self.resource_id,
+            source=self.source,
+            source_pk=self.source_pk,
+            created_by=self.created_by,
+            status=self.status,
+            created=self.created,
+            updated=self.updated,
+        )

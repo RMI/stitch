@@ -29,12 +29,12 @@ class ResourceService(AbstractService):
         with self.tx:
             src_repo = self.tx.source_registry.get_source_repository(source)
             rec_data = src_repo.row_to_record_data(data)
-            source_id = src_repo.write(rec_data)
+            source_pk = src_repo.write(rec_data)
             resource_kwargs = source_record_to_resource_data(
-                dataset=source, record=rec_data, source_pk=source_id
+                source=source, record=rec_data, source_pk=source_pk
             )
             resource_id = self.tx.resources.create(**resource_kwargs)
             _member_id = self.tx.memberships.create(
-                resource_id=resource_id, source_name=source, source_id=source_id
+                resource_id=resource_id, source_name=source, source_id=source_pk
             )
             return resource_id

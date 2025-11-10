@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 class ConnectionConfig(Protocol):
     def to_url(self) -> URL:
-        """Creates a `sqlalchem.URL` from configuration properties"""
+        """Creates a `sqlalchemy.URL` from configuration properties"""
 
 
 def Session(config: ConnectionConfig):

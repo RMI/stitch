@@ -10,7 +10,7 @@ import pytest
 from stitch.core.resources.domain.ports import (
     ResourceRepository,
     MembershipRepository,
-    SourcePersistenceRepository,
+    SourceRepository,
     TransactionContext,
 )
 
@@ -43,14 +43,14 @@ def mock_membership_repository():
 
 @pytest.fixture
 def mock_source_persistence_repository():
-    """Mock SourcePersistenceRepository with standard behavior.
+    """Mock SourceRepository with standard behavior.
 
-    Returns a MagicMock with SourcePersistenceRepository spec and default behaviors:
+    Returns a MagicMock with SourceRepository spec and default behaviors:
     - source_name property returns "test_source"
     - row_to_record_data() returns dict with all mapped fields
     - write() returns "source_123"
     """
-    repo = MagicMock(spec=SourcePersistenceRepository)
+    repo = MagicMock(spec=SourceRepository)
     repo.source_name = "test_source"
     repo.row_to_record_data.return_value = {
         "dataset": "test_source",
@@ -78,6 +78,7 @@ def mock_source_registry_builder(mock_source_persistence_repository):
     Returns:
         Callable that creates a configured mock SourceRegistry
     """
+
     def _create_registry(source_repo=None):
         if source_repo is None:
             source_repo = mock_source_persistence_repository
