@@ -13,6 +13,7 @@ class ResourceEntity:
 
     Attributes:
         id: unique identifier
+        repointed_to: optional identifier to new aggregate resource
         name: the resource name
         country: ISO 3166-1 country code
         repointed_to: `id` field for the new parent/aggregate resource, None if not merged
