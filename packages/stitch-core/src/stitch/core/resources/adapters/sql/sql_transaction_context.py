@@ -1,14 +1,9 @@
-from typing import Callable
 from sqlalchemy.orm import Session, sessionmaker
 from stitch.core.resources.adapters.sql.sql_resource_repository import (
     SQLResourceRepository,
 )
 from stitch.core.resources.adapters.sql.sql_membership_repository import (
     SQLMembershipRepository,
-)
-from stitch.core.resources.domain.ports import (
-    SourcePersistenceRepository,
-    SourceRegistry,
 )
 from stitch.core.resources.domain.ports.context import TransactionContext
 from stitch.core.resources.domain.ports.sources import SourceRegistryFactory
@@ -40,6 +35,8 @@ class SQLTransactionContext(TransactionContext):
         try:
             if exc_type is None:
                 self.commit()
+        except Exception:
+            self.rollback()
         finally:
             self.session.close()  # type: ignore[union-attr]
 
