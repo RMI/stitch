@@ -34,6 +34,7 @@ class ResourceModel(Base, TimestampMixin):
     longitude: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
     created_by: Mapped[str | None] = mapped_column(String, nullable=True)
 
+    # TODO: consider using relationship for updates/creations
     memberships = relationship("MembershipModel", back_populates="resource")
 
     def as_entity(self) -> ResourceEntity:
