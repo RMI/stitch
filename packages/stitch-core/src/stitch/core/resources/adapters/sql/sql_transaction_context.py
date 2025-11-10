@@ -35,6 +35,8 @@ class SQLTransactionContext(TransactionContext):
         try:
             if exc_type is None:
                 self.commit()
+        except Exception:
+            self.rollback()
         finally:
             self.session.close()  # type: ignore[union-attr]
 
