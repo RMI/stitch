@@ -15,7 +15,7 @@ class ResourceEntity:
         resource_id: unique identifier
         name: the resource name
         country: ISO 3166-1 country code
-        repointed_id: `id` field for the new parent/aggregate resource, None if not merged
+        repointed_to: `id` field for the new parent/aggregate resource, None if not merged
         created: creation timestamp
         updated: last update timestamp
         created_by: id for the user/service/process responsible for creating the resource

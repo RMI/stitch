@@ -18,7 +18,7 @@ class ResourceRepository(Protocol):
         self,
         name: str,
         country: str,
-        repointed_id: int | None = None,
+        repointed_to: int | None = None,
         latitude: float | None = None,
         longitude: float | None = None,
         created_by: UserPlaceholder | None = None,
