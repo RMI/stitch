@@ -2,7 +2,6 @@ from __future__ import annotations
 from ast import TypeAlias
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Required, TypedDict
 
 UserPlaceholder: TypeAlias = str
 
@@ -13,12 +12,13 @@ class ResourceEntity:
 
     Attributes:
         id: unique identifier
-        repointed_to: optional identifier to new aggregate resource
+        repointed_to: `id` field for the new parent/aggregate resource, None if not merged
         name: the resource name
         country: ISO 3166-1 country code
-        repointed_to: `id` field for the new parent/aggregate resource, None if not merged
+        latitude: the entity latitude
+        longitude: the entity longitude
+        last_updated: last update timestamp
         created: creation timestamp
-        updated: last update timestamp
         created_by: id for the user/service/process responsible for creating the resource
     """
 
