@@ -1,15 +1,10 @@
-from datetime import datetime
 from sqlalchemy import (
-    DateTime,
     ForeignKey,
     Integer,
     String,
     UniqueConstraint,
-    func,
-    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.schema import FetchedValue
 from .base import Base, TimestampMixin
 
 
