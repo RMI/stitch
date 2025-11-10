@@ -1,26 +1,7 @@
-from typing import Any
-
 from sqlalchemy.orm import Session
 from .model.resource import ResourceModel
 from stitch.core.resources.domain.entities import ResourceEntity
 from stitch.core.resources.domain.ports import ResourceRepository
-
-
-def normalize_resource_model(model: ResourceModel) -> dict[str, Any]:
-    """Translate provider-specific ORM row into the normalized dict expected by domain."""
-    projection = {
-        "id": model.id,
-        "source": model.source,
-        "source_pk": model.source_pk,
-        "repointed_to": model.repointed_to,
-        "name": model.name,
-        "country": model.country,
-        "operator": model.operator,
-        "latitude": float(model.latitude) if model.latitude is not None else None,
-        "longitude": float(model.longitude) if model.longitude is not None else None,
-        "created": model.created,
-    }
-    return projection
 
 
 class SQLResourceRepository(ResourceRepository):
@@ -64,6 +45,3 @@ class SQLResourceRepository(ResourceRepository):
         """
         Update the resource's `repointed_to`  to `to_resource_id`
         """
-
-    def _model_to_entity(self, model: ResourceModel):
-        return ResourceEntity(**normalize_resource_model(model))
