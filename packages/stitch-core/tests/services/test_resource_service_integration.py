@@ -161,7 +161,7 @@ class TestResourceServiceCreateResourceIntegration:
         mock_source_repo.write.return_value = "unicode_test"
 
         resource_id = resource_service_integration.create_resource(
-            source=source_data["dataset"], data={"id": "UNICODE_TEST"}
+            source="gem", data={"id": "UNICODE_TEST"}
         )
 
         resource = db_session.query(ResourceModel).filter_by(id=resource_id).first()

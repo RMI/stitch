@@ -6,25 +6,26 @@ from stitch.core.resources.errors import InvalidDataTypeError, MalformedSourceDa
 
 
 # Unicode test cases for resource fields
+# Note: Only use fields that exist in ResourceModel (name, country, latitude, longitude, created_by)
 UNICODE_TEST_CASES = [
     pytest.param(
-        {"name": "Test Field 世界", "country": "China", "dataset": "gem"},
-        {"name": "Test Field 世界", "country": "China"},
+        {"name": "Test Field 世界", "country": "CHN"},
+        {"name": "Test Field 世界", "country": "CHN"},
         id="chinese-characters",
     ),
     pytest.param(
-        {"name": "حقل النفط", "operator": "شركة البترول", "dataset": "gem"},
-        {"name": "حقل النفط", "operator": "شركة البترول"},
+        {"name": "حقل النفط", "country": "SAU"},
+        {"name": "حقل النفط", "country": "SAU"},
         id="arabic-rtl",
     ),
     pytest.param(
-        {"name": "Oil Field 🚀", "description": "Production 🎉", "dataset": "gem"},
-        {"name": "Oil Field 🚀", "description": "Production 🎉"},
+        {"name": "Oil Field 🚀", "country": "USA"},
+        {"name": "Oil Field 🚀", "country": "USA"},
         id="emoji-characters",
     ),
     pytest.param(
-        {"name": "Test\u200bField", "operator": "Op\u200bCo", "dataset": "gem"},
-        {"name": "Test\u200bField", "operator": "Op\u200bCo"},
+        {"name": "Test\u200bField", "country": "CAN"},
+        {"name": "Test\u200bField", "country": "CAN"},
         id="zero-width-characters",
     ),
 ]

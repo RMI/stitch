@@ -322,13 +322,10 @@ class TestResourceServiceUnicodeHandling:
         """Verify service correctly handles unicode characters in resource fields."""
         configure_source_mock(mock_transaction_context, source_data)
 
-        result = resource_service.create_resource(
-            source=source_data["dataset"], data={"id": "TEST"}
-        )
+        result = resource_service.create_resource(source="gem", data={"id": "TEST"})
 
         assert_resource_created_with(
             mock_transaction_context,
-            dataset=source_data["dataset"],
             **expected_fields,
         )
         assert result == 42
