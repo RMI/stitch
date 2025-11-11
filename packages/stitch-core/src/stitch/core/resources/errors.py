@@ -1,7 +1,11 @@
 """Custom exceptions for the resources package."""
 
 
-class DataTransformationError(Exception):
+class StitchResourcesError(Exception):
+    """General base error class to distinguish internal errors."""
+
+
+class DataTransformationError(StitchResourcesError):
     """Raised when source data cannot be transformed to resource format.
 
     This is the base exception for all data transformation errors.
