@@ -251,3 +251,38 @@ class TestSQLResourceRepositoryMergeResources:
         error_message = str(exc_info.value)
         assert "Cannot merge Resources with same id" in error_message
         assert str(resource_id) in error_message
+
+    def test_merge_nonexistent_resources_raises_entity_not_found(
+        self, db_session: Session
+    ):
+        """Test that merging with non-existent resources raises EntityNotFoundError."""
+        repo = SQLResourceRepository(db_session)
+
+        # Create one real resource
+        real_id = repo.create(name="Real Resource")
+
+        # Test 1: Non-existent left resource
+        with pytest.raises(EntityNotFoundError) as exc_info:
+            repo.merge_resources(999999, real_id)
+
+        error_message = str(exc_info.value)
+        assert "No Resource foun for" in error_message
+        assert "999999" in error_message
+
+        # Test 2: Non-existent right resource
+        with pytest.raises(EntityNotFoundError) as exc_info:
+            repo.merge_resources(real_id, 888888)
+
+        error_message = str(exc_info.value)
+        assert "No Resource foun for" in error_message
+        assert "888888" in error_message
+
+        # Test 3: Both non-existent
+        with pytest.raises(EntityNotFoundError) as exc_info:
+            repo.merge_resources(111111, 222222)
+
+        error_message = str(exc_info.value)
+        assert "No Resource foun for" in error_message
+        # Both IDs should be in the error message
+        assert "111111" in error_message
+        assert "222222" in error_message
