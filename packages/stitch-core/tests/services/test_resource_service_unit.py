@@ -7,12 +7,20 @@ behavior in isolation.
 
 import pytest
 
+from stitch.core.resources.errors import InvalidDataTypeError, MalformedSourceDataError
+from tests.data.parameter_sets import (
+    DATA_TYPE_ERROR_CASES,
+    MALFORMED_DATA_CASES,
+    UNICODE_TEST_CASES,
+)
 from tests.utils.assertions import (
-    assert_resource_created_with,
     assert_membership_created_with,
+    assert_no_downstream_calls,
+    assert_resource_created_with,
     assert_transaction_entered_and_exited,
     get_create_kwargs,
 )
+from tests.utils.mock_helpers import configure_source_mock
 
 
 class TestResourceServiceCreateResourceUnit:
@@ -297,3 +305,83 @@ class TestResourceServiceDataScenarios:
             source=source,
             source_pk="source_123",
         )
+
+
+class TestResourceServiceUnicodeHandling:
+    """Unit tests for unicode character handling in resource data."""
+
+    @pytest.mark.parametrize("source_data,expected_fields", UNICODE_TEST_CASES)
+    def test_handles_unicode_characters(
+        self,
+        resource_service,
+        mock_transaction_context,
+        source_data,
+        expected_fields,
+    ):
+        """Verify service correctly handles unicode characters in resource fields."""
+        configure_source_mock(mock_transaction_context, source_data)
+
+        result = resource_service.create_resource(
+            source=source_data["dataset"], data={"id": "TEST"}
+        )
+
+        assert_resource_created_with(
+            mock_transaction_context,
+            dataset=source_data["dataset"],
+            **expected_fields,
+        )
+        assert result == 42
+
+
+class TestResourceServiceDataTypeValidation:
+    """Unit tests for data type validation errors."""
+
+    @pytest.mark.parametrize(
+        "source_data,error_type,field_name", DATA_TYPE_ERROR_CASES
+    )
+    def test_invalid_data_type_raises_error(
+        self,
+        resource_service,
+        mock_transaction_context,
+        source_data,
+        error_type,
+        field_name,
+    ):
+        """Verify service raises InvalidDataTypeError for incorrect field types."""
+        source_repo = configure_source_mock(
+            mock_transaction_context, source_data, write_error=error_type(f"Invalid type for {field_name}")
+        )
+        source_repo.row_to_record_data.side_effect = error_type(
+            f"Invalid type for {field_name}"
+        )
+
+        with pytest.raises(error_type, match=field_name):
+            resource_service.create_resource(
+                source=source_data["dataset"], data={"id": "TEST"}
+            )
+
+        assert_no_downstream_calls(mock_transaction_context)
+
+
+class TestResourceServiceMalformedDataHandling:
+    """Unit tests for malformed source data handling."""
+
+    @pytest.mark.parametrize("source_data,error_type,error_msg", MALFORMED_DATA_CASES)
+    def test_malformed_data_raises_error(
+        self,
+        resource_service,
+        mock_transaction_context,
+        source_data,
+        error_type,
+        error_msg,
+    ):
+        """Verify service raises MalformedSourceDataError for invalid data structure."""
+        source_repo = configure_source_mock(
+            mock_transaction_context, source_data, write_error=error_type(error_msg)
+        )
+        source_repo.row_to_record_data.side_effect = error_type(error_msg)
+
+        with pytest.raises(error_type, match=error_msg):
+            resource_service.create_resource(source="gem", data={"id": "TEST"})
+
+        assert_no_downstream_calls(mock_transaction_context)
