@@ -72,3 +72,31 @@ def assert_transaction_entered_and_exited(mock_tx: MagicMock):
     """
     mock_tx.__enter__.assert_called_once()
     mock_tx.__exit__.assert_called_once()
+
+
+def assert_no_downstream_calls(mock_tx: MagicMock):
+    """Verify no repository operations were called after an error.
+
+    Useful for testing error handling where downstream operations
+    should not be executed after an exception occurs.
+
+    Args:
+        mock_tx: Mocked transaction context
+    """
+    mock_tx.resources.create.assert_not_called()
+    mock_tx.memberships.create.assert_not_called()
+
+
+def assert_resource_matches_expected(actual: Any, expected: dict[str, Any]):
+    """Compare resource fields to expected data.
+
+    Args:
+        actual: The actual resource object (ORM model or entity)
+        expected: Dictionary of expected field values
+
+    Raises:
+        AssertionError: If any field doesn't match expected value
+    """
+    for key, value in expected.items():
+        actual_value = getattr(actual, key)
+        assert actual_value == value, f"Field {key} mismatch: expected {value!r}, got {actual_value!r}"
