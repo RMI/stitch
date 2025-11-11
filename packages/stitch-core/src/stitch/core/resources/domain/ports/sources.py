@@ -73,11 +73,11 @@ class SourceRepository(Protocol):
     ) -> str:
         """Persist record and return new id"""
 
-    def fetch(self, source_id: str) -> SourceEntity | None:
+    def fetch(self, source_pk: str) -> SourceEntity | None:
         """Retrieve entity record by id. Return `None` if it doesn't exist."""
         pass
 
-    def fecth_many(self, source_ids: list[str]) -> Sequence[SourceEntity]:
+    def fecth_many(self, source_pks: list[str]) -> Sequence[SourceEntity]:
         """Retrieve multiple source entities"""
 
     def row_to_record_data(self, data: Mapping[str, Any]) -> SourceRecord:
