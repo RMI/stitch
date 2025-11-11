@@ -235,3 +235,19 @@ class TestSQLResourceRepositoryMergeResources:
         saved3_b = db_session.get(ResourceModel, id3_b)
         assert saved3_a.repointed_to == result3.id
         assert saved3_b.repointed_to == result3.id
+
+    def test_merge_same_id_raises_resource_integrity_error(self, db_session: Session):
+        """Test that attempting to merge a resource with itself raises ResourceIntegrityError."""
+        repo = SQLResourceRepository(db_session)
+
+        # Create a resource
+        resource_id = repo.create(name="Test Resource")
+
+        # Attempt to merge it with itself should raise error
+        with pytest.raises(ResourceIntegrityError) as exc_info:
+            repo.merge_resources(resource_id, resource_id)
+
+        # Verify error message contains the ID
+        error_message = str(exc_info.value)
+        assert "Cannot merge Resources with same id" in error_message
+        assert str(resource_id) in error_message
