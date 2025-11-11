@@ -378,3 +378,60 @@ class TestSQLResourceRepositoryMergeResources:
         saved2 = db_session.get(ResourceModel, id_no_loc)
         assert saved1.repointed_to == merged2.id
         assert saved2.repointed_to == merged2.id
+
+    def test_merge_selection_logic(self, db_session: Session):
+        """Test that merge always selects attributes from higher ID regardless of parameter order."""
+        repo = SQLResourceRepository(db_session)
+
+        # Create two resources with distinct attributes
+        # First resource (lower ID)
+        id_first = repo.create(
+            name="First Resource",
+            country="FRA",
+            latitude=48.8566,
+            longitude=2.3522,
+        )
+
+        # Second resource (higher ID)
+        id_second = repo.create(
+            name="Second Resource",
+            country="USA",
+            latitude=40.7128,
+            longitude=-74.0060,
+        )
+
+        # Verify IDs are sequential
+        assert id_second > id_first
+
+        # Test 1: Merge with lower ID as left parameter
+        merged1 = repo.merge_resources(id_first, id_second)
+
+        # Should select from second (higher ID)
+        assert merged1.name == "Second Resource"
+        assert merged1.country == "USA"
+        assert pytest.approx(merged1.latitude, rel=1e-6) == 40.7128
+        assert pytest.approx(merged1.longitude, rel=1e-6) == -74.0060
+
+        # Create another pair for reverse order test
+        id_third = repo.create(
+            name="Third Resource",
+            country="GBR",
+            latitude=51.5074,
+            longitude=-0.1278,
+        )
+
+        id_fourth = repo.create(
+            name="Fourth Resource",
+            country="JPN",
+            latitude=35.6762,
+            longitude=139.6503,
+        )
+
+        # Test 2: Merge with higher ID as left parameter
+        merged2 = repo.merge_resources(id_fourth, id_third)
+
+        # Should still select from fourth (higher ID), even though it's the left parameter
+        assert merged2.name == "Fourth Resource"
+        assert merged2.country == "JPN"
+        assert pytest.approx(merged2.latitude, rel=1e-6) == 35.6762
+        assert pytest.approx(merged2.longitude, rel=1e-6) == 139.6503
