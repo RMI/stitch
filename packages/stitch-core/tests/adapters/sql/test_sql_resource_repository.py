@@ -286,3 +286,47 @@ class TestSQLResourceRepositoryMergeResources:
         # Both IDs should be in the error message
         assert "111111" in error_message
         assert "222222" in error_message
+
+    def test_merge_already_merged_resource_raises_integrity_error(
+        self, db_session: Session
+    ):
+        """Test that attempting to merge an already-merged resource raises ResourceIntegrityError."""
+        repo = SQLResourceRepository(db_session)
+
+        # Create three resources
+        id_a = repo.create(name="Resource A")
+        id_b = repo.create(name="Resource B")
+        id_c = repo.create(name="Resource C")
+
+        # Merge A and B to create merged resource AB
+        merged_ab = repo.merge_resources(id_a, id_b)
+
+        # Now A and B are both repointed to merged_ab
+        # Try to merge A again (left parameter)
+        with pytest.raises(ResourceIntegrityError) as exc_info:
+            repo.merge_resources(id_a, id_c)
+
+        error_message = str(exc_info.value)
+        assert "Cannot merge any resource that has already been merged" in error_message
+        assert str(id_a) in error_message
+        assert str(merged_ab.id) in error_message
+
+        # Try to merge B again (right parameter)
+        with pytest.raises(ResourceIntegrityError) as exc_info:
+            repo.merge_resources(id_c, id_b)
+
+        error_message = str(exc_info.value)
+        assert "Cannot merge any resource that has already been merged" in error_message
+        assert str(id_b) in error_message
+
+        # Create another pair and merge them
+        id_d = repo.create(name="Resource D")
+        id_e = repo.create(name="Resource E")
+        merged_de = repo.merge_resources(id_d, id_e)
+
+        # Try to merge two already-merged resources
+        with pytest.raises(ResourceIntegrityError) as exc_info:
+            repo.merge_resources(id_a, id_d)
+
+        error_message = str(exc_info.value)
+        assert "Cannot merge any resource that has already been merged" in error_message
