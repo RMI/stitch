@@ -10,7 +10,6 @@ def source_record_to_resource_data(
         source_pk=source_pk,
         country=record.get("country", None),
         name=record.get("name", None),
-        operator=record.get("operator", None),
         latitude=record.get("latitude", None),
         longitude=record.get("longitude", None),
     )

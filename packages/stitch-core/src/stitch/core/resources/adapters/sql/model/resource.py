@@ -29,7 +29,6 @@ class ResourceModel(Base, TimestampMixin):
     repointed_to: Mapped[int | None] = mapped_column(BigIntegerType, nullable=True)
     name: Mapped[str | None] = mapped_column(String, nullable=True)
     country: Mapped[str | None] = mapped_column(String(3), nullable=True)
-    operator: Mapped[str | None] = mapped_column(String, nullable=True)
     latitude: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
     longitude: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
     created_by: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -43,7 +42,6 @@ class ResourceModel(Base, TimestampMixin):
             repointed_to=self.repointed_to,
             name=self.name,
             country=self.country,
-            operator=self.operator,
             latitude=self.latitude,
             longitude=self.longitude,
             created_by=self.created_by,
@@ -56,7 +54,6 @@ class ResourceModel(Base, TimestampMixin):
         cls,
         name: str | None = None,
         country: str | None = None,
-        operator: str | None = None,
         latitude: float | None = None,
         longitude: float | None = None,
         created_by: str | None = None,
@@ -65,7 +62,6 @@ class ResourceModel(Base, TimestampMixin):
         return cls(
             name=name,
             country=country,
-            operator=operator,
             latitude=latitude,
             longitude=longitude,
             created_by=created_by,

@@ -15,7 +15,6 @@ class SQLResourceRepository(ResourceRepository):
         repointed_to: int | None = None,
         name: str | None = None,
         country: str | None = None,
-        operator: str | None = None,
         latitude: float | None = None,
         longitude: float | None = None,
     ) -> int:
@@ -23,7 +22,6 @@ class SQLResourceRepository(ResourceRepository):
             repointed_to=repointed_to,
             name=name,
             country=country,
-            operator=operator,
             latitude=latitude,
             longitude=longitude,
         )
