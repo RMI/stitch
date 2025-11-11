@@ -185,3 +185,53 @@ class TestSQLResourceRepositoryMergeResources:
         # New resource itself should not be repointed
         saved_new = db_session.get(ResourceModel, new_resource.id)
         assert saved_new.repointed_to is None
+
+    def test_merge_accepts_different_input_types(self, db_session: Session):
+        """Test that merge_resources accepts int and ResourceEntity inputs."""
+        repo = SQLResourceRepository(db_session)
+
+        # Create three pairs of resources for testing different input combinations
+        # Pair 1: both ints
+        id1_a = repo.create(name="Resource 1A")
+        id1_b = repo.create(name="Resource 1B")
+
+        # Pair 2: first as int, second as entity
+        id2_a = repo.create(name="Resource 2A")
+        id2_b = repo.create(name="Resource 2B")
+        entity2_b = repo.get(id2_b)
+
+        # Pair 3: first as entity, second as int
+        id3_a = repo.create(name="Resource 3A")
+        id3_b = repo.create(name="Resource 3B")
+        entity3_a = repo.get(id3_a)
+
+        # Test 1: both ints
+        result1 = repo.merge_resources(id1_a, id1_b)
+        assert result1 is not None
+        assert result1.id is not None
+
+        # Verify repointing happened
+        saved1_a = db_session.get(ResourceModel, id1_a)
+        saved1_b = db_session.get(ResourceModel, id1_b)
+        assert saved1_a.repointed_to == result1.id
+        assert saved1_b.repointed_to == result1.id
+
+        # Test 2: int and ResourceEntity
+        result2 = repo.merge_resources(id2_a, entity2_b)
+        assert result2 is not None
+        assert result2.id is not None
+
+        saved2_a = db_session.get(ResourceModel, id2_a)
+        saved2_b = db_session.get(ResourceModel, id2_b)
+        assert saved2_a.repointed_to == result2.id
+        assert saved2_b.repointed_to == result2.id
+
+        # Test 3: ResourceEntity and int
+        result3 = repo.merge_resources(entity3_a, id3_b)
+        assert result3 is not None
+        assert result3.id is not None
+
+        saved3_a = db_session.get(ResourceModel, id3_a)
+        saved3_b = db_session.get(ResourceModel, id3_b)
+        assert saved3_a.repointed_to == result3.id
+        assert saved3_b.repointed_to == result3.id
