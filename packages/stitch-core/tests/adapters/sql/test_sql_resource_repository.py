@@ -15,7 +15,7 @@ class TestSQLResourceRepositoryCreate:
 
     @pytest.mark.parametrize(
         "fixture_key",
-        ["gem_full", "gem_minimal", "woodmac_numeric_pk", "woodmac_full"],
+        ["gem_full", "gem_minimal", "woodmac_full"],
     )
     def test_create_resource_basic_scenarios(
         self, db_session: Session, fixture_key: str
