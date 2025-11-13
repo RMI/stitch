@@ -1,9 +1,4 @@
-from typing import Protocol, TypeVar
-
-
-T = TypeVar("T")
-
-EntOrId = T | int
+from typing import Protocol
 
 
 class HasId(Protocol):
