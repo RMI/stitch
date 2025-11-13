@@ -30,13 +30,6 @@ RESOURCE_DATA: dict[str, ResourceEntityData] = {
         "longitude": 49.5,
         "created_by": "user",
     },
-    "woodmac_numeric_pk": {
-        "name": "North Sea Field",
-        "country": "GBR",
-        "latitude": 58.0,
-        "longitude": 1.5,
-        "created_by": "user",
-    },
     "edge_case_no_location": {
         "name": "Unknown Location Field",
         "country": "IRQ",
