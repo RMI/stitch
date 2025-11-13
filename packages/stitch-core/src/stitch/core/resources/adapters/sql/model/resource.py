@@ -42,8 +42,8 @@ class ResourceModel(Base, TimestampMixin):
             repointed_to=self.repointed_to,
             name=self.name,
             country=self.country,
-            latitude=self.latitude,
-            longitude=self.longitude,
+            latitude=float(self.latitude),
+            longitude=float(self.longitude),
             created_by=self.created_by,
             created=self.created,
             last_updated=self.updated,
@@ -52,6 +52,7 @@ class ResourceModel(Base, TimestampMixin):
     @classmethod
     def create(
         cls,
+        repointed_to: int | None = None,
         name: str | None = None,
         country: str | None = None,
         latitude: float | None = None,
@@ -65,7 +66,7 @@ class ResourceModel(Base, TimestampMixin):
             latitude=latitude,
             longitude=longitude,
             created_by=created_by,
-            repointed_to=None,
+            repointed_to=repointed_to,
         )
 
     @classmethod

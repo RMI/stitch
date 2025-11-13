@@ -35,6 +35,6 @@ class ResourceService(AbstractService):
             )
             resource_id = self.tx.resources.create(**resource_kwargs)
             _member_id = self.tx.memberships.create(
-                resource_id=resource_id, source_name=source, source_id=source_pk
+                resource_id=resource_id, source=source, source_pk=source_pk
             )
             return resource_id

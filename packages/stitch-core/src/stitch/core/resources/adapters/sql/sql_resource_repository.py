@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from .model.resource import ResourceModel
-from stitch.core.resources.domain.entities import ResourceEntity
+from stitch.core.resources.domain.entities import ResourceEntity, UserPlaceholder
 from stitch.core.resources.domain.ports import ResourceRepository
 
 
@@ -17,6 +17,7 @@ class SQLResourceRepository(ResourceRepository):
         country: str | None = None,
         latitude: float | None = None,
         longitude: float | None = None,
+        created_by: UserPlaceholder | None = None,
     ) -> int:
         model = ResourceModel.create(
             repointed_to=repointed_to,

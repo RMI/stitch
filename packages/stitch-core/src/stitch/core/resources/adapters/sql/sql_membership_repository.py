@@ -14,10 +14,10 @@ class SQLMembershipRepository(MembershipRepository):
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def create(self, resource_id: int, source_name: str, source_pk: str):
+    def create(self, resource_id: int, source: str, source_pk: str):
         model = MembershipModel(
             resource_id=resource_id,
-            source=source_name,
+            source=source,
             source_pk=source_pk,
         )
 

@@ -43,4 +43,5 @@ class MembershipModel(Base, TimestampMixin):
             created_by=self.created_by,
             status=self.status,
             created=self.created,
+            updated=self.updated,
         )
