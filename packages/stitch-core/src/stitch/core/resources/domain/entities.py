@@ -2,6 +2,7 @@ from __future__ import annotations
 from ast import TypeAlias
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Required, TypedDict
 
 UserPlaceholder: TypeAlias = str
 
@@ -39,6 +40,15 @@ class ResourceEntity:
 
     def __hash__(self) -> int:
         return hash((self.id, self.name, self.latitude, self.longitude))
+
+
+class ResourceEntityData(TypedDict, total=False):
+    name: Required[str]
+    country: Required[str]
+    repointed_to: int | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    created_by: UserPlaceholder | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -82,3 +92,11 @@ class MembershipEntity:
         return hash(
             (self.id, self.resource_id, self.source, self.source_pk, self.status)
         )
+
+
+class MembershipEntityData(TypedDict, total=False):
+    resource_id: Required[int]
+    source: Required[str]
+    source_pk: Required[str]
+    created_by: str | None = None
+    status: str | None = None
