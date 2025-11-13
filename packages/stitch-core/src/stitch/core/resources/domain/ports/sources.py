@@ -11,44 +11,7 @@ from typing import (
 
 from sqlalchemy.orm import Session
 
-
-@dataclass(frozen=True)
-class SourceEntity:
-    """Generic representation of a row/entity from a raw/external data source.
-
-    Establishes a minimal structure (aligned with our `Resource` definition) that a
-    `SourceRepositry` implementation can fulfill.
-
-    Attributes:
-        id: the unique record identifier within the source collection/table
-        source: the collection/table identifier (e.g. "gem", "woodmac", or other domain-specific string)
-        name: the entity/record name
-        country: ISO 3166-1 country code
-        latitude: optional latitude
-        longitude: optional longitude
-        payload: the underlying source data with an unspecified structure/schema
-        created: creation timestamp
-    """
-
-    id: int
-    source: str
-    name: str
-    country: str
-    latitude: float | None
-    longitude: float | None
-    payload: object | Mapping[str, Any]
-    created: datetime
-
-
-class SourceRecord(TypedDict, total=False):
-    """Convenience class for passing around `SourceEntity` data."""
-
-    source: Required[str]
-    name: Required[str]
-    payload: Required[object | Mapping[str, Any]]
-    country: Required[str]
-    latitude: float | None
-    longitude: float | None
+from stitch.core.resources.domain.entities import SourceEntity, SourceRecord
 
 
 # TODO: consider making this Generic where the type, `T`, corresponds to the

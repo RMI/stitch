@@ -3,9 +3,7 @@ from ast import TypeAlias
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Required, TypedDict
-
-from .ports.sources import SourceEntity
+from typing import Any, Required, TypedDict
 
 UserPlaceholder: TypeAlias = str
 
@@ -19,12 +17,20 @@ class AggregateResourceEntity:
     Attributes:
         root: the primary `ResourceEntity` for this object
         constituents: the `ResourceEntity` objects whose `repointed_to` attribute points to `root`
-        source_data: the total collected source data aggregated through the `MembershipEntity` relationships
+        source_data:
+            source data aggregated through the `MembershipEntity` relationships
+            ```
+            source_data = {
+              [source]: {
+                [source_pk]: { ... [raw source data] ... }
+              }
+            }
+            ```
     """
 
     root: ResourceEntity
     constituents: Sequence[ResourceEntity]
-    source_data: Mapping[str, SourceEntity]
+    source_data: Mapping[str, Mapping[str, SourceEntity]]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -120,3 +126,42 @@ class MembershipEntityData(TypedDict, total=False):
     source_pk: Required[str]
     created_by: str | None = None
     status: str | None = None
+
+
+@dataclass(frozen=True)
+class SourceEntity:
+    """Generic representation of a row/entity from a raw/external data source.
+
+    Establishes a minimal structure (aligned with our `Resource` definition) that a
+    `SourceRepositry` implementation can fulfill.
+
+    Attributes:
+        id: the unique record identifier within the source collection/table
+        source: the collection/table identifier (e.g. "gem", "woodmac", or other domain-specific string)
+        name: the entity/record name
+        country: ISO 3166-1 country code
+        latitude: optional latitude
+        longitude: optional longitude
+        payload: the underlying source data with an unspecified structure/schema
+        created: creation timestamp
+    """
+
+    id: int
+    source: str
+    name: str
+    country: str
+    latitude: float | None
+    longitude: float | None
+    payload: object | Mapping[str, Any]
+    created: datetime
+
+
+class SourceRecord(TypedDict, total=False):
+    """Convenience class for passing around `SourceEntity` data."""
+
+    source: Required[str]
+    name: Required[str]
+    payload: Required[object | Mapping[str, Any]]
+    country: Required[str]
+    latitude: float | None
+    longitude: float | None

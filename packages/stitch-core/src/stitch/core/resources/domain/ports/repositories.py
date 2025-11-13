@@ -96,5 +96,7 @@ class MembershipRepository(Protocol):
     ) -> ResourceEntity:
         pass
 
-    def repoint_memberships(ids: Sequence[int], to_resource_id: int):
+    def create_repointed_memberships(
+        self, from_resoure_ids: Sequence[int], to_resource_id: int
+    ):
         """Updates all memberships to point to the provided id."""
