@@ -21,10 +21,25 @@ def mock_resource_repository():
 
     Returns a MagicMock with ResourceRepository spec and default behaviors:
     - create() returns resource_id=42
+    - get() returns a ResourceEntity with id=42
     - All other methods are mocked but not configured
     """
+    from stitch.core.resources.domain.entities import ResourceEntity
+    from datetime import datetime, timezone
+
     repo = MagicMock(spec=ResourceRepository)
     repo.create.return_value = 42
+    repo.get.return_value = ResourceEntity(
+        id=42,
+        repointed_to=None,
+        name="Mock Resource",
+        country="USA",
+        latitude=30.0,
+        longitude=-95.0,
+        created=datetime.now(timezone.utc),
+        last_updated=datetime.now(timezone.utc),
+        created_by=None,
+    )
     return repo
 
 

@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from stitch.core.resources.domain.ports import SourceRecord
+from stitch.core.resources.domain.entities import SourceRecord
 
 
 def source_record_to_resource_data(

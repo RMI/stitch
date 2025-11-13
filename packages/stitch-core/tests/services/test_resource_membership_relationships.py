@@ -31,12 +31,12 @@ class TestResourceMembershipRelationships:
         mock_source_repo.write.return_value = "source_123"
 
         # Act - create resource via service
-        resource_id = resource_service_integration.create_resource(
+        resource_entity = resource_service_integration.create_resource(
             source="test_source", data={"id": "TEST123"}
         )
 
         # Load ResourceModel directly to test relationship
-        resource = db_session.query(ResourceModel).filter_by(id=resource_id).first()
+        resource = db_session.query(ResourceModel).filter_by(id=resource_entity.id).first()
 
         # Assert - access memberships relationship (triggers lazy load)
         memberships = resource.memberships
@@ -59,18 +59,18 @@ class TestResourceMembershipRelationships:
         mock_source_repo.write.return_value = "can_456"
 
         # Act - create resource
-        resource_id = resource_service_integration.create_resource(
+        resource_entity = resource_service_integration.create_resource(
             source="woodmac", data={"id": "456"}
         )
 
         # Load MembershipModel directly to test relationship
         membership = (
-            db_session.query(MembershipModel).filter_by(resource_id=resource_id).first()
+            db_session.query(MembershipModel).filter_by(resource_id=resource_entity.id).first()
         )
 
         # Assert - access resource relationship (triggers lazy load)
         resource = membership.resource
-        assert resource.id == resource_id
+        assert resource.id == resource_entity.id
         assert resource.name == "Relationship Test"
         assert resource.country == "CAN"
 
@@ -87,7 +87,7 @@ class TestResourceMembershipRelationships:
         }
         mock_source_repo.write.return_value = "first_789"
 
-        resource_id = resource_service_integration.create_resource(
+        resource_entity = resource_service_integration.create_resource(
             source="gem", data={"id": "789"}
         )
 
@@ -97,12 +97,12 @@ class TestResourceMembershipRelationships:
         member_repo = SQLMembershipRepository(repo_session)
 
         member_repo.create(
-            resource_id=resource_id, source="woodmac", source_pk="second_999"
+            resource_id=resource_entity.id, source="woodmac", source_pk="second_999"
         )
         repo_session.commit()
 
         # Act - load resource and check relationships
-        resource = db_session.query(ResourceModel).filter_by(id=resource_id).first()
+        resource = db_session.query(ResourceModel).filter_by(id=resource_entity.id).first()
 
         # Assert - should have 2 memberships
         assert len(resource.memberships) == 2
@@ -116,4 +116,4 @@ class TestResourceMembershipRelationships:
 
         # Verify both memberships link back to resource
         for membership in resource.memberships:
-            assert membership.resource.id == resource_id
+            assert membership.resource.id == resource_entity.id
