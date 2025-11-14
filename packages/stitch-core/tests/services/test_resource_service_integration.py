@@ -235,3 +235,188 @@ class TestResourceServiceCreateResourceIntegration:
 
         assert resource_count == 1
         assert membership_count == 1
+
+
+class TestResourceServiceMergeResourcesIntegration:
+    """Integration tests for merge_resources with real SQLite database."""
+
+    def test_basic_merge_flow(
+        self, resource_service_integration, db_session, mock_source_repo
+    ):
+        """Test merging two resources with full database verification."""
+        mock_source_repo.row_to_record_data.return_value = {
+            "name": "Field 1",
+            "country": "USA",
+            "latitude": 30.0,
+            "longitude": -95.0,
+        }
+        mock_source_repo.write.return_value = "gem_001"
+
+        resource1 = resource_service_integration.create_resource(
+            source="gem", data={"id": "001"}
+        )
+
+        mock_source_repo.row_to_record_data.return_value = {
+            "name": "Field 2",
+            "country": "CAN",
+            "latitude": 50.0,
+            "longitude": -110.0,
+        }
+        mock_source_repo.write.return_value = "woodmac_002"
+
+        resource2 = resource_service_integration.create_resource(
+            source="woodmac", data={"id": "002"}
+        )
+
+        mock_gem_source = MagicMock()
+        mock_wm_source = MagicMock()
+
+        def mock_fetch(source_pk):
+            if source_pk == "gem_001":
+                return mock_gem_source
+            elif source_pk == "woodmac_002":
+                return mock_wm_source
+            raise ValueError(f"Unknown source_pk: {source_pk}")
+
+        mock_source_repo.fetch.side_effect = mock_fetch
+
+        aggregate = resource_service_integration.merge_resources(resource1, resource2)
+
+        assert aggregate.root is not None
+        assert aggregate.root.id != resource1.id
+        assert aggregate.root.id != resource2.id
+        assert aggregate.constituents == (resource1, resource2)
+
+        merged_resource = (
+            db_session.query(ResourceModel).filter_by(id=aggregate.root.id).first()
+        )
+        assert merged_resource is not None
+        assert merged_resource.name is None
+        assert merged_resource.country is None
+
+        resource1_updated = db_session.query(ResourceModel).filter_by(id=resource1.id).first()
+        resource2_updated = db_session.query(ResourceModel).filter_by(id=resource2.id).first()
+        assert resource1_updated.repointed_to == aggregate.root.id
+        assert resource2_updated.repointed_to == aggregate.root.id
+
+        new_memberships = (
+            db_session.query(MembershipModel)
+            .filter_by(resource_id=aggregate.root.id)
+            .all()
+        )
+        assert len(new_memberships) == 2
+
+        source_keys = {(m.source, m.source_pk) for m in new_memberships}
+        assert source_keys == {("gem", "gem_001"), ("woodmac", "woodmac_002")}
+
+        assert "gem" in aggregate.source_data
+        assert "woodmac" in aggregate.source_data
+        assert aggregate.source_data["gem"]["gem_001"] == mock_gem_source
+        assert aggregate.source_data["woodmac"]["woodmac_002"] == mock_wm_source
+
+    def test_merge_three_resources(
+        self, resource_service_integration, db_session, mock_source_repo
+    ):
+        """Test merging three resources simultaneously."""
+        resources = []
+        source_configs = [
+            ("gem", "gem_001", "Field A", "USA"),
+            ("woodmac", "woodmac_002", "Field B", "CAN"),
+            ("rystad", "rystad_003", "Field C", "MEX"),
+        ]
+
+        for source, source_pk, name, country in source_configs:
+            mock_source_repo.row_to_record_data.return_value = {
+                "name": name,
+                "country": country,
+                "latitude": 30.0,
+                "longitude": -95.0,
+            }
+            mock_source_repo.write.return_value = source_pk
+
+            resource = resource_service_integration.create_resource(
+                source=source, data={"id": source_pk}
+            )
+            resources.append(resource)
+
+        mock_sources = {
+            "gem_001": MagicMock(),
+            "woodmac_002": MagicMock(),
+            "rystad_003": MagicMock(),
+        }
+
+        def mock_fetch(source_pk):
+            if source_pk in mock_sources:
+                return mock_sources[source_pk]
+            raise ValueError(f"Unknown source_pk: {source_pk}")
+
+        mock_source_repo.fetch.side_effect = mock_fetch
+
+        aggregate = resource_service_integration.merge_resources(*resources)
+
+        assert aggregate.root is not None
+        assert len(aggregate.constituents) == 3
+        assert set(aggregate.constituents) == set(resources)
+
+        for resource in resources:
+            updated = db_session.query(ResourceModel).filter_by(id=resource.id).first()
+            assert updated.repointed_to == aggregate.root.id
+
+        new_memberships = (
+            db_session.query(MembershipModel)
+            .filter_by(resource_id=aggregate.root.id)
+            .all()
+        )
+        assert len(new_memberships) == 3
+
+        source_keys = {(m.source, m.source_pk) for m in new_memberships}
+        expected_keys = {
+            ("gem", "gem_001"),
+            ("woodmac", "woodmac_002"),
+            ("rystad", "rystad_003"),
+        }
+        assert source_keys == expected_keys
+
+    def test_transaction_rollback_on_merge_error(
+        self, db_session, mock_source_registry, mock_source_repo
+    ):
+        """Verify transaction rolls back when merge operation fails."""
+        from stitch.core.resources.adapters.sql.errors import ResourceIntegrityError
+
+        session_factory = sessionmaker(bind=db_session.get_bind())
+
+        def _registry_factory(session):
+            return mock_source_registry
+
+        tx_context = SQLTransactionContext(session_factory, _registry_factory)
+        service = ResourceService(tx_context)
+
+        mock_source_repo.row_to_record_data.return_value = {
+            "name": "Field 1",
+            "country": "USA",
+            "latitude": 30.0,
+            "longitude": -95.0,
+        }
+        mock_source_repo.write.return_value = "test_001"
+
+        resource1 = service.create_resource(source="test_source", data={"id": "001"})
+
+        mock_source_repo.write.return_value = "test_002"
+        resource2 = service.create_resource(source="test_source", data={"id": "002"})
+
+        initial_resource_count = db_session.query(ResourceModel).count()
+        initial_membership_count = db_session.query(MembershipModel).count()
+
+        with pytest.raises(ResourceIntegrityError, match="only possible between different resources"):
+            service.merge_resources(resource1, resource1)
+
+        check_session = session_factory()
+        final_resource_count = check_session.query(ResourceModel).count()
+        final_membership_count = check_session.query(MembershipModel).count()
+        check_session.close()
+
+        assert final_resource_count == initial_resource_count
+        assert final_membership_count == initial_membership_count
+
+        resource1_check = db_session.query(ResourceModel).filter_by(id=resource1.id).first()
+        assert resource1_check.repointed_to is None
