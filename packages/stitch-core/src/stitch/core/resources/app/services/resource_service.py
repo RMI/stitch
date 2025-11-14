@@ -1,5 +1,6 @@
 from abc import ABC
 from collections import defaultdict
+from collections.abc import Sequence
 from typing import Any, Mapping
 
 
@@ -44,20 +45,23 @@ class ResourceService(AbstractService):
             return self.tx.resources.get(resource_id=resource_id)
 
     def merge_resources(
-        self, left: ResourceEntity | int, right: ResourceEntity | int
+        self,
+        *resources: Sequence[ResourceEntity | int],
     ) -> AggregateResourceEntity:
         with self.tx:
-            mr = self.tx.resources.merge_resources(left=left, right=right)
+            new_resource = self.tx.resources.merge_resources(*resources)
             new_mems = self.tx.memberships.create_repointed_memberships(
-                from_resoure_ids=(left.id, right.id), to_resource_id=mr.id
+                from_resources=resources, to_resource=new_resource
             )
             # get source data from memberships
             data: dict[str, dict[str, SourceEntity]] = defaultdict(dict)
+            # TODO: consider new method on SourceRepository:
+            # - `get_aggregate_data(ids: Sequence[tuple["source", "source_pk"]]) -> dict[str, dict[str, SourceEntity]]`
             for member in new_mems:
                 repo = self.tx.source_registry.get_source_repository(member.source)
                 entity = repo.fetch(source_pk=member.source_pk)
                 data[member.source][member.source_pk] = entity
 
             return AggregateResourceEntity(
-                root=mr, constituents=[left, right], source_data=data
+                root=new_resource, constituents=resources, source_data=data
             )

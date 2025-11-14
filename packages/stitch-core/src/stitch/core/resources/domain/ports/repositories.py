@@ -45,6 +45,11 @@ class ResourceRepository(Protocol):
         """Fetch the AggregateResourceEntity identified by the passed `ResourceEntity`/`resource_id`."""
 
     def merge_resources(
+        self, *resources: Sequence[ResourceEntity | int]
+    ) -> ResourceEntity:
+        """Merge two or more resources and repoint them to the newly created resource."""
+
+    def merge_resources_(
         self, left: ResourceEntity | int, right: ResourceEntity | int
     ) -> ResourceEntity:
         """Merge two resources and repoint them to the newly created resource."""
@@ -97,6 +102,8 @@ class MembershipRepository(Protocol):
         pass
 
     def create_repointed_memberships(
-        self, from_resoure_ids: Sequence[int], to_resource_id: int
-    ):
+        self,
+        from_resources: Sequence[ResourceEntity | int],
+        to_resource: ResourceEntity | int,
+    ) -> Sequence[MembershipEntity]:
         """Updates all memberships to point to the provided id."""
