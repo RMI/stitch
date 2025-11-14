@@ -11,6 +11,7 @@ cli = ["stitch-cli", "stitch-validator"]
 
 [tool.uv.workspace]
 members = ["packages/*", "dev/*", "deployments/*"]
+exclude = ["deployments/db"]
 
 [tool.uv.sources]
 stitch-core = { workspace = true }

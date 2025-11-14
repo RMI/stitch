@@ -22,7 +22,7 @@ class PostgresConfig(BaseSettings, cli_parse_args=False):
     password: str = "xxx"
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
-        env_prefix="PG_",
+        env_prefix="POSTGRES_",
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
