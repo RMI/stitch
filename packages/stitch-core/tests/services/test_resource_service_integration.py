@@ -294,8 +294,12 @@ class TestResourceServiceMergeResourcesIntegration:
         assert merged_resource.name is None
         assert merged_resource.country is None
 
-        resource1_updated = db_session.query(ResourceModel).filter_by(id=resource1.id).first()
-        resource2_updated = db_session.query(ResourceModel).filter_by(id=resource2.id).first()
+        resource1_updated = (
+            db_session.query(ResourceModel).filter_by(id=resource1.id).first()
+        )
+        resource2_updated = (
+            db_session.query(ResourceModel).filter_by(id=resource2.id).first()
+        )
         assert resource1_updated.repointed_to == aggregate.root.id
         assert resource2_updated.repointed_to == aggregate.root.id
 
@@ -407,7 +411,9 @@ class TestResourceServiceMergeResourcesIntegration:
         initial_resource_count = db_session.query(ResourceModel).count()
         initial_membership_count = db_session.query(MembershipModel).count()
 
-        with pytest.raises(ResourceIntegrityError, match="only possible between different resources"):
+        with pytest.raises(
+            ResourceIntegrityError, match="only possible between different resources"
+        ):
             service.merge_resources(resource1, resource1)
 
         check_session = session_factory()
@@ -418,7 +424,9 @@ class TestResourceServiceMergeResourcesIntegration:
         assert final_resource_count == initial_resource_count
         assert final_membership_count == initial_membership_count
 
-        resource1_check = db_session.query(ResourceModel).filter_by(id=resource1.id).first()
+        resource1_check = (
+            db_session.query(ResourceModel).filter_by(id=resource1.id).first()
+        )
         assert resource1_check.repointed_to is None
 
     def test_end_to_end_merge_with_heterogeneous_sources(
@@ -512,12 +520,14 @@ class TestResourceServiceMergeResourcesIntegration:
                     }
                     tracker["last_id"] = record_id
                     return rec_data
+
                 return row_to_record
 
             def make_write(source_prefix, tracker):
                 def write(rec_data):
                     record_id = tracker.get("last_id")
                     return f"{source_prefix}_{record_id}"
+
                 return write
 
             def make_fetch(entities_map):
@@ -525,9 +535,12 @@ class TestResourceServiceMergeResourcesIntegration:
                     if source_pk in entities_map:
                         return entities_map[source_pk]
                     raise ValueError(f"Unknown source_pk: {source_pk}")
+
                 return fetch
 
-            repo.row_to_record_data.side_effect = make_row_to_record(dataset, call_tracker)
+            repo.row_to_record_data.side_effect = make_row_to_record(
+                dataset, call_tracker
+            )
             repo.write.side_effect = make_write(source_name, call_tracker)
             repo.fetch.side_effect = make_fetch(source_entities)
             source_repos[source_name] = (repo, source_entities)
@@ -546,15 +559,23 @@ class TestResourceServiceMergeResourcesIntegration:
         service = ResourceService(tx_context)
 
         gem_resource = service.create_resource(source="gem", data={"id": "GEM001"})
-        woodmac_resource = service.create_resource(source="woodmac", data={"id": "WM001"})
+        woodmac_resource = service.create_resource(
+            source="woodmac", data={"id": "WM001"}
+        )
         rystad_resource = service.create_resource(source="rystad", data={"id": "RY001"})
 
-        aggregate = service.merge_resources(gem_resource, woodmac_resource, rystad_resource)
+        aggregate = service.merge_resources(
+            gem_resource, woodmac_resource, rystad_resource
+        )
 
         assert aggregate.root is not None
         assert aggregate.root.id is not None
         assert len(aggregate.constituents) == 3
-        assert set(aggregate.constituents) == {gem_resource, woodmac_resource, rystad_resource}
+        assert set(aggregate.constituents) == {
+            gem_resource,
+            woodmac_resource,
+            rystad_resource,
+        }
 
         assert len(aggregate.source_data) == 3
         assert "gem" in aggregate.source_data
@@ -580,16 +601,22 @@ class TestResourceServiceMergeResourcesIntegration:
         assert rystad_source_entity.data["water_depth"] is None
 
         check_session = session_factory()
-        merged_resource = check_session.query(ResourceModel).filter_by(id=aggregate.root.id).first()
+        merged_resource = (
+            check_session.query(ResourceModel).filter_by(id=aggregate.root.id).first()
+        )
         assert merged_resource is not None
         assert merged_resource.repointed_to is None
 
         for constituent in aggregate.constituents:
-            resource = check_session.query(ResourceModel).filter_by(id=constituent.id).first()
+            resource = (
+                check_session.query(ResourceModel).filter_by(id=constituent.id).first()
+            )
             assert resource.repointed_to == aggregate.root.id
 
         all_memberships = check_session.query(MembershipModel).all()
-        merged_memberships = [m for m in all_memberships if m.resource_id == aggregate.root.id]
+        merged_memberships = [
+            m for m in all_memberships if m.resource_id == aggregate.root.id
+        ]
         assert len(merged_memberships) == 3
 
         membership_keys = {(m.source, m.source_pk) for m in merged_memberships}

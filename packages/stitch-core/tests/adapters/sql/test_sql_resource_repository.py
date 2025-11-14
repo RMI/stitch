@@ -8,7 +8,6 @@ from stitch.core.resources.adapters.sql.sql_resource_repository import (
 )
 from stitch.core.resources.adapters.sql.model.resource import ResourceModel
 from stitch.core.resources.adapters.sql.errors import (
-    EntityNotFoundError,
     ResourceIntegrityError,
 )
 from tests.fixtures.fixture_db_data import RESOURCE_DATA

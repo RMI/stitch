@@ -227,7 +227,9 @@ class TestSQLMembershipRepositoryCreateRepointedMemberships:
         db_session.flush()
         return [mem1_1, mem1_2, mem2_1, mem2_2]
 
-    def test_create_repointed_memberships_basic(self, repo, db_session, sample_resources, sample_memberships):
+    def test_create_repointed_memberships_basic(
+        self, repo, db_session, sample_resources, sample_memberships
+    ):
         """Test basic repointing of memberships from two resources to a new target."""
         resource1, resource2, resource3 = sample_resources
         target_resource = ResourceModel.create(
@@ -238,8 +240,7 @@ class TestSQLMembershipRepositoryCreateRepointedMemberships:
         db_session.flush()
 
         new_memberships = repo.create_repointed_memberships(
-            from_resources=[resource1.id, resource2.id],
-            to_resource=target_resource.id
+            from_resources=[resource1.id, resource2.id], to_resource=target_resource.id
         )
 
         assert len(new_memberships) == 4
@@ -260,14 +261,18 @@ class TestSQLMembershipRepositoryCreateRepointedMemberships:
         all_memberships = db_session.query(MembershipModel).all()
         assert len(all_memberships) == 8
 
-        original_mems = db_session.query(MembershipModel).filter(
-            MembershipModel.resource_id.in_([resource1.id, resource2.id])
-        ).all()
+        original_mems = (
+            db_session.query(MembershipModel)
+            .filter(MembershipModel.resource_id.in_([resource1.id, resource2.id]))
+            .all()
+        )
         assert len(original_mems) == 4
         for mem in original_mems:
             assert mem.status is None
 
-    def test_create_repointed_memberships_no_memberships(self, repo, db_session, sample_resources):
+    def test_create_repointed_memberships_no_memberships(
+        self, repo, db_session, sample_resources
+    ):
         """Test repointing when source resources have no memberships."""
         resource1, resource2, resource3 = sample_resources
         target_resource = ResourceModel.create(
@@ -278,8 +283,7 @@ class TestSQLMembershipRepositoryCreateRepointedMemberships:
         db_session.flush()
 
         new_memberships = repo.create_repointed_memberships(
-            from_resources=[resource3.id],
-            to_resource=target_resource.id
+            from_resources=[resource3.id], to_resource=target_resource.id
         )
 
         assert new_memberships == []
@@ -303,8 +307,7 @@ class TestSQLMembershipRepositoryCreateRepointedMemberships:
         target_entity = target_resource.as_entity()
 
         new_memberships = repo.create_repointed_memberships(
-            from_resources=[resource1_entity, resource2.id],
-            to_resource=target_entity
+            from_resources=[resource1_entity, resource2.id], to_resource=target_entity
         )
 
         assert len(new_memberships) == 4
@@ -335,7 +338,7 @@ class TestSQLMembershipRepositoryCreateRepointedMemberships:
 
         new_memberships = repo.create_repointed_memberships(
             from_resources=[resource1.id, resource2.id, resource3.id],
-            to_resource=target_resource.id
+            to_resource=target_resource.id,
         )
 
         assert len(new_memberships) == 5
@@ -378,12 +381,13 @@ class TestSQLMembershipRepositoryCreateRepointedMemberships:
 
         with pytest.raises(MembershipIntegrityError) as exc_info:
             repo.create_repointed_memberships(
-                from_resources=[resource1.id],
-                to_resource=target_resource.id
+                from_resources=[resource1.id], to_resource=target_resource.id
             )
 
         error_msg = str(exc_info.value)
-        assert "Cannot repoint memberships that have already been repointed" in error_msg
+        assert (
+            "Cannot repoint memberships that have already been repointed" in error_msg
+        )
         assert "MembershipModel" in error_msg
 
     def test_target_resource_with_existing_memberships_raises_error(
@@ -410,8 +414,7 @@ class TestSQLMembershipRepositoryCreateRepointedMemberships:
 
         with pytest.raises(MembershipIntegrityError) as exc_info:
             repo.create_repointed_memberships(
-                from_resources=[resource1.id],
-                to_resource=target_resource.id
+                from_resources=[resource1.id], to_resource=target_resource.id
             )
 
         error_msg = str(exc_info.value)

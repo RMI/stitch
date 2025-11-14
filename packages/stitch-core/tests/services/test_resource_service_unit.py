@@ -382,9 +382,7 @@ class TestResourceServiceMalformedDataHandling:
 class TestResourceServiceMergeResourcesUnit:
     """Unit tests for merge_resources with mocked dependencies."""
 
-    def test_merge_orchestration_flow(
-        self, resource_service, mock_transaction_context
-    ):
+    def test_merge_orchestration_flow(self, resource_service, mock_transaction_context):
         """Verify repositories are called in correct sequence during merge."""
         from stitch.core.resources.domain.entities import (
             ResourceEntity,
@@ -441,9 +439,7 @@ class TestResourceServiceMergeResourcesUnit:
         mock_transaction_context.resources.merge_resources.return_value = (
             merged_resource
         )
-        mock_transaction_context.memberships.create_repointed_memberships.return_value = (
-            new_memberships
-        )
+        mock_transaction_context.memberships.create_repointed_memberships.return_value = new_memberships
 
         mock_gem_source = MagicMock(spec=SourceEntity)
         mock_wm_source = MagicMock(spec=SourceEntity)
