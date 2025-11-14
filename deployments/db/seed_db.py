@@ -1,4 +1,5 @@
 import logging
+import os
 from stitch.core.resources.adapters.sql.settings import PostgresConfig
 from stitch.core.resources.adapters.sql.model.base import Base
 from stitch.core.resources.adapters.sql.model.resource import ResourceModel
@@ -11,7 +12,8 @@ from stitch.core.resources.adapters.sql.sql_membership_repository import (
     SQLMembershipRepository,
 )
 
-logging.basicConfig(level=logging.DEBUG)
+log_level = os.getenv("LOG_LEVEL", "DEBUG").upper()
+logging.basicConfig(level=getattr(logging, log_level))
 logger = logging.getLogger(__name__)
 
 
