@@ -4,25 +4,17 @@ Stitch is a platform that integrates diverse oil & gas asset datasets, applies A
 
 ## Development Database
 
-To quickly spin up a seeded PostgreSQL development database, first copy the example environment file:
+To quickly start a seeded PostgreSQL development database:
 
-```bash
-cp .env.example .env
-```
+1. Copy the example environment file:
+   ```bash
+   cp .env.example .env
+   ```
+2. Update environment variables in `.env` as needed.
+3. Start the database using Docker Compose:
+   ```bash
+   docker compose up
+   ```
 
-and update the ENVVARS in the `.env` file as needed.
-
-Then, run the following command to start the database using Docker Compose:
-
-```bash
-docker compose up
-```
-
-This will start a PostgreSQL instance and automatically seed it with example data using the included seed script.
-
-- The database will be accessible at localhost:5432.
-- Connection details (database name, user, password, host, port) are
-  configured via environment variables in a `.env` file.
-- An example configuration is provided in `.env.example`. Copy it to `.env`
-  and adjust values as needed before starting the containers.
-- To inspect the data, connect using any PostgreSQL client.
+This launches PostgreSQL and seeds it with example data.  
+For advanced details on seeding, persistence, and customizing the database, see [deployments/db/README.md](deployments/db/README.md).
