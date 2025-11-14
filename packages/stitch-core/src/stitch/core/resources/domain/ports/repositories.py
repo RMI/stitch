@@ -98,7 +98,7 @@ class MembershipRepository(Protocol):
         source_pk: str,
         status: str | None = None,
         created_by: UserPlaceholder | None = None,
-    ) -> ResourceEntity:
+    ) -> int:
         pass
 
     def create_repointed_memberships(
