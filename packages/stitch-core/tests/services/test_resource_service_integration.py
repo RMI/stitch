@@ -524,7 +524,7 @@ class TestResourceServiceMergeResourcesIntegration:
                 return row_to_record
 
             def make_write(source_prefix, tracker):
-                def write(rec_data):
+                def write(**rec_data):
                     record_id = tracker.get("last_id")
                     return f"{source_prefix}_{record_id}"
 

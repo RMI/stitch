@@ -437,7 +437,8 @@ class TestResourceServiceMergeResourcesUnit:
         ]
 
         mock_transaction_context.resources.merge_resources.return_value = (
-            merged_resource
+            merged_resource,
+            (resource1, resource2),
         )
         mock_transaction_context.memberships.create_repointed_memberships.return_value = new_memberships
 
