@@ -1,0 +1,18 @@
+[project]
+name = "stitch-api"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [{ name = "Michael Barlow", email = "mbarlow@rmi.org" }]
+requires-python = ">=3.12.12"
+dependencies = ["fastapi[standard]>=0.124.0"]
+
+[project.scripts]
+stitch-api = "stitch_api:main"
+
+[build-system]
+requires = ["uv_build>=0.9.16,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "stitch.api"

@@ -10,7 +10,7 @@ dependencies = []
 cli = ["stitch-cli", "stitch-validator"]
 
 [tool.uv.workspace]
-members = ["packages/*", "dev/*", "deployments/*"]
+members = ["packages/*", "dev/stitch-cli", "deployments/*"]
 
 [tool.uv.sources]
 stitch-cli = { workspace = true }
