@@ -48,6 +48,17 @@ class ResourceRepository(Protocol):
         """Get all root resources"""
         ...
 
+    def get_root_resource(self, resource: ResourceEntity | int) -> ResourceEntity:
+        """Given any resource or resource id, fetch the final root to which its been repointed.
+
+        Args:
+            resource: The resource entity or id
+
+        Returns:
+            The root resource or itself if the passed id/entity is a root itself or hasn't been repointed.
+        """
+        ...
+
     def get_constituents(
         self, resource: ResourceEntity | int
     ) -> Sequence[ResourceEntity]:

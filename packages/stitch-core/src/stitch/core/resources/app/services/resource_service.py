@@ -72,6 +72,27 @@ class ResourceService(AbstractService):
         with self.tx:
             return self.tx.resources.get(resource_id=resource_id)
 
+    def get_root_resource(self, resource_id: int) -> AggregateResourceEntity:
+        """Fetch the root/parent aggregate resource for a given resource id
+
+        If the resource_id is already a root, we return it with its aggregate data.
+        If the resource_id hasn't been repointed, return it as an aggregate with empty constituent
+        and source data.
+
+        Args:
+            resource_id: the
+
+        Returns:
+            The final `AggregateResourceEntity`
+        """
+        with self.tx:
+            resource = self.tx.resources.get_root_resource(resource_id)
+            return AggregateResourceEntity(
+                root=resource,
+                constituents=self.tx.resources.get_constituents(resource),
+                source_data=self._aggregate_resource_data(resource.id),
+            )
+
     def create_resource(self, source: str, data: Mapping[str, Any]):
         with self.tx:
             src_repo = self.tx.source_registry.get_source_repository(source)

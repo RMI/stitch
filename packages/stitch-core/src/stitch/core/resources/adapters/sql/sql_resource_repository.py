@@ -59,6 +59,13 @@ class SQLResourceRepository(ResourceRepository):
         stmt = select(ResourceModel).where(ResourceModel.repointed_to.is_(None))
         return (m.as_entity() for m in self._session.scalars(stmt).all())
 
+    def get_root_resource(self, resource: ResourceEntity | int) -> ResourceEntity:
+        res_id = extract_id(resource)
+        model = self.get(res_id)
+        if model.repointed_to is None:
+            return model
+        return self.get(model.id)
+
     def get_constituents(
         self, resource: ResourceEntity | int
     ) -> Sequence[ResourceEntity]:
