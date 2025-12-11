@@ -48,6 +48,7 @@ class ResourceEntity:
         created_by: id for the user/service/process responsible for creating the resource
     """
 
+    # TODO: remove unneeded attributes from entities (STIT-288)
     id: int
     repointed_to: int | None = None
     name: str | None = None
