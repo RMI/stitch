@@ -1516,12 +1516,14 @@ version = "0.1.0"
 source = { editable = "deployments/api" }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
+    { name = "stitch-cli" },
     { name = "stitch-core" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.124.0" },
+    { name = "stitch-cli", editable = "dev/stitch-cli" },
     { name = "stitch-core", editable = "packages/stitch-core" },
 ]
 

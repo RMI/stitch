@@ -5,13 +5,13 @@ description = "Add your description here"
 readme = "README.md"
 authors = [{ name = "Michael Barlow", email = "mbarlow@rmi.org" }]
 requires-python = ">=3.12.12"
-dependencies = [
-    "fastapi[standard]>=0.124.0",
-    "stitch-core",
-]
+dependencies = ["fastapi[standard]>=0.124.0", "stitch-cli", "stitch-core"]
 
 [project.scripts]
-stitch-api = "stitch_api:main"
+stitch-api = "stitch.api.__main__:main"
+
+[project.entry-points.stitchcli]
+api = "stitch.api.stitch_cli_plugin"
 
 [build-system]
 requires = ["uv_build>=0.9.16,<0.10.0"]
@@ -22,3 +22,4 @@ module-name = "stitch.api"
 
 [tool.uv.sources]
 stitch-core = { workspace = true }
+stitch-cli = { workspace = true }
