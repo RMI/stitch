@@ -1,11 +1,10 @@
 from __future__ import annotations
-from ast import TypeAlias
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Required, TypedDict
+from typing import Any, Required, TypedDict, override
 
-UserPlaceholder: TypeAlias = str
+type UserPlaceholder = str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -49,21 +48,24 @@ class ResourceEntity:
         created_by: id for the user/service/process responsible for creating the resource
     """
 
+    # TODO: remove unneeded attributes from entities (STIT-288)
     id: int
     repointed_to: int | None = None
-    name: str
-    country: str
+    name: str | None = None
+    country: str | None = None
     latitude: float | None = None
     longitude: float | None = None
     last_updated: datetime
     created: datetime
     created_by: UserPlaceholder | None = None
 
-    def __eq__(self, other) -> bool:
+    @override
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, ResourceEntity):
             return False
         return self.id == other.id
 
+    @override
     def __hash__(self) -> int:
         return hash((self.id, self.name, self.latitude, self.longitude))
 
@@ -71,10 +73,10 @@ class ResourceEntity:
 class ResourceEntityData(TypedDict, total=False):
     name: Required[str]
     country: Required[str]
-    repointed_to: int | None = None
-    latitude: float | None = None
-    longitude: float | None = None
-    created_by: UserPlaceholder | None = None
+    repointed_to: int
+    latitude: float | None
+    longitude: float | None
+    created_by: UserPlaceholder
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -109,11 +111,13 @@ class MembershipEntity:
     created: datetime
     updated: datetime
 
-    def __eq__(self, other) -> bool:
+    @override
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, MembershipEntity):
             return False
         return self.id == other.id
 
+    @override
     def __hash__(self) -> int:
         return hash(
             (self.id, self.resource_id, self.source, self.source_pk, self.status)
@@ -124,8 +128,8 @@ class MembershipEntityData(TypedDict, total=False):
     resource_id: Required[int]
     source: Required[str]
     source_pk: Required[str]
-    created_by: str | None = None
-    status: str | None = None
+    created_by: str
+    status: str
 
 
 @dataclass(frozen=True)

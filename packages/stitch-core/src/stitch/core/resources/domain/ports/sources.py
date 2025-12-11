@@ -23,6 +23,7 @@ class SourceRepository(Protocol):
     @property
     def source_name(self) -> str:
         """Unique collection/table identifier."""
+        ...
 
     def write(
         self,
@@ -31,16 +32,19 @@ class SourceRepository(Protocol):
         **kwargs: Unpack[SourceRecord],
     ) -> str:
         """Persist record and return new id"""
+        ...
 
     def fetch(self, source_pk: str) -> SourceEntity | None:
         """Retrieve entity record by id. Return `None` if it doesn't exist."""
-        pass
+        ...
 
-    def fecth_many(self, source_pks: list[str]) -> Sequence[SourceEntity]:
+    def fetch_many(self, source_pks: Sequence[str]) -> Sequence[SourceEntity]:
         """Retrieve multiple source entities"""
+        ...
 
     def row_to_record_data(self, data: Mapping[str, Any]) -> SourceRecord:
         """Translate source data to record data structure."""
+        ...
 
 
 class SourceRegistry(Protocol):
@@ -48,13 +52,14 @@ class SourceRegistry(Protocol):
 
     def is_source(self, name: str) -> bool:
         """Check if a name exists as a source in the registry."""
+        ...
 
     def get_source_repository(self, source: str) -> SourceRepository:
         """Fetch a `SourceRepository` for the specified identifier."""
+        ...
 
 
 class SourceRegistryFactory(Protocol):
     """Generic representation of any callable that returns a valid `SourceRegistry` instance."""
 
-    def __call__(self, session: Session) -> SourceRegistry:
-        pass
+    def __call__(self, session: Session) -> SourceRegistry: ...

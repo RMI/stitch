@@ -1,8 +1,7 @@
 from typing import Protocol
-from collections.abc import Sequence
+from collections.abc import Iterable, Mapping, Sequence
 
 from stitch.core.resources.domain.entities import (
-    AggregateResourceEntity,
     ResourceEntity,
     UserPlaceholder,
 )
@@ -25,8 +24,9 @@ class ResourceRepository(Protocol):
         created_by: UserPlaceholder | None = None,
     ) -> int:
         """Create new Resource and return unique resource identifier"""
+        ...
 
-    def get(self, resource_id: int) -> ResourceEntity | None:
+    def get(self, resource_id: int) -> ResourceEntity:
         """Retrieve resource by identifier
 
         Args:
@@ -38,35 +38,38 @@ class ResourceRepository(Protocol):
         Raises:
             EntityNotFoundError if no Resource with `resource_id` is found
         """
+        ...
 
-    def get_aggregate_resource(
+    def get_multiple(self, *ids: int) -> Sequence[ResourceEntity]:
+        """Fetch multiple resources by id"""
+        ...
+
+    def get_all_root_resources(self) -> Iterable[ResourceEntity]:
+        """Get all root resources"""
+        ...
+
+    def get_constituents(
         self, resource: ResourceEntity | int
-    ) -> AggregateResourceEntity | None:
-        """Fetch the AggregateResourceEntity identified by the passed `ResourceEntity`/`resource_id`."""
+    ) -> Sequence[ResourceEntity]:
+        """Get all resources that have been repointed to `resource`"""
+        ...
 
     def merge_resources(
-        self, *resources: Sequence[ResourceEntity | int]
-    ) -> ResourceEntity:
-        """Merge two or more resources and repoint them to the newly created resource."""
+        self, *resources: ResourceEntity | int
+    ) -> tuple[ResourceEntity, Sequence[ResourceEntity]]:
+        """Merge 2 or more resources to create a new parent.
 
-    def get_root_resource(
-        self, resource: ResourceEntity | int
-    ) -> ResourceEntity | None:
-        """Follow the id repointing until we find an "unrepointed" resource"""
+        Args:
+            *resources: sequence of positional resource entities or ids
 
-    def split_resources_by_id(
-        self, subject_id: int, from_id: int
-    ) -> tuple[ResourceEntity, ResourceEntity]:
-        """Remove the relationship between the `subject` resource  from its current aggregate.
-
-        Returns the pair of new resources: ("removed" resource, "from" resource)
-
+        Returns:
+            A 2-tuple of (new parent resource, constituents)
         """
+        ...
 
-    def get_all_connected_resources(
-        self, id: int | ResourceEntity
-    ) -> Sequence[ResourceEntity]:
-        """Find all resource ids that either point to or are pointed to by `id`"""
+    def split_resource(self, resource_id: int) -> ResourceEntity:
+        """Remove the resource id from its parent aggregate"""
+        ...
 
 
 class MembershipRepository(Protocol):
@@ -85,6 +88,29 @@ class MembershipRepository(Protocol):
         """
         pass
 
+    def get_active_members(self, resource_id: int) -> Sequence[MembershipEntity]:
+        """Retrieve all membership entities connected to the `resource_id`.
+
+        Args:
+            resource_id: the target resource id
+
+        Returns:
+            A list of memberships
+        """
+        ...
+
+    def get_source_refs(self, resource_id: int) -> Mapping[str, Sequence[str]]:
+        """Fetch a mapping of all sources and primary keys related to the `resource_id`.
+
+        Structure:
+        ```
+        {
+            [source]: [... source primary keys ...]
+        }
+        ```
+        """
+        ...
+
     def create(
         self,
         resource_id: int,
@@ -92,8 +118,7 @@ class MembershipRepository(Protocol):
         source_pk: str,
         status: str | None = None,
         created_by: UserPlaceholder | None = None,
-    ) -> int:
-        pass
+    ) -> int: ...
 
     def create_repointed_memberships(
         self,
@@ -101,3 +126,4 @@ class MembershipRepository(Protocol):
         to_resource: ResourceEntity | int,
     ) -> Sequence[MembershipEntity]:
         """Updates all memberships to point to the provided id."""
+        ...

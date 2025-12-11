@@ -1,9 +1,10 @@
-from collections.abc import Sequence
+from collections.abc import Generator, Sequence
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from stitch.core.resources.adapters.sql.common import extract_id
 from stitch.core.resources.adapters.sql.errors import (
+    EntityNotFoundError,
     ResourceIntegrityError,
 )
 from .model.resource import ResourceModel
@@ -40,15 +41,43 @@ class SQLResourceRepository(ResourceRepository):
         self._session.flush()
         return model.id
 
-    def get(self, resource_id: int) -> ResourceEntity | None:
+    def get(self, resource_id: int) -> ResourceEntity:
         model = self._session.get(ResourceModel, resource_id)
         if model is None:
-            return None
+            raise EntityNotFoundError(f"No resource with id {resource_id} found.")
         return model.as_entity()
 
-    def merge_resources(
-        self, *resources: Sequence[ResourceEntity | int]
-    ) -> ResourceEntity:
+    def get_multiple(self, *ids: int) -> Sequence[ResourceEntity]:
+        return tuple(
+            model.as_entity()
+            for model in self._session.scalars(
+                select(ResourceModel).where(ResourceModel.id.in_(ids))
+            ).all()
+        )
+
+    def get_all_root_resources(self) -> Generator[ResourceEntity, None, None]:
+        stmt = select(ResourceModel).where(ResourceModel.repointed_to.is_(None))
+        return (m.as_entity() for m in self._session.scalars(stmt).all())
+
+    def get_constituents(
+        self, resource: ResourceEntity | int
+    ) -> Sequence[ResourceEntity]:
+        res_id = extract_id(resource)
+        res_model = self._session.get(ResourceModel, res_id)
+        if res_model is None:
+            raise EntityNotFoundError()
+        elif res_model.repointed_to is not None:
+            raise
+        # resource exists and has not been repointed
+        # fetch all resources where `repointed_to == res_id`
+        return tuple(
+            r.as_entity()
+            for r in self._session.scalars(
+                select(ResourceModel).where(ResourceModel.repointed_to == res_id)
+            )
+        )
+
+    def merge_resources(self, *resources: ResourceEntity | int):
         """Merge two or more resources and repoint them to the newly created resource.
 
         Merging constraints:
@@ -106,15 +135,6 @@ class SQLResourceRepository(ResourceRepository):
             model.repointed_to = new_resource.id
         # no need to add the updated models to the session
         # commit happens in the TransactionContext
-        return new_resource.as_entity()
+        return new_resource.as_entity(), tuple(m.as_entity() for m in models)
 
-    def get_root_resource(
-        self, resource: ResourceEntity | int
-    ) -> ResourceEntity | None:
-        """Trace the `repointed_to` values until reaching a `ResourceModel` where  repointed_to is None/null"""
-        pass
-
-    def repoint_resource(self, resource_id: int, to_resource_id: int):
-        """
-        Update the resource's `repointed_to`  to `to_resource_id`
-        """
+    def split_resource(self, resource_id: int) -> ResourceEntity: ...

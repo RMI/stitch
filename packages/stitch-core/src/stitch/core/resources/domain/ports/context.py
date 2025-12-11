@@ -29,6 +29,7 @@ class TransactionContext(Protocol):
 
     def __enter__(self) -> TransactionContext:
         """Begin transaction"""
+        ...
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """Commit or rollback based on exception status"""

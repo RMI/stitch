@@ -1,3 +1,6 @@
+from collections import defaultdict
+from collections.abc import Mapping
+from functools import reduce
 from typing import Sequence
 
 from sqlalchemy import select
@@ -46,10 +49,17 @@ class SQLMembershipRepository(MembershipRepository):
             return None
         return model.as_entity()
 
-    def get_active_members(self, resource_id: int) -> Sequence[MembershipModel]:
+    def get_active_members(self, resource_id: int):
         stmt = select(MembershipModel).where(MembershipModel.resource_id == resource_id)
 
-        return self._session.execute(stmt).scalars().all()
+        return tuple(m.as_entity() for m in self._session.execute(stmt).scalars().all())
+
+    def get_source_refs(self, resource_id: int) -> Mapping[str, Sequence[str]]:
+        def _reducer(map_: dict[str, list[str]], m: MembershipEntity):
+            map_[m.source].append(m.source_pk)
+            return map_
+
+        return reduce(_reducer, self.get_active_members(resource_id), defaultdict(list))
 
     def create_repointed_memberships(
         self,

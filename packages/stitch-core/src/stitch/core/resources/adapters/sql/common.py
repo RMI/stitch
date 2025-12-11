@@ -2,10 +2,11 @@ from typing import Protocol
 
 
 class HasId(Protocol):
-    id: int
+    @property
+    def id(self) -> int: ...
 
 
 def extract_id(entity: HasId | int) -> int:
-    if hasattr(entity, "id"):
-        return entity.id
-    return entity
+    if isinstance(entity, int):
+        return entity
+    return entity.id

@@ -8,6 +8,7 @@ from stitch.core.resources.adapters.sql.sql_resource_repository import (
 )
 from stitch.core.resources.adapters.sql.model.resource import ResourceModel
 from stitch.core.resources.adapters.sql.errors import (
+    EntityNotFoundError,
     ResourceIntegrityError,
 )
 from tests.fixtures.fixture_db_data import RESOURCE_DATA
@@ -127,13 +128,14 @@ class TestSQLResourceRepositoryGet:
         assert pytest.approx(entity.latitude, rel=1e-6) == data["latitude"]
         assert pytest.approx(entity.longitude, rel=1e-6) == data["longitude"]
 
-    def test_get_resource_returns_none_for_nonexistent_id(self, db_session: Session):
+    def test_get_resource_raises_for_nonexistent_id(self, db_session: Session):
         """Test that get() returns None for non-existent resource."""
         repo = SQLResourceRepository(db_session)
 
-        result = repo.get(999999)
+        with pytest.raises(EntityNotFoundError) as exc_info:
+            result = repo.get(999999)
 
-        assert result is None
+        assert "999999" in str(exc_info.value)
 
 
 class TestSQLResourceRepositoryMergeResources:
@@ -160,7 +162,7 @@ class TestSQLResourceRepositoryMergeResources:
         )
 
         # Merge them
-        new_resource = repo.merge_resources(id1, id2)
+        new_resource, *_ = repo.merge_resources(id1, id2)
 
         # Verify new resource was created
         assert new_resource is not None
@@ -206,7 +208,7 @@ class TestSQLResourceRepositoryMergeResources:
         entity3_a = repo.get(id3_a)
 
         # Test 1: both ints
-        result1 = repo.merge_resources(id1_a, id1_b)
+        result1, *_ = repo.merge_resources(id1_a, id1_b)
         assert result1 is not None
         assert result1.id is not None
 
@@ -217,7 +219,7 @@ class TestSQLResourceRepositoryMergeResources:
         assert saved1_b.repointed_to == result1.id
 
         # Test 2: int and ResourceEntity
-        result2 = repo.merge_resources(id2_a, entity2_b)
+        result2, *_ = repo.merge_resources(id2_a, entity2_b)
         assert result2 is not None
         assert result2.id is not None
 
@@ -227,7 +229,7 @@ class TestSQLResourceRepositoryMergeResources:
         assert saved2_b.repointed_to == result2.id
 
         # Test 3: ResourceEntity and int
-        result3 = repo.merge_resources(entity3_a, id3_b)
+        result3, *_ = repo.merge_resources(entity3_a, id3_b)
         assert result3 is not None
         assert result3.id is not None
 
@@ -299,7 +301,7 @@ class TestSQLResourceRepositoryMergeResources:
         id_c = repo.create(name="Resource C")
 
         # Merge A and B to create merged resource AB
-        merged_ab = repo.merge_resources(id_a, id_b)
+        merged_ab, *_ = repo.merge_resources(id_a, id_b)
 
         # Now A and B are both repointed to merged_ab
         # Try to merge A again (left parameter)
@@ -321,7 +323,7 @@ class TestSQLResourceRepositoryMergeResources:
         # Create another pair and merge them
         id_d = repo.create(name="Resource D")
         id_e = repo.create(name="Resource E")
-        merged_de = repo.merge_resources(id_d, id_e)
+        merged_de, *_ = repo.merge_resources(id_d, id_e)
 
         # Try to merge two already-merged resources
         with pytest.raises(ResourceIntegrityError) as exc_info:
@@ -348,7 +350,7 @@ class TestSQLResourceRepositoryMergeResources:
         id_special = repo.create(**special_chars_data)
 
         # Merge them (special has higher ID, so its attributes should be selected)
-        merged1 = repo.merge_resources(id_regular, id_special)
+        merged1, *_ = repo.merge_resources(id_regular, id_special)
         # assert merged1.name == special_chars_data["name"]
         # assert merged1.country == special_chars_data["country"]
 
@@ -366,7 +368,7 @@ class TestSQLResourceRepositoryMergeResources:
         id_no_loc = repo.create(**no_location_data)
 
         # Merge them (no_location has higher ID)
-        merged2 = repo.merge_resources(id_with_loc, id_no_loc)
+        merged2, *_ = repo.merge_resources(id_with_loc, id_no_loc)
         assert merged2.name is None
         assert merged2.country is None
         assert merged2.latitude is None
@@ -404,7 +406,7 @@ class TestSQLResourceRepositoryMergeResources:
         assert id_second > id_first
 
         # Test 1: Merge with lower ID as left parameter
-        merged1 = repo.merge_resources(id_first, id_second)
+        merged1, *_ = repo.merge_resources(id_first, id_second)
 
         # Should select from second (higher ID)
         assert merged1.name == "Second Resource"
@@ -428,7 +430,7 @@ class TestSQLResourceRepositoryMergeResources:
         )
 
         # Test 2: Merge with higher ID as left parameter
-        merged2 = repo.merge_resources(id_fourth, id_third)
+        merged2, *_ = repo.merge_resources(id_fourth, id_third)
 
         # Should still select from fourth (higher ID), even though it's the left parameter
         assert merged2.name == "Fourth Resource"
