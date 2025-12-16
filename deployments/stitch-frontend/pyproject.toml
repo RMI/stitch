@@ -1,0 +1,6 @@
+[project]
+name = "stitch-frontend"
+version = "0.1.0"
+description = "web client"
+readme = "README.md"
+authors = [{ name = "Jason Brown", email = "jason.brown@rmi.org" }]
