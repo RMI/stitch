@@ -5,7 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 authors = [{ name = "Michael Barlow", email = "mbarlow@rmi.org" }]
 requires-python = ">=3.12.12"
-dependencies = ["fastapi[standard]>=0.124.0", "stitch-cli", "stitch-core"]
+dependencies = [
+    "fastapi[standard]>=0.124.0",
+    "sqlalchemy>=2.0.44",
+    "stitch-cli",
+    "stitch-core",
+]
 
 [project.scripts]
 stitch-api = "stitch.api.__main__:main"
