@@ -4,15 +4,17 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["stitch-core"]
 
 [project.optional-dependencies]
 cli = ["stitch-cli", "stitch-validator"]
 
 [tool.uv.workspace]
-members = ["packages/*", "dev/stitch-cli", "deployments/*"]
+members = ["packages/*", "dev/*", "deployments/*"]
+exclude = ["deployments/db"]
 
 [tool.uv.sources]
+stitch-core = { workspace = true }
 stitch-cli = { workspace = true }
 stitch-validator = { workspace = true }
 
