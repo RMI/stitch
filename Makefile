@@ -59,7 +59,7 @@ STITCHCORE_STAMP := build/stitch-core.stamp
 
 stitch-core: $(STITCHCORE_STAMP)
 
-$(STITCHCORE_STAMP): $(STITCHCORE_SRCS)
+$(STITCHCORE_STAMP): $(STITCHCORE_SRCS) $(CLI_STAMP)
 	mkdir -p $(@D)
 	$(UV) build $(STITCHCORE_DIR)
 	touch $@
