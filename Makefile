@@ -78,6 +78,6 @@ $(CLI_STAMP): $(CLI_SRCS)
 .PHONY: all build clean \
         check lint test format format-check \
         sync sync-dev sync-all \
-				dev \
+        dev \
         schema stitch-core cli \
         clean-build clean-cache
