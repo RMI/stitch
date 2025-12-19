@@ -2,7 +2,7 @@ on:
   workflow_call:
 
 jobs:
-  test:
+  format-check:
     name: "formatting (ruff)"
     runs-on: ubuntu-latest
     steps:
@@ -17,6 +17,6 @@ jobs:
         with:
           python-version-file: ".python-version"
 
-      - name: Run check
+      - name: Run format check
         run: make format-check
 
