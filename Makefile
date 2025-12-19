@@ -10,7 +10,8 @@ lint: dev
 	$(RUFF) check
 
 test: dev
-	$(PYTEST)
+	$(PYTEST) packages/schema
+	$(PYTEST) packages/stitch-core
 
 format: dev
 	$(RUFF) format
