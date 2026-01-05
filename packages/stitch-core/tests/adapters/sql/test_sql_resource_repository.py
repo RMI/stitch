@@ -11,7 +11,7 @@ from stitch.core.resources.adapters.sql.errors import (
     EntityNotFoundError,
     ResourceIntegrityError,
 )
-from tests.fixtures.fixture_db_data import RESOURCE_DATA
+from fixtures.fixture_db_data import RESOURCE_DATA
 
 
 class TestSQLResourceRepositoryCreate:
