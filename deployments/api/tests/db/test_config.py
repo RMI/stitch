@@ -20,7 +20,9 @@ class TestUnitOfWork:
             _ = uow.session
 
     @pytest.mark.anyio
-    async def test_session_available_after_enter(self, mock_session_factory, mock_session):
+    async def test_session_available_after_enter(
+        self, mock_session_factory, mock_session
+    ):
         """Session available after entering async context."""
         uow = UnitOfWork(mock_session_factory)
 
