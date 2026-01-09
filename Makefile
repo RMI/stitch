@@ -12,6 +12,7 @@ lint: dev
 test: dev
 	$(PYTEST) packages/schema
 	$(PYTEST) packages/stitch-core
+	$(PYTEST) deployments/api
 
 format: dev
 	$(RUFF) format
@@ -25,10 +26,10 @@ sync:
 	$(UV) sync
 
 sync-dev:
-	$(UV) sync --group dev
+	$(UV) sync --group dev --all-packages
 
 sync-all:
-	$(UV) sync --group dev --extra cli
+	$(UV) sync --group dev --all-packages --extra cli
 
 # ---------------------------------------------------------------------
 # Packages and source discovery
