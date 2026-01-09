@@ -1,0 +1,30 @@
+---
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+name: Python Package Checks
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ github.event_action }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: "Tests"
+    uses: ./.github/workflows/python-test.yml
+
+  lint:
+    name: "Linting"
+    uses: ./.github/workflows/python-lint.yml
+
+  format:
+    name: "Format"
+    uses: ./.github/workflows/python-format.yml
+
+  build:
+    name: "Build"
+    uses: ./.github/workflows/python-build.yml
