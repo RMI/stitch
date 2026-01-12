@@ -135,10 +135,11 @@ frontend-clean:
 	       $(FRONTEND_INSTALL_STAMP) $(FRONTEND_BUILD_STAMP)
 
 .PHONY: all build clean \
+        build-python \
         check lint test format format-check \
-        uv-check uv-lint uv-test uv-format uv-format-check \
+        uv-lint uv-test uv-format uv-format-check \
         uv-sync uv-sync-dev uv-sync-all \
         uv-dev \
         schema stitch-core cli \
         clean-build clean-cache \
-				frontend frontend-install frontend-build frontend-test frontend-dev frontend-clean
+        frontend frontend-install frontend-build frontend-test frontend-dev frontend-clean
