@@ -6,28 +6,36 @@ RUFF := $(UV) run ruff
 check: lint test format-check
 	@echo "All checks passed."
 
-lint: dev
+lint: uv-lint
+
+test: uv-test
+
+format: uv-format
+
+format-check: uv-format-check
+
+uv-lint: uv-dev
 	$(RUFF) check
 
-test: dev
+uv-test: uv-dev
 	$(PYTEST) packages/schema
 	$(PYTEST) packages/stitch-core
 
-format: dev
+uv-format: uv-dev
 	$(RUFF) format
 
-format-check: dev
+uv-format-check: uv-dev
 	$(RUFF) format --check
 
-dev: sync-all
+uv-dev: uv-sync-all
 
-sync:
+uv-sync:
 	$(UV) sync
 
-sync-dev:
+uv-sync-dev:
 	$(UV) sync --group dev
 
-sync-all:
+uv-sync-all:
 	$(UV) sync --group dev --extra cli
 
 # ---------------------------------------------------------------------
@@ -77,7 +85,8 @@ $(CLI_STAMP): $(CLI_SRCS)
 
 .PHONY: all build clean \
         check lint test format format-check \
-        sync sync-dev sync-all \
-        dev \
+        uv-check uv-lint uv-test uv-format uv-format-check \
+        uv-sync uv-sync-dev uv-sync-all \
+        uv-dev \
         schema stitch-core cli \
         clean-build clean-cache
