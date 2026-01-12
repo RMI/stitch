@@ -1,0 +1,22 @@
+---
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+name: Node Package Checks
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ github.event_action }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: "Tests"
+    uses: ./.github/workflows/node-test.yml
+
+  build:
+    name: "Build"
+    uses: ./.github/workflows/node-build.yml

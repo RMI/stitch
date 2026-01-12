@@ -1,0 +1,21 @@
+Tn:
+  workflow_call:
+
+jobs:
+  build-frontend:
+    name: "Build Frontend"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: deployments/stitch-frontend/package.json
+          cache: "npm"
+          cache-dependency-path: deployments/stitch-frontend/package-lock.json
+
+      - name: Build
+        run: make frontend-build
+
