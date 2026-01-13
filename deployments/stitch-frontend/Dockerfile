@@ -10,8 +10,6 @@ COPY index.html vite.config.js ./
 COPY public/ ./public/
 COPY src/ ./src/
 
-RUN ls -la
-
 RUN npm run build
 
 ########################
