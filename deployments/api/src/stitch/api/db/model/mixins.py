@@ -1,21 +1,33 @@
+from datetime import datetime
 from typing import Any, ClassVar, Generic, TypeVar, get_args, get_origin
 from pydantic import TypeAdapter
-from sqlalchemy import JSON, Dialect, String, TypeDecorator
-from sqlalchemy.dialects import postgresql
+from sqlalchemy import DateTime, ForeignKey, String, func
 from sqlalchemy.ext.hybrid import hybrid_property
 
 from sqlalchemy.orm import Mapped, declarative_mixin, mapped_column
 from stitch.api.entities import SourceBase
+from .types import StitchJson
 
 
-class StitchJson(TypeDecorator):
-    impl = JSON
-    cache_ok = True
+@declarative_mixin
+class TimestampMixin:
+    created: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
 
-    def load_dialect_impl(self, dialect: Dialect):
-        if dialect.name == "postgresql":
-            return dialect.type_descriptor(postgresql.JSONB())
-        return dialect.type_descriptor(JSON())
+
+@declarative_mixin
+class UserAuditMixin:
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    last_updated_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
 
 
 TPayload = TypeVar("TPayload", bound=SourceBase)

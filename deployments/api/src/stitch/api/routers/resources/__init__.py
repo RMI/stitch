@@ -30,3 +30,7 @@ async def create_resource(
     return await resource_repo.create(
         session=uow.session, user=user, resource=resource_in
     )
+
+
+@router.post("/merge/...")
+async def merge_resource(): ...
