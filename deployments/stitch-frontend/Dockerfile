@@ -6,7 +6,12 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 # Copy source and build
-COPY . .
+COPY index.html vite.config.js ./
+COPY public/ ./public/
+COPY src/ ./src/
+
+RUN ls -la
+
 RUN npm run build
 
 ########################
@@ -14,7 +19,7 @@ RUN npm run build
 ########################
 FROM nginx:1.27-alpine AS runtime
 
-# Optional: SPA routing (see nginx.conf below)
+# Optional: SPA routing configured via nginx.conf
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Copy built assets
