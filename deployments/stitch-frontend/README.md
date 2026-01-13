@@ -32,7 +32,6 @@ stitch-frontend/
 
 ## Scripts
 
-
 ```bash
 # Install dependencies
 npm install
@@ -82,15 +81,16 @@ npm run test:coverage
 Test files should be placed next to the component they test with a `.test.jsx` or `.test.js` extension.
 
 **Example test:**
-```javascript
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import MyComponent from './MyComponent';
 
-describe('MyComponent', () => {
-  it('renders correctly', () => {
+```javascript
+import { describe, it, expect } from "vitest";
+import { render, screen } from "@testing-library/react";
+import MyComponent from "./MyComponent";
+
+describe("MyComponent", () => {
+  it("renders correctly", () => {
     render(<MyComponent />);
-    expect(screen.getByText('Hello')).toBeInTheDocument();
+    expect(screen.getByText("Hello")).toBeInTheDocument();
   });
 });
 ```
@@ -98,10 +98,14 @@ describe('MyComponent', () => {
 ### Testing Utilities
 
 The project includes:
+
 - **@testing-library/react** - Component testing utilities
 - **@testing-library/jest-dom** - Custom matchers for DOM elements
 - **@testing-library/user-event** - User interaction simulation
 - **jsdom** - DOM environment for Node.js
 
 Test setup is located in `src/test/setup.js` and runs automatically before each test file.
+
+```
+
 ```

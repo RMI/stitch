@@ -1,17 +1,17 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import App from './App';
+import { describe, it, expect } from "vitest";
+import { render, screen } from "@testing-library/react";
+import App from "./App";
 
-describe('App', () => {
-  it('renders hello world heading', () => {
+describe("App", () => {
+  it("renders hello world heading", () => {
     render(<App />);
     const heading = screen.getByText(/hello world/i);
     expect(heading).toBeInTheDocument();
   });
 
-  it('heading has correct styling classes', () => {
+  it("heading has correct styling classes", () => {
     render(<App />);
     const heading = screen.getByText(/hello world/i);
-    expect(heading).toHaveClass('text-3xl', 'font-bold', 'underline');
+    expect(heading).toHaveClass("text-3xl", "font-bold", "underline");
   });
 });
