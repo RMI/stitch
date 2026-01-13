@@ -16,6 +16,5 @@ jobs:
           cache: "npm"
           cache-dependency-path: deployments/stitch-frontend/package-lock.json
 
-
       - name: Run Tests
         run: make frontend-test
