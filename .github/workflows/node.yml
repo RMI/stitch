@@ -17,6 +17,10 @@ jobs:
     name: "Tests"
     uses: ./.github/workflows/node-test.yml
 
+  lint:
+    name: "Linting"
+    uses: ./.github/workflows/node-lint.yml
+
   build:
     name: "Build"
     uses: ./.github/workflows/node-build.yml
