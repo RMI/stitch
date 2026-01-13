@@ -2,7 +2,7 @@ on:
   workflow_call:
 
 jobs:
-  test-frontend:
+  lint-frontend:
     name: "Linting (frontend)"
     runs-on: ubuntu-latest
     steps:
@@ -16,5 +16,5 @@ jobs:
           cache: "npm"
           cache-dependency-path: deployments/stitch-frontend/package-lock.json
 
-      - name: Run Tests
+      - name: Run Linter
         run: make frontend-lint
