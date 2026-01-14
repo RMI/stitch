@@ -5,6 +5,13 @@ from sqlalchemy import select
 
 from stitch.api.db.model import ResourceModel
 
+from tests.utils import (
+    make_empty_resource,
+    make_gem_data,
+    make_resource_with_new_sources,
+    make_wm_data,
+)
+
 
 class TestResourcesIntegration:
     """Integration tests for resources endpoints with real database."""
@@ -20,23 +27,13 @@ class TestResourcesIntegration:
     @pytest.mark.anyio
     async def test_create_resource_returns_resource(self, integration_client):
         """POST /resources/ returns the created resource."""
-        response = await integration_client.post(
-            "/resources/",
-            json={
-                "name": "Integration Test Resource",
-                "country": "USA",
-                "source": "gem",
-                "source_pk": "GEM-INT-001",
-                "data": {
-                    "source": "gem",
-                    "id": 100,
-                    "name": "GEM Integration Field",
-                    "lat": 40.0,
-                    "lon": -100.0,
-                    "country": "USA",
-                },
-            },
+        resource_in = make_resource_with_new_sources(
+            gem=make_gem_data(name="GEM Integration Field", lat=40.0, lon=-100.0).model,
+            name="Integration Test Resource",
+            country="USA",
         )
+
+        response = await integration_client.post("/resources/", json=resource_in.data)
 
         assert response.status_code == 200
         data = response.json()
@@ -48,21 +45,16 @@ class TestResourcesIntegration:
     @pytest.mark.anyio
     async def test_create_and_get_resource(self, integration_client):
         """POST creates resource, GET retrieves it."""
+        resource_in = make_resource_with_new_sources(
+            wm=make_wm_data(
+                field_name="WM Roundtrip Field", field_country="CAN", production=5000.0
+            ).model,
+            name="Roundtrip Resource",
+            country="CAN",
+        )
+
         create_response = await integration_client.post(
-            "/resources/",
-            json={
-                "name": "Roundtrip Resource",
-                "country": "CAN",
-                "source": "wm",
-                "source_pk": "WM-ROUND-001",
-                "data": {
-                    "source": "wm",
-                    "id": 200,
-                    "field_name": "WM Roundtrip Field",
-                    "field_country": "CAN",
-                    "production": 5000.0,
-                },
-            },
+            "/resources/", json=resource_in.data
         )
 
         assert create_response.status_code == 200
@@ -81,23 +73,15 @@ class TestResourcesIntegration:
         self, integration_client, integration_session_factory
     ):
         """POST resource is persisted and queryable directly."""
-        response = await integration_client.post(
-            "/resources/",
-            json={
-                "name": "Persisted Resource",
-                "country": "MEX",
-                "source": "gem",
-                "source_pk": "GEM-PERSIST-001",
-                "data": {
-                    "source": "gem",
-                    "id": 300,
-                    "name": "GEM Persist Field",
-                    "lat": 25.0,
-                    "lon": -105.0,
-                    "country": "MEX",
-                },
-            },
+        resource_in = make_resource_with_new_sources(
+            gem=make_gem_data(
+                name="GEM Persist Field", lat=25.0, lon=-105.0, country="MEX"
+            ).model,
+            name="Persisted Resource",
+            country="MEX",
         )
+
+        response = await integration_client.post("/resources/", json=resource_in.data)
 
         assert response.status_code == 200
         created_id = response.json()["id"]
@@ -114,22 +98,10 @@ class TestResourcesIntegration:
 
     @pytest.mark.anyio
     async def test_create_with_minimal_data(self, integration_client):
-        """POST /resources/ works with only required fields."""
-        response = await integration_client.post(
-            "/resources/",
-            json={
-                "source": "gem",
-                "source_pk": "GEM-MIN-001",
-                "data": {
-                    "source": "gem",
-                    "id": 400,
-                    "name": "Minimal GEM Field",
-                    "lat": 30.0,
-                    "lon": -90.0,
-                    "country": "USA",
-                },
-            },
-        )
+        """POST /resources/ works with only required fields (no source data)."""
+        resource_in = make_empty_resource(name=None, country=None)
+
+        response = await integration_client.post("/resources/", json=resource_in.data)
 
         assert response.status_code == 200
         data = response.json()

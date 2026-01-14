@@ -11,6 +11,12 @@ from stitch.api.db.config import get_uow
 from stitch.api.entities import Resource, SourceData
 from stitch.api.main import app
 
+from tests.utils import (
+    make_gem_data,
+    make_resource_with_new_sources,
+    make_wm_data,
+)
+
 
 def make_resource(
     id: int = 1,
@@ -83,6 +89,13 @@ class TestCreateResourceUnit:
     async def test_creates_resource_with_user(self, async_client, mock_uow, test_user):
         """POST /resources/ calls repo.create with user and data."""
         expected = make_resource(id=123, name="New Resource", country="CAN")
+        resource_in = make_resource_with_new_sources(
+            gem=make_gem_data(
+                name="GEM Field", lat=45.0, lon=-120.0, country="CAN"
+            ).model,
+            name="New Resource",
+            country="CAN",
+        )
 
         async def override_get_uow():
             yield mock_uow
@@ -92,23 +105,7 @@ class TestCreateResourceUnit:
         with patch("stitch.api.routers.resources.resource_actions") as mock_repo:
             mock_repo.create = AsyncMock(return_value=expected)
 
-            response = await async_client.post(
-                "/resources/",
-                json={
-                    "name": "New Resource",
-                    "country": "CAN",
-                    "source": "gem",
-                    "source_pk": "GEM123",
-                    "data": {
-                        "source": "gem",
-                        "id": 1,
-                        "name": "GEM Field",
-                        "lat": 45.0,
-                        "lon": -120.0,
-                        "country": "CAN",
-                    },
-                },
-            )
+            response = await async_client.post("/resources/", json=resource_in.data)
 
         assert response.status_code == 200
         mock_repo.create.assert_awaited_once()
@@ -119,6 +116,12 @@ class TestCreateResourceUnit:
     async def test_returns_created_resource(self, async_client, mock_uow):
         """POST /resources/ returns the created resource entity."""
         expected = make_resource(id=456, name="Created Resource")
+        resource_in = make_resource_with_new_sources(
+            wm=make_wm_data(
+                field_name="WM Field", field_country="USA", production=1000.0
+            ).model,
+            name="Created Resource",
+        )
 
         async def override_get_uow():
             yield mock_uow
@@ -128,21 +131,7 @@ class TestCreateResourceUnit:
         with patch("stitch.api.routers.resources.resource_actions") as mock_repo:
             mock_repo.create = AsyncMock(return_value=expected)
 
-            response = await async_client.post(
-                "/resources/",
-                json={
-                    "name": "Created Resource",
-                    "source": "wm",
-                    "source_pk": "WM456",
-                    "data": {
-                        "source": "wm",
-                        "id": 2,
-                        "field_name": "WM Field",
-                        "field_country": "USA",
-                        "production": 1000.0,
-                    },
-                },
-            )
+            response = await async_client.post("/resources/", json=resource_in.data)
 
         assert response.status_code == 200
         data = response.json()
@@ -151,7 +140,7 @@ class TestCreateResourceUnit:
 
     @pytest.mark.anyio
     async def test_validates_request_body(self, async_client, mock_uow):
-        """POST /resources/ returns 422 for invalid request body."""
+        """POST /resources/ returns 422 for invalid request body with bad source_data."""
 
         async def override_get_uow():
             yield mock_uow
@@ -161,7 +150,10 @@ class TestCreateResourceUnit:
         response = await async_client.post(
             "/resources/",
             json={
-                "name": "Missing Fields",
+                "name": "Test Resource",
+                "source_data": {
+                    "gem": [{"invalid_field": "bad"}],
+                },
             },
         )
 
