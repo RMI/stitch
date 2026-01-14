@@ -7,7 +7,7 @@ on:
     branches:
       - main
 
-name: Docker Package Checks
+name: Docker Checks
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ github.event_action }}
   cancel-in-progress: true
@@ -20,3 +20,14 @@ jobs:
   compose-build:
     name: "docker compose build"
     uses: ./.github/workflows/docker-compose-build.yml
+
+  frontend:
+    name: Docker actions for frontend image
+    uses: RMI-PACTA/actions/.github/workflows/docker.yml@main
+    with:
+      dockerfile: deployments/stitch-frontend/Dockerfile
+      do-check-r-sysdeps: false
+      # dependabot forks the repo when making PRs, and doesn't have access
+      # to secrets (like the deploy key) in actions. This allows the CI to
+      # pass for dependabot PRs if the build succeeds.
+      push-image: false
