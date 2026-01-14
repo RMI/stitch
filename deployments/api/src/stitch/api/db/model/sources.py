@@ -107,7 +107,7 @@ class RMIManualSourceModel(SourceBase[RMIManualData, RMIManualSource]):
     )
 
 
-class CCReservoirsDataModel(SourceBase[CCReservoirsData, CCReservoirsSource]):
+class CCReservoirsSourceModel(SourceBase[CCReservoirsData, CCReservoirsSource]):
     __tablename__ = "cc_reservoirs_sources"
 
     name: Mapped[str]
@@ -117,7 +117,7 @@ class CCReservoirsDataModel(SourceBase[CCReservoirsData, CCReservoirsSource]):
 
 
 SourceModel = (
-    GemSourceModel | WMSourceModel | RMIManualSourceModel | CCReservoirsDataModel
+    GemSourceModel | WMSourceModel | RMIManualSourceModel | CCReservoirsSourceModel
 )
 SourceModelCls = type[SourceModel]
 
@@ -125,14 +125,14 @@ SOURCE_TABLES: Final[Mapping[SourceKey, SourceModelCls]] = {
     "gem": GemSourceModel,
     "wm": WMSourceModel,
     "rmi": RMIManualSourceModel,
-    "cc": CCReservoirsDataModel,
+    "cc": CCReservoirsSourceModel,
 }
 
 
 class SourceModelData(TypedDict, total=False):
     gem: MutableMapping[IdType, GemSourceModel]
     wm: MutableMapping[IdType, WMSourceModel]
-    cc: MutableMapping[IdType, CCReservoirsDataModel]
+    cc: MutableMapping[IdType, CCReservoirsSourceModel]
     rmi: MutableMapping[IdType, RMIManualSourceModel]
 
 
