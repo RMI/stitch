@@ -114,6 +114,7 @@ async def create(session: AsyncSession, user: CurrentUser, resource: CreateResou
                     )
                 )
     await session.flush()
+    await session.refresh(model, ["memberships"])
     return await resource_model_to_entity(session, model)
 
 

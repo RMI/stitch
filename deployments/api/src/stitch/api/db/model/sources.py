@@ -3,7 +3,7 @@
 from collections.abc import Mapping, MutableMapping
 from typing import Final, Generic, Self, TypeVar, TypedDict, get_args, get_origin
 from pydantic import BaseModel
-from sqlalchemy import inspect
+from sqlalchemy import CheckConstraint, inspect
 from sqlalchemy.orm import Mapped, mapped_column
 from .common import Base
 from .types import PORTABLE_BIGINT, StitchJson
@@ -23,10 +23,11 @@ from stitch.api.entities import (
 
 def float_constraint(
     colname: str, min_: float | None = None, max_: float | None = None
-):
+) -> CheckConstraint:
     min_str = f"{colname} >= {min_}" if min_ is not None else None
     max_str = f"{colname} <= {max_}" if max_ is not None else None
-    return " AND ".join(filter(None, (min_str, max_str)))
+    expr = " AND ".join(filter(None, (min_str, max_str)))
+    return CheckConstraint(expr)
 
 
 def lat_constraints(colname: str):
