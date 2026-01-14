@@ -7,18 +7,18 @@ behavior in isolation.
 
 import pytest
 
-from tests.data.parameter_sets import (
+from data.parameter_sets import (
     DATA_TYPE_ERROR_CASES,
     MALFORMED_DATA_CASES,
     UNICODE_TEST_CASES,
 )
-from tests.utils.assertions import (
+from utils.assertions import (
     assert_membership_created_with,
     assert_no_downstream_calls,
     assert_resource_created_with,
     assert_transaction_entered_and_exited,
 )
-from tests.utils.mock_helpers import configure_source_mock
+from utils.mock_helpers import configure_source_mock
 
 
 class TestResourceServiceCreateResourceUnit:

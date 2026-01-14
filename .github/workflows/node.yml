@@ -21,6 +21,10 @@ jobs:
     name: "Linting"
     uses: ./.github/workflows/node-lint.yml
 
+  format:
+    name: "Formatting"
+    uses: ./.github/workflows/node-format.yml
+
   build:
     name: "Build"
     uses: ./.github/workflows/node-build.yml

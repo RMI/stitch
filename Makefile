@@ -10,9 +10,9 @@ lint: uv-lint frontend-lint
 
 test: uv-test frontend-test
 
-format: uv-format
+format: uv-format frontend-format
 
-format-check: uv-format-check
+format-check: uv-format-check frontend-format-check
 
 uv-lint: uv-dev
 	$(RUFF) check
@@ -130,6 +130,12 @@ frontend-test: $(FRONTEND_INSTALL_STAMP)
 frontend-lint: $(FRONTEND_INSTALL_STAMP)
 	$(NPM) run lint
 
+frontend-format: $(FRONTEND_INSTALL_STAMP)
+	$(NPM) run format
+
+frontend-format-check: $(FRONTEND_INSTALL_STAMP)
+	$(NPM) run format:check
+
 frontend-dev: $(FRONTEND_INSTALL_STAMP)
 	$(NPM) run dev
 
@@ -145,4 +151,4 @@ frontend-clean:
         uv-dev \
         schema stitch-core cli \
         clean-build clean-cache \
-        frontend frontend-install frontend-build frontend-test frontend-lint frontend-dev frontend-clean
+        frontend frontend-install frontend-build frontend-test frontend-lint frontend-dev frontend-clean frontend-format frontend-format-check

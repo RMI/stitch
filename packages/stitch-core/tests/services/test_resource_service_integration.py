@@ -15,7 +15,7 @@ from stitch.core.resources.adapters.sql.sql_transaction_context import (
     SQLTransactionContext,
 )
 from stitch.core.resources.app.services.resource_service import ResourceService
-from tests.data.parameter_sets import UNICODE_TEST_CASES
+from data.parameter_sets import UNICODE_TEST_CASES
 
 
 class TestResourceServiceCreateResourceIntegration:
