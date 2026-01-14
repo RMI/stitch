@@ -1,22 +1,22 @@
-import { describe, it, expect } from 'vitest';
-import { screen } from '@testing-library/react';
-import { renderWithQueryClient } from './test/utils';
-import App from './App';
+import { describe, it, expect } from "vitest";
+import { screen } from "@testing-library/react";
+import { renderWithQueryClient } from "./test/utils";
+import App from "./App";
 
-describe('App', () => {
-  it('renders Resources heading', () => {
+describe("App", () => {
+  it("renders Resources heading", () => {
     renderWithQueryClient(<App />);
     const heading = screen.getByText(/^Resources$/i);
     expect(heading).toBeInTheDocument();
   });
 
-  it('renders Resource heading', () => {
+  it("renders Resource heading", () => {
     renderWithQueryClient(<App />);
     const heading = screen.getByText(/^Resource \d+$/i);
     expect(heading).toBeInTheDocument();
   });
 
-  it('renders both ResourcesView and ResourceView components', () => {
+  it("renders both ResourcesView and ResourceView components", () => {
     renderWithQueryClient(<App />);
 
     // Check for ResourcesView content

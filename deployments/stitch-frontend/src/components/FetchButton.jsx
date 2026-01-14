@@ -1,9 +1,9 @@
-import Button from './Button';
+import Button from "./Button";
 
 function FetchButton({ onFetch, isLoading }) {
   return (
     <Button onClick={onFetch} disabled={isLoading} variant="primary">
-      {isLoading ? 'Loading...' : 'Fetch'}
+      {isLoading ? "Loading..." : "Fetch"}
     </Button>
   );
 }

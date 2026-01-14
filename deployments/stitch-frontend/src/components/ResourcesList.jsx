@@ -1,4 +1,4 @@
-import Card from './Card';
+import Card from "./Card";
 
 function ResourcesList({ resources, isLoading, isError, error }) {
   if (isError) {
@@ -15,9 +15,9 @@ function ResourcesList({ resources, isLoading, isError, error }) {
         <ul>
           {resources.map((resource, index) => (
             <span key={resource.id}>
-            {resource.id}
-            {index < resources.length - 1 ? ', ' : ''}
-          </span>
+              {resource.id}
+              {index < resources.length - 1 ? ", " : ""}
+            </span>
           ))}
         </ul>
       </Card>

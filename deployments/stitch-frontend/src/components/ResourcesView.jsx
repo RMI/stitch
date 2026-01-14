@@ -23,7 +23,12 @@ export default function ResourcesView({ className, endpoint }) {
         <FetchButton onFetch={() => refetch()} isLoading={isLoading} />
         <ClearCacheButton onClear={handleClear} disabled={!data?.length} />
       </div>
-      <ResourcesList resources={data} isLoading={isLoading} isError={isError} error={error} />
+      <ResourcesList
+        resources={data}
+        isLoading={isLoading}
+        isError={isError}
+        error={error}
+      />
     </div>
   );
 }

@@ -1,5 +1,5 @@
-import { render } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 export function renderWithQueryClient(ui, options = {}) {
   const queryClient = new QueryClient({
@@ -14,9 +14,7 @@ export function renderWithQueryClient(ui, options = {}) {
 
   return {
     ...render(
-      <QueryClientProvider client={queryClient}>
-        {ui}
-      </QueryClientProvider>
+      <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>,
     ),
     queryClient,
   };

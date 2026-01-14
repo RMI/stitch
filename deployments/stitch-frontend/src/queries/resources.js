@@ -1,11 +1,11 @@
-import { getResource, getResources } from './api';
+import { getResource, getResources } from "./api";
 
 // Query key factory - hierarchical for easy invalidation
 export const resourceKeys = {
-  all: ['resources'],
-  lists: () => [...resourceKeys.all, 'list'],
+  all: ["resources"],
+  lists: () => [...resourceKeys.all, "list"],
   list: (filters) => [...resourceKeys.lists(), filters],
-  details: () => [...resourceKeys.all, 'detail'],
+  details: () => [...resourceKeys.all, "detail"],
   detail: (id) => [...resourceKeys.details(), id],
 };
 

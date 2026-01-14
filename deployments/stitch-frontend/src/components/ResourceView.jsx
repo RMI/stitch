@@ -42,7 +42,10 @@ export default function ResourceView({ className, endpoint }) {
           className="w-24"
         />
         <FetchButton onFetch={() => refetch()} isLoading={isLoading} />
-        <ClearCacheButton onClear={() => handleClear(id)} disabled={!data && !error} />
+        <ClearCacheButton
+          onClear={() => handleClear(id)}
+          disabled={!data && !error}
+        />
       </div>
       <JsonView
         data={data}

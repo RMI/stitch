@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { resourceQueries } from '../queries/resources';
+import { useQuery } from "@tanstack/react-query";
+import { resourceQueries } from "../queries/resources";
 
 export function useResources() {
   return useQuery(resourceQueries.list());

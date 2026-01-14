@@ -68,11 +68,12 @@ npm run test:coverage
 ```
 
 ## API
+
 To temporarily run the API in development mode, outside Docker:
-```uv run --package stitch-api stitch-api```
+`uv run --package stitch-api stitch-api`
 
 To temporarily seed the resources/ endpoint with data:
-```node seed-resources.js```
+`node seed-resources.js`
 
 ## Testing
 
@@ -145,11 +146,11 @@ Query keys are organized hierarchically for easy invalidation:
 
 ```js
 export const resourceKeys = {
-  all: ['resources'],                           // ['resources']
-  lists: () => [...resourceKeys.all, 'list'],   // ['resources', 'list']
-  list: (filters) => [...resourceKeys.lists(), filters],  // ['resources', 'list', filters]
-  details: () => [...resourceKeys.all, 'detail'],         // ['resources', 'detail']
-  detail: (id) => [...resourceKeys.details(), id],        // ['resources', 'detail', id]
+  all: ["resources"], // ['resources']
+  lists: () => [...resourceKeys.all, "list"], // ['resources', 'list']
+  list: (filters) => [...resourceKeys.lists(), filters], // ['resources', 'list', filters]
+  details: () => [...resourceKeys.all, "detail"], // ['resources', 'detail']
+  detail: (id) => [...resourceKeys.details(), id], // ['resources', 'detail', id]
 };
 ```
 
@@ -178,8 +179,8 @@ export const resourceQueries = {
 #### In Hooks
 
 ```js
-import { useQuery } from '@tanstack/react-query';
-import { resourceQueries } from '../queries/resources';
+import { useQuery } from "@tanstack/react-query";
+import { resourceQueries } from "../queries/resources";
 
 export function useResource(id) {
   return useQuery(resourceQueries.detail(id));
@@ -189,8 +190,8 @@ export function useResource(id) {
 #### In Components (Cache Manipulation)
 
 ```js
-import { useQueryClient } from '@tanstack/react-query';
-import { resourceKeys } from '../queries/resources';
+import { useQueryClient } from "@tanstack/react-query";
+import { resourceKeys } from "../queries/resources";
 
 function MyComponent() {
   const queryClient = useQueryClient();
@@ -223,6 +224,7 @@ function MyComponent() {
 ### Examples from This Project
 
 #### Clearing cache for a specific resource (ResourceView.jsx)
+
 ```js
 import { resourceKeys } from "../queries/resources";
 
@@ -232,6 +234,7 @@ const handleClear = (id) => {
 ```
 
 #### Clearing the resources list (ResourcesView.jsx)
+
 ```js
 import { resourceKeys } from "../queries/resources";
 
@@ -245,15 +248,17 @@ const handleClear = () => {
 When adding new endpoints:
 
 1. **Update the key factory** in `src/queries/[entity].js`:
+
    ```js
    export const resourceKeys = {
      // ... existing keys
-     mutations: () => [...resourceKeys.all, 'mutation'],
+     mutations: () => [...resourceKeys.all, "mutation"],
      mutation: (id) => [...resourceKeys.mutations(), id],
    };
    ```
 
 2. **Add query definition**:
+
    ```js
    export const resourceQueries = {
      // ... existing queries

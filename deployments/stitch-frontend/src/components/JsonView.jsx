@@ -11,15 +11,15 @@ export default function Jsonview({
     const errorMessage = error?.status === 404 ? "Not Found" : error.message;
     return (
       <>
-      {error?.status === 404 ? (
-        <Card title="" className="mb-6 border-2 border-gray-500">
-          <p className="text-gray-600">Not Found</p>
-        </Card>
-      ) : (
-        <Card title="Error" className="mb-6 border-2 border-red-500">
-          <p className="text-red-600">{errorMessage}</p>
-        </Card>
-      )}
+        {error?.status === 404 ? (
+          <Card title="" className="mb-6 border-2 border-gray-500">
+            <p className="text-gray-600">Not Found</p>
+          </Card>
+        ) : (
+          <Card title="Error" className="mb-6 border-2 border-red-500">
+            <p className="text-red-600">{errorMessage}</p>
+          </Card>
+        )}
       </>
     );
   }

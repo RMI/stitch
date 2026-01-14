@@ -1,62 +1,68 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { renderWithQueryClient, createMockResponse, createMockError } from '../test/utils';
-import ResourceView from './ResourceView';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import {
+  renderWithQueryClient,
+  createMockResponse,
+  createMockError,
+} from "../test/utils";
+import ResourceView from "./ResourceView";
 
-describe('ResourceView', () => {
+describe("ResourceView", () => {
   beforeEach(() => {
     global.fetch = vi.fn();
   });
 
-  it('renders heading with default ID and endpoint information', () => {
+  it("renders heading with default ID and endpoint information", () => {
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
     expect(screen.getByText(/^Resource \d+$/)).toBeInTheDocument();
     expect(screen.getByText(/\/api\/v1\/resources\//)).toBeInTheDocument();
   });
 
-  it('renders input field with default value of 1', () => {
+  it("renders input field with default value of 1", () => {
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    const input = screen.getByRole('spinbutton');
+    const input = screen.getByRole("spinbutton");
     expect(input).toHaveValue(1);
   });
 
-  it('renders Fetch and Clear Cache buttons', () => {
+  it("renders Fetch and Clear Cache buttons", () => {
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    expect(screen.getByRole('button', { name: /fetch/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /clear cache/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /fetch/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /clear cache/i }),
+    ).toBeInTheDocument();
   });
 
-  it('shows initial message before data is fetched', () => {
+  it("shows initial message before data is fetched", () => {
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
     expect(screen.getByText(/No resource loaded/i)).toBeInTheDocument();
   });
 
-  it('allows changing the resource ID in the input', async () => {
+  it("allows changing the resource ID in the input", async () => {
     const user = userEvent.setup();
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    const input = screen.getByRole('spinbutton');
+    const input = screen.getByRole("spinbutton");
     await user.clear(input);
-    await user.type(input, '42');
+    await user.type(input, "42");
 
     expect(input).toHaveValue(42);
     expect(screen.getByText(/^Resource 42$/)).toBeInTheDocument();
   });
 
-  it('fetches resource when Fetch button is clicked', async () => {
+  it("fetches resource when Fetch button is clicked", async () => {
     const user = userEvent.setup();
-    const mockResource = { id: 1, name: 'Test Resource', type: 'test' };
+    const mockResource = { id: 1, name: "Test Resource", type: "test" };
 
     global.fetch.mockResolvedValueOnce(createMockResponse(mockResource));
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    const fetchButton = screen.getByRole('button', { name: /fetch/i });
+    const fetchButton = screen.getByRole("button", { name: /fetch/i });
     await user.click(fetchButton);
 
     await waitFor(() => {
@@ -64,37 +70,37 @@ describe('ResourceView', () => {
     });
   });
 
-  it('fetches resource when Enter key is pressed in input', async () => {
+  it("fetches resource when Enter key is pressed in input", async () => {
     const user = userEvent.setup();
-    const mockResource = { id: 5, name: 'Resource 5', type: 'test' };
+    const mockResource = { id: 5, name: "Resource 5", type: "test" };
 
     global.fetch.mockResolvedValueOnce(createMockResponse(mockResource));
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    const input = screen.getByRole('spinbutton');
+    const input = screen.getByRole("spinbutton");
     await user.clear(input);
-    await user.type(input, '5{Enter}');
+    await user.type(input, "5{Enter}");
 
     await waitFor(() => {
       expect(screen.getByText(/"name": "Resource 5"/)).toBeInTheDocument();
     });
   });
 
-  it('displays JSON data for successful fetch', async () => {
+  it("displays JSON data for successful fetch", async () => {
     const user = userEvent.setup();
     const mockResource = {
       id: 1,
-      name: 'Test Resource',
-      type: 'example',
-      status: 'active'
+      name: "Test Resource",
+      type: "example",
+      status: "active",
     };
 
     global.fetch.mockResolvedValueOnce(createMockResponse(mockResource));
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    const fetchButton = screen.getByRole('button', { name: /fetch/i });
+    const fetchButton = screen.getByRole("button", { name: /fetch/i });
     await user.click(fetchButton);
 
     await waitFor(() => {
@@ -105,69 +111,69 @@ describe('ResourceView', () => {
     });
   });
 
-  it('displays error message when fetch fails', async () => {
+  it("displays error message when fetch fails", async () => {
     const user = userEvent.setup();
     global.fetch.mockResolvedValueOnce(createMockError(404));
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    const fetchButton = screen.getByRole('button', { name: /fetch/i });
+    const fetchButton = screen.getByRole("button", { name: /fetch/i });
     await user.click(fetchButton);
 
     await waitFor(() => {
-      expect(screen.getByText('Not Found')).toBeInTheDocument();
+      expect(screen.getByText("Not Found")).toBeInTheDocument();
     });
   });
 
-  it('disables Clear Cache button when no data', () => {
+  it("disables Clear Cache button when no data", () => {
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    const clearButton = screen.getByRole('button', { name: /clear cache/i });
+    const clearButton = screen.getByRole("button", { name: /clear cache/i });
     expect(clearButton).toBeDisabled();
   });
 
-  it('enables Clear Cache button after data is loaded', async () => {
+  it("enables Clear Cache button after data is loaded", async () => {
     const user = userEvent.setup();
-    const mockResource = { id: 1, name: 'Test Resource' };
+    const mockResource = { id: 1, name: "Test Resource" };
 
     global.fetch.mockResolvedValueOnce(createMockResponse(mockResource));
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    const fetchButton = screen.getByRole('button', { name: /fetch/i });
+    const fetchButton = screen.getByRole("button", { name: /fetch/i });
     await user.click(fetchButton);
 
     await waitFor(() => {
-      const clearButton = screen.getByRole('button', { name: /clear cache/i });
+      const clearButton = screen.getByRole("button", { name: /clear cache/i });
       expect(clearButton).not.toBeDisabled();
     });
   });
 
-  it('enables Clear Cache button after error', async () => {
+  it("enables Clear Cache button after error", async () => {
     const user = userEvent.setup();
     global.fetch.mockResolvedValueOnce(createMockError(500));
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    const fetchButton = screen.getByRole('button', { name: /fetch/i });
+    const fetchButton = screen.getByRole("button", { name: /fetch/i });
     await user.click(fetchButton);
 
     await waitFor(() => {
-      const clearButton = screen.getByRole('button', { name: /clear cache/i });
+      const clearButton = screen.getByRole("button", { name: /clear cache/i });
       expect(clearButton).not.toBeDisabled();
     });
   });
 
-  it('clears cache when Clear Cache button is clicked', async () => {
+  it("clears cache when Clear Cache button is clicked", async () => {
     const user = userEvent.setup();
-    const mockResource = { id: 1, name: 'Test Resource' };
+    const mockResource = { id: 1, name: "Test Resource" };
 
     global.fetch.mockResolvedValueOnce(createMockResponse(mockResource));
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
     // Fetch data first
-    const fetchButton = screen.getByRole('button', { name: /fetch/i });
+    const fetchButton = screen.getByRole("button", { name: /fetch/i });
     await user.click(fetchButton);
 
     await waitFor(() => {
@@ -175,7 +181,7 @@ describe('ResourceView', () => {
     });
 
     // Clear cache
-    const clearButton = screen.getByRole('button', { name: /clear cache/i });
+    const clearButton = screen.getByRole("button", { name: /clear cache/i });
     await user.click(clearButton);
 
     await waitFor(() => {
