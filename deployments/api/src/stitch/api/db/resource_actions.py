@@ -1,6 +1,5 @@
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from functools import reduce
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.status import HTTP_404_NOT_FOUND
@@ -14,7 +13,6 @@ from stitch.api.entities import (
     Resource,
     SourceData,
     SourceKey,
-    SourceRef,
 )
 
 from .model import (
