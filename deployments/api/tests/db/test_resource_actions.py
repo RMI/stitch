@@ -321,13 +321,17 @@ class TestCreateResourceActionIntegration:
         )
 
         memberships = (
-            await seeded_integration_session.execute(
-                select(MembershipModel).where(
-                    MembershipModel.source == "gem",
-                    MembershipModel.source_pk == existing_gem_source.id,
+            (
+                await seeded_integration_session.execute(
+                    select(MembershipModel).where(
+                        MembershipModel.source == "gem",
+                        MembershipModel.source_pk == existing_gem_source.id,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         assert len(memberships) == 2
         resource_ids = {m.resource_id for m in memberships}
