@@ -18,5 +18,5 @@ jobs:
           python-version-file: ".python-version"
 
       - name: Run format check
-        run: make format-check
+        run: make uv-format-check
 

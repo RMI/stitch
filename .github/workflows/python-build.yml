@@ -18,7 +18,7 @@ jobs:
           python-version-file: ".python-version"
 
       - name: Build
-        run: make build
+        run: make build-python
 
   build-cli:
     name: "Build CLI"

@@ -13,7 +13,7 @@ from stitch.core.resources.adapters.sql.model.membership import (
 )
 from stitch.core.resources.adapters.sql.model.resource import ResourceModel
 from stitch.core.resources.adapters.sql.errors import MembershipIntegrityError
-from tests.fixtures.fixture_db_data import MEMBERSHIP_DATA
+from fixtures.fixture_db_data import MEMBERSHIP_DATA
 
 
 class TestSQLMembershipRepositoryCreate:

@@ -12,7 +12,7 @@ from stitch.core.resources.adapters.sql.sql_membership_repository import (
 )
 from stitch.core.resources.adapters.sql.model.resource import ResourceModel
 from stitch.core.resources.adapters.sql.model.membership import MembershipModel
-from tests.fixtures.fixture_db_data import RESOURCE_DATA, MEMBERSHIP_DATA
+from fixtures.fixture_db_data import RESOURCE_DATA, MEMBERSHIP_DATA
 
 
 class TestResourceMembershipIntegration:

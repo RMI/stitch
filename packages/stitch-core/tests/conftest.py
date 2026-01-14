@@ -7,14 +7,14 @@ import pytest
 from sqlalchemy.orm import Session
 
 # Import database fixtures to make them available to all tests
-from tests.fixtures.database import db_engine, db_session
-from tests.fixtures.service_fixtures import (
+from fixtures.database import db_engine, db_session
+from fixtures.service_fixtures import (
     mock_source_repo,
     mock_source_registry,
     resource_service_integration,
     resource_service_unit,
 )
-from tests.fixtures.mocks import (
+from fixtures.mocks import (
     mock_resource_repository,
     mock_membership_repository,
     mock_source_persistence_repository,

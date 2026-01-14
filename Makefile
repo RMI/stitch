@@ -6,23 +6,31 @@ RUFF := $(UV) run ruff
 check: lint test format-check
 	@echo "All checks passed."
 
-lint: dev
+lint: uv-lint frontend-lint
+
+test: uv-test frontend-test
+
+format: uv-format frontend-format
+
+format-check: uv-format-check frontend-format-check
+
+uv-lint: uv-dev
 	$(RUFF) check
 
-test: dev
+uv-test: uv-dev
 	$(PYTEST) packages/schema
 	$(PYTEST) packages/stitch-core
 	$(PYTEST) deployments/api
 
-format: dev
+uv-format: uv-dev
 	$(RUFF) format
 
-format-check: dev
+uv-format-check: uv-dev
 	$(RUFF) format --check
 
-dev: sync-all
+uv-dev: uv-sync-all
 
-sync:
+uv-sync:
 	$(UV) sync
 
 sync-dev:
@@ -34,9 +42,9 @@ sync-all:
 # ---------------------------------------------------------------------
 # Packages and source discovery
 # ---------------------------------------------------------------------
-all: build cli
-build: schema stitch-core
-clean: clean-build clean-cache
+all: build-python cli frontend
+build-python: schema stitch-core
+clean: clean-build clean-cache frontend-clean
 
 clean-build:
 	rm -rf build dist
@@ -76,9 +84,72 @@ $(CLI_STAMP): $(CLI_SRCS)
 	$(UV) build $(CLI_DIR)
 	touch $@
 
+# ---------------------------------------------------------------------
+# stitch-frontend
+# ---------------------------------------------------------------------
+FRONTEND_DIR := deployments/stitch-frontend
+NPM := npm --prefix $(FRONTEND_DIR)
+
+FRONTEND_PKG  := $(FRONTEND_DIR)/package.json
+FRONTEND_LOCK := $(FRONTEND_DIR)/package-lock.json
+
+FRONTEND_INSTALL_STAMP := build/frontend.npm-ci.stamp
+FRONTEND_BUILD_STAMP   := build/frontend.build.stamp
+
+# Inputs that should trigger reinstall / rebuild
+FRONTEND_INSTALL_INPUTS := $(FRONTEND_PKG) $(FRONTEND_LOCK)
+
+FRONTEND_BUILD_INPUTS := \
+	$(FRONTEND_DIR)/index.html \
+	$(FRONTEND_DIR)/vite.config.js \
+	$(FRONTEND_DIR)/vitest.config.js \
+	$(FRONTEND_DIR)/eslint.config.js \
+	$(shell find $(FRONTEND_DIR)/src $(FRONTEND_DIR)/public -type f) \
+	$(FRONTEND_INSTALL_INPUTS)
+
+frontend: frontend-build
+
+# --- install deps (keyed off lockfile) ---
+frontend-install: $(FRONTEND_INSTALL_STAMP)
+
+$(FRONTEND_INSTALL_STAMP): $(FRONTEND_INSTALL_INPUTS)
+	mkdir -p $(@D)
+	$(NPM) ci
+	touch $@
+
+# --- build (incremental) ---
+frontend-build: $(FRONTEND_BUILD_STAMP)
+
+$(FRONTEND_BUILD_STAMP): $(FRONTEND_INSTALL_STAMP) $(FRONTEND_BUILD_INPUTS)
+	mkdir -p $(@D)
+	$(NPM) run build
+	touch $@
+
+frontend-test: $(FRONTEND_INSTALL_STAMP)
+	$(NPM) run test:run
+
+frontend-lint: $(FRONTEND_INSTALL_STAMP)
+	$(NPM) run lint
+
+frontend-format: $(FRONTEND_INSTALL_STAMP)
+	$(NPM) run format
+
+frontend-format-check: $(FRONTEND_INSTALL_STAMP)
+	$(NPM) run format:check
+
+frontend-dev: $(FRONTEND_INSTALL_STAMP)
+	$(NPM) run dev
+
+frontend-clean:
+	rm -rf $(FRONTEND_DIR)/dist $(FRONTEND_DIR)/node_modules \
+	       $(FRONTEND_INSTALL_STAMP) $(FRONTEND_BUILD_STAMP)
+
 .PHONY: all build clean \
+        build-python \
         check lint test format format-check \
-        sync sync-dev sync-all \
-        dev \
+        uv-lint uv-test uv-format uv-format-check \
+        uv-sync uv-sync-dev uv-sync-all \
+        uv-dev \
         schema stitch-core cli \
-        clean-build clean-cache
+        clean-build clean-cache \
+        frontend frontend-install frontend-build frontend-test frontend-lint frontend-dev frontend-clean frontend-format frontend-format-check

@@ -1,0 +1,22 @@
+---
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+name: Docker Checks
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ github.event_action }}
+  cancel-in-progress: true
+
+jobs:
+  compose-config:
+    name: "docker compose config"
+    uses: ./.github/workflows/docker-compose-config.yml
+
+  compose-build:
+    name: "docker compose build"
+    uses: ./.github/workflows/docker-compose-build.yml
