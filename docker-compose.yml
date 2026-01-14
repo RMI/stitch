@@ -1,4 +1,12 @@
 services:
+
+  api:
+    build:
+      context: .
+      dockerfile:  deployments/api/Dockerfile
+    ports:
+    - "8000:8000"
+
   db:
     image: postgres:16
     healthcheck:
