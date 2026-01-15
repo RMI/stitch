@@ -16,7 +16,9 @@ COPY pyproject.toml uv.lock ./
 
 # Copy the member pyprojects (and/or whole packages) that are needed to resolve deps
 COPY deployments/api/pyproject.toml deployments/api/pyproject.toml
-COPY deployments deployments
+COPY deployments/api deployments/api
+COPY deployments/db deployments/db
+COPY deployments/stitch-frontend deployments/stitch-frontend
 
 COPY packages/stitch-core/pyproject.toml packages/stitch-core/pyproject.toml
 COPY packages/stitch-core/src packages/stitch-core/src
