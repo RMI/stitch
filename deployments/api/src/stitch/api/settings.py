@@ -19,7 +19,7 @@ class Environment(StrEnum):
 class PostgresConfig(BaseSettings, cli_parse_args=False):
     host: str = "localhost"
     port: int = 5432
-    database: str = "postgres"
+    db: str = "postgres"
     user: str = "postgres"
     password: SecretStr = SecretStr("postgres")
 
@@ -36,7 +36,7 @@ class PostgresConfig(BaseSettings, cli_parse_args=False):
             username=self.user,
             password=self.password.get_secret_value(),
             host=self.host,
-            database=self.database,
+            database=self.db,
             port=self.port,
         )
 

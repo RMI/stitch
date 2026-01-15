@@ -29,6 +29,7 @@ services:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+      - ./deployments/api/scripts/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
 
   seed:
     build:

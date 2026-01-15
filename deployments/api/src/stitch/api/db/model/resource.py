@@ -25,9 +25,9 @@ from .types import PORTABLE_BIGINT
 
 
 class MembershipStatus(StrEnum):
-    ACTIVE = auto()
-    INACTIVE = auto()
-    INVALID = auto()
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+    INVALID = "INVALID"
 
 
 class MembershipModel(TimestampMixin, UserAuditMixin, Base):

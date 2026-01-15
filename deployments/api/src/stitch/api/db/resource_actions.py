@@ -5,6 +5,7 @@ from functools import partial
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from starlette.status import HTTP_404_NOT_FOUND
 
 from stitch.api.db.model.sources import SOURCE_TABLES, SourceModel
@@ -76,10 +77,14 @@ async def resource_model_to_entity(
 
 
 async def get_all(session: AsyncSession) -> Sequence[Resource]:
-    stmt = select(ResourceModel).where(ResourceModel.repointed_id.is_(None))
+    stmt = (
+        select(ResourceModel)
+        .where(ResourceModel.repointed_id.is_(None))
+        .options(selectinload(ResourceModel.memberships))
+    )
     models = (await session.scalars(stmt)).all()
     fn = partial(resource_model_to_entity, session)
-    return await asyncio.gather([fn(m) for m in models])
+    return await asyncio.gather(*[fn(m) for m in models])
 
 
 async def get(session: AsyncSession, id: int):

@@ -15,7 +15,7 @@ class TestPostgresConfig:
         config = PostgresConfig(
             host="localhost",
             port=5432,
-            database="testdb",
+            db="testdb",
             user="testuser",
             password=SecretStr("testpass"),
         )
@@ -33,7 +33,7 @@ class TestPostgresConfig:
         config = PostgresConfig(
             host="localhost",
             port=5432,
-            database="testdb",
+            db="testdb",
             user="testuser",
             password=SecretStr("secret123"),
         )
@@ -42,13 +42,17 @@ class TestPostgresConfig:
 
         assert url.password == "secret123"
 
-    def test_defaults(self):
-        """Verify default values are applied."""
+    def test_defaults(self, monkeypatch):
+        """Verify default values are applied when env vars are unset."""
+        monkeypatch.setenv("POSTGRES_DB", "postgres")
+        monkeypatch.setenv("POSTGRES_HOST", "localhost")
+        monkeypatch.setenv("POSTGRES_PORT", "5432")
+        monkeypatch.setenv("POSTGRES_USER", "postgres")
         config = PostgresConfig()
 
         assert config.host == "localhost"
         assert config.port == 5432
-        assert config.database == "postgres"
+        assert config.db == "postgres"
         assert config.user == "postgres"
 
 
@@ -81,7 +85,7 @@ class TestSettings:
     def test_get_database_url_postgres_dialect(self, monkeypatch):
         """Dialect=postgresql returns PostgresConfig URL."""
         monkeypatch.setenv("POSTGRES_HOST", "pghost")
-        monkeypatch.setenv("POSTGRES_DATABASE", "pgdb")
+        monkeypatch.setenv("POSTGRES_DB", "pgdb")
 
         settings = Settings(dialect="postgresql")
         url = settings.get_database_url()
