@@ -1,4 +1,3 @@
-from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime
 from typing import (
@@ -7,7 +6,6 @@ from typing import (
     Literal,
     Mapping,
     Protocol,
-    Self,
     TypeVar,
     runtime_checkable,
 )
@@ -151,13 +149,13 @@ class CreateResourceSourceData(BaseModel):
 class ResourceBase(BaseModel):
     name: str | None = Field(default=None)
     country: str | None = Field(default=None)
-    repointed_to: Resource | None = Field(default=None)
+    repointed_to: "Resource | None" = Field(default=None)
 
 
 class Resource(ResourceBase, Timestamped):
     id: int
     source_data: SourceData
-    constituents: Sequence[Self]
+    constituents: Sequence["Resource"]
 
 
 class CreateResource(ResourceBase):
