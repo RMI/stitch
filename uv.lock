@@ -8,7 +8,6 @@ members = [
     "stitch-api",
     "stitch-cli",
     "stitch-core",
-    "stitch-frontend",
     "stitch-validator",
 ]
 
@@ -1583,11 +1582,6 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.11.0" },
     { name = "sqlalchemy", specifier = ">=2.0.44" },
 ]
-
-[[package]]
-name = "stitch-frontend"
-version = "0.1.0"
-source = { virtual = "deployments/stitch-frontend" }
 
 [[package]]
 name = "stitch-validator"
