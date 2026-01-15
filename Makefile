@@ -33,10 +33,10 @@ uv-dev: uv-sync-all
 uv-sync:
 	$(UV) sync
 
-sync-dev:
+uv-sync-dev:
 	$(UV) sync --group dev --all-packages
 
-sync-all:
+uv-sync-all:
 	$(UV) sync --group dev --all-packages --extra cli
 
 # ---------------------------------------------------------------------
