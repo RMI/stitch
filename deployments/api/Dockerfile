@@ -16,9 +16,7 @@ COPY pyproject.toml uv.lock ./
 
 # Copy the member pyprojects (and/or whole packages) that are needed to resolve deps
 COPY deployments/api/pyproject.toml deployments/api/pyproject.toml
-COPY deployments/api deployments/api
-COPY deployments/db deployments/db
-COPY deployments/stitch-frontend deployments/stitch-frontend
+COPY deployments/api/src /app/src
 
 COPY packages/stitch-core/pyproject.toml packages/stitch-core/pyproject.toml
 COPY packages/stitch-core/src packages/stitch-core/src
@@ -49,4 +47,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 COPY deployments/api/src /app/src
 ENV PYTHONPATH=/app/src
 
-CMD ["fastapi", "run", "stitch/api/main.py"]
+CMD ["fastapi", "run", "src/stitch/api/main.py"]
