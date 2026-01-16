@@ -27,7 +27,7 @@ services:
       timeout: 1s
       retries: 5
       start_period: 10s
-      start_interval: 0.1s
+      start_interval: 1s
     env_file:
       - .env
     ports:
