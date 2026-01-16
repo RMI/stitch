@@ -20,6 +20,7 @@ uv-lint: uv-dev
 uv-test: uv-dev
 	$(PYTEST) packages/schema
 	$(PYTEST) packages/stitch-core
+	$(PYTEST) deployments/api
 
 uv-format: uv-dev
 	$(RUFF) format
@@ -33,10 +34,10 @@ uv-sync:
 	$(UV) sync
 
 uv-sync-dev:
-	$(UV) sync --group dev
+	$(UV) sync --group dev --all-packages
 
 uv-sync-all:
-	$(UV) sync --group dev --extra cli
+	$(UV) sync --group dev --all-packages --extra cli
 
 # ---------------------------------------------------------------------
 # Packages and source discovery

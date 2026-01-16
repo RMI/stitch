@@ -1,4 +1,21 @@
 services:
+
+  api:
+    build:
+      context: .
+      dockerfile: deployments/api/Dockerfile
+    volumes:
+      - ./deployments/api/src:/app/src
+    environment:
+      LOG_LEVEL: info
+      POSTGRES_DB: stitch
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+    ports:
+    - "8000:8000"
+
   db:
     image: postgres:16
     healthcheck:
@@ -12,6 +29,7 @@ services:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+      - ./deployments/api/scripts/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
 
   seed:
     build:
