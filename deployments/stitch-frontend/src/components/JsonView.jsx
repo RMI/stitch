@@ -24,6 +24,14 @@ export default function Jsonview({
     );
   }
 
+  if (isLoading) {
+    return (
+      <Card>
+        <p className="text-gray-500 text-center">Loading...</p>
+      </Card>
+    );
+  }
+
   if (data) {
     return (
       <Card title="Resources">

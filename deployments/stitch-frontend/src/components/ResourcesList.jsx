@@ -9,6 +9,14 @@ function ResourcesList({ resources, isLoading, isError, error }) {
     );
   }
 
+  if (isLoading) {
+    return (
+      <Card>
+        <p className="text-gray-500 text-center">Loading...</p>
+      </Card>
+    );
+  }
+
   if (resources?.length > 0) {
     return (
       <Card title="Resource IDs">
