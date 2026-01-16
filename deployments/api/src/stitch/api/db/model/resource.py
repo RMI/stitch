@@ -189,7 +189,7 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
         return root
 
     async def get_constituents(self, session: AsyncSession):
-        return await self.__class__.get_constituents_by_id(session, self.id)
+        return await self.__class__.get_constituents_by_root_id(session, self.id)
 
     @classmethod
     def create(
@@ -208,8 +208,10 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
         )
 
     @classmethod
-    async def get_constituents_by_id(cls, session: AsyncSession, resource_id: int):
-        sub_cte = cls._subtree_cte(resource_id=resource_id)
+    async def get_constituents_by_root_id(
+        cls, session: AsyncSession, root_resource_id: int
+    ):
+        sub_cte = cls._subtree_cte(resource_id=root_resource_id)
         stmt = select(cls).join(sub_cte, cls.id == sub_cte.c.id)
         return (await session.scalars(stmt)).all()
 
