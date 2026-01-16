@@ -1,4 +1,4 @@
-FROM python:3.12.2-slim AS builder
+FROM python:3.12.12-slim-trixie AS builder
 
 # better console streaming for docker logs
 ENV PYTHONUNBUFFERED=1 \
@@ -34,7 +34,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # -------------------------------------------------------
 
-FROM python:3.12.2-slim AS runtime
+FROM python:3.12.12-slim-trixie AS runtime
 
 ENV PYTHONUNBUFFERED=1
 WORKDIR /app
