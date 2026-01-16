@@ -3,7 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
-from pydantic import SecretStr
+from pydantic import HttpUrl, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -59,6 +59,7 @@ class SqliteConfig(BaseSettings):
 class Settings(BaseSettings):
     environment: Environment = Environment.DEV
     dialect: Dialect = "postgresql"
+    frontend_url: HttpUrl = HttpUrl("http://localhost")
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env",

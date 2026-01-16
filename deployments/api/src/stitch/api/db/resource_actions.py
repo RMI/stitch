@@ -63,8 +63,14 @@ async def resource_model_to_entity(
 ) -> Resource:
     source_model_data = await model.get_source_data(session)
     source_data = SourceData.model_validate(source_model_data)
-    constituent_models = await ResourceModel.get_constituents_by_id(session, model.id)
-    constituents = [resource_model_to_empty_entity(cm) for cm in constituent_models]
+    constituent_models = await ResourceModel.get_constituents_by_root_id(
+        session, model.id
+    )
+    constituents = [
+        resource_model_to_empty_entity(cm)
+        for cm in constituent_models
+        if cm.id != model.id
+    ]
     return Resource(
         id=model.id,
         name=model.name,
