@@ -59,7 +59,7 @@ class SqliteConfig(BaseSettings):
 class Settings(BaseSettings):
     environment: Environment = Environment.DEV
     dialect: Dialect = "postgresql"
-    frontend_url: HttpUrl
+    frontend_url: HttpUrl = HttpUrl("http://localhost")
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env",
