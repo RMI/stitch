@@ -6,7 +6,7 @@ from stitch.api.settings import Settings
 def register_middlewares(application: FastAPI, settings: Settings):
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=[str(settings.frontend_url)],
+        allow_origins=[str(settings.frontend_url).rstrip("/")],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
