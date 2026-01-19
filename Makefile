@@ -157,5 +157,5 @@ frontend-clean:
         uv-dev \
         schema stitch-core cli \
         clean-build clean-cache \
-				lock-check uv-lock-check \
+        lock-check uv-lock-check \
         frontend frontend-install frontend-build frontend-test frontend-lint frontend-dev frontend-clean frontend-format frontend-format-check
