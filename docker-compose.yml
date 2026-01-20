@@ -18,6 +18,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
 
   db:
     image: postgres:17-alpine
@@ -34,7 +36,6 @@ services:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
-      - ./deployments/api/scripts/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
 
   adminer:
     image: adminer:latest
@@ -44,15 +45,20 @@ services:
       db:
         condition: service_healthy
 
-  seed:
+
+  db-init:
     build:
       context: .
-      dockerfile: deployments/db/Dockerfile
-    env_file:
-      - .env
+      dockerfile: deployments/api/Dockerfile
+    environment:
+      STITCH_DB_SCHEMA_MODE: "if-empty"
+      STITCH_DB_SEED_MODE: "if-needed"
+      STITCH_DB_SEED_PROFILE: "dev"
     depends_on:
       db:
         condition: service_healthy
+    command: ["python", "-m", "stitch.api.db.init_job"]
+    restart: "no"
 
   frontend:
     build:
