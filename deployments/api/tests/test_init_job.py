@@ -8,12 +8,14 @@ from stitch.api.db import init_job as ij
 
 # ---------- Settings / enums tests ----------
 
+
 def test_load_settings_parses_enums(monkeypatch):
     monkeypatch.setenv("STITCH_DB_SCHEMA_MODE", ij.SchemaMode.ASSERT_ONLY.value)
     monkeypatch.setenv("STITCH_DB_SEED_MODE", ij.SeedMode.NEVER.value)
     s = ij.load_settings()
     assert s.schema_mode is ij.SchemaMode.ASSERT_ONLY
     assert s.seed_mode is ij.SeedMode.NEVER
+
 
 def test_load_settings_invalid_enum_raises(monkeypatch):
     monkeypatch.setenv("STITCH_DB_SCHEMA_MODE", "no-such-mode")
@@ -23,6 +25,7 @@ def test_load_settings_invalid_enum_raises(monkeypatch):
 
 
 # ---------- classify_db_state tests (mock sqlalchemy.inspect) ----------
+
 
 class DummyInspector:
     def __init__(self, table_names):
@@ -42,13 +45,17 @@ def test_classify_db_state_empty(monkeypatch):
     assert state == "empty"
     assert existing == set()
 
+
 def test_classify_db_state_ok(monkeypatch):
-    monkeypatch.setattr(ij, "inspect", lambda engine: DummyInspector(["users", "resources", "other"]))
+    monkeypatch.setattr(
+        ij, "inspect", lambda engine: DummyInspector(["users", "resources", "other"])
+    )
     dummy_engine = object()
     expected = {"users", "resources"}
     state, existing = ij.classify_db_state(dummy_engine, expected)
     assert state == "ok"
     assert "users" in existing and "resources" in existing
+
 
 def test_classify_db_state_partial(monkeypatch):
     monkeypatch.setattr(ij, "inspect", lambda engine: DummyInspector(["users"]))
@@ -60,6 +67,7 @@ def test_classify_db_state_partial(monkeypatch):
 
 
 # ---------- seed_already_applied tests (mock engine.connect()) ----------
+
 
 class DummyConnCtx:
     def __init__(self, first_value):
@@ -87,12 +95,14 @@ def test_seed_already_applied_true():
     engine = make_engine_with_connect_returning(True)
     assert ij.seed_already_applied(engine, "dev") is True
 
+
 def test_seed_already_applied_false():
     engine = make_engine_with_connect_returning(False)
     assert ij.seed_already_applied(engine, "dev") is False
 
 
 # ---------- advisory lock tests (mock connection) ----------
+
 
 def test_acquire_release_lock_calls_execute():
     # create a mock connection (not engine) that has execute
@@ -109,4 +119,3 @@ def test_acquire_release_lock_calls_execute():
     conn.execute.assert_called()
     sql_text = str(conn.execute.call_args[0][0])
     assert "pg_advisory_unlock" in sql_text or "pg_try_advisory_unlock" in sql_text
-
