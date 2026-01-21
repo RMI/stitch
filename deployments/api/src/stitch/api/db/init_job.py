@@ -437,7 +437,14 @@ def main() -> None:
         print("[db-init] done.", flush=True)
     finally:
         print("[db-init] releasing advisory lock...", flush=True)
-        release_lock(engine)
+        try:
+            release_lock(engine)
+        except Exception as e:
+            print(
+                f"[db-init] ERROR releasing advisory lock: {e}",
+                file=sys.stderr,
+                flush=True,
+            )
         engine.dispose()
 
 
