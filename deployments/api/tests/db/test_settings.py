@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from pydantic import HttpUrl, SecretStr, TypeAdapter, ValidationError
+from pydantic import SecretStr, TypeAdapter, ValidationError
 
 from stitch.api.settings import OriginUrl, PostgresConfig, Settings, SqliteConfig
 

@@ -103,10 +103,14 @@ class TestCorsMiddleware:
             },
         )
 
-        allowed_methods_header = response.headers.get("Access-Control-Allow-Methods", "")
+        allowed_methods_header = response.headers.get(
+            "Access-Control-Allow-Methods", ""
+        )
 
         for method in ALLOWED_METHODS:
-            assert method in allowed_methods_header, f"Method {method} not in allowed methods"
+            assert method in allowed_methods_header, (
+                f"Method {method} not in allowed methods"
+            )
 
     @pytest.mark.anyio
     async def test_allowed_headers_in_preflight_response(
@@ -122,7 +126,9 @@ class TestCorsMiddleware:
             },
         )
 
-        allowed_headers_header = response.headers.get("Access-Control-Allow-Headers", "")
+        allowed_headers_header = response.headers.get(
+            "Access-Control-Allow-Headers", ""
+        )
 
         for header in ALLOWED_HEADERS:
             assert header.lower() in allowed_headers_header.lower(), (
