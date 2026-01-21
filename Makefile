@@ -3,7 +3,7 @@ PYTEST := $(UV) run pytest
 RUFF := $(UV) run ruff
 
 # Aggregate check: can be run in parallel with -j
-check: lint test format-check
+check: lint test format-check lock-check
 	@echo "All checks passed."
 
 lint: uv-lint frontend-lint
@@ -13,6 +13,8 @@ test: uv-test frontend-test
 format: uv-format frontend-format
 
 format-check: uv-format-check frontend-format-check
+
+lock-check: uv-lock-check
 
 uv-lint: uv-dev
 	$(RUFF) check
@@ -38,6 +40,9 @@ uv-sync-dev:
 
 uv-sync-all:
 	$(UV) sync --group dev --all-packages --extra cli
+
+uv-lock-check:
+	$(UV) lock --check
 
 # ---------------------------------------------------------------------
 # Packages and source discovery
@@ -152,4 +157,5 @@ frontend-clean:
         uv-dev \
         schema stitch-core cli \
         clean-build clean-cache \
+        lock-check uv-lock-check \
         frontend frontend-install frontend-build frontend-test frontend-lint frontend-dev frontend-clean frontend-format frontend-format-check

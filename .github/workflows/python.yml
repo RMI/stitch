@@ -21,6 +21,10 @@ jobs:
     name: "Linting"
     uses: ./.github/workflows/python-lint.yml
 
+  lock-check:
+    name: "Check Lockfile"
+    uses: ./.github/workflows/python-lock-check.yml
+
   format:
     name: "Format"
     uses: ./.github/workflows/python-format.yml
