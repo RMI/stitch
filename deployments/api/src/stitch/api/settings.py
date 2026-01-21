@@ -3,7 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
-from pydantic import HttpUrl, SecretStr
+from pydantic import AfterValidator, HttpUrl, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -56,10 +56,23 @@ class SqliteConfig(BaseSettings):
         return URL.create(drivername="sqlite+aiosqlite", database=db)
 
 
+def _validate_origin(url: HttpUrl):
+    if url.path and url.path != "/":
+        raise ValueError("URL must be an origin with no path")
+    if url.query:
+        raise ValueError("URL must be an origin with no query string")
+    if url.fragment:
+        raise ValueError("URL must be an origin with no fragment")
+    return url
+
+
+OriginUrl = Annotated[HttpUrl, AfterValidator(_validate_origin)]
+
+
 class Settings(BaseSettings):
     environment: Environment = Environment.DEV
     dialect: Dialect = "postgresql"
-    frontend_url: HttpUrl = HttpUrl("http://localhost")
+    frontend_origin_url: OriginUrl = HttpUrl("http://localhost:3000")
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env",

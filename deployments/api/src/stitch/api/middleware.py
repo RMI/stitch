@@ -22,7 +22,7 @@ ALLOWED_HEADERS: Final[tuple[str, ...]] = (
 def register_middlewares(application: FastAPI, settings: Settings):
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=[str(settings.frontend_url).rstrip("/")],
+        allow_origins=[str(settings.frontend_origin_url).rstrip("/")],
         allow_credentials=True,
         allow_methods=ALLOWED_METHODS,
         allow_headers=ALLOWED_HEADERS,
