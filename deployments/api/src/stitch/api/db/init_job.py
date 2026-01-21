@@ -1,5 +1,23 @@
-# deployments/api/src/stitch/api/db/init_job.py
 from __future__ import annotations
+
+"""
+DB init/seed job.
+
+This module is intended to be run as a one-shot job (e.g. a `db-init` service)
+*before* the API starts. It can:
+  - create schema from SQLAlchemy metadata if the DB is empty
+  - fail fast on partial/mismatched schemas (no auto-healing)
+  - apply a seed profile once and record that it ran
+
+Role separation / env vars:
+  - The recommended setup uses two Postgres roles:
+      * migrator/seeder role: DDL + seed (used by the init job)
+      * app role: no DDL (used by the API)
+  - Set STITCH_DB_USER / STITCH_DB_PASSWORD on a per-service basis to choose
+    which role connects (migrator for `db-init`, app for `api`).
+  - POSTGRES_* variables are supported as a fallback for local convenience and
+    backwards compatibility.
+"""
 
 import os
 import sys
@@ -61,8 +79,11 @@ def _env(name: str, default: str = "") -> str:
 
 def build_db_url() -> str:
     """
-    Prefer DATABASE_URL. Otherwise build from POSTGRES_* or STITCH_* envvars.
-    Use STITCH_DB_* for role separation (app vs migrator).
+    Prefer DATABASE_URL. Otherwise build from env vars.
+
+    Recommended: use STITCH_DB_USER/STITCH_DB_PASSWORD to select the connecting
+    role per service (migrator for db-init, app for api). POSTGRES_USER/
+    POSTGRES_PASSWORD are supported as a fallback.
     """
     url = _env("DATABASE_URL")
     if url:
