@@ -380,7 +380,7 @@ def seed_dev(engine) -> None:
     )
 
 
-def seed(engine, profile: str) -> None:
+def seed(engine, profile: SeedProfile | str) -> None:
     if profile == "dev":
         seed_dev(engine)
         return
