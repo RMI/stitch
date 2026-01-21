@@ -144,24 +144,28 @@ def release_lock(engine) -> None:
 
 
 def ensure_meta_tables(engine) -> None:
-    ddl = f"""
-    CREATE TABLE IF NOT EXISTS {META_SCHEMA_TABLE} (
-      id INTEGER PRIMARY KEY DEFAULT 1,
-      schema_version TEXT NOT NULL,
-      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS {META_SEED_TABLE} (
-      profile TEXT PRIMARY KEY,
-      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    """
     with engine.begin() as conn:
-        for stmt in ddl.split(";"):
-            s = stmt.strip()
-            if s:
-                conn.execute(text(s))
-
+        conn.execute(
+            text(
+                f"""
+                CREATE TABLE IF NOT EXISTS {META_SCHEMA_TABLE} (
+                  id INTEGER PRIMARY KEY DEFAULT 1,
+                  schema_version TEXT NOT NULL,
+                  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                f"""
+                CREATE TABLE IF NOT EXISTS {META_SEED_TABLE} (
+                  profile TEXT PRIMARY KEY,
+                  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+        )
 
 def mark_schema_version(engine, version: str) -> None:
     with engine.begin() as conn:
