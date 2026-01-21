@@ -296,8 +296,8 @@ def create_seed_sources():
     for i, src in enumerate(rmi_sources, start=1):
         src.id = i
 
-    # your enum exists in DDL generation; leaving here for completeness
-    # (table creation comes from metadata anyway)
+    # CC Reservoir sources are intentionally omitted from the dev seed profile;
+    # the CCReservoirsSourceModel table is still created from SQLAlchemy metadata.
     cc_sources: list[CCReservoirsSourceModel] = []
 
     return gem_sources, wm_sources, rmi_sources, cc_sources
