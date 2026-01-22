@@ -1,4 +1,5 @@
 UV ?= uv
+DOCKER_COMPOSE := docker compose
 PYTEST := $(UV) run pytest
 RUFF := $(UV) run ruff
 
@@ -49,7 +50,7 @@ uv-lock-check:
 # ---------------------------------------------------------------------
 all: build-python cli frontend
 build-python: schema stitch-core
-clean: clean-build clean-cache frontend-clean
+clean: clean-build clean-cache frontend-clean clean-docker
 
 clean-build:
 	rm -rf build dist
@@ -149,6 +150,13 @@ frontend-clean:
 	rm -rf $(FRONTEND_DIR)/dist $(FRONTEND_DIR)/node_modules \
 	       $(FRONTEND_INSTALL_STAMP) $(FRONTEND_BUILD_STAMP)
 
+# docker
+clean-docker:
+	$(DOCKER_COMPOSE) down --volumes --remove-orphans
+
+dev-docker:
+	$(DOCKER_COMPOSE) up
+
 .PHONY: all build clean \
         build-python \
         check lint test format format-check \
@@ -158,4 +166,5 @@ frontend-clean:
         schema stitch-core cli \
         clean-build clean-cache \
         lock-check uv-lock-check \
+        clean-docker dev-docker \
         frontend frontend-install frontend-build frontend-test frontend-lint frontend-dev frontend-clean frontend-format frontend-format-check
