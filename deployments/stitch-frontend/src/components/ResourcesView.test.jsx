@@ -77,7 +77,9 @@ describe("ResourcesView", () => {
     const fetchButton = screen.getByRole("button", { name: /fetch/i });
     await user.click(fetchButton);
 
-    expect(screen.getByRole("button", { name: /loading/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /loading/i }),
+    ).toBeInTheDocument();
   });
 
   it("displays error message when fetch fails", async () => {

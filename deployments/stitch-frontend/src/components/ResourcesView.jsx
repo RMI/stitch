@@ -21,7 +21,10 @@ export default function ResourcesView({ className, endpoint }) {
       </div>
       <div className="mb-6 flex gap-3">
         <FetchButton onFetch={() => refetch()} isLoading={isLoading} />
-        <ClearCacheButton onClear={handleClear} disabled={!data?.length && !isError} />
+        <ClearCacheButton
+          onClear={handleClear}
+          disabled={!data?.length && !isError}
+        />
       </div>
       <ResourcesList
         resources={data}

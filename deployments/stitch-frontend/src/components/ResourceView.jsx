@@ -24,7 +24,9 @@ export default function ResourceView({ className, endpoint }) {
 
   return (
     <div className={`max-w-4xl mx-auto ${className}`}>
-      <h1 className="text-3xl font-bold mb-3 text-gray-800">Resource ID: {id}</h1>
+      <h1 className="text-3xl font-bold mb-3 text-gray-800">
+        Resource ID: {id}
+      </h1>
       <div className=" text-gray-500 pb-4">
         <span className="font-bold">
           {import.meta.env.VITE_API_URL}
