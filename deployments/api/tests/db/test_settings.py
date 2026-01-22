@@ -2,9 +2,10 @@
 
 from pathlib import Path
 
-from pydantic import SecretStr
+import pytest
+from pydantic import SecretStr, TypeAdapter, ValidationError
 
-from stitch.api.settings import PostgresConfig, Settings, SqliteConfig
+from stitch.api.settings import OriginUrl, PostgresConfig, Settings, SqliteConfig
 
 
 class TestPostgresConfig:
@@ -79,6 +80,51 @@ class TestSqliteConfig:
         assert url.database == str(db_file)
 
 
+class TestOriginUrlValidation:
+    """Tests for OriginUrl type validation."""
+
+    def test_valid_origin_url(self):
+        """Valid origin without path/query/fragment passes."""
+        adapter = TypeAdapter(OriginUrl)
+
+        result = adapter.validate_python("http://localhost:3000")
+
+        assert str(result) == "http://localhost:3000/"
+
+    def test_valid_origin_url_with_trailing_slash(self):
+        """Origin with "/" path passes."""
+        adapter = TypeAdapter(OriginUrl)
+
+        result = adapter.validate_python("http://localhost:3000/")
+
+        assert str(result) == "http://localhost:3000/"
+
+    def test_rejects_url_with_path(self):
+        """URL with path raises ValueError."""
+        adapter = TypeAdapter(OriginUrl)
+
+        with pytest.raises(ValidationError, match="URL must be an origin with no path"):
+            adapter.validate_python("http://localhost:3000/api/v1")
+
+    def test_rejects_url_with_query_string(self):
+        """URL with query raises ValueError."""
+        adapter = TypeAdapter(OriginUrl)
+
+        with pytest.raises(
+            ValidationError, match="URL must be an origin with no query string"
+        ):
+            adapter.validate_python("http://localhost:3000?foo=bar")
+
+    def test_rejects_url_with_fragment(self):
+        """URL with fragment raises ValueError."""
+        adapter = TypeAdapter(OriginUrl)
+
+        with pytest.raises(
+            ValidationError, match="URL must be an origin with no fragment"
+        ):
+            adapter.validate_python("http://localhost:3000#section")
+
+
 class TestSettings:
     """Tests for Settings dialect switching."""
 
@@ -114,3 +160,10 @@ class TestSettings:
         settings = Settings()
 
         assert settings.environment.value == "dev"
+
+    def test_default_frontend_origin_url(self, monkeypatch):
+        """Verify default frontend origin URL is http://localhost:3000."""
+        monkeypatch.delenv("FRONTEND_ORIGIN_URL", raising=False)
+        settings = Settings(_env_file=None)
+
+        assert str(settings.frontend_origin_url) == "http://localhost:3000/"

@@ -28,6 +28,8 @@ function ResourcesList({ resources, isLoading, isError, error }) {
             </span>
           ))}
         </ul>
+        <hr className="my-4" />
+        <pre>{JSON.stringify(resources, null, 2)}</pre>
       </Card>
     );
   }
