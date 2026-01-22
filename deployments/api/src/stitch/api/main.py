@@ -1,5 +1,8 @@
 from contextlib import asynccontextmanager
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import OperationalError
+from starlette.status import HTTP_503_SERVICE_UNAVAILABLE
 from .middleware import register_middlewares
 from .db.config import dispose_engine
 from .settings import get_settings
@@ -25,3 +28,14 @@ settings = get_settings()
 register_middlewares(application=app, settings=settings)
 
 app.include_router(base_router)
+
+
+# Global exception handler
+# - this will catch all exceptions of this type, incl. things like db constraint violations
+# - we can refine and narrow the scope at a a later point
+@app.exception_handler(OperationalError)
+async def db_unavailable_handler(_request: Request, _exc: OperationalError):
+    return JSONResponse(
+        status_code=HTTP_503_SERVICE_UNAVAILABLE,
+        content={"detail": "Database unavailable."},
+    )
