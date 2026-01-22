@@ -6,35 +6,44 @@ services:
       dockerfile: deployments/api/Dockerfile
     volumes:
       - ./deployments/api/src:/app/src
+    env_file:
+      - .env
     environment:
       LOG_LEVEL: info
       POSTGRES_DB: stitch
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
+      # API connects as the app role (no DDL)
+      STITCH_DB_USER: stitch_app
+      STITCH_DB_PASSWORD: ${STITCH_APP_PASSWORD}
+
     ports:
     - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
 
   db:
     image: postgres:17-alpine
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-stitch} || exit 1"]
       interval: 10s
-      timeout: 1s
-      retries: 5
-      start_period: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
       start_interval: 1s
     env_file:
       - .env
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
     ports:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
-      - ./deployments/api/scripts/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./deployments/db/00-init-roles.sh:/docker-entrypoint-initdb.d/00-init-roles.sh:ro
 
   adminer:
     image: adminer:latest
@@ -44,15 +53,26 @@ services:
       db:
         condition: service_healthy
 
-  seed:
+
+  db-init:
     build:
       context: .
-      dockerfile: deployments/db/Dockerfile
+      dockerfile: deployments/api/Dockerfile
     env_file:
       - .env
+    environment:
+      STITCH_DB_SCHEMA_MODE: "if-empty"
+      STITCH_DB_SEED_MODE: "if-needed"
+      STITCH_DB_SEED_PROFILE: "dev"
+      # db-init connects as the migrator role (DDL + seed)
+      STITCH_DB_USER: stitch_migrator
+      STITCH_DB_PASSWORD: ${STITCH_MIGRATOR_PASSWORD}
+
     depends_on:
       db:
         condition: service_healthy
+    command: ["python", "-m", "stitch.api.db.init_job"]
+    restart: "no"
 
   frontend:
     build:
