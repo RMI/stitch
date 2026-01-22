@@ -12,7 +12,7 @@ describe("App", () => {
 
   it("renders Resource heading", () => {
     renderWithQueryClient(<App />);
-    const heading = screen.getByText(/^Resource \d+$/i);
+    const heading = screen.getByText(/^Resource ID: \d+$/i);
     expect(heading).toBeInTheDocument();
   });
 
@@ -23,6 +23,6 @@ describe("App", () => {
     expect(screen.getByText(/^Resources$/i)).toBeInTheDocument();
 
     // Check for ResourceView content
-    expect(screen.getByText(/^Resource \d+$/i)).toBeInTheDocument();
+    expect(screen.getByText(/^Resource ID: \d+$/i)).toBeInTheDocument();
   });
 });

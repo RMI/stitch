@@ -16,7 +16,7 @@ describe("ResourceView", () => {
   it("renders heading with default ID and endpoint information", () => {
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    expect(screen.getByText(/^Resource \d+$/)).toBeInTheDocument();
+    expect(screen.getByText(/^Resource ID: \d+$/)).toBeInTheDocument();
     expect(screen.getByText(/\/api\/v1\/resources\//)).toBeInTheDocument();
   });
 
@@ -51,7 +51,7 @@ describe("ResourceView", () => {
     await user.type(input, "42");
 
     expect(input).toHaveValue(42);
-    expect(screen.getByText(/^Resource 42$/)).toBeInTheDocument();
+    expect(screen.getByText(/^Resource ID: 42$/)).toBeInTheDocument();
   });
 
   it("fetches resource when Fetch button is clicked", async () => {
