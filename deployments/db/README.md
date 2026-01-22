@@ -25,25 +25,57 @@ This directory contains resources for building and running the development Postg
   ```
   This deletes the volume and triggers reseeding.
 
-## Environment Variables
+## Deployment
 
-- Connection details (database name, user, password, host, port) are set via environment variables.
-- See `.env.example` in the project root for sample configuration.
+### Manual Process
 
-## Manual Seeding
+Create a Resource: "Azure Database for PostgreSQL Flexible Server"
 
-If you need to rerun the seed script manually:
+#### Basics
 
-1. Exec into the running container:
-   ```bash
-   docker exec -it <container_name> bash
-   ```
-2. Run the seed script:
-   ```bash
-   python /docker-entrypoint-initdb.d/seed_db.py
-   ```
+* Subscription: `RMI-PROJECT-STITCH_SUB`
+* Resource Group: `STITCH-DB-RG`
+* Region: `West US 2`
+* PostgreSQL version: `17`
+* Workload Type: `Dev/Test`
+* Compute + storage: Click "Configure server"
+  * Cluster options: `Server`
+  * Compute tier: `Burstable`
+  * Compute size: `Standard_B1ms`
+  * Storage type: `Premium SSD`
+  * Storage size: `32 GiB`
+  * Performance tier: `P4 (120 iops)`
+  * Storage autogrow: Unchecked
+  * Zonal resiliency: Disabled
+  * Backup retention period: `7 Days`
+  * Geo-redundancy: Unchecked
+* Zonal resiliency: Disabled
+* Authentication: PostgreSQL and Microsoft Entra Authentication
+* Microsoft Entra administrator: Click "Set admin"
+  * `Admin_Alex@rmi.org`
+* Administrator login: `postgres`
+* Password: Set password and note elsewhere
+* Confirm password
 
-## Troubleshooting
+#### Networking
 
-- If the database does not seed as expected, ensure the volume is removed before restarting.
-- Check container logs for errors during seeding.
+* Connectivity method: `Public access`
+* Check "Allow public access to this resource through the internet using a
+  public IP address"
+* Check "Allow public access from any Azure service within Azure to this server"
+* Click "Add current client IP address"
+  * Consider renaming new rule to something like `Alex_IPAddress_2026-1-22_13-26-17`
+* *DO NOT CLICK* "Add 0.0.0.0 - 255.255.255.255"
+* No Private endpoints
+
+#### Security
+
+* Data encryption key: `Service-managed key`
+
+#### Tags
+
+* as appropriate
+
+#### Review and Create
+
+Click Create, then visit your new DB.
