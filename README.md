@@ -17,4 +17,5 @@ To quickly start a seeded PostgreSQL development database:
    ```
 
 This launches PostgreSQL and seeds it with example data.  
-For advanced details on seeding, persistence, and customizing the database, see [deployments/db/README.md](deployments/db/README.md).
+
+With the application up in docker, you can visit `localhost:3000` to visit
