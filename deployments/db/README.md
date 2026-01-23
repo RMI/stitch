@@ -89,7 +89,7 @@ In the Web UI, under "Settings"/"Databases" on the left menu, view the existing
 databases.
 If the `stitch` database does not exist, create it.
 
-##### Run init Roles init script
+##### Run Roles init script
 
 test your connection (assuming you have psql tools installed locally):
 ```bash
