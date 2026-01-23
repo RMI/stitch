@@ -89,11 +89,14 @@ In the Web UI, under "Settings"/"Databases" on the left menu, view the existing
 databases.
 If the `stitch` database does not exist, create it.
 
-##### Run init script
+##### Run init Roles init script
 
 test your connection (assuming you have psql tools installed locally):
 ```bash
 pg_isready -d stitch -U postgres -h stitch-deploy-test.postgres.database.azure.com 
+
+psql -c "\\q" -d stitch -U postgres -h stitch-deploy-test.postgres.database.azure.com
+
 ```
 
 Change the host above with the "Endpoint" from the resource main view,
@@ -109,3 +112,58 @@ POSTGRES_DB=stitch \
     STITCH_APP_PASSWORD=CHANGE_ME456! \
     deployments/db/00-init-roles.sh
 ```
+
+Then check that you can connect as the new roles:
+
+```bash
+
+psql -c "\\q" -d stitch -U stitch_migrator -h stitch-deploy-test.postgres.database.azure.com
+psql -c "\\q" -d stitch -U stitch_app -h stitch-deploy-test.postgres.database.azure.com
+
+```
+
+##### Connect with local docker containers
+
+Assuming you have built the docker container for the API locally (with `docker
+compose up api --build` or `docker compose build api`), you should have an image
+called `stitch-api`, and be able to attempt connecting with that container to
+the public DB.
+
+```bash
+
+docker run \
+    -e LOG_LEVEL='info' \
+    -e POSTGRES_DB='stitch' \
+    -e POSTGRES_HOST='stitch-deploy-test.postgres.database.azure.com' \
+    -e POSTGRES_PORT='5432' \
+    -e POSTGRES_USER='stitch_app' \
+    -e POSTGRES_PASSWORD='CHANGE_ME456!' \
+    --rm \
+    -p 8000:8000 \
+    stitch-api:latest
+
+```
+
+If you try to hit the API (i.e. visit `http://localhost:8000/api/v1/resources/2`, then you should get an `500 Internal Server Error`, with a sqlalchemy error along the lines of `realtion "resources" does not exist`.
+This confirms that the API container can sucessfully connect to the DB, but the DDL operations and seeding have no been done by the `db-init` container.
+
+You can seed the database by connecting with the migrator role, and running the
+init command:
+
+```bash
+
+docker run \
+    -e LOG_LEVEL='info' \
+    -e POSTGRES_DB='stitch' \
+    -e POSTGRES_HOST='stitch-deploy-test.postgres.database.azure.com' \
+    -e POSTGRES_PORT='5432' \
+    -e POSTGRES_USER='stitch_migrator' \
+    -e POSTGRES_PASSWORD='CHANGE_ME123!' \
+    --rm \
+    -p 8000:8000 \
+    stitch-api:latest python -m stitch.api.db.init_job
+
+```
+
+You can then re-connect with the API container (use the command above), and
+should be able to see the seeded dev data through the API.
