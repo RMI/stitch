@@ -8,7 +8,7 @@ To quickly start a seeded PostgreSQL development database:
 
 1. Copy the example environment file:
    ```bash
-   cp .env.example .env
+   cp env.example .env
    ```
 2. Update environment variables in `.env` as needed.
 3. Start the database using Docker Compose:

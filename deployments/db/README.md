@@ -28,7 +28,7 @@ This directory contains resources for building and running the development Postg
 ## Environment Variables
 
 - Connection details (database name, user, password, host, port) are set via environment variables.
-- See `.env.example` in the project root for sample configuration.
+- See `env.example` in the project root for sample configuration.
 
 ## Manual Seeding
 
