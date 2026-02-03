@@ -30,7 +30,7 @@ uv-format: uv-dev
 uv-format-check: uv-dev
 	$(RUFF) format --check
 
-uv-dev: uv-sync-all
+uv-dev: uv-sync-dev
 
 uv-sync:
 	$(UV) sync
