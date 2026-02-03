@@ -21,7 +21,6 @@ uv-lint: uv-dev
 	$(RUFF) check
 
 uv-test: uv-dev
-	$(PYTEST) packages/schema
 	$(PYTEST) packages/stitch-core
 	$(PYTEST) deployments/api
 
@@ -46,7 +45,7 @@ uv-lock-check:
 # Packages and source discovery
 # ---------------------------------------------------------------------
 all: build-python frontend
-build-python: schema stitch-core
+build-python: stitch-core
 clean: clean-build clean-cache frontend-clean clean-docker
 
 clean-build:
@@ -54,16 +53,6 @@ clean-build:
 clean-cache:
 	rm -rf .ruff_cache .pytest_cache
 
-SCHEMA_DIR := packages/schema
-SCHEMA_SRCS := $(shell find $(SCHEMA_DIR) -name '*.py' -o -name 'pyproject.toml')
-SCHEMA_STAMP := build/schema.stamp
-
-schema: $(SCHEMA_STAMP)
-
-$(SCHEMA_STAMP): $(SCHEMA_SRCS)
-	mkdir -p $(@D)
-	$(UV) build $(SCHEMA_DIR)
-	touch $@
 
 STITCHCORE_DIR := packages/stitch-core
 STITCHCORE_SRCS := $(shell find $(STITCHCORE_DIR) -name '*.py' -o -name 'pyproject.toml')
@@ -149,7 +138,7 @@ dev-docker:
         uv-lint uv-test uv-format uv-format-check \
         uv-sync uv-sync-dev uv-sync-all \
         uv-dev \
-        schema stitch-core \
+        stitch-core \
         clean-build clean-cache \
         lock-check uv-lock-check \
         clean-docker dev-docker \
