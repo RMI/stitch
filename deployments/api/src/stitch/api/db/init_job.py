@@ -264,6 +264,7 @@ def create_seed_user() -> UserModel:
         email="seed@example.com",
     )
 
+
 def create_dev_user() -> UserModel:
     dev_user = get_current_user()
     print("[db-init] getting info for Dev User...", flush=True)
