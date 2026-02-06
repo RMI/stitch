@@ -7,7 +7,11 @@ requires-python = ">=3.12"
 dependencies = ["stitch-core"]
 
 [tool.uv.workspace]
-members = ["deployments/api", "packages/stitch-core"]
+members = [
+    "deployments/api",
+    "packages/stitch-core",
+    "packages/stitch-resources",
+]
 
 [tool.uv.sources]
 stitch-core = { workspace = true }

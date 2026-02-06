@@ -7,6 +7,7 @@ members = [
     "stitch",
     "stitch-api",
     "stitch-core",
+    "stitch-resources",
 ]
 
 [[package]]
@@ -971,9 +972,11 @@ source = { editable = "deployments/api" }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
     { name = "greenlet" },
+    { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "sqlalchemy" },
     { name = "stitch-core" },
+    { name = "stitch-resources" },
 ]
 
 [package.dev-dependencies]
@@ -988,9 +991,11 @@ dev = [
 requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.124.0" },
     { name = "greenlet", specifier = ">=3.3.0" },
+    { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
     { name = "sqlalchemy", specifier = ">=2.0.44" },
     { name = "stitch-core", editable = "packages/stitch-core" },
+    { name = "stitch-resources", editable = "packages/stitch-resources" },
 ]
 
 [package.metadata.requires-dev]
@@ -1019,6 +1024,17 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.11.0" },
     { name = "sqlalchemy", specifier = ">=2.0.44" },
 ]
+
+[[package]]
+name = "stitch-resources"
+version = "0.1.0"
+source = { editable = "packages/stitch-resources" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.12.5" }]
 
 [[package]]
 name = "typer"
