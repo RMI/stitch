@@ -4,8 +4,9 @@ services:
     build:
       context: .
       dockerfile: deployments/api/Dockerfile
+      target: dev
     volumes:
-      - ./deployments/api/src:/app/src
+      - .:/app
     env_file:
       - .env
     environment:
@@ -58,6 +59,9 @@ services:
     build:
       context: .
       dockerfile: deployments/api/Dockerfile
+      target: dev
+    volumes:
+      - .:/app
     env_file:
       - .env
     environment:
