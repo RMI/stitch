@@ -19,6 +19,8 @@ from stitch.api.entities import (
     CCReservoirsData,
     WMSource,
 )
+from stitch.api.sources import OilAndGasFieldSource
+from stitch.resources.ogsi import OilAndGasFieldSourceData
 
 
 def float_constraint(
@@ -72,6 +74,10 @@ class SourceBase(Base, Generic[TModelIn, TModelOut]):
         column_keys = {col.key for col in mapper.columns}
         filtered = {k: v for k, v in entity.model_dump().items() if k in column_keys}
         return cls(**filtered)
+
+
+class GemSourceModel_(SourceBase[OilAndGasFieldSourceData, OilAndGasFieldSource]):
+    __tablename__ = "gem_field_sources"
 
 
 class GemSourceModel(SourceBase[GemData, GemSource]):
