@@ -20,7 +20,6 @@ from stitch.api.entities import (
 )
 
 from .model import (
-    CCReservoirsSourceModel,
     GemSourceModel,
     MembershipModel,
     RMIManualSourceModel,
@@ -144,13 +143,11 @@ async def create_source_data(session: AsyncSession, data: CreateSourceData):
     gems = tuple(GemSourceModel.from_entity(gem) for gem in data.gem)
     wms = tuple(WMSourceModel.from_entity(wm) for wm in data.wm)
     rmis = tuple(RMIManualSourceModel.from_entity(rmi) for rmi in data.rmi)
-    ccs = tuple(CCReservoirsSourceModel.from_entity(cc) for cc in data.cc)
 
-    session.add_all(gems + wms + rmis + ccs)
+    session.add_all(gems + wms + rmis)
     await session.flush()
     return SourceData(
         gem={g.id: g.as_entity() for g in gems},
         wm={wm.id: wm.as_entity() for wm in wms},
         rmi={rmi.id: rmi.as_entity() for rmi in rmis},
-        cc={cc.id: cc.as_entity() for cc in ccs},
     )

@@ -14,7 +14,6 @@ from stitch.api.db.model import (
 from stitch.api.entities import CreateSourceData, GemData, User, WMData
 
 from tests.utils import (
-    make_cc_data,
     make_create_resource,
     make_empty_resource,
     make_gem_data,
@@ -77,7 +76,9 @@ class TestCreateResourceActionIntegration:
     ):
         """New GEM source creates resource, source, and membership."""
         resource_in = make_resource_with_new_sources(
-            gem=make_gem_data(name="Test GEM Field", lat=40.0, lon=-100.0).model,
+            gem=make_gem_data(
+                name="Test GEM Field", latitude=40.0, longitude=-100.0
+            ).model,
             name="With GEM",
         )
 
@@ -123,12 +124,11 @@ class TestCreateResourceActionIntegration:
         seeded_integration_session: AsyncSession,
         test_user: User,
     ):
-        """Resource with all four source types creates correct memberships."""
+        """Resource with all three source types creates correct memberships."""
         source_data = make_source_data(
             gem=[make_gem_data(name="All Types GEM").model],
-            wm=[make_wm_data(field_name="All Types WM").model],
-            rmi=[make_rmi_data(name_override="All Types RMI").model],
-            cc=[make_cc_data(name="All Types CC").model],
+            wm=[make_wm_data(name="All Types WM").model],
+            rmi=[make_rmi_data(name="All Types RMI").model],
         )
         resource_in = make_create_resource(
             name="All Sources Resource",
@@ -154,7 +154,7 @@ class TestCreateResourceActionIntegration:
         )
 
         sources = {m.source for m in memberships}
-        assert sources == {"gem", "wm", "rmi", "cc"}
+        assert sources == {"gem", "wm", "rmi"}
 
     @pytest.mark.anyio
     async def test_creates_resource_with_existing_gem_id(
@@ -393,11 +393,15 @@ class TestCreateSourceDataActionIntegration:
         """Bulk create sources returns SourceData with assigned IDs."""
         source_data = CreateSourceData(
             gem=[
-                GemData(name="Bulk GEM 1", lat=40.0, lon=-100.0, country="USA"),
-                GemData(name="Bulk GEM 2", lat=41.0, lon=-101.0, country="CAN"),
+                GemData(
+                    name="Bulk GEM 1", latitude=40.0, longitude=-100.0, country="USA"
+                ),
+                GemData(
+                    name="Bulk GEM 2", latitude=41.0, longitude=-101.0, country="CAN"
+                ),
             ],
             wm=[
-                WMData(field_name="Bulk WM", field_country="USA", production=5000.0),
+                WMData(name="Bulk WM", country="USA"),
             ],
         )
 

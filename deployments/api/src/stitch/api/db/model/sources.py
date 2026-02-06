@@ -3,21 +3,13 @@
 from collections.abc import Mapping, MutableMapping
 from typing import Final, Generic, TypeVar, TypedDict, get_args, get_origin
 from pydantic import BaseModel
-from sqlalchemy import CheckConstraint, inspect
+from sqlalchemy import CheckConstraint, DateTime, Float, Integer, String, inspect
 from sqlalchemy.orm import Mapped, mapped_column
 from .common import Base
-from .types import PORTABLE_BIGINT, StitchJson
+from .types import PORTABLE_BIGINT, PORTABLE_JSON
 from stitch.api.entities import (
-    CCReservoirsSource,
-    GemSource,
     IdType,
-    RMIManualSource,
     SourceKey,
-    WMData,
-    GemData,
-    RMIManualData,
-    CCReservoirsData,
-    WMSource,
 )
 from stitch.api.sources import OilAndGasFieldSource
 from stitch.resources.ogsi import OilAndGasFieldSourceData
@@ -40,6 +32,10 @@ def lon_constraints(colname: str):
     return float_constraint(colname, -180, 180)
 
 
+def year_constraints(colname: str):
+    return float_constraint(colname, 1800, 2100)
+
+
 TModelIn = TypeVar("TModelIn", bound=BaseModel)
 TModelOut = TypeVar("TModelOut", bound=BaseModel)
 
@@ -52,6 +48,41 @@ class SourceBase(Base, Generic[TModelIn, TModelOut]):
     id: Mapped[int] = mapped_column(
         PORTABLE_BIGINT, primary_key=True, autoincrement=True
     )
+
+    # All OilAndGasFieldSourceData columns
+    name: Mapped[str | None] = mapped_column(String, nullable=True)
+    country: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    latitude: Mapped[float | None] = mapped_column(
+        Float, lat_constraints("latitude"), nullable=True
+    )
+    longitude: Mapped[float | None] = mapped_column(
+        Float, lon_constraints("longitude"), nullable=True
+    )
+    last_updated: Mapped[str | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    name_local: Mapped[str | None] = mapped_column(String, nullable=True)
+    state_province: Mapped[str | None] = mapped_column(String, nullable=True)
+    region: Mapped[str | None] = mapped_column(String, nullable=True)
+    basin: Mapped[str | None] = mapped_column(String, nullable=True)
+    owners: Mapped[list | None] = mapped_column(PORTABLE_JSON, nullable=True)
+    operators: Mapped[list | None] = mapped_column(PORTABLE_JSON, nullable=True)
+    location_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    production_conventionality: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )
+    primary_hydrocarbon_group: Mapped[str | None] = mapped_column(String, nullable=True)
+    reservoir_formation: Mapped[str | None] = mapped_column(String, nullable=True)
+    discovery_year: Mapped[int | None] = mapped_column(
+        Integer, year_constraints("discovery_year"), nullable=True
+    )
+    production_start_year: Mapped[int | None] = mapped_column(
+        Integer, year_constraints("production_start_year"), nullable=True
+    )
+    fid_year: Mapped[int | None] = mapped_column(
+        Integer, year_constraints("fid_year"), nullable=True
+    )
+    field_status: Mapped[str | None] = mapped_column(String, nullable=True)
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
@@ -76,72 +107,33 @@ class SourceBase(Base, Generic[TModelIn, TModelOut]):
         return cls(**filtered)
 
 
-class GemSourceModel_(SourceBase[OilAndGasFieldSourceData, OilAndGasFieldSource]):
-    __tablename__ = "gem_field_sources"
-
-
-class GemSourceModel(SourceBase[GemData, GemSource]):
+class GemSourceModel(SourceBase[OilAndGasFieldSourceData, OilAndGasFieldSource]):
     __tablename__ = "gem_sources"
 
-    name: Mapped[str]
-    country: Mapped[str]
-    lat: Mapped[float] = mapped_column(lat_constraints("lat"))
-    lon: Mapped[float] = mapped_column(lon_constraints("lon"))
 
-
-class WMSourceModel(SourceBase[WMData, WMSource]):
+class WMSourceModel(SourceBase[OilAndGasFieldSourceData, OilAndGasFieldSource]):
     __tablename__ = "wm_sources"
 
-    field_name: Mapped[str]
-    field_country: Mapped[str]
-    production: Mapped[float]
 
-
-class RMIManualSourceModel(SourceBase[RMIManualData, RMIManualSource]):
+class RMIManualSourceModel(SourceBase[OilAndGasFieldSourceData, OilAndGasFieldSource]):
     __tablename__ = "rmi_manual_sources"
 
-    name_override: Mapped[str | None]
-    gwp: Mapped[float | None]
-    gor: Mapped[float | None | None] = mapped_column(
-        float_constraint("gor", 0, 1), nullable=True
-    )
-    country: Mapped[str | None]
-    latitude: Mapped[float | None] = mapped_column(
-        lat_constraints("latitude"), nullable=True
-    )
-    longitude: Mapped[float | None] = mapped_column(
-        lon_constraints("longitude"), nullable=True
-    )
 
-
-class CCReservoirsSourceModel(SourceBase[CCReservoirsData, CCReservoirsSource]):
-    __tablename__ = "cc_reservoirs_sources"
-
-    name: Mapped[str]
-    basin: Mapped[str]
-    depth: Mapped[float]
-    geofence: Mapped[list[tuple[float, float]]] = mapped_column(StitchJson())
-
-
-SourceModel = (
-    GemSourceModel | WMSourceModel | RMIManualSourceModel | CCReservoirsSourceModel
-)
+SourceModel = GemSourceModel | WMSourceModel | RMIManualSourceModel
 SourceModelCls = type[SourceModel]
 
 SOURCE_TABLES: Final[Mapping[SourceKey, SourceModelCls]] = {
     "gem": GemSourceModel,
     "wm": WMSourceModel,
     "rmi": RMIManualSourceModel,
-    "cc": CCReservoirsSourceModel,
 }
 
 
 class SourceModelData(TypedDict, total=False):
     gem: MutableMapping[IdType, GemSourceModel]
     wm: MutableMapping[IdType, WMSourceModel]
-    cc: MutableMapping[IdType, CCReservoirsSourceModel]
     rmi: MutableMapping[IdType, RMIManualSourceModel]
 
 
 def empty_source_model_data():
-    return SourceModelData(gem={}, wm={}, cc={}, rmi={})
+    return SourceModelData(gem={}, wm={}, rmi={})

@@ -119,10 +119,6 @@ class MembershipModel(TimestampMixin, UserAuditMixin, Base):
 #     def rmi(self) -> list[RMIManualSourceModel]:
 #         return self._owner._rmi_sources
 #
-#     @property
-#     def cc(self) -> list[CCReservoirsSourceModel]:
-#         return self._owner._cc_sources
-#
 #
 # class SourcesDescriptor:
 #     def __get__(self, obj: "ResourceModel | None", objtype: Any = None) -> SourceModels:
@@ -157,9 +153,6 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
     # )
     # _rmi_sources: Mapped[list[RMIManualSourceModel]] = src_relationship(
     #     model=RMIManualSourceModel, source="rmi"
-    # )
-    # _cc_sources: Mapped[list[CCReservoirsSourceModel]] = src_relationship(
-    #     model=CCReservoirsSourceModel, source="cc"
     # )
     #
     # sources: SourceModels = SourcesDescriptor()

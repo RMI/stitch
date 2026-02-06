@@ -28,7 +28,9 @@ class TestResourcesIntegration:
     async def test_create_resource_returns_resource(self, integration_client):
         """POST /resources/ returns the created resource."""
         resource_in = make_resource_with_new_sources(
-            gem=make_gem_data(name="GEM Integration Field", lat=40.0, lon=-100.0).model,
+            gem=make_gem_data(
+                name="GEM Integration Field", latitude=40.0, longitude=-100.0
+            ).model,
             name="Integration Test Resource",
             country="USA",
         )
@@ -46,9 +48,7 @@ class TestResourcesIntegration:
     async def test_create_and_get_resource(self, integration_client):
         """POST creates resource, GET retrieves it."""
         resource_in = make_resource_with_new_sources(
-            wm=make_wm_data(
-                field_name="WM Roundtrip Field", field_country="CAN", production=5000.0
-            ).model,
+            wm=make_wm_data(name="WM Roundtrip Field", country="CAN").model,
             name="Roundtrip Resource",
             country="CAN",
         )
@@ -75,7 +75,7 @@ class TestResourcesIntegration:
         """POST resource is persisted and queryable directly."""
         resource_in = make_resource_with_new_sources(
             gem=make_gem_data(
-                name="GEM Persist Field", lat=25.0, lon=-105.0, country="MEX"
+                name="GEM Persist Field", latitude=25.0, longitude=-105.0, country="MEX"
             ).model,
             name="Persisted Resource",
             country="MEX",

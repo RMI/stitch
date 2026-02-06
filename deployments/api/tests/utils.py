@@ -13,7 +13,6 @@ from typing import Any, Generic, TypeVar
 from pydantic import BaseModel
 
 from stitch.api.entities import (
-    CCReservoirsData,
     CreateResource,
     CreateResourceSourceData,
     GemData,
@@ -39,88 +38,63 @@ class FactoryResult(Generic[T]):
 # Static defaults for each source type (no id - these are for creation)
 GEM_DEFAULTS: dict[str, Any] = {
     "name": "Default GEM Field",
-    "lat": 45.0,
-    "lon": -120.0,
+    "latitude": 45.0,
+    "longitude": -120.0,
     "country": "USA",
 }
 
 WM_DEFAULTS: dict[str, Any] = {
-    "field_name": "Default WM Field",
-    "field_country": "USA",
-    "production": 1000.0,
+    "name": "Default WM Field",
+    "country": "USA",
 }
 
 RMI_DEFAULTS: dict[str, Any] = {
-    "name_override": "Default RMI",
-    "gwp": 25.0,
-    "gor": 0.5,
+    "name": "Default RMI",
     "country": "USA",
     "latitude": 40.0,
     "longitude": -100.0,
 }
 
-CC_DEFAULTS: dict[str, Any] = {
-    "name": "Default CC Reservoir",
-    "basin": "Permian",
-    "depth": 3000.0,
-    "geofence": [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)],
-}
-
 
 def make_gem_data(
     name: str = GEM_DEFAULTS["name"],
-    lat: float = GEM_DEFAULTS["lat"],
-    lon: float = GEM_DEFAULTS["lon"],
+    latitude: float = GEM_DEFAULTS["latitude"],
+    longitude: float = GEM_DEFAULTS["longitude"],
     country: str = GEM_DEFAULTS["country"],
+    **kwargs: Any,
 ) -> FactoryResult[GemData]:
     """Create a GemData with both model and dict representations."""
-    return FactoryResult(model=GemData(name=name, lat=lat, lon=lon, country=country))
-
-
-def make_wm_data(
-    field_name: str = WM_DEFAULTS["field_name"],
-    field_country: str = WM_DEFAULTS["field_country"],
-    production: float = WM_DEFAULTS["production"],
-) -> FactoryResult[WMData]:
-    """Create a WMData with both model and dict representations."""
     return FactoryResult(
-        model=WMData(
-            field_name=field_name, field_country=field_country, production=production
+        model=GemData(
+            name=name, latitude=latitude, longitude=longitude, country=country, **kwargs
         )
     )
 
 
+def make_wm_data(
+    name: str = WM_DEFAULTS["name"],
+    country: str = WM_DEFAULTS["country"],
+    **kwargs: Any,
+) -> FactoryResult[WMData]:
+    """Create a WMData with both model and dict representations."""
+    return FactoryResult(model=WMData(name=name, country=country, **kwargs))
+
+
 def make_rmi_data(
-    name_override: str = RMI_DEFAULTS["name_override"],
-    gwp: float = RMI_DEFAULTS["gwp"],
-    gor: float = RMI_DEFAULTS["gor"],
+    name: str = RMI_DEFAULTS["name"],
     country: str = RMI_DEFAULTS["country"],
     latitude: float = RMI_DEFAULTS["latitude"],
     longitude: float = RMI_DEFAULTS["longitude"],
+    **kwargs: Any,
 ) -> FactoryResult[RMIManualData]:
     """Create an RMIManualData with both model and dict representations."""
     return FactoryResult(
         model=RMIManualData(
-            name_override=name_override,
-            gwp=gwp,
-            gor=gor,
+            name=name,
             country=country,
             latitude=latitude,
             longitude=longitude,
-        )
-    )
-
-
-def make_cc_data(
-    name: str = CC_DEFAULTS["name"],
-    basin: str = CC_DEFAULTS["basin"],
-    depth: float = CC_DEFAULTS["depth"],
-    geofence: Sequence[tuple[float, float]] = CC_DEFAULTS["geofence"],
-) -> FactoryResult[CCReservoirsData]:
-    """Create a CCReservoirsData with both model and dict representations."""
-    return FactoryResult(
-        model=CCReservoirsData(
-            name=name, basin=basin, depth=depth, geofence=list(geofence)
+            **kwargs,
         )
     )
 
@@ -129,7 +103,6 @@ def make_source_data(
     gem: Sequence[GemData | int] | None = None,
     wm: Sequence[WMData | int] | None = None,
     rmi: Sequence[RMIManualData | int] | None = None,
-    cc: Sequence[CCReservoirsData | int] | None = None,
 ) -> FactoryResult[CreateResourceSourceData]:
     """Create CreateResourceSourceData with both model and dict representations.
 
@@ -137,7 +110,6 @@ def make_source_data(
         gem: List of GemData models or existing source IDs
         wm: List of WMData models or existing source IDs
         rmi: List of RMIManualData models or existing source IDs
-        cc: List of CCReservoirsData models or existing source IDs
 
     Returns:
         FactoryResult with model and data (dict) attributes
@@ -147,7 +119,6 @@ def make_source_data(
             gem=list(gem or []),
             wm=list(wm or []),
             rmi=list(rmi or []),
-            cc=list(cc or []),
         )
     )
 
@@ -197,7 +168,6 @@ def make_resource_with_new_sources(
     gem: GemData | Sequence[GemData] | None = None,
     wm: WMData | Sequence[WMData] | None = None,
     rmi: RMIManualData | Sequence[RMIManualData] | None = None,
-    cc: CCReservoirsData | Sequence[CCReservoirsData] | None = None,
     name: str | None = "Resource with Sources",
     country: str | None = "USA",
 ) -> FactoryResult[CreateResource]:
@@ -214,7 +184,6 @@ def make_resource_with_new_sources(
         gem=to_list(gem),
         wm=to_list(wm),
         rmi=to_list(rmi),
-        cc=to_list(cc),
     )
     return make_create_resource(name=name, country=country, source_data=source_data)
 
@@ -223,7 +192,6 @@ def make_resource_with_existing_ids(
     gem_ids: Sequence[int] | None = None,
     wm_ids: Sequence[int] | None = None,
     rmi_ids: Sequence[int] | None = None,
-    cc_ids: Sequence[int] | None = None,
     name: str | None = "Resource with Existing Sources",
     country: str | None = "USA",
 ) -> FactoryResult[CreateResource]:
@@ -232,7 +200,6 @@ def make_resource_with_existing_ids(
         gem=list(gem_ids or []),
         wm=list(wm_ids or []),
         rmi=list(rmi_ids or []),
-        cc=list(cc_ids or []),
     )
     return make_create_resource(name=name, country=country, source_data=source_data)
 
@@ -244,8 +211,6 @@ def make_resource_with_mixed_sources(
     existing_wm_ids: Sequence[int] | None = None,
     new_rmi: RMIManualData | Sequence[RMIManualData] | None = None,
     existing_rmi_ids: Sequence[int] | None = None,
-    new_cc: CCReservoirsData | Sequence[CCReservoirsData] | None = None,
-    existing_cc_ids: Sequence[int] | None = None,
     name: str | None = "Resource with Mixed Sources",
     country: str | None = "USA",
 ) -> FactoryResult[CreateResource]:
@@ -263,11 +228,6 @@ def make_resource_with_mixed_sources(
     rmi_items: list[RMIManualData | int] = to_list(new_rmi) + list(
         existing_rmi_ids or []
     )
-    cc_items: list[CCReservoirsData | int] = to_list(new_cc) + list(
-        existing_cc_ids or []
-    )
 
-    source_data = make_source_data(
-        gem=gem_items, wm=wm_items, rmi=rmi_items, cc=cc_items
-    )
+    source_data = make_source_data(gem=gem_items, wm=wm_items, rmi=rmi_items)
     return make_create_resource(name=name, country=country, source_data=source_data)

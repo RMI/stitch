@@ -12,7 +12,6 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from stitch.api.db.model import (
-    CCReservoirsSourceModel,
     GemSourceModel,
     MembershipModel,
     RMIManualSourceModel,
@@ -267,24 +266,25 @@ def create_seed_user() -> UserModel:
 def create_seed_sources():
     gem_sources = [
         GemSourceModel.from_entity(
-            GemData(name="Permian Basin Field", country="USA", lat=31.8, lon=-102.3)
+            GemData(
+                name="Permian Basin Field",
+                country="USA",
+                latitude=31.8,
+                longitude=-102.3,
+            )
         ),
         GemSourceModel.from_entity(
-            GemData(name="North Sea Platform", country="GBR", lat=57.5, lon=1.5)
+            GemData(
+                name="North Sea Platform", country="GBR", latitude=57.5, longitude=1.5
+            )
         ),
     ]
     for i, src in enumerate(gem_sources, start=1):
         src.id = i
 
     wm_sources = [
-        WMSourceModel.from_entity(
-            WMData(
-                field_name="Eagle Ford Shale", field_country="USA", production=125000.5
-            )
-        ),
-        WMSourceModel.from_entity(
-            WMData(field_name="Ghawar Field", field_country="SAU", production=500000.0)
-        ),
+        WMSourceModel.from_entity(WMData(name="Eagle Ford Shale", country="USA")),
+        WMSourceModel.from_entity(WMData(name="Ghawar Field", country="SAU")),
     ]
     for i, src in enumerate(wm_sources, start=1):
         src.id = i
@@ -292,9 +292,7 @@ def create_seed_sources():
     rmi_sources = [
         RMIManualSourceModel.from_entity(
             RMIManualData(
-                name_override="Custom Override Name",
-                gwp=25.5,
-                gor=0.45,
+                name="Custom Override Name",
                 country="CAN",
                 latitude=56.7,
                 longitude=-111.4,
@@ -304,11 +302,7 @@ def create_seed_sources():
     for i, src in enumerate(rmi_sources, start=1):
         src.id = i
 
-    # CC Reservoir sources are intentionally omitted from the dev seed profile;
-    # the CCReservoirsSourceModel table is still created from SQLAlchemy metadata.
-    cc_sources: list[CCReservoirsSourceModel] = []
-
-    return gem_sources, wm_sources, rmi_sources, cc_sources
+    return gem_sources, wm_sources, rmi_sources
 
 
 def create_seed_resources(user: UserEntity) -> list[ResourceModel]:
@@ -362,8 +356,8 @@ def seed_dev(engine) -> None:
             name=f"{user_model.first_name} {user_model.last_name}",
         )
 
-        gem_sources, wm_sources, rmi_sources, cc_sources = create_seed_sources()
-        session.add_all(gem_sources + wm_sources + rmi_sources + cc_sources)
+        gem_sources, wm_sources, rmi_sources = create_seed_sources()
+        session.add_all(gem_sources + wm_sources + rmi_sources)
 
         resources = create_seed_resources(user_entity)
         session.add_all(resources)

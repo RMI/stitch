@@ -1,7 +1,6 @@
 from collections.abc import Sequence
 from datetime import datetime
 from typing import (
-    Annotated,
     Generic,
     Literal,
     Mapping,
@@ -10,7 +9,10 @@ from typing import (
     runtime_checkable,
 )
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field
+
+from stitch.resources.ogsi.models import OilAndGasFieldSourceData
+from stitch.api.sources import OilAndGasFieldSource
 
 IdType = int | str | UUID
 
@@ -24,9 +26,8 @@ class HasId(Protocol):
 GEM_SRC = Literal["gem"]
 WM_SRC = Literal["wm"]
 RMI_SRC = Literal["rmi"]
-CC_SRC = Literal["cc"]
 
-SourceKey = GEM_SRC | WM_SRC | RMI_SRC | CC_SRC
+SourceKey = GEM_SRC | WM_SRC | RMI_SRC
 
 TSourceKey = TypeVar("TSourceKey", bound=SourceKey)
 
@@ -34,10 +35,6 @@ TSourceKey = TypeVar("TSourceKey", bound=SourceKey)
 class Timestamped(BaseModel):
     created: datetime = Field(default_factory=datetime.now)
     updated: datetime = Field(default_factory=datetime.now)
-
-
-class Identified(BaseModel):
-    id: IdType
 
 
 class SourceBase(BaseModel, Generic[TSourceKey]):
@@ -50,76 +47,25 @@ class SourceRef(BaseModel):
     id: int
 
 
-# The sources will come in and be initially stored in a raw table.
-# That raw table will be an append-only table.
-# We'll translate that data into one of the below structures, so each source will have a `UUID` or similar that
-# references their id in the "raw" table.
-# When pulling into the internal "sources" table, each will get a new unique id which is what the memberships will reference
-
-
-class GemData(BaseModel):
-    name: str
-    lat: float = Field(ge=-90, le=90)
-    lon: float = Field(ge=-180, le=180)
-    country: str
-
-
-class GemSource(Identified, GemData):
-    model_config = ConfigDict(from_attributes=True)
-
-
-class WMData(BaseModel):
-    field_name: str
-    field_country: str
-    production: float
-
-
-class WMSource(Identified, WMData):
-    model_config = ConfigDict(from_attributes=True)
-
-
-class RMIManualData(BaseModel):
-    name_override: str
-    gwp: float
-    gor: float = Field(gt=0, lt=1)
-    country: str
-    latitude: float = Field(ge=-90, le=90)
-    longitude: float = Field(ge=-180, le=180)
-
-
-class RMIManualSource(Identified, RMIManualData):
-    model_config = ConfigDict(from_attributes=True)
-
-
-class CCReservoirsData(BaseModel):
-    name: str
-    basin: str
-    depth: float
-    geofence: Sequence[tuple[float, float]]
-
-
-class CCReservoirsSource(Identified, CCReservoirsData):
-    model_config = ConfigDict(from_attributes=True)
-
-
-OGSISourcePayload = Annotated[
-    GemSource | WMSource | RMIManualSource | CCReservoirsSource,
-    Field(discriminator="source"),
-]
+# Entity aliases — all sources share the same schema
+GemData = OilAndGasFieldSourceData
+WMData = OilAndGasFieldSourceData
+RMIManualData = OilAndGasFieldSourceData
+GemSource = OilAndGasFieldSource
+WMSource = OilAndGasFieldSource
+RMIManualSource = OilAndGasFieldSource
 
 
 class SourceData(BaseModel):
     gem: Mapping[IdType, GemSource] = Field(default_factory=dict)
     wm: Mapping[IdType, WMSource] = Field(default_factory=dict)
     rmi: Mapping[IdType, RMIManualSource] = Field(default_factory=dict)
-    cc: Mapping[IdType, CCReservoirsSource] = Field(default_factory=dict)
 
 
 class CreateSourceData(BaseModel):
     gem: Sequence[GemData] = Field(default_factory=list)
     wm: Sequence[WMData] = Field(default_factory=list)
     rmi: Sequence[RMIManualData] = Field(default_factory=list)
-    cc: Sequence[CCReservoirsData] = Field(default_factory=list)
 
 
 class CreateResourceSourceData(BaseModel):
@@ -132,7 +78,6 @@ class CreateResourceSourceData(BaseModel):
     gem: Sequence[GemData | int] = Field(default_factory=list)
     wm: Sequence[WMData | int] = Field(default_factory=list)
     rmi: Sequence[RMIManualData | int] = Field(default_factory=list)
-    cc: Sequence[CCReservoirsData | int] = Field(default_factory=list)
 
     def get(self, key: SourceKey):
         if key == "gem":
@@ -141,8 +86,6 @@ class CreateResourceSourceData(BaseModel):
             return self.wm
         elif key == "rmi":
             return self.rmi
-        elif key == "cc":
-            return self.cc
         raise ValueError(f"Unknown source key: {key}")
 
 

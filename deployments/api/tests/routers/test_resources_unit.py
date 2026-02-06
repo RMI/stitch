@@ -91,7 +91,7 @@ class TestCreateResourceUnit:
         expected = make_resource(id=123, name="New Resource", country="CAN")
         resource_in = make_resource_with_new_sources(
             gem=make_gem_data(
-                name="GEM Field", lat=45.0, lon=-120.0, country="CAN"
+                name="GEM Field", latitude=45.0, longitude=-120.0, country="CAN"
             ).model,
             name="New Resource",
             country="CAN",
@@ -117,9 +117,7 @@ class TestCreateResourceUnit:
         """POST /resources/ returns the created resource entity."""
         expected = make_resource(id=456, name="Created Resource")
         resource_in = make_resource_with_new_sources(
-            wm=make_wm_data(
-                field_name="WM Field", field_country="USA", production=1000.0
-            ).model,
+            wm=make_wm_data(name="WM Field", country="USA").model,
             name="Created Resource",
         )
 

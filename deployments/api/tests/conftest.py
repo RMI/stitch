@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from stitch.api.db.config import UnitOfWork, get_uow
 from stitch.api.db.model import (
-    CCReservoirsSourceModel,
     GemSourceModel,
     RMIManualSourceModel,
     StitchBase,
@@ -21,7 +20,6 @@ from stitch.api.entities import User
 from stitch.api.main import app
 
 from .utils import (
-    CC_DEFAULTS,
     GEM_DEFAULTS,
     RMI_DEFAULTS,
     WM_DEFAULTS,
@@ -185,8 +183,8 @@ async def existing_gem_source(
     """Pre-create a GEM source in DB, return model with ID."""
     model = GemSourceModel(
         name=GEM_DEFAULTS["name"],
-        lat=GEM_DEFAULTS["lat"],
-        lon=GEM_DEFAULTS["lon"],
+        latitude=GEM_DEFAULTS["latitude"],
+        longitude=GEM_DEFAULTS["longitude"],
         country=GEM_DEFAULTS["country"],
     )
     seeded_integration_session.add(model)
@@ -200,9 +198,8 @@ async def existing_wm_source(
 ) -> WMSourceModel:
     """Pre-create a WM source in DB, return model with ID."""
     model = WMSourceModel(
-        field_name=WM_DEFAULTS["field_name"],
-        field_country=WM_DEFAULTS["field_country"],
-        production=WM_DEFAULTS["production"],
+        name=WM_DEFAULTS["name"],
+        country=WM_DEFAULTS["country"],
     )
     seeded_integration_session.add(model)
     await seeded_integration_session.flush()
@@ -215,28 +212,10 @@ async def existing_rmi_source(
 ) -> RMIManualSourceModel:
     """Pre-create an RMI source in DB, return model with ID."""
     model = RMIManualSourceModel(
-        name_override=RMI_DEFAULTS["name_override"],
-        gwp=RMI_DEFAULTS["gwp"],
-        gor=RMI_DEFAULTS["gor"],
+        name=RMI_DEFAULTS["name"],
         country=RMI_DEFAULTS["country"],
         latitude=RMI_DEFAULTS["latitude"],
         longitude=RMI_DEFAULTS["longitude"],
-    )
-    seeded_integration_session.add(model)
-    await seeded_integration_session.flush()
-    return model
-
-
-@pytest.fixture
-async def existing_cc_source(
-    seeded_integration_session: AsyncSession,
-) -> CCReservoirsSourceModel:
-    """Pre-create a CC source in DB, return model with ID."""
-    model = CCReservoirsSourceModel(
-        name=CC_DEFAULTS["name"],
-        basin=CC_DEFAULTS["basin"],
-        depth=CC_DEFAULTS["depth"],
-        geofence=list(CC_DEFAULTS["geofence"]),
     )
     seeded_integration_session.add(model)
     await seeded_integration_session.flush()
@@ -251,42 +230,27 @@ async def existing_sources(
     session = seeded_integration_session
 
     gems = [
-        GemSourceModel(name=f"GEM {i}", lat=45.0 + i, lon=-120.0 + i, country="USA")
-        for i in range(2)
-    ]
-    wms = [
-        WMSourceModel(
-            field_name=f"WM Field {i}", field_country="USA", production=1000.0 * (i + 1)
+        GemSourceModel(
+            name=f"GEM {i}", latitude=45.0 + i, longitude=-120.0 + i, country="USA"
         )
         for i in range(2)
     ]
+    wms = [WMSourceModel(name=f"WM Field {i}", country="USA") for i in range(2)]
     rmis = [
         RMIManualSourceModel(
-            name_override=f"RMI {i}",
-            gwp=25.0,
-            gor=0.5,
+            name=f"RMI {i}",
             country="USA",
             latitude=40.0 + i,
             longitude=-100.0 + i,
         )
         for i in range(2)
     ]
-    ccs = [
-        CCReservoirsSourceModel(
-            name=f"CC Reservoir {i}",
-            basin="Permian",
-            depth=3000.0,
-            geofence=[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)],
-        )
-        for i in range(2)
-    ]
 
-    session.add_all(gems + wms + rmis + ccs)
+    session.add_all(gems + wms + rmis)
     await session.flush()
 
     return {
         "gem": [g.id for g in gems],
         "wm": [w.id for w in wms],
         "rmi": [r.id for r in rmis],
-        "cc": [c.id for c in ccs],
     }
