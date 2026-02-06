@@ -1,12 +1,31 @@
 services:
-
   api:
     build:
       context: .
       dockerfile: deployments/api/Dockerfile
       target: dev
-    volumes:
-      - .:/app
+    command:
+      - uvicorn
+      - stitch.api.main:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --reload
+    develop:
+      watch:
+        - path: ./deployments/api/src
+          action: sync
+          target: /app/deployments/api/src
+        - path: ./packages/stitch-core/src
+          action: sync
+          target: /app/packages/stitch-core/src
+        - path: ./deployments/api/pyproject.toml
+          action: rebuild
+        - path: ./packages/stitch-core/pyproject.toml
+          action: rebuild
+        - path: ./uv.lock
+          action: rebuild
     env_file:
       - .env
     environment:
@@ -19,7 +38,7 @@ services:
       STITCH_DB_PASSWORD: ${STITCH_APP_PASSWORD}
 
     ports:
-    - "8000:8000"
+      - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -29,7 +48,11 @@ services:
   db:
     image: postgres:17-alpine
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-stitch} || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-stitch} || exit 1",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -54,14 +77,11 @@ services:
       db:
         condition: service_healthy
 
-
   db-init:
     build:
       context: .
       dockerfile: deployments/api/Dockerfile
       target: dev
-    volumes:
-      - .:/app
     env_file:
       - .env
     environment:
