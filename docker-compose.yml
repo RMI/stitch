@@ -4,14 +4,6 @@ services:
       context: .
       dockerfile: deployments/api/Dockerfile
       target: dev
-    command:
-      - uvicorn
-      - stitch.api.main:app
-      - --host
-      - "0.0.0.0"
-      - --port
-      - "8000"
-      - --reload
     develop:
       watch:
         - path: ./deployments/api/src
@@ -35,7 +27,7 @@ services:
       POSTGRES_PORT: 5432
       # API connects as the app role (no DDL)
       STITCH_DB_USER: stitch_app
-      STITCH_DB_PASSWORD: ${STITCH_APP_PASSWORD}
+      STITCH_DB_PASSWORD: ${STITCH_APP_PASSWORD:?STITCH_APP_PASSWORD must be set in .env}
 
     ports:
       - "8000:8000"
