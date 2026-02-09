@@ -6,6 +6,11 @@ Stitch is a platform that integrates diverse oil & gas asset datasets, applies A
 
 Local development is run via Docker Compose (DB + API + Frontend) with optional DB initialization/seeding.
 
+The stack uses two compose files:
+
+- **`docker-compose.yml`** — base services (API, DB, frontend, etc.)
+- **`docker-compose.local.yml`** — local dev overrides (dev build target, debug logging, file-watch sync)
+
 ### Prerequisites
 
 - Docker Desktop (includes Docker Engine + Docker Compose)
@@ -29,7 +34,7 @@ Edit `.env` as needed (passwords, seed settings, etc.).
 
 Start (and build) the stack:
 ```bash
-docker compose up --build
+docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 
 # or, if you have make installed:
 make dev-docker
@@ -37,7 +42,7 @@ make dev-docker
 
 or, if already built:
 ```bash
-docker compose up db api frontend
+docker compose -f docker-compose.yml -f docker-compose.local.yml up db api frontend
 ```
 
 Useful URLs:
@@ -54,7 +59,7 @@ Note: The `db-init` service runs automatically (via `depends_on`) to apply schem
 
 Stop containers and delete the Postgres volume (this removes all local DB data):
 ```bash
-docker compose down -v
+docker compose -f docker-compose.yml -f docker-compose.local.yml down -v
 
 # or, if you have make installed:
 make clean-docker
@@ -62,5 +67,5 @@ make clean-docker
 
 Then start fresh:
 ```bash
-docker compose up db api frontend
+docker compose -f docker-compose.yml -f docker-compose.local.yml up db api frontend
 ```

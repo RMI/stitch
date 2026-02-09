@@ -3,21 +3,6 @@ services:
     build:
       context: .
       dockerfile: deployments/api/Dockerfile
-      target: dev
-    develop:
-      watch:
-        - path: ./deployments/api/src
-          action: sync
-          target: /app/deployments/api/src
-        - path: ./packages/stitch-core/src
-          action: sync
-          target: /app/packages/stitch-core/src
-        - path: ./deployments/api/pyproject.toml
-          action: rebuild
-        - path: ./packages/stitch-core/pyproject.toml
-          action: rebuild
-        - path: ./uv.lock
-          action: rebuild
     env_file:
       - .env
     environment:
