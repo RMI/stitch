@@ -4,13 +4,18 @@ services:
       LOG_LEVEL: debug
     volumes:
       - ./deployments/api/src:/app/deployments/api/src
-      - ./packages/stitch-core/src:/app/packages/stitch-core/src
-    develop:
-      watch:
-        - path: ./uv.lock
-          action: rebuild
-        - path: ./deployments/api/pyproject.toml
-          action: rebuild
-
+      - ./packages:/app/packages
     command:
-      ["uvicorn", "stitch.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+      - uvicorn
+      - stitch.api.main:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --reload
+      - --reload-dir
+      - /app/deployments/api/src
+      - --reload-dir
+      - /app/packages
+      - --reload-exclude
+      - "*/tests/*"
