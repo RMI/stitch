@@ -21,6 +21,9 @@ COPY deployments/api/src /app/src
 COPY packages/stitch-core/pyproject.toml packages/stitch-core/pyproject.toml
 COPY packages/stitch-core/src packages/stitch-core/src
 
+COPY packages/stitch-auth/pyproject.toml packages/stitch-auth/pyproject.toml
+COPY packages/stitch-auth/src packages/stitch-auth/src
+
 # Install deps for the api project (important: target the subproject)
 # Create venv and sync using the lock for the API project
 RUN --mount=type=cache,target=/root/.cache/uv \
