@@ -27,7 +27,6 @@ from stitch.api.entities import (
     User as UserEntity,
     WMData,
 )
-from stitch.api.deps import get_current_user
 
 """
 DB init/seed job.
@@ -259,21 +258,18 @@ def fail_partial(existing_tables: set[str], expected: set[str]) -> None:
 def create_seed_user() -> UserModel:
     return UserModel(
         id=1,
-        first_name="Seed",
-        last_name="User",
+        sub="seed|system",
+        name="Seed User",
         email="seed@example.com",
     )
 
 
 def create_dev_user() -> UserModel:
-    dev_user = get_current_user()
-    print("[db-init] getting info for Dev User...", flush=True)
-    print(f"[db-init] User: '{dev_user}'...", flush=True)
     return UserModel(
-        id=dev_user.id,
-        first_name=dev_user.name,
-        last_name="Deverson",
-        email=dev_user.email,
+        id=2,
+        sub="dev|local-placeholder",
+        name="Dev Deverson",
+        email="dev@example.com",
     )
 
 
@@ -375,14 +371,16 @@ def seed_dev(engine) -> None:
 
         user_entity = UserEntity(
             id=user_model.id,
+            sub=user_model.sub,
             email=user_model.email,
-            name=f"{user_model.first_name} {user_model.last_name}",
+            name=user_model.name,
         )
 
         dev_entity = UserEntity(
             id=dev_model.id,
+            sub=dev_model.sub,
             email=dev_model.email,
-            name=f"{dev_model.first_name} {dev_model.last_name}",
+            name=dev_model.name,
         )
 
         gem_sources, wm_sources, rmi_sources, cc_sources = create_seed_sources()
