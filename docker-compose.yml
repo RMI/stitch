@@ -84,10 +84,14 @@ services:
   localauth0:
     profiles: [auth-test]
     image: public.ecr.aws/primaassicurazioni/localauth0:0.8.3
+    healthcheck:
+      test: ["CMD", "/localauth0", "healthcheck"]
+    environment:
+      LOCALAUTH0_CONFIG_PATH: /etc/localauth0.toml
     ports:
       - "3100:3000"
     volumes:
-      - ./dev/localauth0.toml:/localauth0.toml:ro
+      - ./dev/localauth0.toml:/etc/localauth0.toml:ro
 
 volumes:
   db_data:

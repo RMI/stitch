@@ -57,15 +57,15 @@ WRONG_TOKEN=$(curl -s -X POST localhost:3100/oauth/token \
 
 ## Test Scenarios
 
-| # | Scenario | Command | Expected |
-|---|----------|---------|----------|
-| 1 | No Authorization header | `curl localhost:8000/api/v1/resources/` | 401 |
-| 2 | Malformed header | `curl -H "Authorization: Basic xyz" localhost:8000/api/v1/resources/` | 401 |
-| 3 | Garbage token (wrong signing key) | `curl -H "Authorization: Bearer not.a.real.jwt" localhost:8000/api/v1/resources/` | 401 |
-| 4 | Wrong audience | `curl -H "Authorization: Bearer $WRONG_TOKEN" localhost:8000/api/v1/resources/` | 401 |
-| 5 | Valid token, first request | `curl -H "Authorization: Bearer $TOKEN" localhost:8000/api/v1/resources/` | 200, user JIT-created |
-| 6 | Valid token, repeat request | Same as #5 | 200, user info updated |
-| 7 | Health endpoint (no auth) | `curl localhost:8000/api/v1/health` | 200 always |
+| #   | Scenario                          | Command                                                                           | Expected               |
+| --- | --------------------------------- | --------------------------------------------------------------------------------- | ---------------------- |
+| 1   | No Authorization header           | `curl localhost:8000/api/v1/resources/`                                           | 401                    |
+| 2   | Malformed header                  | `curl -H "Authorization: Basic xyz" localhost:8000/api/v1/resources/`             | 401                    |
+| 3   | Garbage token (wrong signing key) | `curl -H "Authorization: Bearer not.a.real.jwt" localhost:8000/api/v1/resources/` | 401                    |
+| 4   | Wrong audience                    | `curl -H "Authorization: Bearer $WRONG_TOKEN" localhost:8000/api/v1/resources/`   | 401                    |
+| 5   | Valid token, first request        | `curl -H "Authorization: Bearer $TOKEN" localhost:8000/api/v1/resources/`         | 200, user JIT-created  |
+| 6   | Valid token, repeat request       | Same as #5                                                                        | 200, user info updated |
+| 7   | Health endpoint (no auth)         | `curl localhost:8000/api/v1/health`                                               | 200 always             |
 
 ### Running the scenarios
 
