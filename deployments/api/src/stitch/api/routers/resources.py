@@ -15,12 +15,14 @@ router = APIRouter(
 
 
 @router.get("/")
-async def get_all_resources(*, uow: UnitOfWorkDep) -> Sequence[Resource]:
+async def get_all_resources(
+    *, uow: UnitOfWorkDep, user: CurrentUser
+) -> Sequence[Resource]:
     return await resource_actions.get_all(session=uow.session)
 
 
 @router.get("/{id}", response_model=Resource)
-async def get_resource(*, uow: UnitOfWorkDep, id: int) -> Resource:
+async def get_resource(*, uow: UnitOfWorkDep, user: CurrentUser, id: int) -> Resource:
     return await resource_actions.get(session=uow.session, id=id)
 
 
