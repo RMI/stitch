@@ -16,7 +16,7 @@ from stitch.api.db.model import (
     UserModel,
     WMSourceModel,
 )
-from stitch.api.deps import get_current_user
+from stitch.api.auth import get_current_user
 from stitch.api.entities import User
 from stitch.api.main import app
 
@@ -89,7 +89,7 @@ def reset_dependency_overrides():
     """Reset FastAPI dependency overrides and auth caches after each test."""
     yield
     app.dependency_overrides = {}
-    from stitch.api.deps import get_oidc_settings, get_jwt_validator
+    from stitch.api.auth import get_oidc_settings, get_jwt_validator
 
     get_oidc_settings.cache_clear()
     get_jwt_validator.cache_clear()

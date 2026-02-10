@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from starlette.status import HTTP_404_NOT_FOUND
 
 from stitch.api.db.model.sources import SOURCE_TABLES, SourceModel
-from stitch.api.deps import CurrentUser
+from stitch.api.auth import CurrentUser
 from stitch.api.entities import (
     CreateResource,
     CreateResourceSourceData,
