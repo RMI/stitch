@@ -37,7 +37,9 @@ def anyio_backend() -> str:
 @pytest.fixture
 def test_user() -> User:
     """Test user entity for dependency injection."""
-    return User(id=1, email="test@test.com", name="Test User", role="admin")
+    return User(
+        id=1, sub="test|user-1", email="test@test.com", name="Test User", role="admin"
+    )
 
 
 @pytest.fixture
@@ -45,8 +47,8 @@ def test_user_model() -> UserModel:
     """Test user ORM model for database seeding."""
     return UserModel(
         id=1,
-        first_name="Test",
-        last_name="User",
+        sub="test|user-1",
+        name="Test User",
         email="test@test.com",
     )
 
@@ -84,9 +86,13 @@ def mock_uow(mock_session: MagicMock) -> MagicMock:
 
 @pytest.fixture(autouse=True)
 def reset_dependency_overrides():
-    """Reset FastAPI dependency overrides after each test."""
+    """Reset FastAPI dependency overrides and auth caches after each test."""
     yield
     app.dependency_overrides = {}
+    from stitch.api.deps import get_oidc_settings, get_jwt_validator
+
+    get_oidc_settings.cache_clear()
+    get_jwt_validator.cache_clear()
 
 
 @pytest.fixture
