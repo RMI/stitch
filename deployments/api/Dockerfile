@@ -18,8 +18,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --frozen --no-install-workspace --package stitch-api
 
-# ── dev target ────────────────────────────────────────────────────────
-FROM base AS dev
+# ── runtime target ────────────────────────────────────────────────────
+FROM base AS runtime
+
+RUN groupadd --system --gid 999 stitch-app \
+ && useradd --system --gid 999 --uid 999 --create-home stitch-app
 
 COPY ./deployments/api /app/deployments/api
 COPY ./packages /app/packages
@@ -28,23 +31,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --locked --package stitch-api
-
-ENV PATH="/app/.venv/bin:$PATH"
-
-CMD ["uvicorn", "stitch.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
-
-# ── prod target ───────────────────────────────────────────────────────
-FROM python:3.12-slim-trixie AS prod
-
-ENV PYTHONUNBUFFERED=1
-WORKDIR /app
-
-RUN groupadd --system --gid 999 stitch-app \
- && useradd --system --gid 999 --uid 999 --create-home stitch-app
-
-COPY --from=dev --chown=stitch-app:stitch-app /app/.venv /app/.venv
-COPY --from=dev --chown=stitch-app:stitch-app /app/deployments/api /app/deployments/api
-COPY --from=dev --chown=stitch-app:stitch-app /app/packages /app/packages
 
 ENV PATH="/app/.venv/bin:$PATH"
 USER stitch-app

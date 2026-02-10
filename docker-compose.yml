@@ -58,7 +58,6 @@ services:
     build:
       context: .
       dockerfile: deployments/api/Dockerfile
-      target: dev
     env_file:
       - .env
     environment:
