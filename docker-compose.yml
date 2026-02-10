@@ -16,7 +16,6 @@ services:
       # API connects as the app role (no DDL)
       STITCH_DB_USER: stitch_app
       STITCH_DB_PASSWORD: ${STITCH_APP_PASSWORD}
-      AUTH_DISABLED: "true"
 
     ports:
     - "8000:8000"
