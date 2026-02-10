@@ -1107,7 +1107,6 @@ dependencies = [
     { name = "greenlet" },
     { name = "pydantic-settings" },
     { name = "sqlalchemy" },
-    { name = "stitch-auth" },
     { name = "stitch-core" },
 ]
 
@@ -1125,7 +1124,6 @@ requires-dist = [
     { name = "greenlet", specifier = ">=3.3.0" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
     { name = "sqlalchemy", specifier = ">=2.0.44" },
-    { name = "stitch-auth", editable = "packages/stitch-auth" },
     { name = "stitch-core", editable = "packages/stitch-core" },
 ]
 
