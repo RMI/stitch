@@ -4,6 +4,7 @@ from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from starlette.status import HTTP_401_UNAUTHORIZED
@@ -36,6 +37,10 @@ _DEV_CLAIMS = TokenClaims(
     raw={},
 )
 
+# auto_error=False so that when AUTH_DISABLED=true the missing header
+# doesn't trigger a 403 before our custom handler runs.
+_bearer_scheme = HTTPBearer(auto_error=False)
+
 
 def validate_auth_config_at_startup() -> None:
     """Called from FastAPI lifespan. Fail fast if misconfigured."""
@@ -47,8 +52,17 @@ def validate_auth_config_at_startup() -> None:
         )
 
 
-async def get_token_claims(request: Request) -> TokenClaims:
-    """Extract and validate JWT from Authorization header."""
+async def get_token_claims(
+    request: Request,
+    _credential: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+) -> TokenClaims:
+    """Extract and validate JWT from Authorization header.
+
+    The ``_credential`` parameter exists solely so FastAPI registers the
+    HTTPBearer security scheme in the OpenAPI spec (Swagger "Authorize"
+    button).  Actual token parsing still uses the raw header so we can
+    return precise 401 messages for missing/malformed values.
+    """
     settings = get_oidc_settings()
 
     if settings.disabled:

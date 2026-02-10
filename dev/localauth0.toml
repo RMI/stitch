@@ -1,0 +1,18 @@
+issuer = "http://localauth0:3000/"
+
+[user_info]
+subject = "mock|dev-user-1"
+name = "Dev User"
+email = "dev@example.com"
+email_verified = true
+
+[[audience]]
+name = "stitch-api-local"
+permissions = []
+
+[[audience]]
+name = "wrong-audience"
+permissions = []
+
+[http]
+port = 3000
