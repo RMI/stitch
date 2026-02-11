@@ -68,7 +68,7 @@ By default, auth is disabled (`AUTH_DISABLED=true`) — all requests get a hardc
 
 2. Start with the `auth-test` profile:
    ```bash
-   docker compose --profile auth-test up --build
+   docker compose -f docker-compose.yml -f docker-compose.local.yml --profile auth-test up --build
    ```
 
 3. Get a token and make requests:
@@ -82,7 +82,7 @@ By default, auth is disabled (`AUTH_DISABLED=true`) — all requests get a hardc
    # Get a valid token
    TOKEN=$(curl -s -X POST localhost:3100/oauth/token \
      -H "Content-Type: application/json" \
-     -d '{"client_id":"test","audience":"stitch-api-local","grant_type":"client_credentials"}' \
+     -d '{"client_id":"client_id","client_secret":"client_secret","audience":"stitch-api-local","grant_type":"client_credentials"}' \
      | jq -r '.access_token')
 
    # Authenticated request → 200

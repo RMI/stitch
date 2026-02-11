@@ -14,5 +14,14 @@ permissions = []
 name = "wrong-audience"
 permissions = []
 
+# Inject user-profile claims into the access token.
+# This mirrors a real Auth0 "Login / Post Login" Action that copies
+# email and name into the access_token for API consumption.
+[access_token]
+custom_claims = [
+    { name = "email", value = { String = "dev@example.com" } },
+    { name = "name", value = { String = "Dev User" } },
+]
+
 [http]
 port = 3000
