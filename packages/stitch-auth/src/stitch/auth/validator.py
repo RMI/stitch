@@ -22,6 +22,8 @@ class JWTValidator:
             signing_key = self._jwks_client.get_signing_key_from_jwt(token)
         except (jwt.PyJWKClientError, jwt.PyJWKClientConnectionError) as e:
             raise JWKSFetchError(str(e)) from e
+        except jwt.InvalidTokenError as e:
+            raise TokenValidationError(str(e)) from e
 
         try:
             payload = jwt.decode(

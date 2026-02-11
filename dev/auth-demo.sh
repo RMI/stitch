@@ -146,7 +146,10 @@ show_step \
     "A properly signed token from localauth0, but issued for 'wrong-audience'\n  instead of 'stitch-api-local'. The API validates the 'aud' claim and rejects it." \
     "401"
 
-echo -e "\n  ${DIM}Fetching token with audience='wrong-audience'...${RESET}"
+show_cmd "curl -s -X POST ${OIDC}/oauth/token -H 'Content-Type: application/json' \\"
+echo -e "    ${DIM}-d '{\"audience\":\"wrong-audience\", ...}'${RESET}"
+wait_for_enter
+
 WRONG_TOKEN=$(curl -s -X POST "${OIDC}/oauth/token" \
     -H "Content-Type: application/json" \
     -d '{"client_id":"client_id","client_secret":"client_secret","audience":"wrong-audience","grant_type":"client_credentials"}' \
@@ -169,7 +172,10 @@ show_step \
     "A properly signed token with the correct audience. On the first\n  authenticated request, the API creates a new user row in the database\n  from the token's sub/name/email claims." \
     "200 + user JIT-created in DB"
 
-echo -e "\n  ${DIM}Fetching token with audience='stitch-api-local'...${RESET}"
+show_cmd "curl -s -X POST ${OIDC}/oauth/token -H 'Content-Type: application/json' \\"
+echo -e "    ${DIM}-d '{\"audience\":\"stitch-api-local\", ...}'${RESET}"
+wait_for_enter
+
 TOKEN=$(curl -s -X POST "${OIDC}/oauth/token" \
     -H "Content-Type: application/json" \
     -d '{"client_id":"client_id","client_secret":"client_secret","audience":"stitch-api-local","grant_type":"client_credentials"}' \
