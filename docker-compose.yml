@@ -4,8 +4,6 @@ services:
     build:
       context: .
       dockerfile: deployments/api/Dockerfile
-    volumes:
-      - ./deployments/api/src:/app/src
     env_file:
       - .env
     environment:
@@ -15,10 +13,10 @@ services:
       POSTGRES_PORT: 5432
       # API connects as the app role (no DDL)
       STITCH_DB_USER: stitch_app
-      STITCH_DB_PASSWORD: ${STITCH_APP_PASSWORD}
+      STITCH_DB_PASSWORD: ${STITCH_APP_PASSWORD:?STITCH_APP_PASSWORD must be set in .env}
 
     ports:
-    - "8000:8000"
+      - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -28,7 +26,11 @@ services:
   db:
     image: postgres:17-alpine
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-stitch} || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-stitch} || exit 1",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -52,7 +54,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-
 
   db-init:
     build:
