@@ -80,6 +80,17 @@ class TestJWTValidatorHappyPath:
 
         assert claims.sub == "550e8400-e29b-41d4-a716-446655440000"
 
+    def test_token_without_nbf_validates(
+        self, oidc_settings, mock_jwks_client, token_factory
+    ):
+        """Token missing nbf claim (e.g. Auth0 default) validates successfully."""
+        token = token_factory(include_nbf=False)
+        validator = JWTValidator(oidc_settings)
+
+        claims = validator.validate(token)
+
+        assert claims.sub == "auth0|user123"
+
 
 class TestJWTValidatorErrors:
     """Error handling and exception mapping."""
@@ -161,8 +172,8 @@ class TestJWTValidatorErrors:
         token = pyjwt.encode(
             {
                 "sub": "auth0|user123",
-                "iss": "https://test.auth0.com/",
-                "aud": "https://api.test.example.com",
+                "iss": "https://auth.example.com/",
+                "aud": "https://api.example.com",
                 "exp": int(time.time()) + 3600,
                 "nbf": int(time.time()) - 10,
             },
