@@ -96,7 +96,8 @@ async def get_token_claims(
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    except AuthError:
+    except AuthError as e:
+        logger.warning("JWT validation failed: %s", e, exc_info=True)
         raise HTTPException(
             status_code=HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",

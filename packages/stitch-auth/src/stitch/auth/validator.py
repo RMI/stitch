@@ -32,7 +32,7 @@ class JWTValidator:
                 issuer=self._settings.issuer,
                 leeway=timedelta(seconds=self._settings.clock_skew_seconds),
                 options={
-                    "require": ["exp", "iss", "aud", "sub", "nbf"],
+                    "require": ["exp", "iss", "sub"],
                     "verify_exp": True,
                     "verify_iss": True,
                     "verify_aud": True,
