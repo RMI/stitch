@@ -1,24 +1,27 @@
 const API_BASE_URL =
   import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
 
-export async function getResources() {
-  const url = `${API_BASE_URL}/resources/`;
-  const response = await fetch(url);
+async function authedFetch(url, getAccessTokenSilently, options = {}) {
+  const token = await getAccessTokenSilently();
+  const headers = new Headers(options.headers || {});
+  headers.set("Authorization", `Bearer ${token}`);
+
+  const response = await fetch(url, { ...options, headers });
   if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
+    const err = new Error(`HTTP error! status: ${response.status}`);
+    err.status = response.status;
+    err.body = await response.text().catch(() => "");
+    throw err;
   }
-  const data = await response.json();
-  return data;
+  return response.json();
 }
 
-export async function getResource(id) {
+export function getResources(getAccessTokenSilently) {
+  const url = `${API_BASE_URL}/resources/`;
+  return authedFetch(url, getAccessTokenSilently);
+}
+
+export function getResource(id, getAccessTokenSilently) {
   const url = `${API_BASE_URL}/resources/${id}`;
-  const response = await fetch(url);
-  if (!response.ok) {
-    const error = new Error(`HTTP error! status: ${response.status}`);
-    error.status = response.status;
-    throw error;
-  }
-  const data = await response.json();
-  return data;
+  return authedFetch(url, getAccessTokenSilently);
 }

@@ -4,22 +4,18 @@ import { getResource, getResources } from "./api";
 export const resourceKeys = {
   all: ["resources"],
   lists: () => [...resourceKeys.all, "list"],
-  list: (filters) => [...resourceKeys.lists(), filters],
   details: () => [...resourceKeys.all, "detail"],
   detail: (id) => [...resourceKeys.details(), id],
 };
 
-// Query definitions
 export const resourceQueries = {
-  list: () => ({
+  list: (getAccessTokenSilently) => ({
     queryKey: resourceKeys.lists(),
-    queryFn: getResources,
-    enabled: false,
+    queryFn: () => getResources(getAccessTokenSilently),
   }),
 
-  detail: (id) => ({
+  detail: (id, getAccessTokenSilently) => ({
     queryKey: resourceKeys.detail(id),
-    queryFn: () => getResource(id),
-    enabled: false,
+    queryFn: () => getResource(id, getAccessTokenSilently),
   }),
 };
