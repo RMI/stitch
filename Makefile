@@ -132,6 +132,9 @@ clean-docker:
 dev-docker:
 	$(DOCKER_COMPOSE) up
 
+docker-reboot: clean-docker
+	$(DOCKER_COMPOSE) up --build
+
 .PHONY: all build clean \
         build-python \
         check lint test format format-check \
