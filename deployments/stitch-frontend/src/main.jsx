@@ -20,7 +20,7 @@ createRoot(document.getElementById("root")).render(
   <StrictMode>
     <Auth0Provider
       domain="rmi-spd.us.auth0.com"
-      clientId="698dba721eb165d16d533436"
+      clientId="TS1V1soQbccAV1sitFFCfUaIlSwHD2S2"
       authorizationParams={{
         redirect_uri: window.location.origin,
         audience: "https://stitch-api.local",
