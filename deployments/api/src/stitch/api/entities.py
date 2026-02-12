@@ -166,8 +166,8 @@ class User(BaseModel):
     id: int = Field(...)
     sub: str = Field(...)
     role: str | None = None
-    email: EmailStr
-    name: str
+    email: EmailStr | None = None
+    name: str | None = None
 
 
 class SourceSelectionLogic(BaseModel): ...
