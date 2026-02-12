@@ -53,11 +53,15 @@ class TestGetCurrentUserJITProvisioning:
         """Existing user found by sub claim."""
         async with integration_session_factory() as session:
             session.add(
-                UserModel(sub="auth0|existing", name="Original", email="orig@example.com")
+                UserModel(
+                    sub="auth0|existing", name="Original", email="orig@example.com"
+                )
             )
             await session.commit()
 
-        claims = _make_claims(sub="auth0|existing", name="Updated", email="new@example.com")
+        claims = _make_claims(
+            sub="auth0|existing", name="Updated", email="new@example.com"
+        )
 
         async with UnitOfWork(integration_session_factory) as uow:
             user = await get_current_user(claims, uow)
@@ -74,7 +78,9 @@ class TestGetCurrentUserJITProvisioning:
         """Claims update reflected in DB on subsequent login."""
         async with integration_session_factory() as session:
             session.add(
-                UserModel(sub="auth0|updatable", name="Old Name", email="old@example.com")
+                UserModel(
+                    sub="auth0|updatable", name="Old Name", email="old@example.com"
+                )
             )
             await session.commit()
 
@@ -124,7 +130,9 @@ class TestGetCurrentUserJITProvisioning:
             )
             await session.commit()
 
-        claims = _make_claims(sub="auth0|race-user", name="Racer", email="racer@example.com")
+        claims = _make_claims(
+            sub="auth0|race-user", name="Racer", email="racer@example.com"
+        )
 
         async with UnitOfWork(integration_session_factory) as uow:
             user = await get_current_user(claims, uow)

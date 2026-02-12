@@ -33,14 +33,18 @@ class TestValidateAuthConfigAtStartup:
         """RuntimeError when auth_disabled=True in PROD environment."""
         settings = _make_settings(auth_disabled=True, environment=Environment.PROD)
         with patch("stitch.api.auth.get_settings", return_value=settings):
-            with pytest.raises(RuntimeError, match="only permitted when ENVIRONMENT=dev"):
+            with pytest.raises(
+                RuntimeError, match="only permitted when ENVIRONMENT=dev"
+            ):
                 validate_auth_config_at_startup()
 
     def test_blocks_disabled_in_test(self):
         """RuntimeError when auth_disabled=True in TEST environment."""
         settings = _make_settings(auth_disabled=True, environment=Environment.TEST)
         with patch("stitch.api.auth.get_settings", return_value=settings):
-            with pytest.raises(RuntimeError, match="only permitted when ENVIRONMENT=dev"):
+            with pytest.raises(
+                RuntimeError, match="only permitted when ENVIRONMENT=dev"
+            ):
                 validate_auth_config_at_startup()
 
     def test_validates_oidc_settings_when_enabled(self):
