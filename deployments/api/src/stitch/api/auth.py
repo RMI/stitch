@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 @lru_cache
 def get_oidc_settings() -> OIDCSettings:
-    return OIDCSettings()
+    return OIDCSettings()  # ty: ignore[missing-argument]
 
 
 @lru_cache
@@ -44,12 +44,15 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 
 def validate_auth_config_at_startup() -> None:
     """Called from FastAPI lifespan. Fail fast if misconfigured."""
-    settings = get_oidc_settings()
-    if settings.disabled and get_settings().environment == Environment.PROD:
-        raise RuntimeError(
-            "AUTH_DISABLED=true is forbidden when ENVIRONMENT=prod. "
-            "Remove AUTH_DISABLED or set it to false."
-        )
+    settings = get_settings()
+    if settings.auth_disabled:
+        if settings.environment != Environment.DEV:
+            raise RuntimeError(
+                "AUTH_DISABLED=true is only permitted when ENVIRONMENT=dev"
+            )
+        logger.warning("Auth is disabled — all requests use dev credentials")
+        return
+    get_oidc_settings()  # fail fast if required OIDC fields missing
 
 
 async def get_token_claims(
@@ -63,9 +66,7 @@ async def get_token_claims(
     button).  Actual token parsing still uses the raw header so we can
     return precise 401 messages for missing/malformed values.
     """
-    settings = get_oidc_settings()
-
-    if settings.disabled:
+    if get_settings().auth_disabled:
         return _DEV_CLAIMS
 
     auth_header = request.headers.get("Authorization")

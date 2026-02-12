@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     environment: Environment = Environment.DEV
     dialect: Dialect = "postgresql"
     frontend_origin_url: OriginUrl = HttpUrl("http://localhost:3000")
+    auth_disabled: bool = False
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env",

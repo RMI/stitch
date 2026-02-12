@@ -47,14 +47,13 @@ def rsa_public_jwk(rsa_private_key: rsa.RSAPrivateKey) -> dict[str, Any]:
 
 @pytest.fixture
 def oidc_settings() -> OIDCSettings:
-    """OIDC settings for tests — auth enabled with test values."""
+    """OIDC settings for tests with example.com values."""
     return OIDCSettings(
-        issuer="https://test.auth0.com/",
-        audience="https://api.test.example.com",
-        jwks_uri="https://test.auth0.com/.well-known/jwks.json",
+        issuer="https://auth.example.com/",
+        audience="https://api.example.com",
+        jwks_uri="https://auth.example.com/.well-known/jwks.json",
         algorithms=("RS256",),
         clock_skew_seconds=30,
-        disabled=False,
     )
 
 
@@ -66,13 +65,14 @@ def token_factory(rsa_private_key_pem: bytes):
         sub: str = "auth0|user123",
         email: str | None = "user@example.com",
         name: str | None = "Test User",
-        iss: str = "https://test.auth0.com/",
-        aud: str = "https://api.test.example.com",
+        iss: str = "https://auth.example.com/",
+        aud: str = "https://api.example.com",
         exp: int | None = None,
         nbf: int | None = None,
         iat: int | None = None,
         kid: str = "test-key-1",
         extra_claims: dict[str, Any] | None = None,
+        include_nbf: bool = True,
     ) -> str:
         now = int(time.time())
         payload: dict[str, Any] = {
@@ -80,9 +80,10 @@ def token_factory(rsa_private_key_pem: bytes):
             "iss": iss,
             "aud": aud,
             "exp": exp if exp is not None else now + 3600,
-            "nbf": nbf if nbf is not None else now - 10,
             "iat": iat if iat is not None else now,
         }
+        if include_nbf:
+            payload["nbf"] = nbf if nbf is not None else now - 10
         if email is not None:
             payload["email"] = email
         if name is not None:
