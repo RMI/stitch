@@ -26,6 +26,7 @@ from stitch.api.entities import (
     User as UserEntity,
     WMData,
 )
+from stitch.api.deps import get_current_user
 
 """
 DB init/seed job.
@@ -263,6 +264,18 @@ def create_seed_user() -> UserModel:
     )
 
 
+def create_dev_user() -> UserModel:
+    dev_user = get_current_user()
+    print("[db-init] getting info for Dev User...", flush=True)
+    print(f"[db-init] User: '{dev_user}'...", flush=True)
+    return UserModel(
+        id=dev_user.id,
+        first_name=dev_user.name,
+        last_name="Deverson",
+        email=dev_user.email,
+    )
+
+
 def create_seed_sources():
     gem_sources = [
         GemSourceModel.from_entity(
@@ -350,16 +363,27 @@ def seed_dev(engine) -> None:
         session.add(user_model)
         session.flush()
 
+        dev_model = create_dev_user()
+        session.add(dev_model)
+        session.flush()
+
         user_entity = UserEntity(
             id=user_model.id,
             email=user_model.email,
             name=f"{user_model.first_name} {user_model.last_name}",
         )
 
-        gem_sources, wm_sources, rmi_sources = create_seed_sources()
-        session.add_all(gem_sources + wm_sources + rmi_sources)
+        dev_entity = UserEntity(
+            id=dev_model.id,
+            email=dev_model.email,
+            name=f"{dev_model.first_name} {dev_model.last_name}",
+        )
+
+        gem_sources, wm_sources, rmi_sources, cc_sources = create_seed_sources()
+        session.add_all(gem_sources + wm_sources + rmi_sources + cc_sources)
 
         resources = create_seed_resources(user_entity)
+        resources = create_seed_resources(dev_entity)
         session.add_all(resources)
 
         memberships = create_seed_memberships(
