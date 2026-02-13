@@ -113,7 +113,7 @@ class TestGetCurrentUserJITProvisioning:
         async with UnitOfWork(integration_session_factory) as uow:
             user = await get_current_user(claims, uow)
 
-        assert user.name == ""
+        assert user.name is None
         assert user.email == "valid@example.com"
 
     @pytest.mark.anyio
