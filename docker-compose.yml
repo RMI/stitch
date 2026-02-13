@@ -59,8 +59,6 @@ services:
     build:
       context: .
       dockerfile: deployments/api/Dockerfile
-    volumes:
-      - .:/app
     env_file:
       - .env
     environment:
@@ -70,7 +68,6 @@ services:
       # db-init connects as the migrator role (DDL + seed)
       STITCH_DB_USER: stitch_migrator
       STITCH_DB_PASSWORD: ${STITCH_MIGRATOR_PASSWORD}
-
     depends_on:
       db:
         condition: service_healthy
