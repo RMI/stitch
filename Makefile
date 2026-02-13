@@ -1,5 +1,6 @@
 UV ?= uv
-DOCKER_COMPOSE := docker compose
+DOCKER_COMPOSE := docker compose -f docker-compose.yml
+DOCKER_COMPOSE_DEV := $(DOCKER_COMPOSE) -f docker-compose.local.yml
 PYTEST := $(UV) run pytest
 RUFF := $(UV) run ruff
 
@@ -127,9 +128,12 @@ frontend-clean:
 
 # docker
 clean-docker:
-	$(DOCKER_COMPOSE) down --volumes --remove-orphans
+	$(DOCKER_COMPOSE_DEV) down --volumes --remove-orphans
 
 dev-docker:
+	$(DOCKER_COMPOSE_DEV) up
+
+prod-docker:
 	$(DOCKER_COMPOSE) up
 
 docker-reboot: clean-docker

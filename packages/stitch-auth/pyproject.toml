@@ -3,7 +3,7 @@ name = "stitch-auth"
 version = "0.1.0"
 description = "Provider-agnostic OIDC JWT validation for Stitch"
 authors = [{ name = "Michael Barlow", email = "mbarlow@rmi.org" }]
-requires-python = ">=3.12.12"
+requires-python = ">=3.12"
 dependencies = [
     "pyjwt[crypto]>=2.9.0",
     "pydantic>=2.0",

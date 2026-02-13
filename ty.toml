@@ -1,0 +1,28 @@
+[environment]
+python-version = "3.12"
+# Source roots for namespace package resolution (stitch.api, stitch.core, stitch.auth)
+root = [
+    "deployments/api/src",
+    "packages/stitch-core/src",
+    "packages/stitch-auth/src",
+]
+# Module resolution paths for test imports (e.g. `from tests.utils import ...`).
+# Needed by ty server (LSP) when editing test files; src.exclude keeps them
+# out of `ty check` batch output.
+extra-paths = [
+    "deployments/api",
+    "packages/stitch-core",
+    "packages/stitch-core/tests",
+    "packages/stitch-auth",
+]
+
+[src]
+exclude = [
+    "dev/",
+    "packages/stitch-core/",
+    "**/tests/",
+]
+
+[analysis]
+# stitch.cli lives in dev/stitch-cli which is outside the workspace for now
+allowed-unresolved-imports = ["stitch.cli"]
