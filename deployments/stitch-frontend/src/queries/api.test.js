@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getResources, getResource } from "./api";
 
+const getAccessTokenSilently = vi.fn(async () => "test-token");
+
 describe("API Functions", () => {
   beforeEach(() => {
     global.fetch = vi.fn();
@@ -19,10 +21,11 @@ describe("API Functions", () => {
         json: async () => mockResources,
       });
 
-      const result = await getResources();
+      const result = await getResources(getAccessTokenSilently);
 
       expect(global.fetch).toHaveBeenCalledWith(
         "http://localhost:8000/api/v1/resources/",
+        expect.objectContaining({ headers: expect.any(Headers) }),
       );
       expect(result).toEqual(mockResources);
     });
@@ -33,13 +36,13 @@ describe("API Functions", () => {
         status: 500,
       });
 
-      await expect(getResources()).rejects.toThrow("HTTP error! status: 500");
+      await expect(getResources(getAccessTokenSilently)).rejects.toThrow("HTTP error! status: 500");
     });
 
     it("throws error on network failure", async () => {
       global.fetch.mockRejectedValueOnce(new Error("Network error"));
 
-      await expect(getResources()).rejects.toThrow("Network error");
+      await expect(getResources(getAccessTokenSilently)).rejects.toThrow("Network error");
     });
   });
 
@@ -53,7 +56,7 @@ describe("API Functions", () => {
         json: async () => mockResource,
       });
 
-      const result = await getResource(42);
+      const result = await getResource(42, getAccessTokenSilently);
 
       expect(global.fetch).toHaveBeenCalledWith(
         "http://localhost:8000/api/v1/resources/42",
@@ -68,7 +71,7 @@ describe("API Functions", () => {
       });
 
       try {
-        await getResource(999);
+        await getResource(999, getAccessTokenSilently);
         expect.fail("Should have thrown an error");
       } catch (error) {
         expect(error.message).toBe("HTTP error! status: 404");
@@ -82,7 +85,7 @@ describe("API Functions", () => {
         status: 404,
       });
 
-      await expect(getResource(123)).rejects.toMatchObject({
+      await expect(getResource(123, getAccessTokenSilently)).rejects.toMatchObject({
         message: "HTTP error! status: 404",
         status: 404,
       });
@@ -94,7 +97,7 @@ describe("API Functions", () => {
         status: 500,
       });
 
-      await expect(getResource(1)).rejects.toMatchObject({
+      await expect(getResource(1, getAccessTokenSilently)).rejects.toMatchObject({
         message: "HTTP error! status: 500",
         status: 500,
       });
@@ -103,7 +106,7 @@ describe("API Functions", () => {
     it("throws error on network failure", async () => {
       global.fetch.mockRejectedValueOnce(new Error("Failed to fetch"));
 
-      await expect(getResource(1)).rejects.toThrow("Failed to fetch");
+      await expect(getResource(1, getAccessTokenSilently)).rejects.toThrow("Failed to fetch");
     });
   });
 });
