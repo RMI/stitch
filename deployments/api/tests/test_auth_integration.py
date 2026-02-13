@@ -101,11 +101,11 @@ class TestGetCurrentUserJITProvisioning:
             assert row.email == "new@example.com"
 
     @pytest.mark.anyio
-    async def test_defaults_empty_string_for_missing_name(
+    async def test_stores_none_for_missing_name(
         self,
         integration_session_factory,
     ):
-        """Name defaults to empty string when claims.name is None."""
+        """Name stays None when claims.name is None."""
         claims = TokenClaims(
             sub="auth0|no-name", email="valid@example.com", name=None, raw={}
         )
@@ -113,7 +113,7 @@ class TestGetCurrentUserJITProvisioning:
         async with UnitOfWork(integration_session_factory) as uow:
             user = await get_current_user(claims, uow)
 
-        assert user.name == ""
+        assert user.name is None
         assert user.email == "valid@example.com"
 
     @pytest.mark.anyio
