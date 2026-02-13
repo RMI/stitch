@@ -17,5 +17,4 @@ stitch-auth = { workspace = true }
 dev = [
     "pytest>=8.4.2",
     "ruff>=0.14.2",
-    "ty>=0.0.16",
 ]
