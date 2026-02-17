@@ -1,4 +1,3 @@
-# pyright: reportAssignmentType=false
 from typing_extensions import Self
 
 from collections.abc import Mapping, MutableMapping
