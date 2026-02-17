@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 @lru_cache
 def get_oidc_settings() -> OIDCSettings:
-    return OIDCSettings()  # ty: ignore[missing-argument]
+    return OIDCSettings()
 
 
 @lru_cache
