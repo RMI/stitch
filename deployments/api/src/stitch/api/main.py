@@ -5,6 +5,7 @@ from sqlalchemy.exc import OperationalError
 from starlette.status import HTTP_503_SERVICE_UNAVAILABLE
 from .middleware import register_middlewares
 from .db.config import dispose_engine
+from .auth import validate_auth_config_at_startup
 from .settings import get_settings
 
 from .routers.resources import router as resource_router
@@ -17,6 +18,7 @@ base_router.include_router(health_router)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_auth_config_at_startup()
     yield
     await dispose_engine()
 

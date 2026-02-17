@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from starlette.status import HTTP_404_NOT_FOUND
 
 from stitch.api.db.model.sources import SOURCE_TABLES, SourceModel
-from stitch.api.deps import CurrentUser
+from stitch.api.auth import CurrentUser
 from stitch.api.entities import (
     CreateResource,
     CreateResourceSourceData,
@@ -42,7 +42,7 @@ async def get_or_create_source_models(
                     continue
                 result[key].append(src_model)
             else:
-                result[key].append(model_cls.from_entity(item))  # pyright: ignore[reportArgumentType]
+                result[key].append(model_cls.from_entity(item))
     return result
 
 
