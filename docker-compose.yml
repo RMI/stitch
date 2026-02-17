@@ -59,8 +59,6 @@ services:
     build:
       context: .
       dockerfile: deployments/api/Dockerfile
-    volumes:
-      - .:/app
     env_file:
       - .env
     environment:
