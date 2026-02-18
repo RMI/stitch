@@ -66,7 +66,7 @@ class PayloadMixin(Generic[TPayload]):
         self.source = value.source
         self._payload_data = value.model_dump(mode="json")
 
-    @payload.inplace.expression  # pyright: ignore[reportArgumentType]
+    @payload.inplace.expression
     @classmethod
     def _payload_expression(cls):
         return cls._payload_data

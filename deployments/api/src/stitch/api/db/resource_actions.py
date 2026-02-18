@@ -42,7 +42,7 @@ async def get_or_create_source_models(
                     continue
                 result[key].append(src_model)
             else:
-                result[key].append(model_cls.from_entity(item))  # pyright: ignore[reportArgumentType]
+                result[key].append(model_cls.from_entity(item))
     return result
 
 

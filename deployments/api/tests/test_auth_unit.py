@@ -8,6 +8,7 @@ from starlette.testclient import TestClient
 from stitch.api.auth import validate_auth_config_at_startup
 from stitch.api.main import app
 from stitch.api.settings import Environment, Settings
+from stitch.auth.settings import OIDCSettings
 
 
 def _make_settings(
@@ -18,6 +19,15 @@ def _make_settings(
         auth_disabled=auth_disabled,
         environment=environment,
     )
+
+
+def _make_oidc_settings(
+    *,
+    issuer: str = "https://example.com",
+    audience: str = "ex_aud",
+    jwks_uri: str = "https://auth.example.com/jwks",
+) -> OIDCSettings:
+    return OIDCSettings(issuer=issuer, audience=audience, jwks_uri=jwks_uri)
 
 
 class TestValidateAuthConfigAtStartup:
@@ -64,12 +74,11 @@ class TestGetTokenClaims:
     def test_returns_dev_claims_when_disabled(self):
         """Returns _DEV_CLAIMS when auth is disabled."""
         settings = _make_settings(auth_disabled=True, environment=Environment.DEV)
+        oidc_settings = _make_oidc_settings()
 
         with (
             patch("stitch.api.auth.get_settings", return_value=settings),
-            patch(
-                "stitch.api.main.validate_auth_config_at_startup",
-            ),
+            patch("stitch.api.auth.get_oidc_settings", return_value=oidc_settings),
         ):
             with TestClient(app) as client:
                 response = client.get("/api/v1/health")
@@ -79,12 +88,11 @@ class TestGetTokenClaims:
     def test_raises_401_missing_auth_header(self):
         """401 when no Authorization header and auth is enabled."""
         settings = _make_settings(auth_disabled=False)
+        oidc_settings = _make_oidc_settings()
 
         with (
             patch("stitch.api.auth.get_settings", return_value=settings),
-            patch(
-                "stitch.api.main.validate_auth_config_at_startup",
-            ),
+            patch("stitch.api.auth.get_oidc_settings", return_value=oidc_settings),
         ):
             with TestClient(app, raise_server_exceptions=False) as client:
                 response = client.get(
@@ -97,12 +105,11 @@ class TestGetTokenClaims:
     def test_raises_401_invalid_header_format(self):
         """401 for malformed Authorization header."""
         settings = _make_settings(auth_disabled=False)
+        oidc_settings = _make_oidc_settings()
 
         with (
             patch("stitch.api.auth.get_settings", return_value=settings),
-            patch(
-                "stitch.api.main.validate_auth_config_at_startup",
-            ),
+            patch("stitch.api.auth.get_oidc_settings", return_value=oidc_settings),
         ):
             with TestClient(app, raise_server_exceptions=False) as client:
                 response = client.get(

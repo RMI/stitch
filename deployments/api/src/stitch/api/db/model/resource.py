@@ -81,56 +81,6 @@ class MembershipModel(TimestampMixin, UserAuditMixin, Base):
         )
 
 
-# WIP
-# T = TypeVar("T", bound=SourceBase)
-#
-#
-# def src_relationship(model: type[T], source: SourceKey) -> Mapped[list[T]]:
-#     return relationship(
-#         model,
-#         secondary=lambda: MembershipModel.__table__,
-#         primaryjoin=lambda: and_(
-#             ResourceModel.id == MembershipModel.resource_id,
-#             MembershipModel.status == MembershipStatus.ACTIVE,
-#             MembershipModel.source == source,
-#         ),
-#         secondaryjoin=lambda: MembershipModel.source_pk == model.id,
-#         viewonly=True,
-#     )
-
-
-# class SourceModels:
-#     __slots__ = "_owner"
-#
-#     _parent: "ResourceModel"
-#
-#     def __init__(self, owner: "ResourceModel") -> None:
-#         self._owner = owner
-#
-#     @property
-#     def gem(self) -> list[GemSourceModel]:
-#         return self._owner._gem_sources
-#
-#     @property
-#     def wm(self) -> list[WMSourceModel]:
-#         return self._owner._wm_sources
-#
-#     @property
-#     def rmi(self) -> list[RMIManualSourceModel]:
-#         return self._owner._rmi_sources
-#
-#     @property
-#     def cc(self) -> list[CCReservoirsSourceModel]:
-#         return self._owner._cc_sources
-#
-#
-# class SourcesDescriptor:
-#     def __get__(self, obj: "ResourceModel | None", objtype: Any = None) -> SourceModels:
-#         if obj is None:
-#             return self  # pyright: ignore[reportReturnType]
-#         return SourceModels(obj)
-
-
 class ResourceModel(TimestampMixin, UserAuditMixin, Base):
     __tablename__ = "resources"
     __table_args__ = (Index("rp_repointed_id_idx", "repointed_id"),)
@@ -148,22 +98,6 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
     # and configure the appropriate SQL statement to load the membership objects
     memberships: Mapped[list[MembershipModel]] = relationship()
 
-    # WIP
-    # _gem_sources: Mapped[list[GemSourceModel]] = src_relationship(
-    #     model=GemSourceModel, source="gem"
-    # )
-    # _wm_sources: Mapped[list[WMSourceModel]] = src_relationship(
-    #     model=WMSourceModel, source="wm"
-    # )
-    # _rmi_sources: Mapped[list[RMIManualSourceModel]] = src_relationship(
-    #     model=RMIManualSourceModel, source="rmi"
-    # )
-    # _cc_sources: Mapped[list[CCReservoirsSourceModel]] = src_relationship(
-    #     model=CCReservoirsSourceModel, source="cc"
-    # )
-    #
-    # sources: SourceModels = SourcesDescriptor()
-
     async def get_source_data(self, session: AsyncSession):
         pks_by_src: dict[SourceKey, set[int]] = defaultdict(set)
         for mem in self.memberships:
@@ -179,7 +113,7 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
             for src_model in await session.scalars(stmt):
                 results[src][src_model.id] = src_model
 
-        return SourceModelData(**results)  # pyright: ignore[reportArgumentType]
+        return SourceModelData(**results)
 
     async def get_root(self, session: AsyncSession):
         root = await session.scalar(self.__class__._root_select(self.id))
