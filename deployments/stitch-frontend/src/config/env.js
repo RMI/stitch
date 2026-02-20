@@ -24,6 +24,7 @@ function loadConfig() {
   });
 }
 
-const config = loadConfig();
+// Optional named export for `import { config } from "./config/env.js"`
+export const config = loadConfig();
 
 export default config;
