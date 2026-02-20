@@ -54,6 +54,45 @@ Note: The `db-init` service runs automatically (via `depends_on`) to apply schem
 - `STITCH_DB_SEED_MODE`
 - `STITCH_DB_SEED_PROFILE`
 
+### Auth Testing (optional)
+
+By default, auth is disabled (`AUTH_DISABLED=true`) — all requests get a hardcoded dev user with no token required. To test real JWT auth flows locally with a mock OIDC server:
+
+1. Update `.env`:
+   ```
+   AUTH_DISABLED=false
+   AUTH_ISSUER=http://localauth0:3000/
+   AUTH_AUDIENCE=stitch-api-local
+   AUTH_JWKS_URI=http://localauth0:3000/.well-known/jwks.json
+   ```
+
+2. Start with the `auth-test` profile:
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.local.yml --profile auth-test up --build
+   ```
+
+3. Get a token and make requests:
+   ```bash
+   # Health check (always open)
+   curl localhost:8000/api/v1/health
+
+   # No token → 401
+   curl localhost:8000/api/v1/resources/
+
+   # Get a valid token
+   TOKEN=$(curl -s -X POST localhost:3100/oauth/token \
+     -H "Content-Type: application/json" \
+     -d '{"client_id":"client_id","client_secret":"client_secret","audience":"stitch-api-local","grant_type":"client_credentials"}' \
+     | jq -r '.access_token')
+
+   # Authenticated request → 200
+   curl -H "Authorization: Bearer $TOKEN" localhost:8000/api/v1/resources/
+   ```
+
+Swagger UI (`/docs`) also supports the "Authorize" button for token entry.
+
+See [docs/auth-testing.md](docs/auth-testing.md) for the full scenario guide.
+
 ## Reset (wipe DB volumes safely)
 
 Stop containers and delete the Postgres volume (this removes all local DB data):

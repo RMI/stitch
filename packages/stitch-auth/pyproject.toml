@@ -5,9 +5,9 @@ description = "Provider-agnostic OIDC JWT validation for Stitch"
 authors = [{ name = "Michael Barlow", email = "mbarlow@rmi.org" }]
 requires-python = ">=3.12"
 dependencies = [
-    "pyjwt[crypto]>=2.9.0",
-    "pydantic>=2.0",
-    "pydantic-settings>=2.11.0",
+  "pyjwt[crypto]>=2.9.0",
+  "pydantic>=2.0",
+  "pydantic-settings>=2.11.0",
 ]
 
 [build-system]
@@ -18,10 +18,7 @@ build-backend = "uv_build"
 module-name = "stitch.auth"
 
 [dependency-groups]
-dev = [
-    "pytest>=8.0",
-    "cryptography>=44.0.0",
-]
+dev = ["pytest>=8.0", "cryptography>=44.0.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
