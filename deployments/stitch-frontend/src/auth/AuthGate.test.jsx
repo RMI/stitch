@@ -20,16 +20,13 @@ describe("AuthGate", () => {
 
     expect(screen.getByText("Loading...")).toBeInTheDocument();
     expect(screen.queryByText("App Content")).not.toBeInTheDocument();
-    expect(vi.mocked(useAuth0)().loginWithRedirect).not.toHaveBeenCalled();
   });
 
   it("shows error message when auth fails", () => {
-    const loginWithRedirect = vi.fn();
     vi.mocked(useAuth0).mockReturnValue({
       ...auth0TestDefaults,
       isAuthenticated: false,
       error: new Error("Something went wrong"),
-      loginWithRedirect,
     });
 
     render(
@@ -42,15 +39,12 @@ describe("AuthGate", () => {
       screen.getByText("Authentication error: Something went wrong"),
     ).toBeInTheDocument();
     expect(screen.queryByText("App Content")).not.toBeInTheDocument();
-    expect(loginWithRedirect).not.toHaveBeenCalled();
   });
 
-  it("calls loginWithRedirect when unauthenticated", () => {
-    const loginWithRedirect = vi.fn();
+  it("renders LoginPage when unauthenticated", () => {
     vi.mocked(useAuth0).mockReturnValue({
       ...auth0TestDefaults,
       isAuthenticated: false,
-      loginWithRedirect,
     });
 
     render(
@@ -59,7 +53,10 @@ describe("AuthGate", () => {
       </AuthGate>,
     );
 
+    expect(screen.getByText("Stitch")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /log in to continue/i }),
+    ).toBeInTheDocument();
     expect(screen.queryByText("App Content")).not.toBeInTheDocument();
-    expect(loginWithRedirect).toHaveBeenCalled();
   });
 });
