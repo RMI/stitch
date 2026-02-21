@@ -26,7 +26,15 @@ services:
       test: ["CMD", "/localauth0", "healthcheck"]
     environment:
       LOCALAUTH0_CONFIG_PATH: /etc/localauth0.toml
-    ports:
-      - "3100:3000"
     volumes:
       - ./dev/localauth0.toml:/etc/localauth0.toml:ro
+  auth0-proxy:
+    profiles: [auth-test]
+    image: nginx:1.27-alpine
+    ports:
+      - "3100:80"
+    volumes:
+      - ./dev/localauth0-proxy.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      localauth0:
+        condition: service_healthy

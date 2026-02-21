@@ -10,6 +10,10 @@ COPY index.html vite.config.js ./
 COPY public/ ./public/
 COPY src/ ./src/
 
+ARG VITE_AUTH0_DOMAIN
+ARG VITE_AUTH0_CLIENT_ID
+ARG VITE_AUTH0_AUDIENCE
+ARG VITE_API_URL
 RUN npm run build
 
 ########################

@@ -1,4 +1,4 @@
-issuer = "http://localauth0:3000/"
+issuer = "http://localhost:3100/"
 
 [user_info]
 subject = "mock|dev-user-1"
