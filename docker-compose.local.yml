@@ -24,13 +24,16 @@ services:
     image: public.ecr.aws/primaassicurazioni/localauth0:0.8.3
     healthcheck:
       test: ["CMD", "/localauth0", "healthcheck"]
+      start_period: 10s
+      start_interval: 1s
+      interval: 30s
     environment:
       LOCALAUTH0_CONFIG_PATH: /etc/localauth0.toml
     volumes:
       - ./dev/localauth0.toml:/etc/localauth0.toml:ro
   auth0-proxy:
     profiles: [auth-test]
-    image: nginx:1.27-alpine
+    image: openresty/openresty:alpine
     ports:
       - "3100:80"
     volumes:
