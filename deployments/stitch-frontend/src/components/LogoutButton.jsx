@@ -5,7 +5,9 @@ export const LogoutButton = () => {
   const { isAuthenticated, logout: authLogout } = useAuth0();
 
   const logout = () =>
-    authLogout({ logoutParams: { returnTo: window.location.origin } });
+    authLogout({
+      openUrl: () => window.location.assign(window.location.origin),
+    });
 
   return isAuthenticated && <Button onClick={logout}>Log out</Button>;
 };
