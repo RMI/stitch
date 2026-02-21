@@ -35,7 +35,7 @@ Update `.env` with the auth-test settings:
 
 ```
 AUTH_DISABLED=false
-AUTH_ISSUER=http://localauth0:3000/
+AUTH_ISSUER=http://localhost:3100/
 AUTH_AUDIENCE=stitch-api-local
 AUTH_JWKS_URI=http://localauth0:3000/.well-known/jwks.json
 ```
@@ -46,7 +46,7 @@ AUTH_JWKS_URI=http://localauth0:3000/.well-known/jwks.json
 docker compose -f docker-compose.yml -f docker-compose.local.yml --profile auth-test up --build
 ```
 
-This starts the normal stack (db, api, frontend) plus `localauth0` on port 3100 (host) / 3000 (Docker network).
+This starts the normal stack (db, api, frontend) plus `localauth0` (Docker-internal on port 3000) and `auth0-proxy` (OpenResty on host port 3100). See [Local Auth Proxy](local-auth-proxy.md) for details on the proxy architecture.
 
 ### 3. Verify localauth0 is running
 
@@ -157,18 +157,27 @@ After a successful authenticated request, verify the user was created in the dat
 4. Click "Authorize"
 5. All subsequent "Try it out" requests will include the token
 
-## CORS and Browser Requests
+## Frontend Auth Flow
 
-The API's CORS middleware explicitly allows the `Authorization` header from the configured `FRONTEND_ORIGIN_URL`. Browser-based requests from the frontend will include the JWT in the `Authorization` header and pass CORS preflight checks. To test this flow, use the frontend at http://localhost:3000 after authenticating via Swagger or configure the frontend to send tokens.
+The frontend at http://localhost:3000 uses the Auth0 SPA SDK to authenticate via the proxy at `localhost:3100`. After login, it attaches Bearer tokens to all API requests. The API's CORS middleware allows the `Authorization` header from `FRONTEND_ORIGIN_URL`.
+
+To test the full browser flow:
+
+1. Open http://localhost:3000 — you'll see the login page
+2. Click "Log in to continue" — redirects to localauth0 via the proxy
+3. Click "Login" on localauth0's page — redirects back to the app
+4. The app fetches resources with the token attached
 
 ## localauth0 Configuration
 
 The mock server is configured via `dev/localauth0.toml`:
 
-- **Issuer**: `http://localauth0:3000/` (matches `AUTH_ISSUER`)
+- **Issuer**: `http://localhost:3100/` (matches `AUTH_ISSUER`; the proxy's address, not localauth0's internal port)
 - **User**: `sub=mock|dev-user-1`, name "Dev User", email `dev@example.com`
 - **Audiences**: `stitch-api-local` (valid) and `wrong-audience` (for testing rejection)
-- **Port**: 3000 inside Docker, mapped to 3100 on the host
+- **Port**: 3000 inside Docker, exposed via `auth0-proxy` on host port 3100
+
+For proxy-specific details and troubleshooting, see [Local Auth Proxy](local-auth-proxy.md).
 
 ## Configuring Real Auth0
 
