@@ -32,7 +32,7 @@ describe("LogoutButton", () => {
     await user.click(screen.getByRole("button", { name: /log out/i }));
 
     expect(logout).toHaveBeenCalledWith({
-      logoutParams: { returnTo: window.location.origin },
+      openUrl: expect.any(Function),
     });
   });
 });
