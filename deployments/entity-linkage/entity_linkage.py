@@ -44,7 +44,9 @@ class Config:
             sleep_seconds=get_float("ENTITY_LINKAGE_SLEEP_SECONDS", "10"),
             timeout_seconds=get_float("ENTITY_LINKAGE_TIMEOUT_SECONDS", "10"),
             max_retries=get_int("ENTITY_LINKAGE_MAX_RETRIES", "60"),
-            retry_backoff_seconds=get_float("ENTITY_LINKAGE_RETRY_BACKOFF_SECONDS", "1"),
+            retry_backoff_seconds=get_float(
+                "ENTITY_LINKAGE_RETRY_BACKOFF_SECONDS", "1"
+            ),
             log_level=os.getenv("ENTITY_LINKAGE_LOG_LEVEL", "INFO").strip().upper(),
         )
 
@@ -102,6 +104,7 @@ def wait_for_api(cfg: Config) -> None:
         f"API not reachable after {cfg.max_retries} retries; last tried: {candidates}"
     )
 
+
 def extract_duplicate_groups(items: list[dict]) -> list[Tuple[str, str, list[int]]]:
     """
     Groups resources by (name, country) and returns only groups
@@ -133,6 +136,7 @@ def extract_duplicate_groups(items: list[dict]) -> list[Tuple[str, str, list[int
             duplicates.append((name, country, ids))
 
     return duplicates
+
 
 def do_get_then_post(cfg: Config) -> None:
     timeout = httpx.Timeout(cfg.timeout_seconds)
@@ -179,9 +183,7 @@ def do_get_then_post(cfg: Config) -> None:
                 )
 
                 # ---- POST (stub) ----
-                payload: Dict[str, Any] = {
-                    "resource_ids": ids
-                }
+                payload: Dict[str, Any] = {"resource_ids": ids}
 
                 log.info("prepost POST %s payload=%s", post_url, _safe_json(payload))
                 r_post = client.post(post_url, json=payload)
@@ -220,7 +222,11 @@ def main() -> int:
         start = time.time()
         try:
             do_get_then_post(cfg)
-            log.info("Iteration ok (elapsed=%.2fs). Sleeping %ss.", time.time() - start, cfg.sleep_seconds)
+            log.info(
+                "Iteration ok (elapsed=%.2fs). Sleeping %ss.",
+                time.time() - start,
+                cfg.sleep_seconds,
+            )
         except Exception:
             log.exception("Iteration failed. Sleeping %ss.", cfg.sleep_seconds)
 
