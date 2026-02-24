@@ -1,7 +1,7 @@
 from typing import TypeVar, Mapping, NamedTuple, MutableMapping
 from pydantic import BaseModel, ConfigDict
 
-from .common import IdType
+from .types import IdType
 
 
 class SourceBase[TId: IdType, TSrcKey: str](BaseModel):

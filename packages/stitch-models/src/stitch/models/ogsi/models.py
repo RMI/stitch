@@ -1,6 +1,6 @@
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
-from stitch.models.common import CountryCode, Latitude, Longitude, Percentage, Year
+from stitch.models.types import CountryCode, Latitude, Longitude, Percentage, Year
 
 from .types import (
     LocationType,
