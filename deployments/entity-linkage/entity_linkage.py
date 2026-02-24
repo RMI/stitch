@@ -6,6 +6,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict
 from urllib.parse import urljoin, urlparse
+from collections import defaultdict
+from typing import List, Tuple
 
 import httpx
 
@@ -100,51 +102,98 @@ def wait_for_api(cfg: Config) -> None:
         f"API not reachable after {cfg.max_retries} retries; last tried: {candidates}"
     )
 
+def extract_duplicate_groups(items: list[dict]) -> list[Tuple[str, str, list[int]]]:
+    """
+    Groups resources by (name, country) and returns only groups
+    that contain more than one item.
+
+    Returns:
+        [
+            (name, country, [id1, id2, ...]),
+            ...
+        ]
+    """
+    groups: dict[tuple[str, str], list[int]] = defaultdict(list)
+
+    for item in items:
+        try:
+            name = item["name"]
+            country = item["country"]
+            rid = item["id"]
+        except KeyError as e:
+            log.warning("Skipping item missing expected field %s: %s", e, item)
+            continue
+
+        groups[(name, country)].append(rid)
+
+    duplicates: list[Tuple[str, str, list[int]]] = []
+
+    for (name, country), ids in groups.items():
+        if len(ids) > 1:
+            duplicates.append((name, country, ids))
+
+    return duplicates
 
 def do_get_then_post(cfg: Config) -> None:
-    """
-    Stub logic:
-      1) GET resources/
-      2) POST resources/ with a dummy payload
-
-    If your API contract changes, this is the only place you should need to edit.
-    """
     timeout = httpx.Timeout(cfg.timeout_seconds)
 
     get_url = urljoin(cfg.api_url, "resources/")
-    post_url = urljoin(cfg.api_url, "resources/")
-
-    payload: Dict[str, Any] = {
-        "name": "entity-linkage-stub",
-        "country": "XYZ",
-        "repointed_to": None,
-        "source_data": None
-    }
+    post_url = urljoin(cfg.api_url, "resources/merge")
 
     with httpx.Client(timeout=timeout) as client:
+        # ---- GET ----
         log.info("GET %s", get_url)
         r_get = client.get(get_url)
+
         log.info(
-            "GET response status=%s headers=%s body=%s",
+            "GET response status=%s",
             r_get.status_code,
-            dict(r_get.headers),
-            r_get.text[:1000],
         )
 
-        log.info("POST %s payload=%s", post_url, _safe_json(payload))
-        r_post = client.post(post_url, json=payload)
-        log.info(
-            "POST response status=%s headers=%s body=%s",
-            r_post.status_code,
-            dict(r_post.headers),
-            r_post.text[:1000],
-        )
-
-        # Raise on unexpected server errors, but keep stubbing friendly
         if r_get.status_code >= 500:
             raise RuntimeError(f"GET failed with status {r_get.status_code}")
-        if r_post.status_code >= 500:
-            raise RuntimeError(f"POST failed with status {r_post.status_code}")
+
+        try:
+            data = r_get.json()
+        except Exception:
+            log.error("GET did not return valid JSON. Body=%s", r_get.text[:1000])
+            raise
+
+        if not isinstance(data, list):
+            raise RuntimeError("Expected GET to return a JSON array")
+
+        log.info("Fetched %s resources", len(data))
+
+        duplicate_groups = extract_duplicate_groups(data)
+
+        if not duplicate_groups:
+            log.info("No duplicate (name, country) groups found.")
+        else:
+            log.info("Found %s duplicate groups.", len(duplicate_groups))
+            for name, country, ids in duplicate_groups:
+                log.info(
+                    "Duplicate group detected: name=%r country=%r ids=%s",
+                    name,
+                    country,
+                    ids,
+                )
+
+                # ---- POST (stub) ----
+                payload: Dict[str, Any] = {
+                    "resource_ids": ids
+                }
+
+                log.info("prepost POST %s payload=%s", post_url, _safe_json(payload))
+                r_post = client.post(post_url, json=payload)
+
+                log.info(
+                    "POST response status=%s body=%s",
+                    r_post.status_code,
+                    r_post.text[:1000],
+                )
+
+                if r_post.status_code >= 500:
+                    raise RuntimeError(f"POST failed with status {r_post.status_code}")
 
 
 def main() -> int:

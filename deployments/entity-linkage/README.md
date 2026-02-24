@@ -7,6 +7,9 @@ A small client container that:
 Note that for now, it does not terminate (runs in loop looking for resources to
 merge)
 
+Note that the the merging logic is trivial at this point (exact match on
+resource name and country).
+
 ## Configuration
 
 - `API_URL` (required)
