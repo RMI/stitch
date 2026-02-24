@@ -82,5 +82,21 @@ services:
     ports:
       - "3000:80"
 
+  entity-linkage:
+    build:
+      context: .
+      dockerfile: deployments/entity-linkage/Dockerfile
+    env_file:
+      - .env
+    environment:
+      # Use the internal compose service name + port by default
+      API_URL: ${ENTITY_LINKAGE_API_URL:-http://api:8000/api/v1}
+      ENTITY_LINKAGE_SLEEP_SECONDS: ${ENTITY_LINKAGE_SLEEP_SECONDS:-10}
+      ENTITY_LINKAGE_LOG_LEVEL: DEBUG
+    depends_on:
+      api:
+        condition: service_started
+    restart: "no"
+
 volumes:
   db_data:
