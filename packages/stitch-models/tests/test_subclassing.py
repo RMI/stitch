@@ -28,16 +28,30 @@ from tests.conftest import (
 
 
 class TestSourceBaseSubclassing:
-    def test_instantiation_with_correct_types(self):
+    def test_instantiation_and_type_preservation(self):
         src = FooSource(id=1, source="foo", value=3.14)
         assert src.id == 1
         assert src.source == "foo"
         assert src.value == 3.14
-
-    def test_field_type_preservation(self):
-        src = FooSource(id=1, source="foo", value=3.14)
         assert isinstance(src.id, int)
         assert isinstance(src.value, float)
+
+    def test_id_type_specialization(self):
+        # int id with coercion from numeric string
+        foo = FooSource(id="42", source="foo", value=1.0)
+        assert foo.id == 42
+        assert isinstance(foo.id, int)
+
+        # str id
+        bar = BarSource(id="abc", source="bar", label="test")
+        assert bar.id == "abc"
+        assert isinstance(bar.id, str)
+
+        # UUID id
+        uid = UUID("550e8400-e29b-41d4-a716-446655440000")
+        uuidsrc = UuidSource(id=uid, source="uuid_src")
+        assert uuidsrc.id == uid
+        assert isinstance(uuidsrc.id, UUID)
 
     def test_wrong_literal_rejected(self):
         with pytest.raises(ValidationError):
@@ -47,22 +61,6 @@ class TestSourceBaseSubclassing:
         with pytest.raises(ValidationError):
             FooSource(id="not_a_number", source="foo", value=3.14)
 
-    def test_numeric_string_coerced_to_int(self):
-        src = FooSource(id="42", source="foo", value=1.0)
-        assert src.id == 42
-        assert isinstance(src.id, int)
-
-    def test_string_id_subclass(self):
-        src = BarSource(id="abc", source="bar", label="test")
-        assert src.id == "abc"
-        assert isinstance(src.id, str)
-
-    def test_uuid_id_subclass(self):
-        uid = UUID("550e8400-e29b-41d4-a716-446655440000")
-        src = UuidSource(id=uid, source="uuid_src")
-        assert src.id == uid
-        assert isinstance(src.id, UUID)
-
 
 # ---------------------------------------------------------------------------
 # SourcePayload subclassing
@@ -71,6 +69,11 @@ class TestSourceBaseSubclassing:
 
 class TestSourcePayloadSubclassing:
     def test_single_source_payload(self, foo_source):
+        # empty default
+        empty = FooPayload()
+        assert empty.foos == {}
+
+        # populated
         payload = FooPayload(foos={1: foo_source})
         assert payload.foos[1].id == 1
         assert payload.foos[1].value == 3.14
@@ -83,10 +86,6 @@ class TestSourcePayloadSubclassing:
         assert len(payload.foos) == 1
         assert len(payload.bars) == 1
         assert payload.bars["abc"].label == "test"
-
-    def test_empty_defaults(self):
-        payload = FooPayload()
-        assert payload.foos == {}
 
     def test_uuid_keyed_payload(self):
         uid = UUID("550e8400-e29b-41d4-a716-446655440000")
@@ -105,11 +104,7 @@ class TestResourceSpecialization:
         assert foo_resource.id == 1
         assert foo_resource.name == "Test"
         assert len(foo_resource.provenance) == 1
-
-    def test_inherits_resource_base_fields(self, foo_resource):
-        assert hasattr(foo_resource, "name")
-        assert hasattr(foo_resource, "country")
-        assert hasattr(foo_resource, "repointed_to")
+        # inherited optional fields default to None
         assert foo_resource.country is None
         assert foo_resource.repointed_to is None
 
@@ -133,22 +128,23 @@ class TestResourceSpecialization:
 
 
 class TestFromAttributes:
-    def test_foo_source_from_orm(self):
-        orm = FooSourceORM(id=1, source="foo", value=3.14)
-        src = FooSource.model_validate(orm, from_attributes=True)
-        assert src.id == 1
-        assert src.source == "foo"
-        assert src.value == 3.14
-
-    def test_bar_source_from_orm(self):
-        orm = BarSourceORM(id="abc", source="bar", label="test")
-        src = BarSource.model_validate(orm, from_attributes=True)
-        assert src.id == "abc"
-        assert src.label == "test"
-
-    def test_config_inheritance(self):
+    def test_from_attributes(self):
+        # config inheritance
         assert FooSource.model_config.get("from_attributes") is True
         assert BarSource.model_config.get("from_attributes") is True
+
+        # FooSource from ORM
+        foo_orm = FooSourceORM(id=1, source="foo", value=3.14)
+        foo = FooSource.model_validate(foo_orm, from_attributes=True)
+        assert foo.id == 1
+        assert foo.source == "foo"
+        assert foo.value == 3.14
+
+        # BarSource from ORM
+        bar_orm = BarSourceORM(id="abc", source="bar", label="test")
+        bar = BarSource.model_validate(bar_orm, from_attributes=True)
+        assert bar.id == "abc"
+        assert bar.label == "test"
 
 
 # ---------------------------------------------------------------------------
@@ -157,24 +153,20 @@ class TestFromAttributes:
 
 
 class TestRepointedToSelf:
-    def test_base_class_chain(self):
-        inner = ResourceBase(name="inner")
-        outer = ResourceBase(name="outer", repointed_to=inner)
-        assert outer.repointed_to is not None
-        assert outer.repointed_to.name == "inner"
+    def test_chain_traversal(self):
+        a = ResourceBase(name="a")
+        b = ResourceBase(name="b", repointed_to=a)
+        c = ResourceBase(name="c", repointed_to=b)
+
+        # full traversal
+        assert c.repointed_to.repointed_to.name == "a"
+        assert c.repointed_to.name == "b"
+
+        # innermost terminates with None
+        assert a.repointed_to is None
 
     def test_self_resolves_to_subclass(self):
         inner = ExtendedResourceBase(extra="y")
         outer = ExtendedResourceBase(extra="x", repointed_to=inner)
         assert isinstance(outer.repointed_to, ExtendedResourceBase)
         assert outer.repointed_to.extra == "y"
-
-    def test_three_level_deep_chain(self):
-        a = ResourceBase(name="a")
-        b = ResourceBase(name="b", repointed_to=a)
-        c = ResourceBase(name="c", repointed_to=b)
-        assert c.repointed_to.repointed_to.name == "a"
-
-    def test_none_terminates(self):
-        a = ResourceBase(name="a")
-        assert a.repointed_to is None

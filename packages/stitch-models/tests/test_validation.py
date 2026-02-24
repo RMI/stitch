@@ -21,6 +21,12 @@ from tests.conftest import (
 )
 
 
+def assert_has_error(errors: list[dict], *, type: str, loc: tuple) -> None:
+    assert any(
+        e["type"] == type and e["loc"] == loc for e in errors
+    ), f"Expected {type} at {loc}, got: {[e['type'] + ' @ ' + str(e['loc']) for e in errors]}"
+
+
 # ---------------------------------------------------------------------------
 # Literal-parameterized `source` field rejects non-matching values
 # ---------------------------------------------------------------------------
@@ -30,19 +36,13 @@ class TestSourceLiteralDiscrimination:
     def test_rejects_wrong_literal_via_dict(self):
         with pytest.raises(ValidationError) as exc_info:
             FooSource.model_validate({"id": 1, "source": "wrong", "value": 3.14})
-        errors = exc_info.value.errors()
-        assert any(
-            e["type"] == "literal_error" and e["loc"] == ("source",) for e in errors
-        )
+        assert_has_error(exc_info.value.errors(), type="literal_error", loc=("source",))
 
     def test_rejects_wrong_literal_via_json(self):
         payload = json.dumps({"id": 1, "source": "wrong", "value": 3.14})
         with pytest.raises(ValidationError) as exc_info:
             FooSource.model_validate_json(payload)
-        errors = exc_info.value.errors()
-        assert any(
-            e["type"] == "literal_error" and e["loc"] == ("source",) for e in errors
-        )
+        assert_has_error(exc_info.value.errors(), type="literal_error", loc=("source",))
 
 
 # ---------------------------------------------------------------------------
@@ -55,22 +55,19 @@ class TestParameterizedIdTypeEnforcement:
         payload = json.dumps({"id": "not_a_number", "source": "foo", "value": 3.14})
         with pytest.raises(ValidationError) as exc_info:
             FooSource.model_validate_json(payload)
-        errors = exc_info.value.errors()
-        assert any(e["type"] == "int_parsing" and e["loc"] == ("id",) for e in errors)
+        assert_has_error(exc_info.value.errors(), type="int_parsing", loc=("id",))
 
     def test_str_id_rejects_int_via_json(self):
         payload = json.dumps({"id": 123, "source": "bar", "label": "test"})
         with pytest.raises(ValidationError) as exc_info:
             BarSource.model_validate_json(payload)
-        errors = exc_info.value.errors()
-        assert any(e["type"] == "string_type" and e["loc"] == ("id",) for e in errors)
+        assert_has_error(exc_info.value.errors(), type="string_type", loc=("id",))
 
     def test_uuid_id_rejects_malformed_string(self):
         payload = json.dumps({"id": "not-a-uuid", "source": "uuid_src"})
         with pytest.raises(ValidationError) as exc_info:
             UuidSource.model_validate_json(payload)
-        errors = exc_info.value.errors()
-        assert any(e["type"] == "uuid_parsing" and e["loc"] == ("id",) for e in errors)
+        assert_has_error(exc_info.value.errors(), type="uuid_parsing", loc=("id",))
 
 
 # ---------------------------------------------------------------------------
@@ -85,10 +82,10 @@ class TestMappingTypeEnforcement:
         )
         with pytest.raises(ValidationError) as exc_info:
             FooPayload.model_validate_json(payload)
-        errors = exc_info.value.errors()
-        assert any(
-            e["type"] == "int_parsing" and e["loc"] == ("foos", "abc", "[key]")
-            for e in errors
+        assert_has_error(
+            exc_info.value.errors(),
+            type="int_parsing",
+            loc=("foos", "abc", "[key]"),
         )
 
     def test_rejects_wrong_source_type_in_value(self):
@@ -108,10 +105,10 @@ class TestMappingTypeEnforcement:
         )
         with pytest.raises(ValidationError) as exc_info:
             MultiPayload.model_validate_json(payload)
-        errors = exc_info.value.errors()
-        assert any(
-            e["type"] == "literal_error" and e["loc"] == ("foos", "1", "source")
-            for e in errors
+        assert_has_error(
+            exc_info.value.errors(),
+            type="literal_error",
+            loc=("foos", "1", "source"),
         )
 
 
@@ -138,8 +135,7 @@ class TestResourceRequiredFields:
         )
         with pytest.raises(ValidationError) as exc_info:
             FooResource.model_validate_json(payload)
-        errors = exc_info.value.errors()
-        assert any(e["type"] == "int_type" and e["loc"] == ("id",) for e in errors)
+        assert_has_error(exc_info.value.errors(), type="int_type", loc=("id",))
 
 
 # ---------------------------------------------------------------------------
@@ -158,11 +154,10 @@ class TestNamedTupleArityEnforcement:
         )
         with pytest.raises(ValidationError) as exc_info:
             FooResource.model_validate_json(payload)
-        errors = exc_info.value.errors()
-        assert any(
-            e["type"] == "missing_argument"
-            and e["loc"] == ("provenance", 0, "source_refs")
-            for e in errors
+        assert_has_error(
+            exc_info.value.errors(),
+            type="missing_argument",
+            loc=("provenance", 0, "source_refs"),
         )
 
     def test_source_ref_rejects_extra_element(self):
@@ -175,11 +170,10 @@ class TestNamedTupleArityEnforcement:
         )
         with pytest.raises(ValidationError) as exc_info:
             FooResource.model_validate_json(payload)
-        errors = exc_info.value.errors()
-        assert any(
-            e["type"] == "unexpected_positional_argument"
-            and e["loc"] == ("provenance", 0, 1, 0, 2)
-            for e in errors
+        assert_has_error(
+            exc_info.value.errors(),
+            type="unexpected_positional_argument",
+            loc=("provenance", 0, 1, 0, 2),
         )
 
 

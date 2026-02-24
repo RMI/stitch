@@ -41,11 +41,6 @@ class TestModelDumpValidateRoundTrip:
         restored = MultiResource.model_validate(dumped)
         assert restored == resource
 
-    def test_provenance_preservation(self, foo_resource):
-        dumped = foo_resource.model_dump()
-        restored = FooResource.model_validate(dumped)
-        assert restored.provenance == foo_resource.provenance
-
 
 # ---------------------------------------------------------------------------
 # model_validate_json
@@ -107,22 +102,6 @@ class TestModelValidateFromDict:
         assert resource.id == 1
         assert resource.source_data.foos[1].value == 3.14
 
-    def test_provenance_from_nested_structures(self):
-        """Provenance can be supplied as raw nested sequences."""
-        # Discover what format model_dump uses for provenance, then feed it back
-        ref = SourceRef("foo", 1)
-        prov = ConstituentProvenance(id=1, source_refs=[ref])
-        src = FooSource(id=1, source="foo", value=1.0)
-        resource = FooResource(
-            id=1,
-            source_data=FooPayload(foos={1: src}),
-            provenance=[prov],
-        )
-        dumped = resource.model_dump()
-        # Validate from the raw dumped dict (provenance is whatever Pydantic serialized)
-        restored = FooResource.model_validate(dumped)
-        assert restored.provenance[0].id == 1
-
 
 # ---------------------------------------------------------------------------
 # repointed_to serialization
@@ -130,12 +109,20 @@ class TestModelValidateFromDict:
 
 
 class TestRepointedToSerialization:
-    def test_base_class_round_trip(self):
-        inner = ResourceBase(name="inner")
-        outer = ResourceBase(name="outer", repointed_to=inner)
-        dumped = outer.model_dump()
+    def test_chain_round_trip(self):
+        a = ResourceBase(name="a")
+        b = ResourceBase(name="b", repointed_to=a)
+        c = ResourceBase(name="c", repointed_to=b)
+
+        # dict round-trip (2-level)
+        dumped = b.model_dump()
         restored = ResourceBase.model_validate(dumped)
-        assert restored.repointed_to.name == "inner"
+        assert restored.repointed_to.name == "a"
+
+        # JSON round-trip (3-level)
+        json_str = c.model_dump_json()
+        restored = ResourceBase.model_validate_json(json_str)
+        assert restored.repointed_to.repointed_to.name == "a"
 
     def test_subclass_json_round_trip(self):
         inner = ExtendedResourceBase(extra="y")
@@ -144,14 +131,6 @@ class TestRepointedToSerialization:
         restored = ExtendedResourceBase.model_validate_json(json_str)
         assert isinstance(restored.repointed_to, ExtendedResourceBase)
         assert restored.repointed_to.extra == "y"
-
-    def test_deep_chain_json_round_trip(self):
-        a = ResourceBase(name="a")
-        b = ResourceBase(name="b", repointed_to=a)
-        c = ResourceBase(name="c", repointed_to=b)
-        json_str = c.model_dump_json()
-        restored = ResourceBase.model_validate_json(json_str)
-        assert restored.repointed_to.repointed_to.name == "a"
 
     def test_resource_with_repointed_to(self, foo_payload, foo_provenance):
         inner = FooResource(
@@ -179,27 +158,23 @@ class TestRepointedToSerialization:
 
 
 class TestNamedTupleSequenceSerialization:
-    def test_provenance_dumps_as_tuple(self, foo_resource):
-        """model_dump serializes NamedTuples as tuples, not dicts."""
+    def test_namedtuples_serialize_as_tuples_and_arrays(self, foo_resource):
+        """model_dump serializes NamedTuples as tuples; JSON uses arrays."""
+        # model_dump → tuples
         dumped = foo_resource.model_dump()
         prov_dumped = dumped["provenance"][0]
         assert isinstance(prov_dumped, tuple)
         assert prov_dumped[0] == 1  # ConstituentProvenance.id
-
-    def test_source_ref_dumps_as_nested_tuple(self, foo_resource):
-        """Nested SourceRef within provenance also serializes as a tuple."""
-        dumped = foo_resource.model_dump()
-        ref_dumped = dumped["provenance"][0][1][0]  # first source_ref
+        ref_dumped = prov_dumped[1][0]  # first source_ref
         assert isinstance(ref_dumped, tuple)
         assert ref_dumped == ("foo", 1)
 
-    def test_json_output_is_arrays(self, foo_resource):
-        """JSON serialization uses nested arrays for NamedTuples."""
+        # model_dump_json → arrays
         json_str = foo_resource.model_dump_json()
         parsed = json.loads(json_str)
         prov_json = parsed["provenance"][0]
         assert isinstance(prov_json, list)
-        assert prov_json[0] == 1  # ConstituentProvenance.id
+        assert prov_json[0] == 1
         ref_json = prov_json[1][0]
         assert isinstance(ref_json, list)
         assert ref_json == ["foo", 1]
