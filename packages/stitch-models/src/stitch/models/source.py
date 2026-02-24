@@ -1,5 +1,4 @@
-from sqlalchemy.util.typing import TypedDict
-from typing import TypeVar, Mapping, NamedTuple, MutableMapping, Literal
+from typing import TypeVar, Mapping, NamedTuple, MutableMapping
 from pydantic import BaseModel, ConfigDict
 
 from .common import IdType
@@ -18,9 +17,13 @@ SourceCollection = Mapping[TId, TSrc]
 MutableSourceCollection = MutableMapping[TId, TSrc]
 
 
-class SourceData[TId: IdType, TSrcKey: str, TSrcCls: SourceBase](
-    TypedDict[TSrcKey, SourceCollection[TId, TSrcCls]]
-): ...
+class SourceData(BaseModel):
+    """Base for domain-specific source data containers.
+
+    Subclass and declare attributes typed as SourceCollection[TId, TSrc].
+    """
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SourceRef[TId: IdType, TSrcKey: str](NamedTuple):
