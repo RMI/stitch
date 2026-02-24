@@ -334,8 +334,8 @@ def create_seed_resources(user: UserEntity) -> list[ResourceModel]:
     resources = [
         ResourceModel.create(user, name="Multi-Source Asset", country="USA"),
         ResourceModel.create(user, name="Single Source Asset", country="GBR"),
-        ResourceModel.create(user, name="Merge Target", country="YYZ"),
-        ResourceModel.create(user, name="Merge Consumed", country="YYZ"),
+        ResourceModel.create(user, name="Merge Demo", country="YYZ"),
+        ResourceModel.create(user, name="Merge Demo", country="YYZ"),
     ]
     for i, res in enumerate(resources, start=1):
         res.id = i
