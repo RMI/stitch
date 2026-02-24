@@ -1,6 +1,7 @@
-from __future__ import annotations
 from pydantic import AwareDatetime, BaseModel, Field
 from typing import Literal
+
+from stitch.models.source import SourceBase, SourceCollection, SourceData
 
 
 LocationType = Literal["Onshore", "Offshore", "Unknown"]
@@ -96,3 +97,30 @@ class OilAndGasFieldSourceData(BaseModel):
     field_status: FieldStatus | None = Field(
         None, description="Current status of the field"
     )
+
+
+class OilAndGasFieldSource[TSrcKey: str](SourceBase[int, TSrcKey], OilAndGasFieldSourceData):
+    """Persisted OGSI field source = SourceBase (id, source) + data fields."""
+
+
+class GemOGSISource(OilAndGasFieldSource[Literal["gem"]]):
+    pass
+
+
+class WMOGSISource(OilAndGasFieldSource[Literal["wm"]]):
+    pass
+
+
+class RMIOGSISource(OilAndGasFieldSource[Literal["rmi"]]):
+    pass
+
+
+class CCOGSISource(OilAndGasFieldSource[Literal["cc"]]):
+    pass
+
+
+class OGSISourceData(SourceData):
+    gem: SourceCollection[int, GemOGSISource] = Field(default_factory=dict)
+    wm: SourceCollection[int, WMOGSISource] = Field(default_factory=dict)
+    rmi: SourceCollection[int, RMIOGSISource] = Field(default_factory=dict)
+    cc: SourceCollection[int, CCOGSISource] = Field(default_factory=dict)
