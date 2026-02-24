@@ -9,6 +9,7 @@ from stitch.models import ConstituentProvenance, SourceRef
 # SourceRef construction
 # ---------------------------------------------------------------------------
 
+
 class TestSourceRefConstruction:
     def test_positional_construction(self):
         ref = SourceRef("foo", 1)
@@ -44,6 +45,7 @@ class TestSourceRefConstruction:
 # SourceRef hashability
 # ---------------------------------------------------------------------------
 
+
 class TestSourceRefHashability:
     def test_equal_refs_are_equal(self):
         a = SourceRef("foo", 1)
@@ -76,6 +78,7 @@ class TestSourceRefHashability:
 # ---------------------------------------------------------------------------
 # ConstituentProvenance
 # ---------------------------------------------------------------------------
+
 
 class TestConstituentProvenance:
     def test_construction_and_field_access(self):

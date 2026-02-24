@@ -7,7 +7,6 @@ from uuid import UUID
 
 from stitch.models import ConstituentProvenance, ResourceBase, SourceRef
 from tests.conftest import (
-    BarSource,
     ExtendedResourceBase,
     FooPayload,
     FooResource,
@@ -15,7 +14,6 @@ from tests.conftest import (
     MultiPayload,
     MultiResource,
     UuidPayload,
-    UuidSource,
 )
 
 TEST_UUID = UUID("550e8400-e29b-41d4-a716-446655440000")
@@ -24,6 +22,7 @@ TEST_UUID = UUID("550e8400-e29b-41d4-a716-446655440000")
 # ---------------------------------------------------------------------------
 # model_dump → model_validate round-trip
 # ---------------------------------------------------------------------------
+
 
 class TestModelDumpValidateRoundTrip:
     def test_foo_resource_round_trip(self, foo_resource):
@@ -52,6 +51,7 @@ class TestModelDumpValidateRoundTrip:
 # model_validate_json
 # ---------------------------------------------------------------------------
 
+
 class TestModelValidateJson:
     def test_from_model_dump_json(self, foo_resource):
         json_str = foo_resource.model_dump_json()
@@ -64,14 +64,18 @@ class TestModelValidateJson:
         NamedTuples serialize as arrays in JSON (not objects), so provenance
         and SourceRef appear as nested arrays: [[id, [[source, id], ...]]].
         """
-        handcrafted = json.dumps({
-            "id": 1,
-            "name": "Test",
-            "country": None,
-            "repointed_to": None,
-            "source_data": {"foos": {"1": {"id": 1, "source": "foo", "value": 3.14}}},
-            "provenance": [[1, [["foo", 1]]]],
-        })
+        handcrafted = json.dumps(
+            {
+                "id": 1,
+                "name": "Test",
+                "country": None,
+                "repointed_to": None,
+                "source_data": {
+                    "foos": {"1": {"id": 1, "source": "foo", "value": 3.14}}
+                },
+                "provenance": [[1, [["foo", 1]]]],
+            }
+        )
 
         restored = FooResource.model_validate_json(handcrafted)
         assert restored.id == 1
@@ -84,6 +88,7 @@ class TestModelValidateJson:
 # ---------------------------------------------------------------------------
 # model_validate from raw dict
 # ---------------------------------------------------------------------------
+
 
 class TestModelValidateFromDict:
     def test_resource_from_raw_dict(self):
@@ -109,7 +114,9 @@ class TestModelValidateFromDict:
         prov = ConstituentProvenance(id=1, source_refs=[ref])
         src = FooSource(id=1, source="foo", value=1.0)
         resource = FooResource(
-            id=1, source_data=FooPayload(foos={1: src}), provenance=[prov],
+            id=1,
+            source_data=FooPayload(foos={1: src}),
+            provenance=[prov],
         )
         dumped = resource.model_dump()
         # Validate from the raw dumped dict (provenance is whatever Pydantic serialized)
@@ -120,6 +127,7 @@ class TestModelValidateFromDict:
 # ---------------------------------------------------------------------------
 # repointed_to serialization
 # ---------------------------------------------------------------------------
+
 
 class TestRepointedToSerialization:
     def test_base_class_round_trip(self):
@@ -147,11 +155,17 @@ class TestRepointedToSerialization:
 
     def test_resource_with_repointed_to(self, foo_payload, foo_provenance):
         inner = FooResource(
-            id=2, source_data=foo_payload, provenance=[foo_provenance], name="inner",
+            id=2,
+            source_data=foo_payload,
+            provenance=[foo_provenance],
+            name="inner",
         )
         outer = FooResource(
-            id=1, source_data=foo_payload, provenance=[foo_provenance],
-            name="outer", repointed_to=inner,
+            id=1,
+            source_data=foo_payload,
+            provenance=[foo_provenance],
+            name="outer",
+            repointed_to=inner,
         )
         json_str = outer.model_dump_json()
         restored = FooResource.model_validate_json(json_str)
@@ -162,6 +176,7 @@ class TestRepointedToSerialization:
 # ---------------------------------------------------------------------------
 # NamedTuple sequence serialization
 # ---------------------------------------------------------------------------
+
 
 class TestNamedTupleSequenceSerialization:
     def test_provenance_dumps_as_tuple(self, foo_resource):
@@ -207,6 +222,7 @@ class TestNamedTupleSequenceSerialization:
 # JSON key coercion
 # ---------------------------------------------------------------------------
 
+
 class TestJsonKeyCoercion:
     def test_int_key_coerced_from_json_string(self):
         """JSON object keys are always strings; Pydantic must coerce '42' → 42."""
@@ -221,7 +237,9 @@ class TestJsonKeyCoercion:
 
     def test_uuid_key_coerced_from_json_string(self):
         uid_str = str(TEST_UUID)
-        raw_json = f'{{"uuids": {{"{uid_str}": {{"id": "{uid_str}", "source": "uuid_src"}}}}}}'
+        raw_json = (
+            f'{{"uuids": {{"{uid_str}": {{"id": "{uid_str}", "source": "uuid_src"}}}}}}'
+        )
         payload = UuidPayload.model_validate_json(raw_json)
         assert TEST_UUID in payload.uuids
 

@@ -27,14 +27,12 @@ from tests.conftest import (
 
 
 class TestSourceLiteralDiscrimination:
-
     def test_rejects_wrong_literal_via_dict(self):
         with pytest.raises(ValidationError) as exc_info:
             FooSource.model_validate({"id": 1, "source": "wrong", "value": 3.14})
         errors = exc_info.value.errors()
         assert any(
-            e["type"] == "literal_error" and e["loc"] == ("source",)
-            for e in errors
+            e["type"] == "literal_error" and e["loc"] == ("source",) for e in errors
         )
 
     def test_rejects_wrong_literal_via_json(self):
@@ -43,8 +41,7 @@ class TestSourceLiteralDiscrimination:
             FooSource.model_validate_json(payload)
         errors = exc_info.value.errors()
         assert any(
-            e["type"] == "literal_error" and e["loc"] == ("source",)
-            for e in errors
+            e["type"] == "literal_error" and e["loc"] == ("source",) for e in errors
         )
 
 
@@ -54,36 +51,26 @@ class TestSourceLiteralDiscrimination:
 
 
 class TestParameterizedIdTypeEnforcement:
-
     def test_int_id_rejects_non_numeric_string_via_json(self):
         payload = json.dumps({"id": "not_a_number", "source": "foo", "value": 3.14})
         with pytest.raises(ValidationError) as exc_info:
             FooSource.model_validate_json(payload)
         errors = exc_info.value.errors()
-        assert any(
-            e["type"] == "int_parsing" and e["loc"] == ("id",)
-            for e in errors
-        )
+        assert any(e["type"] == "int_parsing" and e["loc"] == ("id",) for e in errors)
 
     def test_str_id_rejects_int_via_json(self):
         payload = json.dumps({"id": 123, "source": "bar", "label": "test"})
         with pytest.raises(ValidationError) as exc_info:
             BarSource.model_validate_json(payload)
         errors = exc_info.value.errors()
-        assert any(
-            e["type"] == "string_type" and e["loc"] == ("id",)
-            for e in errors
-        )
+        assert any(e["type"] == "string_type" and e["loc"] == ("id",) for e in errors)
 
     def test_uuid_id_rejects_malformed_string(self):
         payload = json.dumps({"id": "not-a-uuid", "source": "uuid_src"})
         with pytest.raises(ValidationError) as exc_info:
             UuidSource.model_validate_json(payload)
         errors = exc_info.value.errors()
-        assert any(
-            e["type"] == "uuid_parsing" and e["loc"] == ("id",)
-            for e in errors
-        )
+        assert any(e["type"] == "uuid_parsing" and e["loc"] == ("id",) for e in errors)
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +79,6 @@ class TestParameterizedIdTypeEnforcement:
 
 
 class TestMappingTypeEnforcement:
-
     def test_rejects_non_coercible_key_via_json(self):
         payload = json.dumps(
             {"foos": {"abc": {"id": 1, "source": "foo", "value": 3.14}}}
@@ -114,10 +100,12 @@ class TestMappingTypeEnforcement:
         assert error_types & {"int_parsing", "literal_error", "missing"}
 
     def test_rejects_wrong_literal_in_nested_json(self):
-        payload = json.dumps({
-            "foos": {"1": {"id": 1, "source": "bar", "value": 3.14}},
-            "bars": {},
-        })
+        payload = json.dumps(
+            {
+                "foos": {"1": {"id": 1, "source": "bar", "value": 3.14}},
+                "bars": {},
+            }
+        )
         with pytest.raises(ValidationError) as exc_info:
             MultiPayload.model_validate_json(payload)
         errors = exc_info.value.errors()
@@ -133,7 +121,6 @@ class TestMappingTypeEnforcement:
 
 
 class TestResourceRequiredFields:
-
     def test_rejects_empty_json(self):
         with pytest.raises(ValidationError) as exc_info:
             FooResource.model_validate_json("{}")
@@ -142,18 +129,17 @@ class TestResourceRequiredFields:
         assert missing_locs >= {"id", "source_data", "provenance"}
 
     def test_rejects_null_id_via_json(self):
-        payload = json.dumps({
-            "id": None,
-            "source_data": {"foos": {}},
-            "provenance": [],
-        })
+        payload = json.dumps(
+            {
+                "id": None,
+                "source_data": {"foos": {}},
+                "provenance": [],
+            }
+        )
         with pytest.raises(ValidationError) as exc_info:
             FooResource.model_validate_json(payload)
         errors = exc_info.value.errors()
-        assert any(
-            e["type"] == "int_type" and e["loc"] == ("id",)
-            for e in errors
-        )
+        assert any(e["type"] == "int_type" and e["loc"] == ("id",) for e in errors)
 
 
 # ---------------------------------------------------------------------------
@@ -162,13 +148,14 @@ class TestResourceRequiredFields:
 
 
 class TestNamedTupleArityEnforcement:
-
     def test_provenance_rejects_short_array(self):
-        payload = json.dumps({
-            "id": 1,
-            "source_data": {"foos": {}},
-            "provenance": [[1]],
-        })
+        payload = json.dumps(
+            {
+                "id": 1,
+                "source_data": {"foos": {}},
+                "provenance": [[1]],
+            }
+        )
         with pytest.raises(ValidationError) as exc_info:
             FooResource.model_validate_json(payload)
         errors = exc_info.value.errors()
@@ -179,11 +166,13 @@ class TestNamedTupleArityEnforcement:
         )
 
     def test_source_ref_rejects_extra_element(self):
-        payload = json.dumps({
-            "id": 1,
-            "source_data": {"foos": {}},
-            "provenance": [[1, [["foo", 1, "extra"]]]],
-        })
+        payload = json.dumps(
+            {
+                "id": 1,
+                "source_data": {"foos": {}},
+                "provenance": [[1, [["foo", 1, "extra"]]]],
+            }
+        )
         with pytest.raises(ValidationError) as exc_info:
             FooResource.model_validate_json(payload)
         errors = exc_info.value.errors()
@@ -200,15 +189,16 @@ class TestNamedTupleArityEnforcement:
 
 
 class TestCoercionLeniencyContracts:
-
     def test_provenance_accepts_object_format_in_json(self):
         """NamedTuples accept both array AND object format in JSON
         despite serializing only as arrays."""
-        payload = json.dumps({
-            "id": 1,
-            "source_data": {"foos": {}},
-            "provenance": [{"id": 1, "source_refs": [["foo", 1]]}],
-        })
+        payload = json.dumps(
+            {
+                "id": 1,
+                "source_data": {"foos": {}},
+                "provenance": [{"id": 1, "source_refs": [["foo", 1]]}],
+            }
+        )
         resource = FooResource.model_validate_json(payload)
         assert resource.provenance[0].id == 1
 

@@ -20,6 +20,7 @@ from stitch.models import (
 # design intent that a given source uses only int, str, or UUID.
 # ---------------------------------------------------------------------------
 
+
 class FooSource(SourceBase[int, Literal["foo"]]):
     value: float
 
@@ -35,6 +36,7 @@ class UuidSource(SourceBase[UUID, Literal["uuid_src"]]):
 # ---------------------------------------------------------------------------
 # Payload doubles
 # ---------------------------------------------------------------------------
+
 
 class FooPayload(SourcePayload):
     foos: Mapping[int, FooSource] = {}
@@ -53,6 +55,7 @@ class UuidPayload(SourcePayload):
 # Resource doubles
 # ---------------------------------------------------------------------------
 
+
 class FooResource(Resource[FooPayload, ConstituentProvenance]):
     pass
 
@@ -68,6 +71,7 @@ class ExtendedResourceBase(ResourceBase):
 # ---------------------------------------------------------------------------
 # ORM-like doubles (plain objects with attributes, for from_attributes tests)
 # ---------------------------------------------------------------------------
+
 
 class FooSourceORM:
     def __init__(self, id: int, source: str, value: float):
@@ -86,6 +90,7 @@ class BarSourceORM:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def foo_source():

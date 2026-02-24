@@ -13,7 +13,6 @@ from tests.conftest import (
     BarSourceORM,
     ExtendedResourceBase,
     FooPayload,
-    FooResource,
     FooSource,
     FooSourceORM,
     MultiPayload,
@@ -26,6 +25,7 @@ from tests.conftest import (
 # ---------------------------------------------------------------------------
 # SourceBase subclassing
 # ---------------------------------------------------------------------------
+
 
 class TestSourceBaseSubclassing:
     def test_instantiation_with_correct_types(self):
@@ -68,6 +68,7 @@ class TestSourceBaseSubclassing:
 # SourcePayload subclassing
 # ---------------------------------------------------------------------------
 
+
 class TestSourcePayloadSubclassing:
     def test_single_source_payload(self, foo_source):
         payload = FooPayload(foos={1: foo_source})
@@ -98,6 +99,7 @@ class TestSourcePayloadSubclassing:
 # Resource specialization
 # ---------------------------------------------------------------------------
 
+
 class TestResourceSpecialization:
     def test_full_instantiation(self, foo_resource):
         assert foo_resource.id == 1
@@ -115,7 +117,10 @@ class TestResourceSpecialization:
         payload = MultiPayload(foos={1: foo_source}, bars={"abc": bar_source})
         prov = ConstituentProvenance(
             id=1,
-            source_refs=[SourceRef(source="foo", id=1), SourceRef(source="bar", id="abc")],
+            source_refs=[
+                SourceRef(source="foo", id=1),
+                SourceRef(source="bar", id="abc"),
+            ],
         )
         resource = MultiResource(id=1, source_data=payload, provenance=[prov])
         assert len(resource.source_data.foos) == 1
@@ -125,6 +130,7 @@ class TestResourceSpecialization:
 # ---------------------------------------------------------------------------
 # from_attributes (ORM-like objects)
 # ---------------------------------------------------------------------------
+
 
 class TestFromAttributes:
     def test_foo_source_from_orm(self):
@@ -148,6 +154,7 @@ class TestFromAttributes:
 # ---------------------------------------------------------------------------
 # repointed_to Self resolution
 # ---------------------------------------------------------------------------
+
 
 class TestRepointedToSelf:
     def test_base_class_chain(self):
