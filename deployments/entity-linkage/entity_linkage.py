@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Dict
 from urllib.parse import urljoin, urlparse
 from collections import defaultdict
-from typing import List, Tuple
+from typing import Tuple
 
 import httpx
 
