@@ -96,7 +96,7 @@ Be respectful and constructive. Focus feedback on code and behavior.
 
 ## Licensing
 
-By contributing, you agree your contributions are licensed under this repository's license.
+By contributing, you agree your contributions are licensed under this repository's [license](./LICENSE).
 
 ## References
 
