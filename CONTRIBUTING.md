@@ -58,7 +58,7 @@ PRs are most likely to be accepted when they:
 - include tests for behavior changes,
 - update docs for user-facing changes,
 - clearly describe what changed and why,
-- link related issues (`Closes #<number>` when appropriate).
+- link related JIRA issues (`STIT-#<number>`) in title when relevant.
 
 Avoid mixing unrelated refactors into feature/fix PRs.
 
