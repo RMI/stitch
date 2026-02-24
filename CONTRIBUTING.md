@@ -92,7 +92,7 @@ Update documentation when behavior changes, including:
 
 ## Code of Conduct
 
-Be respectful and constructive. Focus feedback on code and behavior.
+Be respectful and constructive. Focus feedback on code and behavior. See our [code of conduct](./CODE_OF_CONDUCT.md) for more details.
 
 ## Licensing
 
