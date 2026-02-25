@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 from uuid import UUID
 
-from stitch.models import ConstituentProvenance, ResourceBase, SourceRef
+from stitch.models import SourceRef
 from tests.conftest import (
-    ExtendedResourceBase,
+    EmptyPayload,
+    ExtendedResource,
     FooPayload,
     FooResource,
     FooSource,
@@ -32,11 +33,11 @@ class TestModelDumpValidateRoundTrip:
 
     def test_multi_resource_round_trip(self, foo_source, bar_source):
         payload = MultiPayload(foos={1: foo_source}, bars={"abc": bar_source})
-        prov = ConstituentProvenance(
+        resource = MultiResource(
             id=1,
-            source_refs=[SourceRef("foo", 1), SourceRef("bar", "abc")],
+            source_data=payload,
+            provenance={1: [SourceRef("foo", 1), SourceRef("bar", "abc")]},
         )
-        resource = MultiResource(id=1, source_data=payload, provenance=[prov])
         dumped = resource.model_dump()
         restored = MultiResource.model_validate(dumped)
         assert restored == resource
@@ -56,28 +57,24 @@ class TestModelValidateJson:
     def test_from_handcrafted_json(self):
         """Validate that a hand-built JSON string parses correctly.
 
-        NamedTuples serialize as arrays in JSON (not objects), so provenance
-        and SourceRef appear as nested arrays: [[id, [[source, id], ...]]].
+        Provenance is a Mapping[int, Sequence[SourceRef]] where SourceRef
+        serializes as arrays: {"1": [["foo", 1]]}.
         """
         handcrafted = json.dumps(
             {
                 "id": 1,
-                "name": "Test",
-                "country": None,
                 "repointed_to": None,
                 "source_data": {
                     "foos": {"1": {"id": 1, "source": "foo", "value": 3.14}}
                 },
-                "provenance": [[1, [["foo", 1]]]],
+                "provenance": {"1": [["foo", 1]]},
             }
         )
 
         restored = FooResource.model_validate_json(handcrafted)
         assert restored.id == 1
-        assert restored.name == "Test"
         assert restored.source_data.foos[1].value == 3.14
-        assert restored.provenance[0].id == 1
-        assert restored.provenance[0].source_refs[0] == SourceRef("foo", 1)
+        assert restored.provenance[1][0] == SourceRef("foo", 1)
 
 
 # ---------------------------------------------------------------------------
@@ -90,13 +87,10 @@ class TestModelValidateFromDict:
         """Resource can be built from a plain nested dict (no model instances)."""
         raw = {
             "id": 1,
-            "name": "Test",
             "source_data": {
                 "foos": {1: {"id": 1, "source": "foo", "value": 3.14}},
             },
-            "provenance": [
-                ConstituentProvenance(id=1, source_refs=[SourceRef("foo", 1)]),
-            ],
+            "provenance": {1: [SourceRef("foo", 1)]},
         }
         resource = FooResource.model_validate(raw)
         assert resource.id == 1
@@ -110,87 +104,83 @@ class TestModelValidateFromDict:
 
 class TestRepointedToSerialization:
     def test_chain_round_trip(self):
-        a = ResourceBase(name="a")
-        b = ResourceBase(name="b", repointed_to=a)
-        c = ResourceBase(name="c", repointed_to=b)
+        ep = EmptyPayload()
+        a = ExtendedResource(id=1, source_data=ep, extra="a")
+        b = ExtendedResource(id=2, source_data=ep, extra="b", repointed_to=a)
+        c = ExtendedResource(id=3, source_data=ep, extra="c", repointed_to=b)
 
         # dict round-trip (2-level)
         dumped = b.model_dump()
-        restored = ResourceBase.model_validate(dumped)
-        assert restored.repointed_to.name == "a"
+        restored = ExtendedResource.model_validate(dumped)
+        assert restored.repointed_to.extra == "a"
 
         # JSON round-trip (3-level)
         json_str = c.model_dump_json()
-        restored = ResourceBase.model_validate_json(json_str)
-        assert restored.repointed_to.repointed_to.name == "a"
+        restored = ExtendedResource.model_validate_json(json_str)
+        assert restored.repointed_to.repointed_to.extra == "a"
 
     def test_subclass_json_round_trip(self):
-        inner = ExtendedResourceBase(extra="y")
-        outer = ExtendedResourceBase(extra="x", repointed_to=inner)
+        ep = EmptyPayload()
+        inner = ExtendedResource(id=2, source_data=ep, extra="y")
+        outer = ExtendedResource(id=1, source_data=ep, extra="x", repointed_to=inner)
         json_str = outer.model_dump_json()
-        restored = ExtendedResourceBase.model_validate_json(json_str)
-        assert isinstance(restored.repointed_to, ExtendedResourceBase)
+        restored = ExtendedResource.model_validate_json(json_str)
+        assert isinstance(restored.repointed_to, ExtendedResource)
         assert restored.repointed_to.extra == "y"
 
-    def test_resource_with_repointed_to(self, foo_payload, foo_provenance):
+    def test_resource_with_repointed_to(self, foo_payload, foo_ref):
         inner = FooResource(
             id=2,
             source_data=foo_payload,
-            provenance=[foo_provenance],
-            name="inner",
+            provenance={2: [foo_ref]},
         )
         outer = FooResource(
             id=1,
             source_data=foo_payload,
-            provenance=[foo_provenance],
-            name="outer",
+            provenance={1: [foo_ref]},
             repointed_to=inner,
         )
         json_str = outer.model_dump_json()
         restored = FooResource.model_validate_json(json_str)
-        assert restored.repointed_to.name == "inner"
         assert restored.repointed_to.id == 2
 
 
 # ---------------------------------------------------------------------------
-# NamedTuple sequence serialization
+# SourceRef serialization within provenance Mapping
 # ---------------------------------------------------------------------------
 
 
-class TestNamedTupleSequenceSerialization:
-    def test_namedtuples_serialize_as_tuples_and_arrays(self, foo_resource):
-        """model_dump serializes NamedTuples as tuples; JSON uses arrays."""
-        # model_dump → tuples
+class TestSourceRefSerializationInProvenance:
+    def test_source_refs_serialize_as_tuples_and_arrays(self, foo_resource):
+        """model_dump serializes SourceRefs as tuples; JSON uses arrays."""
+        # model_dump → tuples in provenance values
         dumped = foo_resource.model_dump()
-        prov_dumped = dumped["provenance"][0]
-        assert isinstance(prov_dumped, tuple)
-        assert prov_dumped[0] == 1  # ConstituentProvenance.id
-        ref_dumped = prov_dumped[1][0]  # first source_ref
-        assert isinstance(ref_dumped, tuple)
-        assert ref_dumped == ("foo", 1)
+        refs = dumped["provenance"][1]
+        assert isinstance(refs[0], tuple)
+        assert refs[0] == ("foo", 1)
 
         # model_dump_json → arrays
         json_str = foo_resource.model_dump_json()
         parsed = json.loads(json_str)
-        prov_json = parsed["provenance"][0]
-        assert isinstance(prov_json, list)
-        assert prov_json[0] == 1
-        ref_json = prov_json[1][0]
-        assert isinstance(ref_json, list)
-        assert ref_json == ["foo", 1]
+        prov_json = parsed["provenance"]["1"]
+        assert isinstance(prov_json[0], list)
+        assert prov_json[0] == ["foo", 1]
 
     def test_multiple_provenance_entries(self, foo_source, bar_source):
         payload = MultiPayload(foos={1: foo_source}, bars={"abc": bar_source})
-        provs = [
-            ConstituentProvenance(id=1, source_refs=[SourceRef("foo", 1)]),
-            ConstituentProvenance(id=2, source_refs=[SourceRef("bar", "abc")]),
-        ]
-        resource = MultiResource(id=1, source_data=payload, provenance=provs)
+        resource = MultiResource(
+            id=1,
+            source_data=payload,
+            provenance={
+                1: [SourceRef("foo", 1)],
+                2: [SourceRef("bar", "abc")],
+            },
+        )
         json_str = resource.model_dump_json()
         restored = MultiResource.model_validate_json(json_str)
         assert len(restored.provenance) == 2
-        assert restored.provenance[0].id == 1
-        assert restored.provenance[1].id == 2
+        assert restored.provenance[1] == [SourceRef("foo", 1)]
+        assert restored.provenance[2] == [SourceRef("bar", "abc")]
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +209,18 @@ class TestJsonKeyCoercion:
         assert TEST_UUID in payload.uuids
 
     def test_int_key_from_dict_stays_int(self):
-        src = FooSource(id=42, source="foo", value=1.0)
+        src = FooSource(id=42, value=1.0)
         payload = FooPayload.model_validate({"foos": {42: src}})
         assert 42 in payload.foos
+
+    def test_provenance_int_key_coerced_from_json_string(self):
+        """Provenance Mapping keys coerce from JSON strings to int."""
+        raw_json = json.dumps(
+            {
+                "id": 1,
+                "source_data": {"foos": {}},
+                "provenance": {"42": [["foo", 1]]},
+            }
+        )
+        resource = FooResource.model_validate_json(raw_json)
+        assert 42 in resource.provenance

@@ -1,8 +1,8 @@
-"""Category C: SourceRef & ConstituentProvenance tests."""
+"""Category C: SourceRef tests."""
 
 from __future__ import annotations
 
-from stitch.models import ConstituentProvenance, SourceRef
+from stitch.models import SourceRef
 
 
 def test_source_ref_is_a_well_behaved_namedtuple():
@@ -46,25 +46,3 @@ def test_source_ref_equality_and_hashing():
 
     # equality with plain tuple
     assert a == ("foo", 1)
-
-
-def test_constituent_provenance():
-    ref = SourceRef("foo", 1)
-    prov = ConstituentProvenance(id=1, source_refs=[ref])
-
-    # field access
-    assert prov.id == 1
-    assert prov.source_refs == [ref]
-
-    # is a tuple + unpacking
-    assert isinstance(prov, tuple)
-    id_, source_refs = prov
-    assert id_ == 1
-    assert source_refs == [ref]
-
-    # multiple source refs
-    refs = [SourceRef("foo", 1), SourceRef("bar", "abc")]
-    prov2 = ConstituentProvenance(id=1, source_refs=refs)
-    assert len(prov2.source_refs) == 2
-    assert prov2.source_refs[0].source == "foo"
-    assert prov2.source_refs[1].source == "bar"

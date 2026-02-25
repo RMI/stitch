@@ -7,11 +7,12 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
-from stitch.models import ConstituentProvenance, ResourceBase, SourceRef
+from stitch.models import SourceRef
 from tests.conftest import (
     BarSource,
     BarSourceORM,
-    ExtendedResourceBase,
+    EmptyPayload,
+    ExtendedResource,
     FooPayload,
     FooSource,
     FooSourceORM,
@@ -29,27 +30,35 @@ from tests.conftest import (
 
 class TestSourceBaseSubclassing:
     def test_instantiation_and_type_preservation(self):
-        src = FooSource(id=1, source="foo", value=3.14)
+        src = FooSource(id=1, value=3.14)
         assert src.id == 1
         assert src.source == "foo"
         assert src.value == 3.14
         assert isinstance(src.id, int)
         assert isinstance(src.value, float)
 
+    def test_source_default_from_subclass(self):
+        """Subclass-declared default means source need not be passed."""
+        foo = FooSource(id=1, value=1.0)
+        assert foo.source == "foo"
+
+        bar = BarSource(id="abc", label="test")
+        assert bar.source == "bar"
+
     def test_id_type_specialization(self):
         # int id with coercion from numeric string
-        foo = FooSource(id="42", source="foo", value=1.0)
+        foo = FooSource(id="42", value=1.0)
         assert foo.id == 42
         assert isinstance(foo.id, int)
 
         # str id
-        bar = BarSource(id="abc", source="bar", label="test")
+        bar = BarSource(id="abc", label="test")
         assert bar.id == "abc"
         assert isinstance(bar.id, str)
 
         # UUID id
         uid = UUID("550e8400-e29b-41d4-a716-446655440000")
-        uuidsrc = UuidSource(id=uid, source="uuid_src")
+        uuidsrc = UuidSource(id=uid)
         assert uuidsrc.id == uid
         assert isinstance(uuidsrc.id, UUID)
 
@@ -89,7 +98,7 @@ class TestSourcePayloadSubclassing:
 
     def test_uuid_keyed_payload(self):
         uid = UUID("550e8400-e29b-41d4-a716-446655440000")
-        src = UuidSource(id=uid, source="uuid_src")
+        src = UuidSource(id=uid)
         payload = UuidPayload(uuids={uid: src})
         assert payload.uuids[uid].id == uid
 
@@ -102,24 +111,25 @@ class TestSourcePayloadSubclassing:
 class TestResourceSpecialization:
     def test_full_instantiation(self, foo_resource):
         assert foo_resource.id == 1
-        assert foo_resource.name == "Test"
-        assert len(foo_resource.provenance) == 1
-        # inherited optional fields default to None
-        assert foo_resource.country is None
+        assert foo_resource.provenance == {1: [SourceRef("foo", 1)]}
         assert foo_resource.repointed_to is None
 
     def test_multi_source_resource(self, foo_source, bar_source):
         payload = MultiPayload(foos={1: foo_source}, bars={"abc": bar_source})
-        prov = ConstituentProvenance(
+        resource = MultiResource(
             id=1,
-            source_refs=[
-                SourceRef(source="foo", id=1),
-                SourceRef(source="bar", id="abc"),
-            ],
+            source_data=payload,
+            provenance={1: [SourceRef("foo", 1), SourceRef("bar", "abc")]},
         )
-        resource = MultiResource(id=1, source_data=payload, provenance=[prov])
         assert len(resource.source_data.foos) == 1
         assert len(resource.source_data.bars) == 1
+
+    def test_provenance_defaults_to_empty(self, foo_source):
+        payload = FooPayload(foos={1: foo_source})
+        from tests.conftest import FooResource
+
+        resource = FooResource(id=1, source_data=payload)
+        assert resource.provenance == {}
 
 
 # ---------------------------------------------------------------------------
@@ -154,19 +164,21 @@ class TestFromAttributes:
 
 class TestRepointedToSelf:
     def test_chain_traversal(self):
-        a = ResourceBase(name="a")
-        b = ResourceBase(name="b", repointed_to=a)
-        c = ResourceBase(name="c", repointed_to=b)
+        ep = EmptyPayload()
+        a = ExtendedResource(id=1, source_data=ep, extra="a")
+        b = ExtendedResource(id=2, source_data=ep, extra="b", repointed_to=a)
+        c = ExtendedResource(id=3, source_data=ep, extra="c", repointed_to=b)
 
         # full traversal
-        assert c.repointed_to.repointed_to.name == "a"
-        assert c.repointed_to.name == "b"
+        assert c.repointed_to.repointed_to.extra == "a"
+        assert c.repointed_to.extra == "b"
 
         # innermost terminates with None
         assert a.repointed_to is None
 
     def test_self_resolves_to_subclass(self):
-        inner = ExtendedResourceBase(extra="y")
-        outer = ExtendedResourceBase(extra="x", repointed_to=inner)
-        assert isinstance(outer.repointed_to, ExtendedResourceBase)
+        ep = EmptyPayload()
+        inner = ExtendedResource(id=2, source_data=ep, extra="y")
+        outer = ExtendedResource(id=1, source_data=ep, extra="x", repointed_to=inner)
+        assert isinstance(outer.repointed_to, ExtendedResource)
         assert outer.repointed_to.extra == "y"

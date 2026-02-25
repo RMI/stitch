@@ -8,29 +8,30 @@ from uuid import UUID
 import pytest
 
 from stitch.models import (
-    ConstituentProvenance,
     Resource,
-    ResourceBase,
-    SourceBase,
+    Source,
     SourcePayload,
     SourceRef,
 )
+
 # ---------------------------------------------------------------------------
 # Source doubles — each specializes to exactly one id type, matching the
 # design intent that a given source uses only int, str, or UUID.
 # ---------------------------------------------------------------------------
 
 
-class FooSource(SourceBase[int, Literal["foo"]]):
+class FooSource(Source[int, Literal["foo"]]):
+    source: Literal["foo"] = "foo"
     value: float
 
 
-class BarSource(SourceBase[str, Literal["bar"]]):
+class BarSource(Source[str, Literal["bar"]]):
+    source: Literal["bar"] = "bar"
     label: str
 
 
-class UuidSource(SourceBase[UUID, Literal["uuid_src"]]):
-    pass
+class UuidSource(Source[UUID, Literal["uuid_src"]]):
+    source: Literal["uuid_src"] = "uuid_src"
 
 
 # ---------------------------------------------------------------------------
@@ -56,15 +57,19 @@ class UuidPayload(SourcePayload):
 # ---------------------------------------------------------------------------
 
 
-class FooResource(Resource[FooPayload, ConstituentProvenance]):
+class EmptyPayload(SourcePayload):
     pass
 
 
-class MultiResource(Resource[MultiPayload, ConstituentProvenance]):
+class FooResource(Resource[FooPayload, int]):
     pass
 
 
-class ExtendedResourceBase(ResourceBase):
+class MultiResource(Resource[MultiPayload, int]):
+    pass
+
+
+class ExtendedResource(Resource[EmptyPayload, int]):
     extra: str
 
 
@@ -94,12 +99,12 @@ class BarSourceORM:
 
 @pytest.fixture
 def foo_source():
-    return FooSource(id=1, source="foo", value=3.14)
+    return FooSource(id=1, value=3.14)
 
 
 @pytest.fixture
 def bar_source():
-    return BarSource(id="abc", source="bar", label="test")
+    return BarSource(id="abc", label="test")
 
 
 @pytest.fixture
@@ -113,15 +118,9 @@ def foo_ref():
 
 
 @pytest.fixture
-def foo_provenance(foo_ref):
-    return ConstituentProvenance(id=1, source_refs=[foo_ref])
-
-
-@pytest.fixture
-def foo_resource(foo_payload, foo_provenance):
+def foo_resource(foo_payload, foo_ref):
     return FooResource(
         id=1,
-        name="Test",
         source_data=foo_payload,
-        provenance=[foo_provenance],
+        provenance={1: [foo_ref]},
     )

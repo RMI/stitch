@@ -89,7 +89,7 @@ class TestMappingTypeEnforcement:
         )
 
     def test_rejects_wrong_source_type_in_value(self):
-        bar = BarSource(id="abc", source="bar", label="test")
+        bar = BarSource(id="abc", label="test")
         with pytest.raises(ValidationError) as exc_info:
             FooPayload(foos={1: bar})  # type: ignore[arg-type]
         errors = exc_info.value.errors()
@@ -123,14 +123,13 @@ class TestResourceRequiredFields:
             FooResource.model_validate_json("{}")
         errors = exc_info.value.errors()
         missing_locs = {e["loc"][0] for e in errors if e["type"] == "missing"}
-        assert missing_locs >= {"id", "source_data", "provenance"}
+        assert missing_locs >= {"id", "source_data"}
 
     def test_rejects_null_id_via_json(self):
         payload = json.dumps(
             {
                 "id": None,
                 "source_data": {"foos": {}},
-                "provenance": [],
             }
         )
         with pytest.raises(ValidationError) as exc_info:
@@ -139,25 +138,26 @@ class TestResourceRequiredFields:
 
 
 # ---------------------------------------------------------------------------
-# NamedTuples serialize as arrays; Pydantic enforces exact arity
+# Provenance Mapping validation
 # ---------------------------------------------------------------------------
 
 
-class TestNamedTupleArityEnforcement:
-    def test_provenance_rejects_short_array(self):
+class TestProvenanceMappingValidation:
+    def test_rejects_non_coercible_provenance_key_via_json(self):
+        """Provenance keys must be coercible to the resource ID type (int)."""
         payload = json.dumps(
             {
                 "id": 1,
                 "source_data": {"foos": {}},
-                "provenance": [[1]],
+                "provenance": {"abc": [["foo", 1]]},
             }
         )
         with pytest.raises(ValidationError) as exc_info:
             FooResource.model_validate_json(payload)
         assert_has_error(
             exc_info.value.errors(),
-            type="missing_argument",
-            loc=("provenance", 0, "source_refs"),
+            type="int_parsing",
+            loc=("provenance", "abc", "[key]"),
         )
 
     def test_source_ref_rejects_extra_element(self):
@@ -165,7 +165,7 @@ class TestNamedTupleArityEnforcement:
             {
                 "id": 1,
                 "source_data": {"foos": {}},
-                "provenance": [[1, [["foo", 1, "extra"]]]],
+                "provenance": {"1": [["foo", 1, "extra"]]},
             }
         )
         with pytest.raises(ValidationError) as exc_info:
@@ -173,7 +173,7 @@ class TestNamedTupleArityEnforcement:
         assert_has_error(
             exc_info.value.errors(),
             type="unexpected_positional_argument",
-            loc=("provenance", 0, 1, 0, 2),
+            loc=("provenance", "1", 0, 2),
         )
 
 
@@ -184,17 +184,16 @@ class TestNamedTupleArityEnforcement:
 
 class TestCoercionLeniencyContracts:
     def test_provenance_accepts_object_format_in_json(self):
-        """NamedTuples accept both array AND object format in JSON
-        despite serializing only as arrays."""
+        """SourceRef NamedTuples accept both array AND object format in JSON."""
         payload = json.dumps(
             {
                 "id": 1,
                 "source_data": {"foos": {}},
-                "provenance": [{"id": 1, "source_refs": [["foo", 1]]}],
+                "provenance": {"1": [{"source": "foo", "id": 1}]},
             }
         )
         resource = FooResource.model_validate_json(payload)
-        assert resource.provenance[0].id == 1
+        assert resource.provenance[1][0] == ("foo", 1)
 
     def test_float_coerces_to_int_id_via_json(self):
         """Lossless float->int coercion works (JS interop)."""
