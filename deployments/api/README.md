@@ -85,7 +85,7 @@ POSTGRES_PASSWORD=*****
 AUTH_DISABLED=false
 AUTH_ISSUER=<AUTH_ISSUER>
 AUTH_AUDIENCE=<AUTH_AUDIENCE>
-AUTH_JWKS_URI=<AUTH_ISSUER>.well-known/jwks.json
+AUTH_JWKS_URI=<AUTH_ISSUER>/.well-known/jwks.json
 ```
 
 #### Ingress

@@ -59,7 +59,7 @@ Create resource: Azure Database for PostgreSQL Flexible Server
 #### Basics
 
 - Subscription: `RMI-PROJECT-STITCH_SUB`
-- Resource Group: `STITCH-DB-RG`
+- Resource Group: `STITCH-DEV-RG`
 - Region: `West US 2`
 - PostgreSQL version: `17`
 - Workload Type: Dev/Test
