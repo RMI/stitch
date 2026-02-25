@@ -1,23 +1,22 @@
-import { expect, afterEach } from "vitest";
+import { expect, afterEach, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 import * as matchers from "@testing-library/jest-dom/matchers";
-import { vi } from "vitest";
-
-vi.mock("@auth0/auth0-react", () => {
-  return {
-    Auth0Provider: ({ children }) => children,
-    useAuth0: () => ({
-      isLoading: false,
-      isAuthenticated: true,
-      loginWithRedirect: vi.fn(),
-      logout: vi.fn(),
-      getAccessTokenSilently: vi.fn(async () => "test-token"),
-    }),
-  };
-});
 
 expect.extend(matchers);
 
 afterEach(() => {
   cleanup();
 });
+
+vi.mock("@auth0/auth0-react", () => ({
+  useAuth0: vi.fn().mockReturnValue({
+    isAuthenticated: true,
+    isLoading: false,
+    error: null,
+    user: { sub: "test-user-id", email: "test@example.com" },
+    getAccessTokenSilently: vi.fn().mockResolvedValue("test-access-token"),
+    loginWithRedirect: vi.fn(),
+    logout: vi.fn(),
+  }),
+  Auth0Provider: ({ children }) => children,
+}));

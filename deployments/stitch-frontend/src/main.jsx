@@ -4,7 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Auth0Provider } from "@auth0/auth0-react";
 import "./index.css";
 import App from "./App.jsx";
-import { AuthGate } from "./AuthGate.jsx";
+import AuthGate from "./auth/AuthGate";
+import config from "./config/env";
 
 // Set global defaults for QueryClient
 const queryClient = new QueryClient({
@@ -19,13 +20,13 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById("root")).render(
   <StrictMode>
     <Auth0Provider
-      domain="rmi-spd.us.auth0.com"
-      clientId="TS1V1soQbccAV1sitFFCfUaIlSwHD2S2"
+      domain={config.auth0.domain}
+      clientId={config.auth0.clientId}
       authorizationParams={{
         redirect_uri: window.location.origin,
-        audience: "https://stitch-api.local",
-        scope: "openid profile email",
+        audience: config.auth0.audience,
       }}
+      useRefreshTokens={true}
     >
       <QueryClientProvider client={queryClient}>
         <AuthGate>
