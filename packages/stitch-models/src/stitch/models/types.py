@@ -1,5 +1,4 @@
-from abc import ABC, abstractmethod
-from collections.abc import Hashable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from typing import Annotated, Protocol, TypeVar, runtime_checkable
 
 from pydantic import Field

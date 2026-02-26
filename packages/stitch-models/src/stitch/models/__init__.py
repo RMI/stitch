@@ -1,3 +1,4 @@
+from abc import ABC
 from collections import defaultdict
 from collections.abc import Mapping, MutableMapping, MutableSequence, Sequence
 from typing import (
@@ -8,7 +9,7 @@ from typing import (
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .types import IdType, Provenance, SourceRef
+from .types import IdType, Provenance
 
 __all__ = [
     "ManagedResource",
@@ -18,7 +19,7 @@ __all__ = [
 ]
 
 
-class Source[TSrcKey: str](BaseModel):
+class Source[TSrcKey: str](BaseModel, ABC):
     """Base class for dependent, canonical `Source` data declarations.
 
     Used for creational patterns and to handle use cases where identifiers should NOT be present.
@@ -50,7 +51,7 @@ class SourcePayload(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(from_attributes=True)
 
 
-class Resource[TPayload: SourcePayload](BaseModel):
+class Resource[TPayload: SourcePayload](BaseModel, ABC):
     """Base class for `Resource` objects without identifiers.
 
     Used for creational patterns or other use cases where identifiers should NOT be present (e.g. ETL).
