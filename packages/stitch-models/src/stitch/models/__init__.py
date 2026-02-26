@@ -37,8 +37,8 @@ Ts = TypeVar("Ts", bound=str)
 Tid = TypeVar("Tid", bound=IdType)
 SourceSequence = Sequence[Source[Ts]]
 MutableSourceSequence = MutableSequence[Source[Ts]]
-SourceMapping = Mapping[SourceRef[Tid, Ts], Source[Ts]]
-MutableSourceMapping = MutableMapping[SourceRef[Tid, Ts], Source[Ts]]
+SourceMapping = Mapping[Tid, Source[Ts]]
+MutableSourceMapping = MutableMapping[Tid, Source[Ts]]
 
 
 class SourcePayload(BaseModel):
