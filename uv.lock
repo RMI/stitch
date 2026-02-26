@@ -1115,6 +1115,7 @@ name = "stitch-api"
 version = "0.1.0"
 source = { editable = "deployments/api" }
 dependencies = [
+    { name = "deleteme-model-oilgas" },
     { name = "fastapi", extra = ["standard"] },
     { name = "greenlet" },
     { name = "pydantic-settings" },
@@ -1133,6 +1134,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "deleteme-model-oilgas", editable = "packages/deleteme-model-oilgas" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.124.0" },
     { name = "greenlet", specifier = ">=3.3.0" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },

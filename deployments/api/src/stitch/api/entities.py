@@ -11,6 +11,7 @@ from typing import (
 )
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from deleteme_model_oilgas import OilGasFieldBase
 
 IdType = int | str | UUID
 
@@ -171,3 +172,10 @@ class User(BaseModel):
 
 
 class SourceSelectionLogic(BaseModel): ...
+
+class OilGasField(OilGasFieldBase, Timestamped):
+    id: int
+    model_config = ConfigDict(from_attributes=True)
+
+class CreateOilGasField(OilGasFieldBase):
+    pass

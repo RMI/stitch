@@ -10,10 +10,12 @@ from .settings import get_settings
 
 from .routers.resources import router as resource_router
 from .routers.health import router as health_router
+from stitch.api.routers.oilgasfields import router as oilgas_fields_router
 
 base_router = APIRouter(prefix="/api/v1")
 base_router.include_router(resource_router)
 base_router.include_router(health_router)
+base_router.include_router(oilgas_fields_router)
 
 
 @asynccontextmanager

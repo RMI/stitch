@@ -7,6 +7,7 @@ from .sources import (
 )
 from .resource import MembershipStatus, MembershipModel, ResourceModel
 from .user import User as UserModel
+from .oilgas_field import OilGasFieldModel
 
 __all__ = [
     "CCReservoirsSourceModel",
@@ -18,4 +19,5 @@ __all__ = [
     "StitchBase",
     "UserModel",
     "WMSourceModel",
+    "OilGasFieldModel",
 ]

@@ -12,6 +12,7 @@ dependencies = [
   "sqlalchemy>=2.0.44",
   "stitch-auth",
   "stitch-core",
+  "deleteme_model_oilgas",
 ]
 
 [project.scripts]
@@ -42,3 +43,5 @@ addopts = ["-v", "--strict-markers", "--tb=short"]
 [tool.uv.sources]
 stitch-auth = { workspace = true }
 stitch-core = { workspace = true }
+deleteme_model_oilgas = { workspace = true }
+

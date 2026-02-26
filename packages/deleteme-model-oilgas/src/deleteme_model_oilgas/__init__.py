@@ -1,3 +1,3 @@
-from .field import OilGasField
+from .field import OilGasFieldBase
 
-__all__ = ["OilGasField"]
+__all__ = ["OilGasFieldBase"]

@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
 
 
-class OilGasField(BaseModel):
+class OilGasFieldBase(BaseModel):
     """
     Minimal Oil / Gas field domain model.
     """
