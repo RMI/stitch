@@ -1,5 +1,5 @@
-import ResourcesView from "./components/ResourcesView";
-import ResourceView from "./components/ResourceView";
+import OGFieldsView from "./components/OGFieldsView";
+import OGFieldView from "./components/OGFieldView";
 import { LogoutButton } from "./components/LogoutButton";
 
 function App() {
@@ -8,8 +8,8 @@ function App() {
       <div className="max-w-4xl mx-auto flex justify-end mb-4">
         <LogoutButton />
       </div>
-      <ResourcesView endpoint="/api/v1/resources" />
-      <ResourceView className="mt-24" endpoint="/api/v1/resources/{id}" />
+      <OGFieldsView endpoint="/api/v1/oilgasfields" />
+      <OGFieldView className="mt-24" endpoint="/api/v1/oilgasfields/{id}" />
     </div>
   );
 }
