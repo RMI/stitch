@@ -173,9 +173,11 @@ class User(BaseModel):
 
 class SourceSelectionLogic(BaseModel): ...
 
+
 class OilGasField(OilGasFieldBase, Timestamped):
     id: int
     model_config = ConfigDict(from_attributes=True)
+
 
 class CreateOilGasField(OilGasFieldBase):
     pass

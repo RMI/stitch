@@ -26,7 +26,9 @@ class OilGasFieldModel(Base, TimestampMixin, UserAuditMixin):
     country: Mapped[str | None] = mapped_column(String, nullable=True)
     basin: Mapped[str | None] = mapped_column(String, nullable=True)
     location_type: Mapped[str | None] = mapped_column(String, nullable=True)
-    production_conventionality: Mapped[str | None] = mapped_column(String, nullable=True)
+    production_conventionality: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )
     fuel_group: Mapped[str | None] = mapped_column(String, nullable=True)
     operator: Mapped[str | None] = mapped_column(String, nullable=True)
 

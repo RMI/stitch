@@ -9,7 +9,7 @@ class OilGasFieldBase(BaseModel):
 
     model_config = ConfigDict(
         extra="forbid",  # reject unknown fields
-        frozen=False,    # allow mutation (change to True if you want immutability)
+        frozen=False,  # allow mutation (change to True if you want immutability)
     )
     name: str = Field(..., min_length=1)
     name_local: Optional[str] = Field(default=None)
@@ -31,4 +31,4 @@ class OilGasFieldBase(BaseModel):
     region: Optional[str] = Field(default=None)
     reservoir_formation: Optional[str] = Field(default=None)
     field_depth: Optional[float] = Field(default=None)
-    subdivision: Optional[str] = Field(default = None)
+    subdivision: Optional[str] = Field(default=None)
