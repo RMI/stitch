@@ -20,6 +20,7 @@ from stitch.api.db.model import (
     StitchBase,
     UserModel,
     WMSourceModel,
+    OilGasFieldModel,
 )
 from stitch.api.entities import (
     GemData,
@@ -319,6 +320,26 @@ def create_seed_sources():
 
     return gem_sources, wm_sources, rmi_sources, cc_sources
 
+def create_og_fields(user: UserEntity) -> list[OilGasFieldModel]:
+    ogfields = [
+        OilGasFieldModel.create(
+            created_by = user,
+            name = "Foo OG field",
+            name_local = "Föö",
+            latitude = 1,
+            longitude = 2,
+            production_start_year = 1901,
+        ),
+        OilGasFieldModel.create(
+            created_by = user,
+            name = "Bar OG field",
+            name_local = "Bär",
+            latitude = 1.1,
+            longitude = 2.2,
+            production_start_year = 1902,
+        )
+    ]
+    return(ogfields)
 
 def create_seed_resources(user: UserEntity) -> list[ResourceModel]:
     resources = [
@@ -385,6 +406,9 @@ def seed_dev(engine) -> None:
 
         gem_sources, wm_sources, rmi_sources, cc_sources = create_seed_sources()
         session.add_all(gem_sources + wm_sources + rmi_sources + cc_sources)
+
+        ogfields = create_og_fields(user_entity)
+        session.add_all(ogfields)
 
         resources = create_seed_resources(user_entity)
         resources = create_seed_resources(dev_entity)

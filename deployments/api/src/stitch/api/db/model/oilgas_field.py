@@ -41,9 +41,7 @@ class OilGasFieldModel(Base, TimestampMixin, UserAuditMixin):
             production_start_year=production_start_year,
             latitude=latitude,
             longitude=longitude,
+            created_by_id=created_by.id,
+            last_updated_by_id=created_by.id,
         )
-        # If your CreatedByMixin expects created_by assignment, keep this.
-        # Otherwise delete these two lines.
-        model.created_by_id=created_by.id,
-        model.last_updated_by_id=created_by.id,
         return model
