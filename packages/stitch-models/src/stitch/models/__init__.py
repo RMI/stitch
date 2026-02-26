@@ -2,30 +2,24 @@ from collections import defaultdict
 from collections.abc import Mapping, MutableMapping, MutableSequence, Sequence
 from typing import (
     ClassVar,
-    NamedTuple,
-    TypeVar,
     Self,
+    TypeVar,
 )
-from pydantic import BaseModel, Field, ConfigDict
 
-from .types import IdType
+from pydantic import BaseModel, ConfigDict, Field
+
+from .types import IdType, Provenance, SourceRef
 
 __all__ = [
+    "ManagedResource",
     "Resource",
-    "ResourceBase",
-    "SourceBase",
-    "SourceBaseCollection",
-    "MutableSourceBaseCollection",
     "Source",
-    "SourceCollection",
-    "MutableSourceCollection",
     "SourcePayload",
-    "SourceRef",
 ]
 
 
-class SourceBase[TSrcKey: str](BaseModel):
-    """Base class for `Source` data without id field.
+class Source[TSrcKey: str](BaseModel):
+    """Base class for dependent, canonical `Source` data declarations.
 
     Used for creational patterns and to handle use cases where identifiers should NOT be present.
 
@@ -39,26 +33,12 @@ class SourceBase[TSrcKey: str](BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(from_attributes=True)
 
 
-TSrcBase = TypeVar("TSrcBase", bound=SourceBase[str])
-SourceBaseCollection = Sequence[TSrcBase]
-MutableSourceBaseCollection = MutableSequence[TSrcBase]
-
-
-class Source[TId: IdType, TSrcKey: str](SourceBase[TSrcKey]):
-    """Canonical source model that has been integrated/stored.
-
-    Attributes:
-        id: unique identifier within `source` scope
-        source: key for identifying the data source
-    """
-
-    id: TId
-
-
-TId = TypeVar("TId", bound=IdType)
-TSrc = TypeVar("TSrc", bound=Source[IdType, str])
-SourceCollection = Mapping[TId, TSrc]
-MutableSourceCollection = MutableMapping[TId, TSrc]
+Ts = TypeVar("Ts", bound=str)
+Tid = TypeVar("Tid", bound=IdType)
+SourceSequence = Sequence[Source[Ts]]
+MutableSourceSequence = MutableSequence[Source[Ts]]
+SourceMapping = Mapping[SourceRef[Tid, Ts], Source[Ts]]
+MutableSourceMapping = MutableMapping[SourceRef[Tid, Ts], Source[Ts]]
 
 
 class SourcePayload(BaseModel):
@@ -70,12 +50,7 @@ class SourcePayload(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(from_attributes=True)
 
 
-class SourceRef[TId: IdType, TSrcKey: str](NamedTuple):
-    source: TSrcKey
-    id: TId
-
-
-class ResourceBase[TPayload: SourcePayload](BaseModel):
+class Resource[TPayload: SourcePayload](BaseModel):
     """Base class for `Resource` objects without identifiers.
 
     Used for creational patterns or other use cases where identifiers should NOT be present (e.g. ETL).
@@ -85,27 +60,13 @@ class ResourceBase[TPayload: SourcePayload](BaseModel):
     """
 
     source_data: TPayload
-
-
-class Resource[TPayload: SourcePayload, TResId: IdType](ResourceBase[TPayload]):
-    """Canonical `Resource` model.
-
-    Identifiers are required for merge, split, and repointing operations in most production contexts.
-
-    Examples:
-    ```
-    class MyResource(Resource[MyPayload, int]):
-        pass
-    ```
-
-    Attributes:
-        id: unique resource identifier
-        repointed_to: the new "parent" resource to which *this* resource points (result of merging)
-        provenance: maps resource IDs to sequences of SourceRefs for data lineage introspection
-    """
-
-    id: TResId
     repointed_to: Self | None = Field(default=None)
-    provenance: Mapping[TResId, Sequence[SourceRef[IdType, str]]] = Field(
+
+
+class ManagedResource[TResId: IdType, TSrcId: IdType, TSrcKey: str, TPl: SourcePayload](
+    Resource[TPl]
+):
+    id: TResId
+    provenance: Provenance[TResId, TSrcId, TSrcKey] = Field(
         default_factory=lambda: defaultdict(list)
     )
