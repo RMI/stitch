@@ -13,3 +13,19 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-name = "stitch.models"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
