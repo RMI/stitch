@@ -29,6 +29,8 @@ from stitch.api.entities import (
     WMData,
 )
 
+from deleteme_model_oilgas.field import OilGasFieldBase
+
 """
 DB init/seed job.
 
@@ -322,22 +324,46 @@ def create_seed_sources():
 
 def create_og_fields(user: UserEntity) -> list[OilGasFieldModel]:
     ogfields = [
-        OilGasFieldModel.create(
+        OilGasFieldModel.from_entity(
             created_by = user,
-            name = "Foo OG field",
-            name_local = "Föö",
-            latitude = 1,
-            longitude = 2,
-            production_start_year = 1901,
+            field = OilGasFieldBase(
+                name = "Foo OG field",
+                name_local = "Föö",
+                latitude = 1,
+                longitude = 2,
+                production_start_year = 1901,
+            )
         ),
-        OilGasFieldModel.create(
+        OilGasFieldModel.from_entity(
             created_by = user,
-            name = "Bar OG field",
-            name_local = "Bär",
-            latitude = 1.1,
-            longitude = 2.2,
-            production_start_year = 1902,
-        )
+            field = OilGasFieldBase(
+                name = "Minimal OG field",
+            )
+        ),
+        OilGasFieldModel.from_entity(
+            created_by = user,
+            field = OilGasFieldBase(
+                name = "Bar OG field",
+                name_local = "Bär",
+                country = "USA",
+                basin = "Super Cool Basin",
+                location_type = "Offshore",
+                production_conventionality = "Mixed",
+                fuel_group = "Condensate",
+                operator = "Very Good Operators (VGO, Inc.)",
+                discovery_year = 1492,
+                production_start_year = 1902,
+                fid_year = 1903,
+                latitude = 1.1,
+                longitude = 2.2,
+                field_status = "Online",
+                owners = "Even Better Owners",
+                region = "North America",
+                reservoir_formation = "Cool Formation",
+                field_depth = 9000.01,
+                subdivision = "MI"
+            )
+        ),
     ]
     return(ogfields)
 

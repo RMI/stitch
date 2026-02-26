@@ -13,7 +13,7 @@ class OilGasFieldBase(BaseModel):
     )
     name: str = Field(..., min_length=1)
     name_local: Optional[str] = Field(default=None)
-    country: Optional[str]
+    country: Optional[str] = Field(default=None)
     basin: Optional[str] = Field(default=None)
     location_type: Optional[str] = Field(default=None)
     production_conventionality: Optional[str] = Field(default=None)
@@ -24,11 +24,11 @@ class OilGasFieldBase(BaseModel):
     fid_year: Optional[int] = Field(default=None)
     latitude: Optional[float] = Field(default=None, ge=-90, le=90)
     longitude: Optional[float] = Field(default=None, ge=-180, le=180)
-    field_status: Optional[str]
+    field_status: Optional[str] = Field(default=None)
     last_updated_source: Optional[str] = Field(default=None)
     raw_lineage: Optional[object] = Field(default=None)
-    owners: Optional[str]
-    region: Optional[str]
-    reservoir_formation: Optional[str]
+    owners: Optional[str] = Field(default=None)
+    region: Optional[str] = Field(default=None)
+    reservoir_formation: Optional[str] = Field(default=None)
     field_depth: Optional[float] = Field(default=None)
     subdivision: Optional[str] = Field(default = None)
