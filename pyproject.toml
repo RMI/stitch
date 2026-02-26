@@ -7,7 +7,12 @@ requires-python = ">=3.12"
 dependencies = ["stitch-core"]
 
 [tool.uv.workspace]
-members = ["deployments/api", "packages/stitch-core", "packages/stitch-auth"]
+members = [
+  "deployments/api",
+  "packages/deleteme-model-oilgas",
+  "packages/stitch-auth",
+  "packages/stitch-core",
+]
 
 [tool.uv.sources]
 stitch-core = { workspace = true }

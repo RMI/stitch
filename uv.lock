@@ -4,6 +4,7 @@ requires-python = ">=3.12.12"
 
 [manifest]
 members = [
+    "deleteme-model-oilgas",
     "stitch",
     "stitch-api",
     "stitch-auth",
@@ -189,6 +190,17 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/0a/21/f7433d18fe6d5845329cbdc597e30caf983229c7a245bcf54afecc555938/cryptography-46.0.4-cp38-abi3-win32.whl", hash = "sha256:0563655cb3c6d05fb2afe693340bc050c30f9f34e15763361cf08e94749401fc", size = 3009779, upload-time = "2026-01-28T00:24:20.198Z" },
     { url = "https://files.pythonhosted.org/packages/3a/6a/bd2e7caa2facffedf172a45c1a02e551e6d7d4828658c9a245516a598d94/cryptography-46.0.4-cp38-abi3-win_amd64.whl", hash = "sha256:fa0900b9ef9c49728887d1576fd8d9e7e3ea872fa9b25ef9b64888adc434e976", size = 3466633, upload-time = "2026-01-28T00:24:21.851Z" },
 ]
+
+[[package]]
+name = "deleteme-model-oilgas"
+version = "0.1.0"
+source = { editable = "packages/deleteme-model-oilgas" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.6" }]
 
 [[package]]
 name = "dnspython"
