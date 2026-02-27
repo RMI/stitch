@@ -1,11 +1,12 @@
 from typing import Literal
 
-GEM_SRC = Literal["gem"]
-WM_SRC = Literal["wm"]
-RMI_SRC = Literal["rmi"]
-LLM_SRC = Literal["llm"]
+GEMSrcKey = Literal["gem"]
+WMSrcKey = Literal["wm"]
+RMISrcKey = Literal["rmi"]
+LLMSrcKey = Literal["llm"]
 
-OGSISourceKey = GEM_SRC | WM_SRC | RMI_SRC | LLM_SRC
+
+OGSISrcKey = GEMSrcKey | WMSrcKey | RMISrcKey | LLMSrcKey
 
 LocationType = Literal["Onshore", "Offshore", "Unknown"]
 

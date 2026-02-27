@@ -1,9 +1,7 @@
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
-from stitch.models.types import CountryCode, Latitude, Longitude, Year
+from stitch.models.types import CountryCodeAlpha3, Latitude, Longitude, Year, Percentage
 
-from .operator import Operator
-from .owner import Owner
 from .types import (
     LocationType,
     ProductionConventionality,
@@ -12,13 +10,33 @@ from .types import (
 )
 
 
-class OilAndGasFieldSourceData(BaseModel):
+class Owner(BaseModel):
+    model_config = ConfigDict(use_attribute_docstrings=True)
+
+    name: str
+    """Name of the company."""
+
+    stake: Percentage
+    """Ownership percentage (0–100)."""
+
+
+class Operator(BaseModel):
+    model_config = ConfigDict(use_attribute_docstrings=True)
+
+    name: str
+    """Name of the operating company."""
+
+    stake: Percentage
+    """Operating stake percentage (0–100)."""
+
+
+class OilAndGasFieldBase(BaseModel):
     model_config = ConfigDict(use_attribute_docstrings=True)
 
     name: str | None = Field(min_length=1)
     """Primary name of the resource."""
 
-    country: CountryCode | None
+    country: CountryCodeAlpha3 | None
     """ISO 3166-1 alpha-3 country code."""
 
     latitude: Latitude | None = None

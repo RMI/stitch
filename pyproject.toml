@@ -9,8 +9,8 @@ dependencies = ["stitch-core"]
 [tool.uv.workspace]
 members = [
   "deployments/api",
-  "packages/stitch-core",
   "packages/stitch-auth",
+  "packages/stitch-core",
   "packages/stitch-models",
   "packages/stitch-ogsi",
 ]

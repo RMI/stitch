@@ -1,34 +1,33 @@
-from pydantic import Field
-from typing import Annotated
-from stitch.models.source import SourceBase, SourcePayload, SourceRef, SourceCollection
-from stitch.models.resource import ConstituentProvenance, Resource
-from .og_field import OilAndGasFieldSourceData
-from .owner import Owner
-from .operator import Operator
+from collections.abc import Mapping, Sequence
+from typing import Annotated, Final
 
+from pydantic import Field
+from stitch.models import (
+    ManagedResource,
+    Resource,
+    Source,
+    SourcePayload,
+)
+
+from .og_field import OilAndGasFieldBase, Owner, Operator
 from .types import (
-    LLM_SRC,
-    GEM_SRC,
-    RMI_SRC,
-    WM_SRC,
     FieldStatus,
+    GEMSrcKey,
+    LLMSrcKey,
     LocationType,
-    OGSISourceKey,
+    OGSISrcKey,
     PrimaryHydrocarbonGroup,
     ProductionConventionality,
+    RMISrcKey,
+    WMSrcKey,
 )
 
 __all__ = [
-    "OGSIResource",
-    "OGSIProvenance",
-    "OGSISrcRef",
-    "OGSISource",
+    "OilAndGasFieldSource",
     "LLMSource",
     "RMISource",
     "WoodMacSource",
     "GemSource",
-    "OilAndGasFieldSourceData",
-    "OGSISourceKey",
     "ProductionConventionality",
     "PrimaryHydrocarbonGroup",
     "LocationType",
@@ -38,51 +37,67 @@ __all__ = [
 ]
 
 
-GEM = "gem"
-WM = "wm"
-RMI = "rmi"
-LLM = "llm"
+LLM_SRC: Final[LLMSrcKey] = "llm"
+GEM_SRC: Final[GEMSrcKey] = "gem"
+RMI_SRC: Final[RMISrcKey] = "rmi"
+WM_SRC: Final[WMSrcKey] = "wm"
 
 
-class OilAndGasFieldSource[TSrcKey: OGSISourceKey](
-    SourceBase[int, TSrcKey], OilAndGasFieldSourceData
-):
-    """Persisted OGSI field source = SourceBase (id, source) + data fields."""
+class GemSource(Source[GEMSrcKey], OilAndGasFieldBase):
+    source = GEM_SRC
 
 
-class GemSource(OilAndGasFieldSource[GEM_SRC]):
-    source: GEM_SRC = GEM
+class WoodMacSource(Source[WMSrcKey], OilAndGasFieldBase):
+    source = WM_SRC
 
 
-class WoodMacSource(OilAndGasFieldSource[WM_SRC]):
-    source: WM_SRC = WM
+class RMISource(Source[RMISrcKey], OilAndGasFieldBase):
+    source = RMI_SRC
 
 
-class RMISource(OilAndGasFieldSource[RMI_SRC]):
-    source: RMI_SRC = RMI
+class LLMSource(Source[LLMSrcKey], OilAndGasFieldBase):
+    source = LLM_SRC
 
 
-class LLMSource(OilAndGasFieldSource[LLM_SRC]):
-    source: LLM_SRC = LLM
+class ManagedGemSource(GemSource):
+    id: int
 
 
-OGSISource = Annotated[
+class ManagedWoodMacSource(WoodMacSource):
+    id: int
+
+
+class ManagedRMISource(RMISource):
+    id: int
+
+
+class ManagedLLMSource(LLMSource):
+    id: int
+
+
+OilAndGasFieldSource = Annotated[
     GemSource | WoodMacSource | RMISource | LLMSource,
     Field(discriminator="source"),
 ]
 
 
-class OGSISourcePayload(SourcePayload):
-    gem: SourceCollection[int, GemSource] = Field(default_factory=dict)
-    wm: SourceCollection[int, WoodMacSource] = Field(default_factory=dict)
-    rmi: SourceCollection[int, RMISource] = Field(default_factory=dict)
-    cc: SourceCollection[int, LLMSource] = Field(default_factory=dict)
+class OGSourcePayload(SourcePayload):
+    gem: Sequence[GemSource] = Field(default_factory=list)
+    wm: Sequence[WoodMacSource] = Field(default_factory=list)
+    rmi: Sequence[RMISource] = Field(default_factory=list)
+    cc: Sequence[LLMSource] = Field(default_factory=list)
 
 
-class OGSISrcRef(SourceRef[int, OGSISourceKey]): ...
+class OGManagedSourcePayload(SourcePayload):
+    gem: Mapping[int, ManagedGemSource] = Field(default_factory=dict)
+    wm: Mapping[int, ManagedWoodMacSource] = Field(default_factory=dict)
+    rmi: Mapping[int, ManagedRMISource] = Field(default_factory=dict)
+    cc: Mapping[int, ManagedLLMSource] = Field(default_factory=dict)
 
 
-class OGSIProvenance(ConstituentProvenance[OGSISrcRef]): ...
+class OGFieldResource(OilAndGasFieldBase, Resource[SourcePayload]): ...
 
 
-class OGSIResource(Resource[OGSISourcePayload, OGSIProvenance]): ...
+class ManagedOGFieldResource(
+    OilAndGasFieldBase, ManagedResource[int, int, OGSISrcKey, OGManagedSourcePayload]
+): ...
