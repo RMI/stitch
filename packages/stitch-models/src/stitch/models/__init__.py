@@ -1,12 +1,12 @@
-from collections import defaultdict
+from collections.abc import Mapping, Sequence
 from typing import (
     ClassVar,
-    Hashable,
+    NamedTuple,
 )
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .types import IdType, Provenance
+from .types import IdType
 
 __all__ = [
     "Resource",
@@ -40,6 +40,11 @@ class SourcePayload(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(from_attributes=True)
 
 
+class SourceRef[TId: IdType, TKey: str](NamedTuple):
+    id: TId
+    source: TKey
+
+
 class Resource[
     TResId: IdType,
     TSrcId: IdType,
@@ -48,7 +53,7 @@ class Resource[
 ](BaseModel):
     id: TResId | None = None
     source_data: TPayload
-    repointed_to: Hashable | None = Field(default=None)
-    provenance: Provenance[TResId, TSrcId, TSrcKey] = Field(
-        default_factory=lambda: defaultdict(list)
+    repointed_to: TResId | None = Field(default=None)
+    provenance: Mapping[TResId, Sequence[SourceRef[TSrcId, TSrcKey]]] = Field(
+        default_factory=dict
     )
