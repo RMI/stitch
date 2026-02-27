@@ -1,10 +1,10 @@
-from collections.abc import Sequence
 from typing import (
     ClassVar,
     NamedTuple,
+    Self,
 )
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .types import IdType
 
@@ -54,4 +54,13 @@ class Resource[
     id: TResId | None = None
     source_data: TPayload
     repointed_to: TResId | None = Field(default=None)
-    constituents: Sequence[TResId] = Field(default_factory=list)
+    constituents: frozenset[TResId] = Field(default_factory=frozenset)
+
+    @model_validator(mode="after")
+    def _no_self_reference(self) -> Self:
+        if self.id is not None:
+            if self.id in self.constituents:
+                raise ValueError("A resource cannot be a constituent of itself")
+            if self.repointed_to == self.id:
+                raise ValueError("A resource cannot be repointed to itself")
+        return self

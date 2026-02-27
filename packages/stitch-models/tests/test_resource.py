@@ -14,7 +14,6 @@ from tests.conftest import (
     ExtendedResource,
     FooPayload,
     FooResource,
-    FooSource,
     MultiPayload,
     UuidPayload,
     UuidSource,
@@ -69,17 +68,29 @@ class TestResourceSubclassing:
         assert resource.id == 1
         assert resource.source_data.foos[1].value == 3.14
 
-    def test_provenance_defaults_to_empty(self, foo_payload):
-        resource = FooResource(id=1, source_data=foo_payload)
-        assert resource.provenance == {}
-
-    def test_repointed_to_defaults_to_none(self, foo_payload):
-        resource = FooResource(id=1, source_data=foo_payload)
+    def test_ingestion_defaults(self, foo_payload):
+        """Ingestion context: id, repointed_to, and constituents all default."""
+        resource = FooResource(source_data=foo_payload)
+        assert resource.id is None
         assert resource.repointed_to is None
+        assert resource.constituents == frozenset()
 
     def test_repointed_to_accepts_id(self, foo_payload):
         resource = FooResource(id=1, source_data=foo_payload, repointed_to=42)
         assert resource.repointed_to == 42
+
+    def test_constituents_accepts_ids(self, foo_payload):
+        resource = FooResource(id=1, source_data=foo_payload, constituents={2, 3})
+        assert resource.constituents == frozenset({2, 3})
+        assert isinstance(resource.constituents, frozenset)
+
+    def test_repointed_to_and_constituents_independent(self, foo_payload):
+        """Both can be set simultaneously — they are independent fields."""
+        resource = FooResource(
+            id=1, source_data=foo_payload, repointed_to=99, constituents={2, 3}
+        )
+        assert resource.repointed_to == 99
+        assert resource.constituents == frozenset({2, 3})
 
     def test_extra_fields_on_subclass(self):
         ep = EmptyPayload()
@@ -134,3 +145,23 @@ class TestResourceValidation:
             type="literal_error",
             loc=("foos", "1", "source"),
         )
+
+    def test_rejects_self_in_constituents(self, foo_payload):
+        with pytest.raises(ValidationError, match="constituent of itself"):
+            FooResource(id=1, source_data=foo_payload, constituents={1, 2})
+
+    def test_rejects_self_repointed_to(self, foo_payload):
+        with pytest.raises(ValidationError, match="repointed to itself"):
+            FooResource(id=1, source_data=foo_payload, repointed_to=1)
+
+    def test_constituents_coerces_list_from_json(self):
+        payload = json.dumps(
+            {
+                "id": 1,
+                "source_data": {"foos": {}},
+                "constituents": [2, 3],
+            }
+        )
+        resource = FooResource.model_validate_json(payload)
+        assert resource.constituents == frozenset({2, 3})
+        assert isinstance(resource.constituents, frozenset)
