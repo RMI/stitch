@@ -11,7 +11,6 @@ from stitch.models import (
     Resource,
     Source,
     SourcePayload,
-    SourceRef,
 )
 
 # ---------------------------------------------------------------------------
@@ -61,15 +60,15 @@ class EmptyPayload(SourcePayload):
     pass
 
 
-class FooResource(Resource[FooPayload, int]):
+class FooResource(Resource[int, int, str, FooPayload]):
     pass
 
 
-class MultiResource(Resource[MultiPayload, int]):
+class MultiResource(Resource[int, int, str, MultiPayload]):
     pass
 
 
-class ExtendedResource(Resource[EmptyPayload, int]):
+class ExtendedResource(Resource[int, int, str, EmptyPayload]):
     extra: str
 
 
@@ -113,14 +112,5 @@ def foo_payload(foo_source):
 
 
 @pytest.fixture
-def foo_ref():
-    return SourceRef(source="foo", id=1)
-
-
-@pytest.fixture
-def foo_resource(foo_payload, foo_ref):
-    return FooResource(
-        id=1,
-        source_data=foo_payload,
-        provenance={1: [foo_ref]},
-    )
+def foo_resource(foo_payload):
+    return FooResource(id=1, source_data=foo_payload)
