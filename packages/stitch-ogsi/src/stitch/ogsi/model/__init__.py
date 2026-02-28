@@ -76,5 +76,5 @@ class OGFieldResource(
 ): ...
 
 
-class OilAndGasFieldFlat(OilAndGasFieldBase):
-    id: int | None
+class OilAndGasFieldView(OilAndGasFieldBase):
+    id: int
