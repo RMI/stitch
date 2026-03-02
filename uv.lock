@@ -1208,14 +1208,24 @@ version = "0.1.0"
 source = { editable = "packages/stitch-ogsi" }
 dependencies = [
     { name = "pydantic" },
+    { name = "pytest" },
     { name = "stitch-models" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "pydantic", specifier = ">=2.12.5" },
+    { name = "pytest", specifier = ">=9.0.2" },
     { name = "stitch-models", editable = "packages/stitch-models" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8" }]
 
 [[package]]
 name = "typer"
