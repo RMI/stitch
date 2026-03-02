@@ -76,7 +76,7 @@ Most common operations have `make` shortcuts. Run `make <target>` from the repo 
 |---|---|
 | `make all` | Build all Python packages and the frontend |
 | `make build-python` | Build all discovered Python packages (under `packages/`) |
-| `make build-python PKG=stitch-core` | Build a single package by name |
+| `make build-python PKG=stitch-auth` | Build a single package by name |
 | `make frontend` | Build the frontend |
 
 Python package discovery is automatic — any subdirectory of `packages/` with a `pyproject.toml` is included. Builds are incremental via stamp files under `build/`.

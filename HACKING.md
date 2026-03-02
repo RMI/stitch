@@ -4,7 +4,6 @@ This guide covers day-to-day development in the current Stitch monorepo.
 
 ## Monorepo layout
 
-- `packages/stitch-core`: shared core domain logic
 - `packages/stitch-auth`: auth/claims/validation package
 - `deployments/api`: FastAPI service (`stitch-api`)
 - `deployments/stitch-frontend`: React + Vite frontend
@@ -60,7 +59,6 @@ Python-only:
 ```bash
 uv run ruff check
 uv run ruff format
-uv run pytest packages/stitch-core
 uv run pytest deployments/api
 ```
 

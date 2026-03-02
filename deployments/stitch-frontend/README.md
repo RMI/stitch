@@ -280,3 +280,109 @@ When adding new endpoints:
 
 - [TanStack Query Docs: Query Keys](https://tanstack.com/query/latest/docs/react/guides/query-keys)
 - [Effective React Query Keys](https://tkdodo.eu/blog/effective-react-query-keys)
+
+## Deployment: Azure Static Web Apps
+
+### Prerequisites
+
+- API deployed and reachable
+- Auth0 application created
+- GitHub repository with Actions enabled
+
+---
+
+### Canonical Values (Example)
+
+```
+SWA_NAME=stitch-frontend-demo-02
+RESOURCE_GROUP=STITCH-DEV-RG
+API_URL=https://stitch-db-demo-02.<region>.azurecontainerapps.io
+AUTH0_DOMAIN=rmi-spd.us.auth0.com
+```
+
+---
+
+### Create Static Web App (Portal)
+
+- Subscription: RMI-PROJECT-STITCH-SUB
+- Resource Group: STITCH-DEV-RG
+- Name: stitch-frontend-demo-02
+- Plan: Free
+- Source: Other (CI configured manually)
+
+Deployment Authorization Policy: Deployment Token
+
+---
+
+### Configure GitHub Secret
+
+Azure Portal → Manage Deployment Token
+
+Add token as GitHub repository secret:
+
+```
+AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN
+```
+
+Push branch or open PR to trigger workflow.
+
+---
+
+### Expected State Before Auth0 Configuration
+
+You should see the Stitch login page.
+
+Attempting login will produce an Auth0 callback error.
+
+This is expected until callback URLs are configured.
+
+---
+
+### Configure Auth0 Callback URLs
+
+Auth0 Dashboard → Applications → Settings
+
+Add your SWA URL to:
+
+- Allowed Callback URLs
+- Allowed Logout URLs
+- Allowed Web Origins
+
+Example:
+
+```
+https://<your-swa>.azurestaticapps.net/
+https://<your-swa>.azurestaticapps.net/callback
+```
+
+Save.
+
+---
+
+### Expected State After Auth0 Configuration
+
+- Login succeeds.
+- API calls fail with CORS error.
+
+This is expected until API CORS is configured.
+
+---
+
+### Configure API CORS
+
+Portal → Container App → Networking → CORS
+
+- Enable credentials
+- Max Age: 5
+- Allowed Origins: <SWA_URL>
+- Allowed Headers: \*
+
+Apply changes.
+
+---
+
+### Final Expected State
+
+- Login succeeds.
+- API calls succeed.
+- Authenticated resources load properly.

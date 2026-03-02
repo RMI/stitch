@@ -97,7 +97,8 @@ async def get_token_claims(
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    except AuthError:
+    except AuthError as e:
+        logger.warning("JWT validation failed: %s", e, exc_info=True)
         raise HTTPException(
             status_code=HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
@@ -129,8 +130,8 @@ async def get_current_user(claims: Claims, uow: UnitOfWorkDep) -> User:
         async with session.begin_nested():
             user_model = UserModel(
                 sub=claims.sub,
-                name=claims.name or "",
-                email=claims.email or "",
+                name=claims.name,
+                email=claims.email,
             )
             session.add(user_model)
     except IntegrityError:

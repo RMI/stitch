@@ -13,13 +13,13 @@ export const resourceKeys = {
 export const resourceQueries = {
   list: () => ({
     queryKey: resourceKeys.lists(),
-    queryFn: getResources,
+    queryFn: (fetcher) => getResources(fetcher),
     enabled: false,
   }),
 
   detail: (id) => ({
     queryKey: resourceKeys.detail(id),
-    queryFn: () => getResource(id),
+    queryFn: (fetcher) => getResource(id, fetcher),
     enabled: false,
   }),
 };
