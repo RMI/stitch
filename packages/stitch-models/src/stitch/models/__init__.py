@@ -12,6 +12,7 @@ __all__ = [
     "Resource",
     "Source",
     "SourcePayload",
+    "SourceRefTuple",
 ]
 
 
@@ -34,13 +35,14 @@ class Source[TId: IdType, TSrcKey: str](BaseModel):
 class SourcePayload(BaseModel):
     """Base for domain-specific source payload containers.
 
-    Subclass and declare attributes typed as SourceCollection[TId, TSrc].
+    Subclass and declare attributes that hold collections (for example, mappings)
+    of :class:`Source` instances keyed and structured as appropriate for your domain.
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(from_attributes=True)
 
 
-class SourceRef[TId: IdType, TKey: str](NamedTuple):
+class SourceRefTuple[TId: IdType, TKey: str](NamedTuple):
     id: TId
     source: TKey
 
