@@ -3,7 +3,7 @@ from typing import Annotated, Protocol, runtime_checkable
 from pydantic import Field
 from uuid import UUID
 
-IdType = int | str | UUID
+IdType = int | UUID
 
 Year = Annotated[int, Field(ge=1800, le=2100)]
 FractionalPercentage = Annotated[float, Field(ge=0.0, le=100)]
@@ -24,4 +24,4 @@ class SourceRef[TId: IdType, TSrcKey: str](Identified[TId], Protocol):
     def source(self) -> TSrcKey: ...
 
 
-ResourceRef = Identified
+type ResourceRef[TId: IdType] = Identified[TId]
