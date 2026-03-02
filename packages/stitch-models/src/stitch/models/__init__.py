@@ -47,8 +47,6 @@ class SourceRef[TId: IdType, TKey: str](NamedTuple):
 
 class Resource[
     TResId: IdType,
-    TSrcId: IdType,
-    TSrcKey: str,
     TPayload: SourcePayload,
 ](BaseModel):
     id: TResId | None = None
