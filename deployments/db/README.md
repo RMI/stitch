@@ -4,7 +4,6 @@ This directory contains resources for building and running the development Postg
 
 ## Overview
 
-- `Dockerfile`: Builds an image based on `stitch-core`, with the seeding logic.
 - `seed_db.py` : Seeds the database with example data on container startup.
 - `volumes`: Used for persistent storage of database data.
 

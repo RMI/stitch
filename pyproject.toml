@@ -4,13 +4,14 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["stitch-core"]
 
 [tool.uv.workspace]
-members = ["deployments/api", "packages/stitch-core", "packages/stitch-auth"]
+members = [
+  "deployments/api",
+  "packages/stitch-auth"
+]
 
 [tool.uv.sources]
-stitch-core = { workspace = true }
 stitch-auth = { workspace = true }
 
 [dependency-groups]

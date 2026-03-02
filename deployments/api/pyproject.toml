@@ -8,10 +8,10 @@ requires-python = ">=3.12.12"
 dependencies = [
   "fastapi[standard]>=0.124.0",
   "greenlet>=3.3.0",
+  "psycopg[binary]>=3.2.12",
   "pydantic-settings>=2.12.0",
   "sqlalchemy>=2.0.44",
   "stitch-auth",
-  "stitch-core",
 ]
 
 [project.scripts]
@@ -41,4 +41,3 @@ addopts = ["-v", "--strict-markers", "--tb=short"]
 
 [tool.uv.sources]
 stitch-auth = { workspace = true }
-stitch-core = { workspace = true }
