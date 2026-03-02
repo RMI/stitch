@@ -63,7 +63,7 @@ class TestOGSourcePayload:
         assert list(payload.gem) == []
         assert list(payload.wm) == []
         assert list(payload.rmi) == []
-        assert list(payload.cc) == []
+        assert list(payload.llm) == []
 
     def test_mixed_sources(self, og_payload: OGSourcePayload):
         assert len(og_payload.gem) == 1

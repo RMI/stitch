@@ -64,7 +64,7 @@ class OGSourcePayload(SourcePayload):
     gem: Sequence[GemSource] = Field(default_factory=lambda: [])
     wm: Sequence[WoodMacSource] = Field(default_factory=lambda: [])
     rmi: Sequence[RMISource] = Field(default_factory=lambda: [])
-    cc: Sequence[LLMSource] = Field(default_factory=lambda: [])
+    llm: Sequence[LLMSource] = Field(default_factory=lambda: [])
 
 
 class OGFieldResource(OilAndGasFieldBase, Resource[int, OGSourcePayload]): ...
