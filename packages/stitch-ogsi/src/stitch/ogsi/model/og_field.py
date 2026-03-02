@@ -1,6 +1,13 @@
+from typing import ClassVar
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
-from stitch.models.types import CountryCodeAlpha3, Latitude, Longitude, Year, Percentage
+from stitch.models.types import (
+    CountryCodeAlpha3,
+    Latitude,
+    Longitude,
+    Year,
+    FractionalPercentage,
+)
 
 from .types import (
     LocationType,
@@ -11,27 +18,27 @@ from .types import (
 
 
 class Owner(BaseModel):
-    model_config = ConfigDict(use_attribute_docstrings=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(use_attribute_docstrings=True)
 
     name: str
     """Name of the company."""
 
-    stake: Percentage
+    stake: FractionalPercentage
     """Ownership percentage (0–100)."""
 
 
 class Operator(BaseModel):
-    model_config = ConfigDict(use_attribute_docstrings=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(use_attribute_docstrings=True)
 
     name: str
     """Name of the operating company."""
 
-    stake: Percentage
+    stake: FractionalPercentage
     """Operating stake percentage (0–100)."""
 
 
 class OilAndGasFieldBase(BaseModel):
-    model_config = ConfigDict(use_attribute_docstrings=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(use_attribute_docstrings=True)
 
     name: str | None = Field(min_length=1)
     """Primary name of the resource."""
