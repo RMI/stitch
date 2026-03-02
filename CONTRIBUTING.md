@@ -21,8 +21,7 @@ Using AI tools is allowed. Submitting AI-generated changes you do not understand
 AI assistance does not change PR quality standards.
 
 - Keep AI-assisted PRs small and focused on a single concern.
-- Do not submit broad, architecture-wide rewrites unless that architectural change is explicitly planned and tracked.
-- Avoid mixing refactors with behavior changes in the same PR.
+- Follow the PR scope and architectural change rules in this document (see "Architectural Changes" and "Pull Request Expectations").
 - Split large AI-generated output into multiple PRs that can be reviewed independently.
 - In your PR description, explicitly call out:
   - what AI was used for,
@@ -52,6 +51,10 @@ External contributors can open issues to report bugs or suggest features. Please
 Work in this repo often happens in Draft PRs. These have the advantage of running the CI Suite and preparing preview environments that can be externally validated and inspected.
 
 When opening a PR, consider opening as Draft, and marking as ready for review once all checks are green.
+
+### Architectural Changes
+
+Architectural changes must be discussed and explicitly pre-approved before opening a PR. Start with an issue or design discussion that explains the proposed change, rationale, tradeoffs, and migration impact, then wait for maintainer approval before implementation.
 
 PRs are most likely to be accepted when they:
 - stay focused on one concern,
