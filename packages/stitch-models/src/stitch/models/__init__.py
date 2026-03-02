@@ -12,6 +12,7 @@ __all__ = [
     "Resource",
     "Source",
     "SourcePayload",
+    "SourceRefTuple",
 ]
 
 
@@ -41,7 +42,7 @@ class SourcePayload(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(from_attributes=True)
 
 
-class SourceRef[TId: IdType, TKey: str](NamedTuple):
+class SourceRefTuple[TId: IdType, TKey: str](NamedTuple):
     id: TId
     source: TKey
 
