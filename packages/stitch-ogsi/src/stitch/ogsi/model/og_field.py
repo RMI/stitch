@@ -37,7 +37,7 @@ class OilGasOperator(BaseModel):
     """Operating stake percentage (0–100)."""
 
 
-class OilAndGasFieldBase(BaseModel):
+class OilGasFieldBase(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(use_attribute_docstrings=True)
 
     name: str | None = Field(min_length=1)
