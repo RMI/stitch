@@ -27,7 +27,7 @@ class OilGasOwner(BaseModel):
     """Ownership percentage (0–100)."""
 
 
-class Operator(BaseModel):
+class OilGasOperator(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(use_attribute_docstrings=True)
 
     name: str
