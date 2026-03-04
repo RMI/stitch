@@ -15,7 +15,7 @@ from stitch.api.db.model import OilGasFieldModel
 from stitch.ogsi.model.og_field import OilGasFieldBase  # request model
 from stitch.ogsi.model import OGFieldView  # response model
 
-router = APIRouter(prefix="/oil_gas_fields", tags=["oil_gas_fields"])
+router = APIRouter(prefix="/oil-gas-fields", tags=["oil_gas_fields"])
 
 
 @router.post("/", response_model=OGFieldView)

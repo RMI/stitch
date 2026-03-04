@@ -8,8 +8,8 @@ function App() {
       <div className="max-w-4xl mx-auto flex justify-end mb-4">
         <LogoutButton />
       </div>
-      <OGFieldsView endpoint="/api/v1/oil_gas_fields" />
-      <OGFieldView className="mt-24" endpoint="/api/v1/oil_gas_fields/{id}" />
+      <OGFieldsView endpoint="/api/v1/oil-gas-fields" />
+      <OGFieldView className="mt-24" endpoint="/api/v1/oil-gas-fields/{id}" />
     </div>
   );
 }
