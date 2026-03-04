@@ -303,13 +303,6 @@ def seed_dev(engine) -> None:
             name=user_model.name,
         )
 
-        dev_entity = UserEntity(
-            id=dev_model.id,
-            sub=dev_model.sub,
-            email=dev_model.email,
-            name=dev_model.name,
-        )
-
         resources = create_seed_resources(user_entity)
         session.add_all(resources)
 
