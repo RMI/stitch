@@ -67,10 +67,10 @@ class OilGasFieldBase(BaseModel):
     basin: str | None = None
     """Geological basin name."""
 
-    owners: list[Owner] | None = None
+    owners: list[OilGasOwner] | None = None
     """List of owners and their ownership stakes."""
 
-    operators: list[Operator] | None = None
+    operators: list[OilGasOperator] | None = None
     """List of operators and their operating stakes."""
 
     location_type: LocationType | None = None

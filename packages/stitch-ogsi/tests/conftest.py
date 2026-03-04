@@ -14,8 +14,8 @@ from stitch.ogsi.model import (
     GemSource,
     WoodMacSource,
     OGSourcePayload,
-    Owner,
-    Operator,
+    OilGasOwner,
+    OilGasOperator,
 )
 
 
@@ -35,8 +35,8 @@ def gem_source() -> GemSource:
         discovery_year=1986,
         production_start_year=1990,
         field_status="Producing",
-        owners=[Owner(name="Acme Energy", stake=60.0)],
-        operators=[Operator(name="Acme Energy", stake=100.0)],
+        owners=[OilGasOwner(name="Acme Energy", stake=60.0)],
+        operators=[OilGasOperator(name="Acme Energy", stake=100.0)],
     )
 
 

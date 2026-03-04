@@ -8,7 +8,7 @@ from stitch.models import (
     SourcePayload,
 )
 
-from .og_field import OilAndGasFieldBase, Owner, Operator
+from .og_field import OilGasFieldBase, OilGasOwner, OilGasOperator
 from .types import (
     GEMSrcKey,
     LLMSrcKey,
@@ -27,8 +27,8 @@ __all__ = [
     "WoodMacSource",
     "GemSource",
     "LocationType",
-    "Owner",
-    "Operator",
+    "OilGasOwner",
+    "OilGasOperator",
 ]
 
 
@@ -38,19 +38,19 @@ RMI_SRC: Final[RMISrcKey] = "rmi"
 WM_SRC: Final[WMSrcKey] = "wm"
 
 
-class GemSource(Source[int, GEMSrcKey], OilAndGasFieldBase):
+class GemSource(Source[int, GEMSrcKey], OilGasFieldBase):
     source: GEMSrcKey = GEM_SRC
 
 
-class WoodMacSource(Source[int, WMSrcKey], OilAndGasFieldBase):
+class WoodMacSource(Source[int, WMSrcKey], OilGasFieldBase):
     source: WMSrcKey = WM_SRC
 
 
-class RMISource(Source[int, RMISrcKey], OilAndGasFieldBase):
+class RMISource(Source[int, RMISrcKey], OilGasFieldBase):
     source: RMISrcKey = RMI_SRC
 
 
-class LLMSource(Source[int, LLMSrcKey], OilAndGasFieldBase):
+class LLMSource(Source[int, LLMSrcKey], OilGasFieldBase):
     source: LLMSrcKey = LLM_SRC
 
 
@@ -67,8 +67,8 @@ class OGSourcePayload(SourcePayload):
     llm: Sequence[LLMSource] = Field(default_factory=lambda: [])
 
 
-class OGFieldResource(OilAndGasFieldBase, Resource[int, OGSourcePayload]): ...
+class OGFieldResource(OilGasFieldBase, Resource[int, OGSourcePayload]): ...
 
 
-class OGFieldView(OilAndGasFieldBase):
+class OGFieldView(OilGasFieldBase):
     id: int
