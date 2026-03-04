@@ -70,7 +70,7 @@ async def merge_resources_endpoint(
         return await resource_actions.merge_resources(
             session=uow.session,
             user=user,
-            ids=unique_ids,
+            resource_ids=unique_ids,
         )
     except HTTPException:
         raise
