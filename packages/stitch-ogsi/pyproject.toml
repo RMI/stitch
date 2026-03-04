@@ -1,0 +1,32 @@
+[project]
+name = "stitch-ogsi"
+version = "0.1.0"
+description = "Oil & Gas specific types, classes, and features"
+readme = "README.md"
+authors = [{ name = "Michael Barlow", email = "mbarlow@rmi.org" }]
+requires-python = ">=3.12.12"
+dependencies = [
+    "pydantic>=2.12.5",
+    "pytest>=9.0.2",
+    "stitch-models",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.4,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "stitch.ogsi"
+
+[tool.uv.sources]
+stitch-models = { workspace = true }
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = ["-v", "--strict-markers", "--tb=short"]

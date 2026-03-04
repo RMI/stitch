@@ -4,7 +4,6 @@ This directory contains resources for building and running the development Postg
 
 ## Overview
 
-- `Dockerfile`: Builds an image based on `stitch-core`, with the seeding logic.
 - `seed_db.py` : Seeds the database with example data on container startup.
 - `volumes`: Used for persistent storage of database data.
 
@@ -30,143 +29,169 @@ This directory contains resources for building and running the development Postg
 
 ## Deployment
 
-### Manual Process
+### Prerequisites
 
-Create a Resource: "Azure Database for PostgreSQL Flexible Server"
+- Azure access to create PostgreSQL Flexible Server
+- `psql` tools installed locally
+- Docker available (for API connectivity testing)
+- Secure location for storing generated passwords (LastPass)
+
+---
+
+### Canonical Deployment Values (Example)
+
+```
+SUBSCRIPTION=RMI-PROJECT-STITCH_SUB
+RESOURCE_GROUP=STITCH-DEV-RG
+REGION=West US 2
+POSTGRES_VERSION=17
+SERVER_NAME=stitch-deploy-test
+DB_NAME=stitch
+```
+
+---
+
+### Manual Provisioning (Azure Portal)
+
+Create resource: Azure Database for PostgreSQL Flexible Server
 
 #### Basics
 
-* Subscription: `RMI-PROJECT-STITCH_SUB`
-* Resource Group: `STITCH-DB-RG`
-* Region: `West US 2`
-* PostgreSQL version: `17`
-* Workload Type: `Dev/Test`
-* Compute + storage: Click "Configure server"
-  * Cluster options: `Server`
-  * Compute tier: `Burstable`
-  * Compute size: `Standard_B1ms`
-  * Storage type: `Premium SSD`
-  * Storage size: `32 GiB`
-  * Performance tier: `P4 (120 iops)`
-  * Storage autogrow: Unchecked
-  * Zonal resiliency: Disabled
-  * Backup retention period: `7 Days`
-  * Geo-redundancy: Unchecked
-* Zonal resiliency: Disabled
-* Authentication: PostgreSQL and Microsoft Entra Authentication
-* Microsoft Entra administrator: Click "Set admin"
-  * `Admin_Alex@rmi.org`
-* Administrator login: `postgres`
-* Password: Set password and note elsewhere
-* Confirm password
+- Subscription: `RMI-PROJECT-STITCH_SUB`
+- Resource Group: `STITCH-DEV-RG`
+- Region: `West US 2`
+- PostgreSQL version: `17`
+- Workload Type: Dev/Test
+- Compute: Burstable / Standard_B1ms
+  - Cluster options: `Server`
+  - Compute tier: `Burstable`
+  - Compute size: `Standard_B1ms`
+  - Storage type: `Premium SSD`
+  - Storage size: `32 GiB`
+  - Performance tier: `P4 (120 iops)`
+  - Storage autogrow: Unchecked
+  - Zonal resiliency: Disabled
+  - Backup retention period: `7 Days`
+  - Geo-redundancy: Unchecked
+- Zonal resiliency: Disabled
+- Authentication: PostgreSQL and Microsoft Entra Authentication
+
+Set:
+
+- Admin login: `postgres`
+- Password: Store securely
 
 #### Networking
 
-* Connectivity method: `Public access`
-* Check "Allow public access to this resource through the internet using a
-  public IP address"
-* Check "Allow public access from any Azure service within Azure to this server"
-* Click "Add current client IP address"
-  * Consider renaming new rule to something like `Alex_IPAddress_2026-1-22_13-26-17`
-* *DO NOT CLICK* "Add 0.0.0.0 - 255.255.255.255"
-* No Private endpoints
+- Connectivity: Public access
+- Allow Azure services
+- Add current client IP
+  - Consider renaming new rule to something like `<MY_NAME>_IPAddress_2026-1-22_13-26-17`
+- Do NOT allow 0.0.0.0/0 ("0.0.0.0 - 255.255.255.255")
+- No private endpoints
 
-#### Security
+---
 
-* Data encryption key: `Service-managed key`
+### Post-Deployment Steps
 
-#### Tags
+#### Create Database
 
-* as appropriate
+Portal → Databases
 
-#### Review and Create
-
-Click Create, then visit your new DB.
-
-#### After Deploy:
-
-
-##### Create Database
-
-In the Web UI, under "Settings"/"Databases" on the left menu, view the existing
-databases.
-If the `stitch` database does not exist, create it.
-
-##### Run Roles init script
-
-test your connection (assuming you have psql tools installed locally):
-```bash
-pg_isready -d stitch -U postgres -h stitch-deploy-test.postgres.database.azure.com 
-
-psql -c "\\q" -d stitch -U postgres -h stitch-deploy-test.postgres.database.azure.com
+Create database named:
 
 ```
+stitch
+```
 
-Change the host above with the "Endpoint" from the resource main view.
+#### Verify Connectivity
 
-If you cannot connect, check that your client IP address is added to the firewall rules under "Settings"/"Networking" on the left menu.
+```bash
+pg_isready -d stitch -U postgres -h <POSTGRES_HOST>
+psql -d stitch -U postgres -h <POSTGRES_HOST>
+```
 
-Then run the init script against your new database:
+If connection fails, verify firewall rules.
+
+---
+
+#### Initialize Roles
+
 ```bash
 POSTGRES_DB=stitch \
     POSTGRES_USER=postgres \
-    PGHOST=stitch-deploy-test.postgres.database.azure.com \
+    PGHOST=<POSTGRES_HOST> \
     STITCH_MIGRATOR_PASSWORD=CHANGE_ME123! \
     STITCH_APP_PASSWORD=CHANGE_ME456! \
     deployments/db/00-init-roles.sh
 ```
 
-Then check that you can connect as the new roles:
+Verify:
 
 ```bash
-
-psql -c "\\q" -d stitch -U stitch_migrator -h stitch-deploy-test.postgres.database.azure.com
-psql -c "\\q" -d stitch -U stitch_app -h stitch-deploy-test.postgres.database.azure.com
-
+psql -d stitch -U stitch_migrator -h <POSTGRES_HOST>
+psql -d stitch -U stitch_app -h <POSTGRES_HOST>
 ```
 
-##### Connect with local docker containers
+---
 
-Assuming you have built the docker container for the API locally (with `docker
-compose up api --build` or `docker compose build api`), you should have an image
-called `stitch-api`, and be able to attempt connecting with that container to
-the public DB.
+### Seed Schema and Data
 
 ```bash
-
 docker run \
-    -e LOG_LEVEL='info' \
-    -e POSTGRES_DB='stitch' \
-    -e POSTGRES_HOST='stitch-deploy-test.postgres.database.azure.com' \
-    -e POSTGRES_PORT='5432' \
-    -e POSTGRES_USER='stitch_app' \
-    -e POSTGRES_PASSWORD='CHANGE_ME456!' \
-    --rm \
-    -p 8000:8000 \
-    stitch-api:latest
-
+  -e LOG_LEVEL='info' \
+  -e POSTGRES_HOST=<POSTGRES_HOST> \
+  -e POSTGRES_USER=stitch_migrator \
+  -e POSTGRES_PASSWORD=CHANGE_ME123! \
+  -e POSTGRES_PORT='5432' \
+  -e POSTGRES_USER='stitch_migrator' \
+  -e POSTGRES_PASSWORD='CHANGE_ME123!' \
+  --rm \
+  stitch-api:latest python -m stitch.api.db.init_job
 ```
 
-If you try to hit the API (i.e. visit `http://localhost:8000/api/v1/resources/2`, then you should get an `500 Internal Server Error`, with a sqlalchemy error along the lines of `relation "resources" does not exist`.
-This confirms that the API container can successfully connect to the DB, but the DDL operations and seeding have no been done by the `db-init` container.
+Re-run API container.
+You should now see seeded dev data.
 
-You can seed the database by connecting with the migrator role, and running the
-init command:
+---
+
+## Updating Database
+
+⚠ DBA-ONLY WORKFLOW
+
+This is a manual operational process.
+It will eventually be replaced with CI-driven migrations.
+
+### Local Docker Database
+
+Remove docker volume (`make clean-docker`) and re-run `db-init`.
+
+### Shared Cloud Database Strategy
+
+1. Rename existing DB:
+
+```
+stitch → stitch_old_YYYYMMDD
+```
+
+2. Create new empty `stitch` database.
+
+3. Re-grant privileges to:
+
+- stitch_migrator
+- stitch_app
+
+(Do not recreate users.)
+
+4. Update local `.env` to point to cloud host.
+
+5. Run:
 
 ```bash
-
-docker run \
-    -e LOG_LEVEL='info' \
-    -e POSTGRES_DB='stitch' \
-    -e POSTGRES_HOST='stitch-deploy-test.postgres.database.azure.com' \
-    -e POSTGRES_PORT='5432' \
-    -e POSTGRES_USER='stitch_migrator' \
-    -e POSTGRES_PASSWORD='CHANGE_ME123!' \
-    --rm \
-    -p 8000:8000 \
-    stitch-api:latest python -m stitch.api.db.init_job
-
+docker compose up db-init
 ```
 
-You can then re-connect with the API container (use the command above), and
-should be able to see the seeded dev data through the API.
+This should recreate schema and seed data.
+
+Manual schema diffs are not currently supported.
+

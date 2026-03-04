@@ -1,0 +1,51 @@
+name: Create Jira ticket on GitHub issue opened
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  call-jira-incoming-webhook:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build payload
+        id: payload
+        run: |
+          # Build a simple JSON payload Jira automation can consume as webhookData.*
+          # We send 'summary' and 'description' directly for easy mapping.
+          jq -n \
+            --arg action "opened" \
+            --arg repository "${{ github.repository }}" \
+            --arg issue_number "${{ github.event.issue.number }}" \
+            --arg title "${{ github.event.issue.title }}" \
+            --arg url "${{ github.event.issue.html_url }}" \
+            --arg author "${{ github.event.issue.user.login }}" \
+            --arg body "${{ github.event.issue.body }}" \
+            '{
+              action: $action,
+              repository: $repository,
+              issue_number: ($issue_number | tonumber),
+              issue: {
+                title: $title,
+                url: $url,
+                author: $author,
+                body: ($body // "")
+              }
+            }' > payload.json
+
+          echo "Payload preview:"
+          cat payload.json
+
+      - name: POST to Jira Automation Incoming Webhook
+        env:
+          JIRA_WEBHOOK_URL: ${{ secrets.JIRA_WEBHOOK_URL }}
+          JIRA_WEBHOOK_TOKEN: ${{ secrets.JIRA_WEBHOOK_TOKEN }}
+        run: |
+          curl -sS -X POST "$JIRA_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-Automation-Webhook-Token: $JIRA_WEBHOOK_TOKEN" \
+            --data-binary @payload.json \
+            -o response.txt -w "\nHTTP %{http_code}\n"
+
+          echo "Response:"
+          cat response.txt

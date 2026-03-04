@@ -2,6 +2,8 @@
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import NoResultFound
+
 
 from stitch.auth import TokenClaims
 
@@ -101,7 +103,7 @@ class TestGetCurrentUserJITProvisioning:
             assert row.email == "new@example.com"
 
     @pytest.mark.anyio
-    async def test_defaults_empty_string_for_missing_name(
+    async def test_error_when_missing_claim(
         self,
         integration_session_factory,
     ):
@@ -111,10 +113,8 @@ class TestGetCurrentUserJITProvisioning:
         )
 
         async with UnitOfWork(integration_session_factory) as uow:
-            user = await get_current_user(claims, uow)
-
-        assert user.name == ""
-        assert user.email == "valid@example.com"
+            with pytest.raises(NoResultFound):
+                await get_current_user(claims, uow)
 
     @pytest.mark.anyio
     async def test_handles_concurrent_first_login(

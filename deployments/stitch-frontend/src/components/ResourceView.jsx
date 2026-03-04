@@ -6,6 +6,7 @@ import ClearCacheButton from "./ClearCacheButton";
 import JsonView from "./JsonView";
 import Input from "./Input";
 import { resourceKeys } from "../queries/resources";
+import config from "../config/env";
 
 export default function ResourceView({ className, endpoint }) {
   const queryClient = useQueryClient();
@@ -29,7 +30,7 @@ export default function ResourceView({ className, endpoint }) {
       </h1>
       <div className=" text-gray-500 pb-4">
         <span className="font-bold">
-          {import.meta.env.VITE_API_URL}
+          {config.apiBaseUrl}
           {endpoint}
         </span>
       </div>
