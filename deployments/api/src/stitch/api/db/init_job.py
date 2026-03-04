@@ -307,6 +307,7 @@ def create_seed_oil_gas_fields(
 
     return og_models
 
+
 def seed_dev(engine) -> None:
     with Session(engine) as session:
         user_model = create_seed_user()
@@ -333,6 +334,7 @@ def seed_dev(engine) -> None:
         session.add_all(og_fields)
 
         session.commit()
+
 
 def seed(engine, profile: SeedProfile | str) -> None:
     if profile == "dev":
