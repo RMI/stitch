@@ -1,5 +1,6 @@
-import ResourcesView from "./components/ResourcesView";
-import ResourceView from "./components/ResourceView";
+import { Routes, Route } from "react-router-dom";
+import HomePage from "./pages/HomePage";
+import ResourceDetailPage from "./pages/ResourceDetailPage";
 import { LogoutButton } from "./components/LogoutButton";
 
 function App() {
@@ -8,8 +9,10 @@ function App() {
       <div className="max-w-4xl mx-auto flex justify-end mb-4">
         <LogoutButton />
       </div>
-      <ResourcesView endpoint="/api/v1/resources" />
-      <ResourceView className="mt-24" endpoint="/api/v1/resources/{id}" />
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/resources/:id" element={<ResourceDetailPage />} />
+      </Routes>
     </div>
   );
 }
