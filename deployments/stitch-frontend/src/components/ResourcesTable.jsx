@@ -2,8 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import SourceMixBar from "./SourceMixBar";
 
-// sortType: "string" | "number" — extend here when numeric columns are added.
-// Omit sortable (or set false) to disable sorting for a column.
+// sortType: "string" | "number", omit sortable (or set false) to disable sorting for a column.
 const COLUMNS = [
   { label: "Name", key: "name", className: "font-medium text-gray-900", sortable: true, sortType: "string" },
   { label: "State/Province", key: "state_province", className: "text-gray-500", sortable: true, sortType: "string" },
@@ -35,9 +34,9 @@ function applySort(data, sortConfig) {
 
 function SortIndicator({ column, sortConfig }) {
   if (sortConfig.column !== column) {
-    return <span className="ml-1 text-gray-300">⬍</span>;
+    return <span className="ml-1 text-gray-medium">⬍</span>;
   }
-  return <span className="ml-1 text-gray-600">{sortConfig.direction === "asc" ? "▲" : "▼"}</span>;
+  return <span className="ml-1 inline-block scale-y-60 text-dark-gray">{sortConfig.direction === "asc" ? "▲" : "▼"}</span>;
 }
 
 export default function ResourcesTable({ resources }) {
