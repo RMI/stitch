@@ -1,12 +1,16 @@
-from typing import Mapping
+import asyncio
+
+from functools import partial
 
 from fastapi import HTTPException
 from starlette.status import HTTP_404_NOT_FOUND
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from stitch.ogsi.model.og_field import OilGasFieldBase
 
 from .model import OilGasFieldSourceModel, ResourceModel, MembershipModel
+from .resource_actions import resource_model_to_entity
 
 
 async def create_source(
@@ -61,12 +65,15 @@ async def get_source(session, id: int) -> OilGasFieldSourceModel:
         )
     return model
 
-
 async def list_og_resources(session):
     stmt = (
         select(ResourceModel)
+        .where(ResourceModel.repointed_id.is_(None))
         .join(MembershipModel, MembershipModel.resource_id == ResourceModel.id)
         .where(MembershipModel.source == "og_field")
+        .options(selectinload(ResourceModel.memberships))
         .distinct()
     )
-    return (await session.scalars(stmt)).all()
+    models = (await session.scalars(stmt)).all()
+    fn = partial(resource_model_to_entity, session)
+    return await asyncio.gather(*[fn(m) for m in models])

@@ -17,7 +17,6 @@ from .common import Base
 from .mixins import TimestampMixin, UserAuditMixin
 from .types import PORTABLE_BIGINT
 
-
 class MembershipStatus(StrEnum):
     ACTIVE = "ACTIVE"
     INACTIVE = "INACTIVE"
@@ -88,6 +87,23 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
     # SQLAlchemy will automatically see the foreign key `memberships.resource_id`
     # and configure the appropriate SQL statement to load the membership objects
     memberships: Mapped[list[MembershipModel]] = relationship()
+
+    async def get_source_data(self, session: AsyncSession):
+        pks_by_src: dict[SourceKey, set[int]] = defaultdict(set)
+        for mem in self.memberships:
+            if mem.status == MembershipStatus.ACTIVE:
+                pks_by_src[mem.source].add(mem.source_pk)
+
+        results: dict[SourceKey, dict[IdType, SourceModel]] = defaultdict(dict)
+        for src, pks in pks_by_src.items():
+            model_cls = SOURCE_TABLES.get(src)
+            if model_cls is None:
+                continue
+            stmt = select(model_cls).where(model_cls.id.in_(pks))
+            for src_model in await session.scalars(stmt):
+                results[src][src_model.id] = src_model
+
+        return SourceModelData(**results)
 
     async def get_root(self, session: AsyncSession):
         root = await session.scalar(self.__class__._root_select(self.id))

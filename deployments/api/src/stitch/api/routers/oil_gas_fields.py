@@ -1,22 +1,13 @@
 from __future__ import annotations
 
-from typing import Any
-from collections.abc import Sequence
 
-from fastapi import APIRouter, HTTPException
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.status import HTTP_404_NOT_FOUND
+from fastapi import APIRouter
 
 from stitch.api.auth import CurrentUser
 from stitch.api.db import resource_actions, og_field_source_actions
 from stitch.api.db.config import UnitOfWorkDep
-from stitch.api.db.model import OilGasFieldSourceModel
 from stitch.api.db.og_field_source_actions import create_source, attach_to_resource
-from stitch.api.resources.entities import CreateResource, Resource
-
-from stitch.ogsi.model.og_field import OilGasFieldBase  # request model
-from stitch.ogsi.model import OGFieldView  # response model
+from stitch.api.entities import CreateResource, Resource
 
 router = APIRouter(prefix="/oil-gas-fields", tags=["oil_gas_fields"])
 
