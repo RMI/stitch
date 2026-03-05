@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Any, ClassVar, Generic, TypeVar, get_args, get_origin
-from pydantic import BaseModel, TypeAdapter
+from pydantic import TypeAdapter
 from sqlalchemy import DateTime, ForeignKey, String, func
 from sqlalchemy.ext.hybrid import hybrid_property
 
@@ -63,9 +63,7 @@ class PayloadMixin(Generic[TPayload]):
 
     @payload.inplace.setter
     def _payload_setter(self, value: TPayload):
-        # Domain-agnostic: if the payload has a `source` attribute, keep it;
-        # otherwise set a neutral default.
-        self.source = getattr(value, "source", "unknown")
+        self.source = value.source
         self._payload_data = value.model_dump(mode="json")
 
     @payload.inplace.expression
