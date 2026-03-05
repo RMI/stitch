@@ -25,6 +25,7 @@ from .common import Base
 from .mixins import TimestampMixin, UserAuditMixin
 from .types import PORTABLE_BIGINT
 
+
 class MembershipStatus(StrEnum):
     ACTIVE = "ACTIVE"
     INACTIVE = "INACTIVE"
@@ -44,7 +45,9 @@ class MembershipModel(TimestampMixin, UserAuditMixin, Base):
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     resource_id: Mapped[int] = mapped_column(ForeignKey("resources.id"), nullable=False)
-    source: Mapped[str] = mapped_column(String(10), nullable=False)  # "gem" | "wm"
+    source: Mapped[SourceKey] = mapped_column(
+        String(10), nullable=False
+    )  # "gem" | "wm"
     source_pk: Mapped[int] = mapped_column(PORTABLE_BIGINT, nullable=False)
     status: Mapped[MembershipStatus]
 
@@ -53,7 +56,7 @@ class MembershipModel(TimestampMixin, UserAuditMixin, Base):
         cls,
         created_by: UserEntity,
         resource: "ResourceModel",
-        source: str,
+        source: SourceKey,
         source_pk: IdType,
         status: MembershipStatus = MembershipStatus.ACTIVE,
     ):

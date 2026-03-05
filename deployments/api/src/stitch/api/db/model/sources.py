@@ -81,11 +81,8 @@ SOURCE_TABLES: Final[Mapping[SourceKey, SourceModelCls]] = {
 
 
 class SourceModelData(TypedDict, total=False):
-    gem: MutableMapping[IdType, OilGasFieldSourceModel]
-    wm: MutableMapping[IdType, OilGasFieldSourceModel]
-    cc: MutableMapping[IdType, OilGasFieldSourceModel]
-    rmi: MutableMapping[IdType, OilGasFieldSourceModel]
+    og_field: MutableMapping[IdType, OilGasFieldSourceModel]
 
 
 def empty_source_model_data():
-    return SourceModelData(gem={}, wm={}, cc={}, rmi={})
+    return SourceModelData(og_field={})
