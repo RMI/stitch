@@ -9,9 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.status import HTTP_404_NOT_FOUND
 
 from stitch.api.auth import CurrentUser
-from stitch.api.db import resource_actions
+from stitch.api.db import resource_actions, og_field_source_actions
 from stitch.api.db.config import UnitOfWorkDep
-from stitch.api.db.model import OilGasFieldModel
+from stitch.api.db.model import OilGasFieldSourceModel
+from stitch.api.db.og_field_source_actions import create_source, attach_to_resource
+from stitch.api.resources.entities import CreateResource, Resource
 
 from stitch.ogsi.model.og_field import OilGasFieldBase  # request model
 from stitch.ogsi.model import OGFieldView  # response model
@@ -19,63 +21,38 @@ from stitch.ogsi.model import OGFieldView  # response model
 router = APIRouter(prefix="/oil-gas-fields", tags=["oil_gas_fields"])
 
 
-@router.post("/", response_model=OGFieldView)
+@router.post("/", response_model=Resource)
 async def create_oil_gas_field(
-    payload: dict[str, Any],
+    raw_body: dict[str, object],
     uow: UnitOfWorkDep,
     user: CurrentUser,
 ):
-    session: AsyncSession = uow.session
+    session = uow.session
 
-    # Validate to the canonical package model (drops/ignores unknown fields),
-    # but keep raw input in original_payload for traceability.
-    domain = OilGasFieldBase.model_validate(payload)
-
-    # Create the generic resource first (label derived from OG name)
-    created_res = await resource_actions.create(
+    # 1) create a generic resource
+    resource = await resource_actions.create(
         session=session,
         user=user,
-        resource=resource_actions.CreateResource(
-            name=domain.name
-        ),  # adjust import if CreateResource lives elsewhere in your branch
+        resource=CreateResource(name=raw_body.get("name"))
     )
 
-    og = OilGasFieldModel(
-        resource_id=created_res.id,
-        created_by_id=user.id,
-        last_updated_by_id=user.id,
+    # 2) create canonical domain source
+    src = await create_source(
+        session=session,
+        raw_payload=raw_body,
+        source_system=raw_body.get("source_system"),
     )
-    og.original_payload = payload
-    og.payload = domain
-    og.set_domain(domain)
-    session.add(og)
-    await session.flush()
 
-    # Package response type
-    return OGFieldView(id=og.resource_id, **domain.model_dump())
+    # 3) attach it via membership
+    await attach_to_resource(session, resource.id, src, user)
 
+    return resource
 
-@router.get("/", response_model=Sequence[OGFieldView])
+@router.get("/", response_model=list[Resource])
 async def list_oil_gas_fields(uow: UnitOfWorkDep, user: CurrentUser):
-    session: AsyncSession = uow.session
-    rows = (await session.execute(select(OilGasFieldModel))).scalars().all()
-
-    out: list[OGFieldView] = []
-    for row in rows:
-        p = row.payload
-        out.append(OGFieldView(id=row.resource_id, **p.model_dump()))
-    return out
+    return await og_field_source_actions.list_og_resources(session=uow.session)
 
 
-@router.get("/{id}", response_model=OGFieldView)
+@router.get("/{id}", response_model=Resource)
 async def get_oil_gas_field(id: int, uow: UnitOfWorkDep, user: CurrentUser):
-    session: AsyncSession = uow.session
-    row = await session.get(OilGasFieldModel, id)
-    if row is None:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail=f"No OilGasField with id `{id}` found.",
-        )
-
-    p = row.payload
-    return OGFieldView(id=row.resource_id, **p.model_dump())
+    return await resource_actions.get(session=uow.session, id=id)
