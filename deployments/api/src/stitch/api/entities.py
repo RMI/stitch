@@ -10,6 +10,8 @@ from typing import (
 from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field
 
+from stitch.models import Source
+from stitch.ogsi.model import OGFieldSource
 from stitch.ogsi.model.types import OGSISrcKey
 from stitch.ogsi.model.og_field import OilGasFieldBase
 
@@ -31,8 +33,17 @@ class Timestamped(BaseModel):
     updated: datetime = Field(default_factory=datetime.now)
 
 
-class Identified(BaseModel):
-    id: IdType
+class User(BaseModel):
+    id: int = Field(...)
+    sub: str = Field(...)
+    role: str | None = None
+    email: EmailStr
+    name: str
+
+
+class WithUser(BaseModel):
+    created_by: User | None = None
+    last_update_by: User | None = None
 
 
 class SourceBase(BaseModel, Generic[TSourceKey]):
@@ -52,8 +63,12 @@ class SourceRef(BaseModel):
 # When pulling into the internal "sources" table, each will get a new unique id which is what the memberships will reference
 
 
+class ManagedOGFieldSource(WithUser, Timestamped):
+    payload: OGFieldSource
+
+
 class SourceData(BaseModel):
-    og_field: Mapping[IdType, OilGasFieldBase] = Field(default_factory=dict)
+    og_field: Mapping[IdType, OGFieldSource] = Field(default_factory=dict)
 
 
 class CreateSourceData(BaseModel):
@@ -85,16 +100,18 @@ class Resource(ResourceBase, Timestamped):
     constituents: Sequence["Resource"]
 
 
+class ManagedResource(ResourceBase, Timestamped, WithUser):
+    id: int
+    source_data: Sequence[OGFieldSource]
+    constituents: Sequence[int] = Field(default_factory=list)
+
+
 class CreateResource(ResourceBase):
     source_data: CreateResourceSourceData | None
 
 
-class User(BaseModel):
-    id: int = Field(...)
-    sub: str = Field(...)
-    role: str | None = None
-    email: EmailStr
-    name: str
+class CreateResource_(ResourceBase):
+    source_data: list[OGFieldSource] = Field(default_factory=list)
 
 
 class SourceSelectionLogic(BaseModel): ...

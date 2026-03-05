@@ -25,14 +25,30 @@ async def create_source(
     # domain validation (pydantic)
     domain: OilGasFieldBase = OilGasFieldBase.model_validate(raw_payload)
 
+    dumped = domain.model_dump(mode="json")
+
     model = OilGasFieldSourceModel(
-        source_system=source_system,
+        source=source_system,
         source_ref=source_ref,
         name=domain.name,
         country=domain.country,
         basin=domain.basin,
-        payload=domain.model_dump(),
-        original_payload=raw_payload,
+        latitude=domain.latitude,
+        longitude=domain.longitude,
+        last_updated=domain.last_updated,
+        name_local=domain.name_local,
+        state_province=domain.state_province,
+        region=domain.region,
+        owners=dumped.get("owners"),
+        operators=dumped.get("operators"),
+        location_type=dumped.get("location_type"),
+        production_conventionality=dumped.get("production_conventionality"),
+        primary_hydrocarbon_group=dumped.get("primary_hydrocarbon_group"),
+        reservoir_formation=domain.reservoir_formation,
+        discovery_year=domain.discovery_year,
+        production_start_year=domain.production_start_year,
+        fid_year=domain.fid_year,
+        field_status=dumped.get("field_status"),
     )
     session.add(model)
     await session.flush()
