@@ -103,11 +103,16 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
         )
 
     async def get_source_data(self, session: AsyncSession) -> Sequence[OGFieldSource]:
-        source_pks = [
-            mem.source_pk
-            for mem in self.memberships
-            if mem.status == MembershipStatus.ACTIVE
-        ]
+        stmt = (
+            select(MembershipModel.source_pk)
+            .where(MembershipModel.resource_id == self.id)
+            .where(MembershipModel.status == MembershipStatus.ACTIVE)
+        )
+        source_pks = (await session.scalars(stmt)).all()
+
+        if not source_pks:
+            return []
+
         stmt = select(OilGasFieldSourceModel).where(
             OilGasFieldSourceModel.id.in_(source_pks)
         )
