@@ -23,14 +23,13 @@ async def get_all_resources(
 
 
 @router.get("/{id}", response_model=OGFieldView)
-async def get_resource(*, uow: UnitOfWorkDep, user: CurrentUser, id: int) -> OGFieldView:
+async def get_resource(
+    *, uow: UnitOfWorkDep, user: CurrentUser, id: int
+) -> OGFieldView:
     res: Resource = await resource_actions.get(session=uow.session, id=id)
 
     og_res = OGFieldResource(
-        id = res.id,
-        name = res.name,
-        country = res.country,
-        source_data = res.source_data
+        id=res.id, name=res.name, country=res.country, source_data=res.source_data
     )
     return og_res.to_view()
 

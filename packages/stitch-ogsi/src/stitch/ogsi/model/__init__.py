@@ -1,4 +1,4 @@
-from typing import Annotated, Final
+from typing import Any, Annotated, Final
 
 from pydantic import Field
 from stitch.models import (
@@ -60,7 +60,6 @@ OGFieldSource = Annotated[
 
 
 class OGFieldResource(OilGasFieldBase, Resource[int, OGFieldSource]):
-
     def to_view(self) -> "OGFieldView":
         """
         Coalesce all source payloads into a single `OGFieldView`.
@@ -74,8 +73,7 @@ class OGFieldResource(OilGasFieldBase, Resource[int, OGFieldSource]):
 
         # Start with whatever canonical values may already exist on the resource itself.
         merged: dict[str, Any] = {
-            k: getattr(self, k)
-            for k in OilGasFieldBase.model_fields.keys()
+            k: getattr(self, k) for k in OilGasFieldBase.model_fields.keys()
         }
 
         # Fill gaps from sources (first non-null wins).
@@ -87,6 +85,7 @@ class OGFieldResource(OilGasFieldBase, Resource[int, OGFieldSource]):
                         merged[k] = v
 
         return OGFieldView(id=self.id, **merged)
+
 
 class OGFieldView(OilGasFieldBase):
     id: int
