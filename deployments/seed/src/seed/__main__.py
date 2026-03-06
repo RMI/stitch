@@ -6,7 +6,6 @@ from typing import Any
 
 import httpx
 
-
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -24,6 +23,28 @@ def _env_int(name: str, default: int) -> int:
         print(f"[seed] WARN: {name}={raw!r} is not an int; using {default}")
         return default
 
+def build_og_field(i: int = 1) -> dict[str, Any]:
+    return {
+        "name": "turquoise 1080p hard drive",
+        "country": "XPG",
+        "latitude": 70.0823,
+        "longitude": -138.7758,
+        "name_local": "Aufderhar LLC 516",
+        "state_province": "Tromp, Romaguera and Macejkovic 42",
+        "region": "McGlynn - Russel 194",
+        "basin": "Wolf LLC 878",
+        "owners": None,
+        "operators": None,
+        "location_type": "Offshore",
+        "production_conventionality": "Mixed",
+        "primary_hydrocarbon_group": "Light Oil",
+        "reservoir_formation": "Lueilwitz, Haag and Strosin 333",
+        "discovery_year": 1801,
+        "production_start_year": 1802,
+        "fid_year": 1803,
+        "field_status": "Producing",
+        "source": "gem"
+    }
 
 def build_payload(i: int) -> dict[str, Any]:
     """
@@ -36,7 +57,7 @@ def build_payload(i: int) -> dict[str, Any]:
         "id": 0,
         "name": f"seeded-og-field-{now}-{i}",
         "country": None,
-        "source_data": [],
+        "source_data": [build_og_field()],
         "constituents": [],
     }
 
