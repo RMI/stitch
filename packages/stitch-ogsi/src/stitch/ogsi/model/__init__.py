@@ -1,6 +1,6 @@
 from typing import Any, Annotated, Final
 
-from pydantic import Field
+from pydantic import Field, BaseModel
 from stitch.models import (
     Resource,
     Source,
@@ -28,6 +28,7 @@ __all__ = [
     "OilGasOwner",
     "OilGasOperator",
     "OGSISrcKey",
+    "OGFieldProvenance",
 ]
 
 
@@ -58,8 +59,15 @@ OGFieldSource = Annotated[
     Field(discriminator="source"),
 ]
 
+class OGFieldProvenance(BaseModel):
+ """Which source "won" for each coalesced field."""
+
+ # Keys are OilGasFieldBase field names, values are the `source` discriminator.
+ by_field: dict[str, OGSISrcKey] = Field(default_factory=dict)
+
 
 class OGFieldResource(OilGasFieldBase, Resource[int, OGFieldSource]):
+
     def to_view(self) -> "OGFieldView":
         """
         Coalesce all source payloads into a single `OGFieldView`.
@@ -71,21 +79,45 @@ class OGFieldResource(OilGasFieldBase, Resource[int, OGFieldSource]):
         if self.id is None:
             raise ValueError("Cannot build OGFieldView from a resource without an id")
 
-        # Start with whatever canonical values may already exist on the resource itself.
-        merged: dict[str, Any] = {
-            k: getattr(self, k) for k in OilGasFieldBase.model_fields.keys()
-        }
+        def _is_empty(v: Any) -> bool:
+            if v is None:
+                return True
+            if isinstance(v, str) and v.strip() == "":
+               return True
+            if isinstance(v, (list, tuple, set, dict)) and len(v) == 0:
+               return True
+            return False
 
-        # Fill gaps from sources (first non-null wins).
-        for src in self.source_data:
-            for k in OilGasFieldBase.model_fields.keys():
-                if merged.get(k) is None:
-                    v = getattr(src, k, None)
-                    if v is not None:
-                        merged[k] = v
+        merged: dict[str, Any] = {}
+        prov: dict[str, OGSISrcKey] = {}
 
-        return OGFieldView(id=self.id, **merged)
+        for fname in OilGasFieldBase.model_fields.keys():
+            # 1) resource-level value
+            cur = getattr(self, fname, None)
+            if not _is_empty(cur):
+                merged[fname] = cur
+                continue
 
+            # 2) first non-empty from sources
+            picked = None
+            picked_src: OGSISrcKey | None = None
+            for src in self.source_data:
+                v = getattr(src, fname, None)
+                if not _is_empty(v):
+                    picked = v
+                    picked_src = src.source
+                    break
+
+            merged[fname] = picked
+            if picked_src is not None:
+                prov[fname] = picked_src
+
+        return OGFieldView(
+            id=int(self.id) if self.id is not None else 0,
+            provenance=OGFieldProvenance(by_field=prov),
+            **merged,
+        )
 
 class OGFieldView(OilGasFieldBase):
     id: int
+    provenance: OGFieldProvenance
