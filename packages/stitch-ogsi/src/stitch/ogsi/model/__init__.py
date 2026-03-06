@@ -59,8 +59,34 @@ OGFieldSource = Annotated[
 ]
 
 
-class OGFieldResource(OilGasFieldBase, Resource[int, OGFieldSource]): ...
+class OGFieldResource(OilGasFieldBase, Resource[int, OGFieldSource]):
 
+    def to_view(self) -> "OGFieldView":
+        """
+        Coalesce all source payloads into a single `OGFieldView`.
+
+        Placeholder logic (shape-first):
+          - in `source_data` order, fill any still-missing fields with the
+            first non-null value found
+        """
+        if self.id is None:
+            raise ValueError("Cannot build OGFieldView from a resource without an id")
+
+        # Start with whatever canonical values may already exist on the resource itself.
+        merged: dict[str, Any] = {
+            k: getattr(self, k)
+            for k in OilGasFieldBase.model_fields.keys()
+        }
+
+        # Fill gaps from sources (first non-null wins).
+        for src in self.source_data:
+            for k in OilGasFieldBase.model_fields.keys():
+                if merged.get(k) is None:
+                    v = getattr(src, k, None)
+                    if v is not None:
+                        merged[k] = v
+
+        return OGFieldView(id=self.id, **merged)
 
 class OGFieldView(OilGasFieldBase):
     id: int
