@@ -35,7 +35,10 @@ const defaultHookReturn = {
 };
 
 beforeEach(() => {
-  vi.mocked(useResources).mockReturnValue({ ...defaultHookReturn, refetch: vi.fn() });
+  vi.mocked(useResources).mockReturnValue({
+    ...defaultHookReturn,
+    refetch: vi.fn(),
+  });
 });
 
 describe("ResourcesView", () => {
@@ -50,7 +53,9 @@ describe("ResourcesView", () => {
     renderWithQueryClient(<ResourcesView endpoint="/api/v1/resources/" />);
 
     expect(screen.getByRole("button", { name: /fetch/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /clear cache/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /clear cache/i }),
+    ).toBeInTheDocument();
   });
 
   it("disables Clear Cache button when no data", () => {
@@ -62,7 +67,10 @@ describe("ResourcesView", () => {
   it("shows loading state while fetching", async () => {
     const user = userEvent.setup();
     const refetch = vi.fn(() => {
-      vi.mocked(useResources).mockReturnValue({ ...defaultHookReturn, isLoading: true });
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        isLoading: true,
+      });
     });
     vi.mocked(useResources).mockReturnValue({ ...defaultHookReturn, refetch });
 
@@ -114,7 +122,9 @@ describe("ResourcesView", () => {
   it("does not show filter bar when no data", () => {
     renderWithQueryClient(<ResourcesView endpoint="/api/v1/resources/" />);
 
-    expect(screen.queryByRole("button", { name: /region/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /region/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("enables Clear Cache button when data is loaded", () => {
@@ -125,7 +135,9 @@ describe("ResourcesView", () => {
 
     renderWithQueryClient(<ResourcesView endpoint="/api/v1/resources/" />);
 
-    expect(screen.getByRole("button", { name: /clear cache/i })).not.toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /clear cache/i }),
+    ).not.toBeDisabled();
   });
 
   it("enables Clear Cache button when in error state", () => {
@@ -137,6 +149,8 @@ describe("ResourcesView", () => {
 
     renderWithQueryClient(<ResourcesView endpoint="/api/v1/resources/" />);
 
-    expect(screen.getByRole("button", { name: /clear cache/i })).not.toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /clear cache/i }),
+    ).not.toBeDisabled();
   });
 });

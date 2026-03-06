@@ -16,7 +16,10 @@ const defaultHookReturn = {
 };
 
 beforeEach(() => {
-  vi.mocked(useResource).mockReturnValue({ ...defaultHookReturn, refetch: vi.fn() });
+  vi.mocked(useResource).mockReturnValue({
+    ...defaultHookReturn,
+    refetch: vi.fn(),
+  });
 });
 
 describe("ResourceView", () => {
@@ -38,7 +41,9 @@ describe("ResourceView", () => {
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
     expect(screen.getByRole("button", { name: /fetch/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /clear cache/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /clear cache/i }),
+    ).toBeInTheDocument();
   });
 
   it("shows initial message before data is fetched", () => {
@@ -62,7 +67,10 @@ describe("ResourceView", () => {
   it("calls refetch when Fetch button is clicked", async () => {
     const user = userEvent.setup();
     const mockRefetch = vi.fn();
-    vi.mocked(useResource).mockReturnValue({ ...defaultHookReturn, refetch: mockRefetch });
+    vi.mocked(useResource).mockReturnValue({
+      ...defaultHookReturn,
+      refetch: mockRefetch,
+    });
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
@@ -74,7 +82,10 @@ describe("ResourceView", () => {
   it("calls refetch when Enter key is pressed in input", async () => {
     const user = userEvent.setup();
     const mockRefetch = vi.fn();
-    vi.mocked(useResource).mockReturnValue({ ...defaultHookReturn, refetch: mockRefetch });
+    vi.mocked(useResource).mockReturnValue({
+      ...defaultHookReturn,
+      refetch: mockRefetch,
+    });
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
@@ -86,8 +97,16 @@ describe("ResourceView", () => {
   });
 
   it("displays JSON data when resource is loaded", () => {
-    const mockResource = { id: 1, name: "Test Resource", type: "example", status: "active" };
-    vi.mocked(useResource).mockReturnValue({ ...defaultHookReturn, data: mockResource });
+    const mockResource = {
+      id: 1,
+      name: "Test Resource",
+      type: "example",
+      status: "active",
+    };
+    vi.mocked(useResource).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockResource,
+    });
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
@@ -123,7 +142,9 @@ describe("ResourceView", () => {
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    expect(screen.getByRole("button", { name: /clear cache/i })).not.toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /clear cache/i }),
+    ).not.toBeDisabled();
   });
 
   it("enables Clear Cache button when in error state", () => {
@@ -135,7 +156,9 @@ describe("ResourceView", () => {
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    expect(screen.getByRole("button", { name: /clear cache/i })).not.toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /clear cache/i }),
+    ).not.toBeDisabled();
   });
 
   it("clears data when Clear Cache button is clicked", async () => {
@@ -152,7 +175,9 @@ describe("ResourceView", () => {
     await user.click(screen.getByRole("button", { name: /clear cache/i }));
 
     await waitFor(() => {
-      expect(queryClient.getQueryState(["resources", "detail", 1])).toBeUndefined();
+      expect(
+        queryClient.getQueryState(["resources", "detail", 1]),
+      ).toBeUndefined();
     });
   });
 });
