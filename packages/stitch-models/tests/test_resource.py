@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import json
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
 
-from tests.conftest import (
+from .conftest import (
     BarSource,
     EmptyPayload,
     ExtendedResource,
     FooPayload,
     FooResource,
+    FooSource,
     MultiPayload,
+    ResourceWithSrcUnion,
     UuidPayload,
     UuidSource,
 )
@@ -98,6 +100,30 @@ class TestResourceSubclassing:
         assert resource.extra == "x"
 
 
+class TestResourceSubclassingDiscriminatedUnion:
+    def test_valid_source_data(self, foo_source: FooSource, bar_source: BarSource):
+        data = [foo_source.model_dump(), bar_source.model_dump()]
+        res = ResourceWithSrcUnion.model_validate(
+            {"id": 1, "res_b": 4.5, "res_c": "hi", "source_data": data}
+        )
+        assert len(res.source_data) == 2
+        assert res.res_c == "hi"
+        assert res.res_b == 4.5
+
+    def test_invalid_source_data_raises(self, foo_source: FooSource):
+        bad_bar = BarSource(id=uuid4(), label="bbar").model_dump()
+        bad_bar["label"] = 4
+
+        with pytest.raises(ValidationError) as exc_info:
+            res = ResourceWithSrcUnion.model_validate(
+                {"id": 1, "res_b": 4.5, "res_c": "hi", "source_data": [bad_bar]}
+            )
+
+        errs = exc_info.value.errors()
+        assert len(errs) == 1
+        assert errs[0]["loc"] == ("source_data", 0, "bar", "label")
+
+
 # ---------------------------------------------------------------------------
 # Resource & Payload validation
 # ---------------------------------------------------------------------------
@@ -112,7 +138,7 @@ class TestResourceValidation:
         assert "source_data" in missing_locs
 
     def test_rejects_wrong_source_in_payload(self):
-        bar = BarSource(id="abc", label="test")
+        bar = BarSource(id=uuid4(), label="test")
         with pytest.raises(ValidationError) as exc_info:
             FooPayload(foos={1: bar})  # type: ignore[arg-type]
         errors = exc_info.value.errors()

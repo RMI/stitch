@@ -13,13 +13,13 @@ from .types import (
     GEMSrcKey,
     LLMSrcKey,
     LocationType,
+    OGSISrcKey,
     RMISrcKey,
     WMSrcKey,
 )
 
 __all__ = [
     "OGFieldSource",
-    "OGSourcePayload",
     "OGFieldResource",
     "OGFieldView",
     "LLMSource",
@@ -60,11 +60,7 @@ OGFieldSource = Annotated[
 ]
 
 
-class OGSourcePayload(SourcePayload):
-    og_field: Sequence[OGFieldSource] = Field(default_factory=lambda: [])
-
-
-class OGFieldResource(OilGasFieldBase, Resource[int, OGSourcePayload]): ...
+class OGFieldResource(OilGasFieldBase, Resource[int, OGFieldSource]): ...
 
 
 class OGFieldView(OilGasFieldBase):

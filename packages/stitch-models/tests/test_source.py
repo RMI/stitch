@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -42,7 +42,7 @@ class TestSourceSubclassing:
         foo = FooSource(id=1, value=1.0)
         assert foo.source == "foo"
 
-        bar = BarSource(id="abc", label="test")
+        bar = BarSource(id=uuid4(), label="test")
         assert bar.source == "bar"
 
     def test_id_type_specialization(self):
@@ -51,10 +51,11 @@ class TestSourceSubclassing:
         assert foo.id == 42
         assert isinstance(foo.id, int)
 
-        # str id
-        bar = BarSource(id="abc", label="test")
-        assert bar.id == "abc"
-        assert isinstance(bar.id, str)
+        # UUID id
+        uid = uuid4()
+        bar = BarSource(id=uid, label="test")
+        assert bar.id == uid
+        assert isinstance(bar.id, UUID)
 
         # UUID id
         uid = UUID("550e8400-e29b-41d4-a716-446655440000")
@@ -77,9 +78,10 @@ class TestSourceSubclassing:
         assert foo.source == "foo"
         assert foo.value == 3.14
 
-        bar_orm = BarSourceORM(id="abc", source="bar", label="test")
+        uid = uuid4()
+        bar_orm = BarSourceORM(id=uid, source="bar", label="test")
         bar = BarSource.model_validate(bar_orm, from_attributes=True)
-        assert bar.id == "abc"
+        assert bar.id == uid
         assert bar.label == "test"
 
 
@@ -106,11 +108,11 @@ class TestSourceValidation:
             FooSource.model_validate_json(payload)
         assert_has_error(exc_info.value.errors(), type="int_parsing", loc=("id",))
 
-    def test_str_id_rejects_int_via_json(self):
+    def test_uuid_id_rejects_int_via_json(self):
         payload = json.dumps({"id": 123, "source": "bar", "label": "test"})
         with pytest.raises(ValidationError) as exc_info:
             BarSource.model_validate_json(payload)
-        assert_has_error(exc_info.value.errors(), type="string_type", loc=("id",))
+        assert_has_error(exc_info.value.errors(), type="uuid_type", loc=("id",))
 
     def test_uuid_id_rejects_malformed_string(self):
         payload = json.dumps({"id": "not-a-uuid", "source": "uuid_src"})

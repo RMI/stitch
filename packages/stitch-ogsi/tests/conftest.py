@@ -6,14 +6,15 @@ documentation for how the models are intended to be used.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
 
 import pytest
 
 from stitch.ogsi.model import (
     GemSource,
+    OGFieldSource,
     WoodMacSource,
-    OGSourcePayload,
     OilGasOwner,
     OilGasOperator,
 )
@@ -28,7 +29,6 @@ def gem_source() -> GemSource:
         country="USA",
         latitude=31.95,
         longitude=-102.07,
-        last_updated=datetime(2025, 6, 1, tzinfo=timezone.utc),
         location_type="Onshore",
         primary_hydrocarbon_group="Light Oil",
         production_conventionality="Unconventional",
@@ -53,5 +53,7 @@ def wm_source() -> WoodMacSource:
 
 
 @pytest.fixture
-def og_payload(gem_source: GemSource, wm_source: WoodMacSource) -> OGSourcePayload:
-    return OGSourcePayload(gem=[gem_source], wm=[wm_source])
+def og_payload(
+    gem_source: GemSource, wm_source: WoodMacSource
+) -> Sequence[OGFieldSource]:
+    return [gem_source, wm_source]
