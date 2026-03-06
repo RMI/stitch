@@ -1,4 +1,13 @@
 from stitch.api.errors import StitchAPIError
 
 
+class ResourceNotFoundError(StitchAPIError): ...
+
+
+class ResourceIntegrityError(StitchAPIError): ...
+
+
+class SourceNotFoundError(StitchAPIError): ...
+
+
 class SourceIntegrityError(StitchAPIError): ...
