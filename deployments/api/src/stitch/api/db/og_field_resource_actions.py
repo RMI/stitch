@@ -59,9 +59,12 @@ async def create(session: AsyncSession, user: CurrentUser, resource: Resource):
         )
     model = ResourceModel.create(created_by=user, name=resource.name)
     session.add(model)
-    src_models = await get_or_create_sources(session, user, resource.source_data)
-    res = await attach_sources_to_resource(
-        session=session, resource_id=model.id, source_rows=src_models, user=user
-    )
+    await session.flush()
+    if resource.source_data:
+        src_models = await get_or_create_sources(session, user, resource.source_data)
+        res = await attach_sources_to_resource(
+            session=session, resource_id=model.id, source_rows=src_models, user=user
+        )
+        return res
     await session.refresh(model, ["memberships"])
-    return res
+    return await resource_model_to_entity(session, model)

@@ -11,7 +11,7 @@ from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel
 
-from stitch.api.resources.entities import CreateResource
+from stitch.api.entities import Resource
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -31,17 +31,14 @@ class FactoryResult(Generic[T]):
 def make_create_resource(
     *,
     name: str | None = None,
-) -> FactoryResult[CreateResource]:
-    """Create a minimal, domain-agnostic CreateResource payload."""
-    return FactoryResult(model=CreateResource(name=name))
-
-
-# Convenience factory functions for common test scenarios
+) -> FactoryResult[Resource]:
+    """Create a minimal Resource payload for creation tests."""
+    return FactoryResult(model=Resource(id=0, name=name))
 
 
 def make_empty_resource(
     *,
     name: str | None = None,
-) -> FactoryResult[CreateResource]:
+) -> FactoryResult[Resource]:
     """Alias for make_create_resource() kept for readability."""
     return make_create_resource(name=name)

@@ -101,7 +101,7 @@ async def attach_sources_to_resource(
     user: User,
 ) -> Resource:
     """Link an OG field source to a resource via membership."""
-    resource = await session.get(ResourceModel, id)
+    resource = await session.get(ResourceModel, resource_id)
     if resource is None:
         raise ResourceNotFoundError(f"No resource found for id: {resource_id}")
     if len(source_rows) < 1:
