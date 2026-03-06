@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import (
     ClassVar,
     NamedTuple,
@@ -13,8 +14,6 @@ __all__ = [
     "Source",
     "SourcePayload",
     "SourceRefTuple",
-    "EmptySourcePayload",
-    "BaseResource",
 ]
 
 
@@ -31,7 +30,9 @@ class Source[TId: IdType, TSrcKey: str](BaseModel):
     source: TSrcKey
 
     # we set `from_attributes=True` to accommodate ORM or other object mappings
-    model_config: ClassVar[ConfigDict] = ConfigDict(from_attributes=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(
+        from_attributes=True, extra="ignore"
+    )
 
 
 class SourcePayload(BaseModel):
@@ -49,14 +50,13 @@ class SourceRefTuple[TId: IdType, TKey: str](NamedTuple):
     source: TKey
 
 
-class Resource[
-    TResId: IdType,
-    TPayload: SourcePayload,
-](BaseModel):
+class Resource[TResId: IdType, TSrc: Source](BaseModel):
     id: TResId | None = None
-    source_data: TPayload
+    source_data: Sequence[TSrc] = Field(default_factory=lambda: [])
     repointed_to: TResId | None = Field(default=None)
     constituents: frozenset[TResId] = Field(default_factory=frozenset)
+
+    model_config = ConfigDict(extra="ignore")
 
     @model_validator(mode="after")
     def _no_self_reference(self) -> Self:
@@ -68,10 +68,22 @@ class Resource[
         return self
 
 
-class EmptySourcePayload(SourcePayload):
-    """Domain-agnostic source payload container (no sources)."""
+class Resource_[
+    TResId: IdType,
+    TPayload: SourcePayload,
+](BaseModel):
+    id: TResId | None = None
+    source_data: TPayload
+    repointed_to: TResId | None = Field(default=None)
+    constituents: frozenset[TResId] = Field(default_factory=frozenset)
 
+    model_config = ConfigDict(extra="ignore")
 
-# A concrete, domain-agnostic Resource you can use everywhere.
-# Domains can replace `EmptySourcePayload` with their own payload type.
-type BaseResource[TResId: IdType] = Resource[TResId, EmptySourcePayload]
+    @model_validator(mode="after")
+    def _no_self_reference(self) -> Self:
+        if self.id is not None:
+            if self.id in self.constituents:
+                raise ValueError("A resource cannot be a constituent of itself")
+            if self.repointed_to == self.id:
+                raise ValueError("A resource cannot be repointed to itself")
+        return self
