@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 
+
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -22,6 +23,7 @@ def _env_int(name: str, default: int) -> int:
     except ValueError:
         print(f"[seed] WARN: {name}={raw!r} is not an int; using {default}")
         return default
+
 
 def build_og_field(i: int = 1) -> dict[str, Any]:
     return {
@@ -43,8 +45,9 @@ def build_og_field(i: int = 1) -> dict[str, Any]:
         "production_start_year": 1802,
         "fid_year": 1803,
         "field_status": "Producing",
-        "source": "gem"
+        "source": "gem",
     }
+
 
 def build_payload(i: int) -> dict[str, Any]:
     """
