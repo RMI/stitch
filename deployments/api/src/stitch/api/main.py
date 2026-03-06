@@ -9,13 +9,13 @@ from .auth import validate_auth_config_at_startup
 from .settings import get_settings
 
 from .routers.health import router as health_router
-from .routers.oil_gas_fields import router as og_router
-from .routers.resources import router as resource_router
+from .routers.oil_gas_fields import router as ogfield_resource_router
+from .routers.oil_gas_field_sources import router as ogfield_source_router
 
 base_router = APIRouter(prefix="/api/v1")
 base_router.include_router(health_router)
-base_router.include_router(og_router)
-base_router.include_router(resource_router)
+base_router.include_router(ogfield_resource_router)
+base_router.include_router(ogfield_source_router)
 
 
 @asynccontextmanager

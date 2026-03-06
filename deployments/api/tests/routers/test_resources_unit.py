@@ -11,8 +11,7 @@ from stitch.api.main import app
 
 from tests.utils import make_create_resource
 
-# Import the response model used by the router (domain-agnostic).
-from stitch.api.resources.entities import Resource
+from stitch.api.entities import Resource
 
 
 def make_resource(
@@ -39,10 +38,10 @@ class TestGetResourceUnit:
 
         app.dependency_overrides[get_uow] = override_get_uow
 
-        with patch("stitch.api.routers.resources.resource_actions") as mock_repo:
+        with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.get = AsyncMock(return_value=expected)
 
-            response = await async_client.get("/resources/42")
+            response = await async_client.get("/oil-gas-fields/42")
 
         assert response.status_code == 200
         data = response.json()
@@ -58,7 +57,7 @@ class TestGetResourceUnit:
 
         app.dependency_overrides[get_uow] = override_get_uow
 
-        with patch("stitch.api.routers.resources.resource_actions") as mock_repo:
+        with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.get = AsyncMock(
                 side_effect=HTTPException(
                     status_code=HTTP_404_NOT_FOUND,
@@ -66,7 +65,7 @@ class TestGetResourceUnit:
                 )
             )
 
-            response = await async_client.get("/resources/999")
+            response = await async_client.get("/oil-gas-fields/999")
 
         assert response.status_code == 404
         assert "999" in response.json()["detail"]
@@ -86,10 +85,10 @@ class TestCreateResourceUnit:
 
         app.dependency_overrides[get_uow] = override_get_uow
 
-        with patch("stitch.api.routers.resources.resource_actions") as mock_repo:
+        with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.create = AsyncMock(return_value=expected)
 
-            response = await async_client.post("/resources/", json=resource_in.data)
+            response = await async_client.post("/oil-gas-fields/", json=resource_in.data)
 
         assert response.status_code == 200
         mock_repo.create.assert_awaited_once()
@@ -107,10 +106,10 @@ class TestCreateResourceUnit:
 
         app.dependency_overrides[get_uow] = override_get_uow
 
-        with patch("stitch.api.routers.resources.resource_actions") as mock_repo:
+        with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.create = AsyncMock(return_value=expected)
 
-            response = await async_client.post("/resources/", json=resource_in.data)
+            response = await async_client.post("/oil-gas-fields/", json=resource_in.data)
 
         assert response.status_code == 200
         data = response.json()
@@ -126,6 +125,6 @@ class TestCreateResourceUnit:
 
         app.dependency_overrides[get_uow] = override_get_uow
 
-        response = await async_client.post("/resources/", json={"label": 123})
+        response = await async_client.post("/oil-gas-fields/", json={"label": 123})
 
         assert response.status_code == 422

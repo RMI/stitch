@@ -1,78 +1,155 @@
 import asyncio
 
+from collections.abc import Sequence
 from functools import partial
 
-from fastapi import HTTPException
-from starlette.status import HTTP_404_NOT_FOUND
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from stitch.ogsi.model.og_field import OilGasFieldBase
+from stitch.api.db.config import AsyncSession
+from stitch.api.db.errors import (
+    ResourceIntegrityError,
+    ResourceNotFoundError,
+    SourceIntegrityError,
+    SourceNotFoundError,
+)
+from stitch.api.db.utils import partition_by_id_none
+from stitch.api.entities import Resource, User
+from stitch.ogsi.model import OGFieldSource
 
-from .model import OilGasFieldSourceModel, ResourceModel, MembershipModel
-from .resource_actions import resource_model_to_entity
+from .model import (
+    MembershipStatus,
+    OilGasFieldSourceModel,
+    ResourceModel,
+    MembershipModel,
+)
+from .utils import resource_model_to_entity
 
 
 async def create_source(
-    session,
-    raw_payload: dict[str, object],
-    *,
-    source_system: str | None = None,
-    source_ref: str | None = None,
-) -> OilGasFieldSourceModel:
+    session: AsyncSession,
+    user: User,
+    source: OGFieldSource,
+) -> OGFieldSource:
     """Validate raw JSON into domain model, persist canonical + original."""
 
     # domain validation (pydantic)
-    domain: OilGasFieldBase = OilGasFieldBase.model_validate(raw_payload)
+    model = OilGasFieldSourceModel.create_from_entity(source, created_by=user)
 
-    model = OilGasFieldSourceModel(
-        source_system=source_system,
-        source_ref=source_ref,
-        name=domain.name,
-        country=domain.country,
-        basin=domain.basin,
-        payload=domain.model_dump(),
-        original_payload=raw_payload,
-    )
     session.add(model)
     await session.flush()
-    return model
+    return model.as_entity()
 
 
-async def attach_to_resource(
-    session,
-    resource_id: int,
-    source_row: OilGasFieldSourceModel,
-    created_by,
-):
-    """Link an OG field source to a resource via membership."""
-    session.add(
-        MembershipModel.create(
-            created_by=created_by,
-            resource=session.get(ResourceModel, resource_id),
-            source="rmi",
-            source_pk=source_row.id,
-        )
-    )
+async def get_or_create_sources(
+    session: AsyncSession,
+    user: User,
+    data: Sequence[OGFieldSource],
+) -> Sequence[OGFieldSource]:
+
+    return [
+        src.as_entity()
+        for src in await _get_or_create_source_models(session, user, data)
+    ]
+
+
+async def _get_or_create_source_models(
+    session: AsyncSession,
+    user: User,
+    data: Sequence[OGFieldSource],
+) -> Sequence[OilGasFieldSourceModel]:
+    new_, ex_ = partition_by_id_none(data)
+    src_models: list[OilGasFieldSourceModel] = [
+        *(await _create_source_models(session, user, new_)),
+        *(await _get_source_models(session, ex_)),
+    ]
     await session.flush()
 
+    return src_models
 
-async def get_source(session, id: int) -> OilGasFieldSourceModel:
+
+async def _create_source_models(
+    session: AsyncSession, user: User, sources: Sequence[OGFieldSource]
+) -> Sequence[OilGasFieldSourceModel]:
+    if any((src.id is not None for src in sources)):
+        existing = [src for src in sources if src.id is not None]
+        raise SourceIntegrityError(
+            f"Cannot create sources with non-None ids: {existing}"
+        )
+    models = [OilGasFieldSourceModel.create_from_entity(src, user) for src in sources]
+    session.add_all(models)
+    await session.flush()
+    return models
+
+
+async def _get_source_models(
+    session: AsyncSession, sources: Sequence[OGFieldSource | int]
+) -> Sequence[OilGasFieldSourceModel]:
+    ids = [
+        id_
+        for id_ in [s if isinstance(s, int) else s.id for s in sources]
+        if id_ is not None
+    ]
+    stmt = select(OilGasFieldSourceModel).where(OilGasFieldSourceModel.id.in_(ids))
+    return (await session.scalars(stmt)).all()
+
+
+async def attach_sources_to_resource(
+    session: AsyncSession,
+    resource_id: int,
+    source_rows: Sequence[OGFieldSource],
+    user: User,
+) -> Resource:
+    """Link an OG field source to a resource via membership."""
+    resource = await session.get(ResourceModel, resource_id)
+    if resource is None:
+        raise ResourceNotFoundError(f"No resource found for id: {resource_id}")
+    if len(source_rows) < 1:
+        raise ResourceIntegrityError(
+            f"Must pass at least 1 source row to attach to resource (id: `{resource_id}`)."
+        )
+
+    src_models = await _get_or_create_source_models(session, user, source_rows)
+
+    # flush the session, new ids are added
+    await session.flush()
+
+    memberships = [
+        MembershipModel.create(
+            created_by=user,
+            resource=resource,
+            source=src.source,
+            source_pk=src.id,
+        )
+        for src in src_models
+    ]
+    session.add_all(memberships)
+    await session.flush()
+    return await resource_model_to_entity(session, resource)
+
+
+async def get_source(session: AsyncSession, id: int) -> OGFieldSource:
     model = await session.get(OilGasFieldSourceModel, id)
     if model is None:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND, detail=f"No OG field source with id `{id}`"
-        )
-    return model
+        raise SourceNotFoundError(f"No OG Field Source found for id `{id}`")
+    return model.as_entity()
 
-async def list_og_resources(session):
+
+async def get_sources(
+    session: AsyncSession, ids: Sequence[int]
+) -> Sequence[OGFieldSource]:
+    stmt = select(OilGasFieldSourceModel).where(OilGasFieldSourceModel.id.in_(ids))
+    models = (await session.scalars(stmt)).all()
+    # TODO: raise if missing ids, optional
+    return [model.as_entity() for model in models]
+
+
+async def list_og_sources(session: AsyncSession) -> Sequence[OGFieldSource]:
     stmt = (
-        select(ResourceModel)
-        .where(ResourceModel.repointed_id.is_(None))
-        .join(MembershipModel, MembershipModel.resource_id == ResourceModel.id)
-        .options(selectinload(ResourceModel.memberships))
+        select(OilGasFieldSourceModel)
+        .join(MembershipModel, MembershipModel.source_pk == OilGasFieldSourceModel.id)
+        .where(MembershipModel.status == MembershipStatus.ACTIVE)
         .distinct()
     )
     models = (await session.scalars(stmt)).all()
-    fn = partial(resource_model_to_entity, session)
-    return await asyncio.gather(*[fn(m) for m in models])
+    return tuple(m.as_entity() for m in models)

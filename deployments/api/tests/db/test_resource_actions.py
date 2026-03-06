@@ -4,7 +4,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from stitch.api.db import resource_actions
+from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db.model import ResourceModel
 from stitch.api.entities import User
 from tests.utils import make_create_resource, make_empty_resource
