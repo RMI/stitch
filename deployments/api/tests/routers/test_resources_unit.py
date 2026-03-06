@@ -88,7 +88,9 @@ class TestCreateResourceUnit:
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.create = AsyncMock(return_value=expected)
 
-            response = await async_client.post("/oil-gas-fields/", json=resource_in.data)
+            response = await async_client.post(
+                "/oil-gas-fields/", json=resource_in.data
+            )
 
         assert response.status_code == 200
         mock_repo.create.assert_awaited_once()
@@ -109,7 +111,9 @@ class TestCreateResourceUnit:
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.create = AsyncMock(return_value=expected)
 
-            response = await async_client.post("/oil-gas-fields/", json=resource_in.data)
+            response = await async_client.post(
+                "/oil-gas-fields/", json=resource_in.data
+            )
 
         assert response.status_code == 200
         data = response.json()

@@ -24,7 +24,9 @@ class TestResourcesIntegration:
         """POST /resources/ returns the created resource."""
         resource_in = make_create_resource(name="Integration Test Resource")
 
-        response = await integration_client.post("/oil-gas-fields/", json=resource_in.data)
+        response = await integration_client.post(
+            "/oil-gas-fields/", json=resource_in.data
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -58,7 +60,9 @@ class TestResourcesIntegration:
         """POST resource is persisted and queryable directly."""
         resource_in = make_create_resource(name="Persisted Resource")
 
-        response = await integration_client.post("/oil-gas-fields/", json=resource_in.data)
+        response = await integration_client.post(
+            "/oil-gas-fields/", json=resource_in.data
+        )
 
         assert response.status_code == 200
         created_id = response.json()["id"]
@@ -77,7 +81,9 @@ class TestResourcesIntegration:
         """POST /resources/ works with only required fields (no source data)."""
         resource_in = make_empty_resource(name=None)
 
-        response = await integration_client.post("/oil-gas-fields/", json=resource_in.data)
+        response = await integration_client.post(
+            "/oil-gas-fields/", json=resource_in.data
+        )
 
         assert response.status_code == 200
         data = response.json()
