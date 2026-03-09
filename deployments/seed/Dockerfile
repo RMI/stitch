@@ -37,8 +37,6 @@ USER stitch-app
 
 # Sensible defaults (override in compose/env as needed)
 ENV API_BASE_URL="http://api:8000/api/v1" \
-    POST_COUNT="5" \
-    LOOP="false" \
-    SLEEP_SECONDS="5"
+    POST_COUNT="5"
 
 CMD ["python", "-m", "stitch.seed"]

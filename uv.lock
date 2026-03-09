@@ -14,6 +14,7 @@ members = [
     "stitch-auth",
     "stitch-models",
     "stitch-ogsi",
+    "stitch-seed",
 ]
 
 [[package]]
@@ -1230,6 +1231,17 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8" }]
+
+[[package]]
+name = "stitch-seed"
+version = "0.1.0"
+source = { editable = "deployments/seed" }
+dependencies = [
+    { name = "httpx" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "httpx", specifier = ">=0.28.0" }]
 
 [[package]]
 name = "typer"
