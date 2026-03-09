@@ -26,6 +26,7 @@ def main() -> None:
     )
     parser.add_argument("package", help="workspace package name")
     parser.add_argument(
+        "-e",
         "--exact",
         action="store_true",
         help="install only the package's declared deps (CI isolation)",
@@ -34,10 +35,12 @@ def main() -> None:
 
     pkg_dir = find_package_dir(known.package)
 
-    cmd = ["uv", "run", "--package", known.package]
+    cmd = ["uv", "run", "--package", known.package, "--active"]
     if known.exact:
         cmd += ["--exact", "--group", "dev"]
     cmd += ["pytest", pkg_dir, *pytest_args]
+
+    print(f"Running: `{cmd}`...")
 
     sys.exit(subprocess.call(cmd))
 
