@@ -35,7 +35,9 @@ def post_payloads(
             body = resp.text
         logger.debug(
             "Response body=%s",
-            json.dumps(body, ensure_ascii=False) if isinstance(body, (dict, list)) else body,
+            json.dumps(body, ensure_ascii=False)
+            if isinstance(body, (dict, list))
+            else body,
         )
 
         resp.raise_for_status()

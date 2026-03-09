@@ -22,7 +22,6 @@ def _default_openapi_url(api_base_url: str) -> str:
     return urlunparse(root) + "/openapi.json"
 
 
-
 def _resolve_seed_post_path(api_base_url: str) -> str:
     """
     We POST to {API_BASE_URL}/oil-gas-fields/ .
@@ -46,7 +45,9 @@ def _extract_post_request_schema(
         )
     op = paths[path].get(method)
     if not op:
-        raise RuntimeError(f"[seed] OpenAPI has no {method.upper()} operation for {path!r}")
+        raise RuntimeError(
+            f"[seed] OpenAPI has no {method.upper()} operation for {path!r}"
+        )
 
     rb = op.get("requestBody") or {}
     content = (rb.get("content") or {}).get(content_type) or {}
@@ -87,7 +88,11 @@ def _dereference(schema: Any, openapi: dict[str, Any], seen: set[str]) -> Any:
 
             # If there are sibling keys alongside $ref, overlay them per JSON Schema behavior.
             if len(schema) > 1:
-                merged = dict(target) if isinstance(target, dict) else {"_ref_target": target}
+                merged = (
+                    dict(target)
+                    if isinstance(target, dict)
+                    else {"_ref_target": target}
+                )
                 for k, v in schema.items():
                     if k != "$ref":
                         merged[k] = _dereference(v, openapi, seen)
@@ -100,6 +105,7 @@ def _dereference(schema: Any, openapi: dict[str, Any], seen: set[str]) -> Any:
         return [_dereference(v, openapi, seen) for v in schema]
 
     return schema
+
 
 class OpenAPIRequestValidator:
     def __init__(self, api_base_url: str, openapi_url: str | None = None) -> None:
@@ -134,7 +140,9 @@ class OpenAPIRequestValidator:
         self._load(client)
         assert self._validator is not None
 
-        errors = sorted(self._validator.iter_errors(payload), key=lambda e: list(e.path))
+        errors = sorted(
+            self._validator.iter_errors(payload), key=lambda e: list(e.path)
+        )
         if not errors:
             return
 

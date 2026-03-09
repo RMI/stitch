@@ -3,7 +3,6 @@ from .client import post_payloads
 from .config import configure_logging, load_config, logger
 from .openapi_validate import OpenAPIRequestValidator
 from .payloads import iter_payloads
- 
 
 
 def main() -> None:
