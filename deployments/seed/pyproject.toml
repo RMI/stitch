@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12.12"
 dependencies = [
   "httpx>=0.28.0",
+  "jsonschema>=4.23.0",
 ]
 
 [project.scripts]
