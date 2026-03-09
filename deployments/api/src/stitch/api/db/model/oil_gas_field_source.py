@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar
 
 from pydantic import TypeAdapter
 from sqlalchemy import (
@@ -133,7 +133,7 @@ class OilGasFieldSourceModel(TimestampMixin, UserAuditMixin, Base):
         return self.__class__.type_adapter.validate_python(self)
 
     @classmethod
-    def from_entity(cls, entity: OGFieldSource) -> Self:
+    def from_entity(cls, entity: OGFieldSource):
         mapper = inspect(cls)
         column_keys = {col.key for col in mapper.columns}
         filtered = {k: v for k, v in entity.model_dump().items() if k in column_keys}

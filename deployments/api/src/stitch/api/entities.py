@@ -1,11 +1,9 @@
 from collections.abc import Sequence
 from datetime import datetime
-from typing import (
-    Self,
-)
 from pydantic import BaseModel, EmailStr, Field
 
 from stitch.ogsi.model import OGFieldSource
+from stitch.models.types import IdType
 
 
 class Timestamped(BaseModel):
@@ -23,13 +21,13 @@ class Timestamped(BaseModel):
 class ResourceBase(BaseModel):
     name: str | None = Field(default=None)
     country: str | None = Field(default=None)
-    repointed_to: Self | None = Field(default=None)
+    repointed_to: IdType | None = Field(default=None)
 
 
 class Resource(ResourceBase, Timestamped):
     id: int
     source_data: Sequence[OGFieldSource] = Field(default_factory=lambda: [])
-    constituents: Sequence[Self] = Field(default_factory=lambda: [])
+    constituents: Sequence[IdType] = Field(default_factory=lambda: [])
 
 
 class User(BaseModel):

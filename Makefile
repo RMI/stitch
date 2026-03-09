@@ -3,6 +3,7 @@ DOCKER_COMPOSE := docker compose -f docker-compose.yml
 DOCKER_COMPOSE_DEV := $(DOCKER_COMPOSE) -f docker-compose.local.yml
 PYTEST := $(UV) run pytest
 RUFF := $(UV) run ruff
+TEST_PKG := ./scripts/test-package.py
 
 # Aggregate check: can be run in parallel with -j
 check: lint test format-check lock-check
@@ -21,8 +22,31 @@ lock-check: uv-lock-check
 uv-lint: uv-dev
 	$(RUFF) check
 
+# All workspace packages with tests
+TEST_PACKAGES := stitch-api stitch-models
+
+define newline
+
+
+endef
+
+# --- local: full sync, no --exact (fast, no venv mutation) ---
+ifdef pkg
 uv-test: uv-dev
-	$(PYTEST) deployments/api
+	$(TEST_PKG) $(pkg)
+else
+uv-test: uv-dev
+	$(foreach p,$(TEST_PACKAGES),$(TEST_PKG) $(p)$(newline))
+endif
+
+# --- isolated (CI): per-package --exact deps only ---
+ifdef pkg
+uv-test-isolated:
+	$(TEST_PKG) --exact $(pkg)
+else
+uv-test-isolated:
+	$(foreach p,$(TEST_PACKAGES),$(TEST_PKG) --exact $(p)$(newline))
+endif
 
 uv-format: uv-dev
 	$(RUFF) format
@@ -127,7 +151,7 @@ prod-docker:
 .PHONY: all build clean \
         build-python \
         check lint test format format-check \
-        uv-lint uv-test uv-format uv-format-check \
+        uv-lint uv-test uv-test-isolated uv-format uv-format-check \
         uv-sync uv-sync-dev uv-sync-all \
         uv-dev \
         clean-build clean-cache \

@@ -2,7 +2,6 @@ from collections.abc import Sequence
 from typing import (
     ClassVar,
     NamedTuple,
-    Self,
 )
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -59,7 +58,7 @@ class Resource[TResId: IdType, TSrc: Source](BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     @model_validator(mode="after")
-    def _no_self_reference(self) -> Self:
+    def _no_self_reference(self):
         if self.id is not None:
             if self.id in self.constituents:
                 raise ValueError("A resource cannot be a constituent of itself")
@@ -80,7 +79,7 @@ class Resource_[
     model_config = ConfigDict(extra="ignore")
 
     @model_validator(mode="after")
-    def _no_self_reference(self) -> Self:
+    def _no_self_reference(self):
         if self.id is not None:
             if self.id in self.constituents:
                 raise ValueError("A resource cannot be a constituent of itself")
