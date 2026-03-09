@@ -24,7 +24,7 @@ FROM base AS runtime
 RUN groupadd --system --gid 999 stitch-app \
  && useradd --system --gid 999 --uid 999 --create-home stitch-app
 
-COPY ./deployments/api /app/deployments/api
+COPY ./deployments /app/deployments
 COPY ./packages /app/packages
 
 RUN --mount=type=cache,target=/root/.cache/uv \
