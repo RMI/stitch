@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -112,7 +112,7 @@ class TestResourceValidation:
         assert "source_data" in missing_locs
 
     def test_rejects_wrong_source_in_payload(self):
-        bar = BarSource(id="abc", label="test")
+        bar = BarSource(id=uuid4(), label="test")
         with pytest.raises(ValidationError) as exc_info:
             FooPayload(foos={1: bar})  # type: ignore[arg-type]
         errors = exc_info.value.errors()
