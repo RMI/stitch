@@ -64,21 +64,17 @@ describe("ResourcesView", () => {
     expect(screen.getByRole("button", { name: /clear cache/i })).toBeDisabled();
   });
 
-  it("shows loading state while fetching", async () => {
-    const user = userEvent.setup();
-    const refetch = vi.fn(() => {
-      vi.mocked(useResources).mockReturnValue({
-        ...defaultHookReturn,
-        isLoading: true,
-      });
+  it("shows loading state while fetching", () => {
+    vi.mocked(useResources).mockReturnValue({
+      ...defaultHookReturn,
+      isLoading: true,
     });
-    vi.mocked(useResources).mockReturnValue({ ...defaultHookReturn, refetch });
 
     renderWithQueryClient(<ResourcesView endpoint="/api/v1/resources/" />);
 
-    await user.click(screen.getByRole("button", { name: /fetch/i }));
-
-    expect(refetch).toHaveBeenCalled();
+    const fetchButton = screen.getByRole("button", { name: /loading/i });
+    expect(fetchButton).toBeInTheDocument();
+    expect(fetchButton).toBeDisabled();
   });
 
   it("renders table rows when data is available", () => {
