@@ -51,6 +51,14 @@ export default function ResourcesView({ className, endpoint }) {
           />
         </div>
       )}
+      {isError && (
+        <p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          Failed to load resources. Check your connection and try again.
+        </p>
+      )}
+      {!isError && data && filteredData?.length === 0 && (
+        <p className="text-sm text-gray-400">No resources match the current filters.</p>
+      )}
       <ResourcesTable resources={filteredData} />
     </div>
   );
