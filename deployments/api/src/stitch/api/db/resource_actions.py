@@ -154,3 +154,52 @@ async def create_source_data(session: AsyncSession, data: CreateSourceData):
         rmi={rmi.id: rmi.as_entity() for rmi in rmis},
         cc={cc.id: cc.as_entity() for cc in ccs},
     )
+
+
+async def merge_resources(
+    session: AsyncSession,
+    user: CurrentUser,
+    ids: Sequence[int],
+) -> Resource:
+    """
+    Stub "merge" behavior:
+    - Treat ids[0] as the canonical/target resource.
+    - Update all resources in ids[1:] to have repointed_id = ids[0].
+
+    NOTE: This only updates the resource table repointing field (no membership/source consolidation).
+    """
+    if not ids:
+        raise HTTPException(status_code=400, detail="No resource IDs provided.")
+    # preserve order but drop duplicates
+    unique_ids = list(dict.fromkeys(ids))
+    if len(unique_ids) < 2:
+        raise HTTPException(
+            status_code=400, detail="Provide at least 2 unique resource IDs."
+        )
+
+    target_id = unique_ids[0]
+    other_ids = unique_ids[1:]
+
+    # Ensure target exists
+    target_model = await session.get(ResourceModel, target_id)
+    if target_model is None:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"No Resource with id `{target_id}` found.",
+        )
+
+    # Ensure all others exist, then repoint them
+    for rid in other_ids:
+        model = await session.get(ResourceModel, rid)
+        if model is None:
+            raise HTTPException(
+                status_code=HTTP_404_NOT_FOUND,
+                detail=f"No Resource with id `{rid}` found.",
+            )
+        model.repointed_id = target_id
+
+    await session.flush()
+
+    # Return the canonical resource entity
+    await session.refresh(target_model, ["memberships"])
+    return await resource_model_to_entity(session, target_model)

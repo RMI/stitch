@@ -281,6 +281,9 @@ def create_seed_sources():
         GemSourceModel.from_entity(
             GemData(name="North Sea Platform", country="GBR", lat=57.5, lon=1.5)
         ),
+        GemSourceModel.from_entity(
+            GemData(name="Merge Target Field", country="YYZ", lat=13.37, lon=13.37)
+        ),
     ]
     for i, src in enumerate(gem_sources, start=1):
         src.id = i
@@ -293,6 +296,13 @@ def create_seed_sources():
         ),
         WMSourceModel.from_entity(
             WMData(field_name="Ghawar Field", field_country="SAU", production=500000.0)
+        ),
+        WMSourceModel.from_entity(
+            WMData(
+                field_name="Merge Consumed Field",
+                field_country="YYZ",
+                production=1337.0,
+            )
         ),
     ]
     for i, src in enumerate(wm_sources, start=1):
@@ -324,6 +334,8 @@ def create_seed_resources(user: UserEntity) -> list[ResourceModel]:
     resources = [
         ResourceModel.create(user, name="Multi-Source Asset", country="USA"),
         ResourceModel.create(user, name="Single Source Asset", country="GBR"),
+        ResourceModel.create(user, name="Merge Demo", country="YYZ"),
+        ResourceModel.create(user, name="Merge Demo", country="YYZ"),
     ]
     for i, res in enumerate(resources, start=1):
         res.id = i
@@ -342,6 +354,8 @@ def create_seed_memberships(
         MembershipModel.create(user, resources[0], "wm", wm_sources[0].id),
         MembershipModel.create(user, resources[0], "rmi", rmi_sources[0].id),
         MembershipModel.create(user, resources[1], "gem", gem_sources[1].id),
+        MembershipModel.create(user, resources[2], "gem", gem_sources[2].id),
+        MembershipModel.create(user, resources[3], "wm", wm_sources[2].id),
     ]
     for i, mem in enumerate(memberships, start=1):
         mem.id = i
