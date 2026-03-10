@@ -1,6 +1,7 @@
 import { vi } from "vitest";
 import { render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 
 /**
  * Default return value for the mocked `useAuth0` hook (mirrors setup.js).
@@ -31,7 +32,9 @@ export function renderWithQueryClient(ui, options = {}) {
 
   return {
     ...render(
-      <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>,
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
+      </MemoryRouter>,
     ),
     queryClient,
   };

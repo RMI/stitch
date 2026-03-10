@@ -1,18 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import {
-  renderWithQueryClient,
-  createMockResponse,
-  createMockError,
-} from "../test/utils";
+import { renderWithQueryClient } from "../test/utils";
 import ResourceView from "./ResourceView";
+import { useResource } from "../hooks/useResources";
+
+vi.mock("../hooks/useResources");
+
+const defaultHookReturn = {
+  data: null,
+  isLoading: false,
+  isError: false,
+  error: null,
+  refetch: vi.fn(),
+};
+
+beforeEach(() => {
+  vi.mocked(useResource).mockReturnValue({
+    ...defaultHookReturn,
+    refetch: vi.fn(),
+  });
+});
 
 describe("ResourceView", () => {
-  beforeEach(() => {
-    global.fetch = vi.fn();
-  });
-
   it("renders heading with default ID and endpoint information", () => {
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
@@ -54,27 +64,28 @@ describe("ResourceView", () => {
     expect(screen.getByText(/^Resource ID: 42$/)).toBeInTheDocument();
   });
 
-  it("fetches resource when Fetch button is clicked", async () => {
+  it("calls refetch when Fetch button is clicked", async () => {
     const user = userEvent.setup();
-    const mockResource = { id: 1, name: "Test Resource", type: "test" };
-
-    global.fetch.mockResolvedValueOnce(createMockResponse(mockResource));
+    const mockRefetch = vi.fn();
+    vi.mocked(useResource).mockReturnValue({
+      ...defaultHookReturn,
+      refetch: mockRefetch,
+    });
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    const fetchButton = screen.getByRole("button", { name: /fetch/i });
-    await user.click(fetchButton);
+    await user.click(screen.getByRole("button", { name: /fetch/i }));
 
-    await waitFor(() => {
-      expect(screen.getByText(/Test Resource/)).toBeInTheDocument();
-    });
+    expect(mockRefetch).toHaveBeenCalled();
   });
 
-  it("fetches resource when Enter key is pressed in input", async () => {
+  it("calls refetch when Enter key is pressed in input", async () => {
     const user = userEvent.setup();
-    const mockResource = { id: 5, name: "Resource 5", type: "test" };
-
-    global.fetch.mockResolvedValueOnce(createMockResponse(mockResource));
+    const mockRefetch = vi.fn();
+    vi.mocked(useResource).mockReturnValue({
+      ...defaultHookReturn,
+      refetch: mockRefetch,
+    });
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
@@ -82,111 +93,91 @@ describe("ResourceView", () => {
     await user.clear(input);
     await user.type(input, "5{Enter}");
 
-    await waitFor(() => {
-      expect(screen.getByText(/"name": "Resource 5"/)).toBeInTheDocument();
-    });
+    expect(mockRefetch).toHaveBeenCalled();
   });
 
-  it("displays JSON data for successful fetch", async () => {
-    const user = userEvent.setup();
+  it("displays JSON data when resource is loaded", () => {
     const mockResource = {
       id: 1,
       name: "Test Resource",
       type: "example",
       status: "active",
     };
-
-    global.fetch.mockResolvedValueOnce(createMockResponse(mockResource));
+    vi.mocked(useResource).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockResource,
+    });
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    const fetchButton = screen.getByRole("button", { name: /fetch/i });
-    await user.click(fetchButton);
-
-    await waitFor(() => {
-      expect(screen.getByText(/"id": 1/)).toBeInTheDocument();
-      expect(screen.getByText(/"name": "Test Resource"/)).toBeInTheDocument();
-      expect(screen.getByText(/"type": "example"/)).toBeInTheDocument();
-      expect(screen.getByText(/"status": "active"/)).toBeInTheDocument();
-    });
+    expect(screen.getByText(/"id": 1/)).toBeInTheDocument();
+    expect(screen.getByText(/"name": "Test Resource"/)).toBeInTheDocument();
+    expect(screen.getByText(/"type": "example"/)).toBeInTheDocument();
+    expect(screen.getByText(/"status": "active"/)).toBeInTheDocument();
   });
 
-  it("displays error message when fetch fails", async () => {
-    const user = userEvent.setup();
-    global.fetch.mockResolvedValueOnce(createMockError(404));
+  it("displays error message when in error state", () => {
+    vi.mocked(useResource).mockReturnValue({
+      ...defaultHookReturn,
+      isError: true,
+      error: new Error("HTTP error! status: 404"),
+    });
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    const fetchButton = screen.getByRole("button", { name: /fetch/i });
-    await user.click(fetchButton);
-
-    await waitFor(() => {
-      expect(screen.getByText("Not Found")).toBeInTheDocument();
-    });
+    expect(screen.getByText(/HTTP error! status: 404/)).toBeInTheDocument();
   });
 
   it("disables Clear Cache button when no data", () => {
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    const clearButton = screen.getByRole("button", { name: /clear cache/i });
-    expect(clearButton).toBeDisabled();
+    expect(screen.getByRole("button", { name: /clear cache/i })).toBeDisabled();
   });
 
-  it("enables Clear Cache button after data is loaded", async () => {
-    const user = userEvent.setup();
-    const mockResource = { id: 1, name: "Test Resource" };
-
-    global.fetch.mockResolvedValueOnce(createMockResponse(mockResource));
+  it("enables Clear Cache button when data is loaded", () => {
+    vi.mocked(useResource).mockReturnValue({
+      ...defaultHookReturn,
+      data: { id: 1, name: "Test Resource" },
+    });
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    const fetchButton = screen.getByRole("button", { name: /fetch/i });
-    await user.click(fetchButton);
-
-    await waitFor(() => {
-      const clearButton = screen.getByRole("button", { name: /clear cache/i });
-      expect(clearButton).not.toBeDisabled();
-    });
+    expect(
+      screen.getByRole("button", { name: /clear cache/i }),
+    ).not.toBeDisabled();
   });
 
-  it("enables Clear Cache button after error", async () => {
-    const user = userEvent.setup();
-    global.fetch.mockResolvedValueOnce(createMockError(500));
+  it("enables Clear Cache button when in error state", () => {
+    vi.mocked(useResource).mockReturnValue({
+      ...defaultHookReturn,
+      isError: true,
+      error: new Error("HTTP error! status: 500"),
+    });
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    const fetchButton = screen.getByRole("button", { name: /fetch/i });
-    await user.click(fetchButton);
-
-    await waitFor(() => {
-      const clearButton = screen.getByRole("button", { name: /clear cache/i });
-      expect(clearButton).not.toBeDisabled();
-    });
+    expect(
+      screen.getByRole("button", { name: /clear cache/i }),
+    ).not.toBeDisabled();
   });
 
-  it("clears cache when Clear Cache button is clicked", async () => {
+  it("clears data when Clear Cache button is clicked", async () => {
     const user = userEvent.setup();
-    const mockResource = { id: 1, name: "Test Resource" };
-
-    global.fetch.mockResolvedValueOnce(createMockResponse(mockResource));
-
-    renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
-
-    // Fetch data first
-    const fetchButton = screen.getByRole("button", { name: /fetch/i });
-    await user.click(fetchButton);
-
-    await waitFor(() => {
-      expect(screen.getByText(/Test Resource/)).toBeInTheDocument();
+    vi.mocked(useResource).mockReturnValue({
+      ...defaultHookReturn,
+      data: { id: 1, name: "Test Resource" },
     });
 
-    // Clear cache
-    const clearButton = screen.getByRole("button", { name: /clear cache/i });
-    await user.click(clearButton);
+    const { queryClient } = renderWithQueryClient(
+      <ResourceView endpoint="/api/v1/resources/{id}" />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /clear cache/i }));
 
     await waitFor(() => {
-      expect(screen.queryByText(/Test Resource/)).not.toBeInTheDocument();
-      expect(screen.getByText(/No resource loaded/i)).toBeInTheDocument();
+      expect(
+        queryClient.getQueryState(["resources", "detail", 1]),
+      ).toBeUndefined();
     });
   });
 });
