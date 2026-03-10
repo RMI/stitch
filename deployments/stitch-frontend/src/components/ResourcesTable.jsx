@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import SourceMixBar from "./SourceMixBar";
 
 // sortType: "string" | "number", omit sortable (or set false) to disable sorting for a column.
@@ -71,7 +71,6 @@ function SortIndicator({ column, sortConfig }) {
 }
 
 export default function ResourcesTable({ resources }) {
-  const navigate = useNavigate();
   // sortConfig is isolated here for now; lift to parent + pass as prop
   // when server-side sort params are needed for pagination.
   const [sortConfig, setSortConfig] = useState({
@@ -117,15 +116,23 @@ export default function ResourcesTable({ resources }) {
         </thead>
         <tbody>
           {sorted.map((resource) => (
+            // `relative` on <tr> anchors the Link's ::after pseudo-element,
+            // which stretches across the full row for pointer/keyboard/right-click support.
             <tr
               key={resource.id}
-              onClick={() => navigate(`/resources/${resource.id}`)}
-              className="cursor-pointer border-b border-gray-100 transition-colors hover:bg-white"
+              className="relative border-b border-gray-100 transition-colors hover:bg-white"
             >
               {COLUMNS.map((col) => (
                 <td key={col.key} className={`py-2.5 pr-6 ${col.className}`}>
-                  {resource[col.key] ?? (
-                    <span className="text-gray-300">—</span>
+                  {col.key === "name" ? (
+                    <Link
+                      to={`/resources/${resource.id}`}
+                      className="after:absolute after:inset-0 after:content-['']"
+                    >
+                      {resource[col.key] ?? <span className="text-gray-300">—</span>}
+                    </Link>
+                  ) : (
+                    resource[col.key] ?? <span className="text-gray-300">—</span>
                   )}
                 </td>
               ))}
