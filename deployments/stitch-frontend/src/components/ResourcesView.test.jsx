@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { renderWithQueryClient } from "../test/utils";
 import ResourcesView from "./ResourcesView";
 import { useResources } from "../hooks/useResources";
