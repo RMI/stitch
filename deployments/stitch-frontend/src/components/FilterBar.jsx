@@ -41,7 +41,7 @@ export default function FilterBar({ resources, filters, onFiltersChange }) {
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" data-testid="filter-bar">
       {/* Dropdowns row */}
       <div className="flex flex-wrap gap-2">
         {FILTER_FIELDS.map(({ key, label }) => (
