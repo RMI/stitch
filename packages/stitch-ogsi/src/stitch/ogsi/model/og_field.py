@@ -1,5 +1,5 @@
 from typing import ClassVar
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from stitch.models.types import (
     CountryCodeAlpha3,
@@ -51,9 +51,6 @@ class OilGasFieldBase(BaseModel):
 
     longitude: Longitude | None = None
     """Longitude in WGS84 coordinate system."""
-
-    last_updated: AwareDatetime | None = None
-    """ISO 8601 timestamp of most recent source data update."""
 
     name_local: str | None = None
     """Name in local script if different from primary name."""

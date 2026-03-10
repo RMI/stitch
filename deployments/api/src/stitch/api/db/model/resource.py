@@ -1,24 +1,21 @@
-from collections import defaultdict
+from collections.abc import Sequence
 from enum import StrEnum
 from sqlalchemy import (
     ForeignKey,
     Index,
-    Integer,
     String,
-    UniqueConstraint,
     literal,
     select,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from stitch.ogsi.model import OGFieldSource, OGSISrcKey
 
-from .sources import (
-    SOURCE_TABLES,
-    SourceKey,
-    SourceModel,
-    SourceModelData,
+from .oil_gas_field_source import (
+    OilGasFieldSourceModel,
 )
-from stitch.api.entities import IdType, User as UserEntity
+
+from stitch.api.entities import Resource, User as UserEntity
 from .common import Base
 from .mixins import TimestampMixin, UserAuditMixin
 from .types import PORTABLE_BIGINT
@@ -33,35 +30,33 @@ class MembershipStatus(StrEnum):
 class MembershipModel(TimestampMixin, UserAuditMixin, Base):
     __tablename__ = "memberships"
 
-    __table_args__ = (
-        UniqueConstraint(
-            "resource_id",
-            "source",
-            "source_pk",
-            name="uc_source_source_pk",
-        ),
+    id: Mapped[int] = mapped_column(
+        PORTABLE_BIGINT, primary_key=True, autoincrement=True
     )
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     resource_id: Mapped[int] = mapped_column(ForeignKey("resources.id"), nullable=False)
-    source: Mapped[SourceKey] = mapped_column(
+    source: Mapped[OGSISrcKey] = mapped_column(
         String(10), nullable=False
     )  # "gem" | "wm"
-    source_pk: Mapped[int] = mapped_column(PORTABLE_BIGINT, nullable=False)
-    status: Mapped[MembershipStatus]
+    source_pk: Mapped[int] = mapped_column(
+        ForeignKey("oil_gas_field_sources.id"), nullable=False
+    )
+    status: Mapped[MembershipStatus] = mapped_column(
+        default=MembershipStatus.ACTIVE, nullable=False
+    )
 
     @classmethod
     def create(
         cls,
         created_by: UserEntity,
         resource: "ResourceModel",
-        source: SourceKey,
-        source_pk: IdType,
+        source: OGSISrcKey,
+        source_pk: int,
         status: MembershipStatus = MembershipStatus.ACTIVE,
     ):
         model = cls(
             resource_id=resource.id,
             source=source,
-            source_pk=str(source_pk),
+            source_pk=source_pk,
             status=status,
             created_by_id=created_by.id,
             last_updated_by_id=created_by.id,
@@ -92,28 +87,37 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
         PORTABLE_BIGINT, ForeignKey("resources.id"), nullable=True
     )
     name: Mapped[str | None] = mapped_column(String, nullable=True)
-    country: Mapped[str | None] = mapped_column(String(3), nullable=True)
 
     # SQLAlchemy will automatically see the foreign key `memberships.resource_id`
     # and configure the appropriate SQL statement to load the membership objects
     memberships: Mapped[list[MembershipModel]] = relationship()
 
-    async def get_source_data(self, session: AsyncSession):
-        pks_by_src: dict[SourceKey, set[int]] = defaultdict(set)
-        for mem in self.memberships:
-            if mem.status == MembershipStatus.ACTIVE:
-                pks_by_src[mem.source].add(mem.source_pk)
+    def as_empty_entity(self):
+        return Resource(
+            id=self.id,
+            name=self.name,
+            source_data=[],
+            constituents=[],
+            created=self.created,
+            updated=self.updated,
+        )
 
-        results: dict[SourceKey, dict[IdType, SourceModel]] = defaultdict(dict)
-        for src, pks in pks_by_src.items():
-            model_cls = SOURCE_TABLES.get(src)
-            if model_cls is None:
-                continue
-            stmt = select(model_cls).where(model_cls.id.in_(pks))
-            for src_model in await session.scalars(stmt):
-                results[src][src_model.id] = src_model
+    async def get_source_data(self, session: AsyncSession) -> Sequence[OGFieldSource]:
+        stmt = (
+            select(MembershipModel.source_pk)
+            .where(MembershipModel.resource_id == self.id)
+            .where(MembershipModel.status == MembershipStatus.ACTIVE)
+        )
+        source_pks = (await session.scalars(stmt)).all()
 
-        return SourceModelData(**results)
+        if not source_pks:
+            return []
+
+        stmt = select(OilGasFieldSourceModel).where(
+            OilGasFieldSourceModel.id.in_(source_pks)
+        )
+        sources = (await session.scalars(stmt)).all()
+        return [ofgsm.as_entity() for ofgsm in sources]
 
     async def get_root(self, session: AsyncSession):
         root = await session.scalar(self.__class__._root_select(self.id))
@@ -130,12 +134,10 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
         cls,
         created_by: UserEntity,
         name: str | None = None,
-        country: str | None = None,
         repointed_to: int | None = None,
     ):
         return cls(
             name=name,
-            country=country,
             repointed_id=repointed_to,
             created_by_id=created_by.id,
             last_updated_by_id=created_by.id,

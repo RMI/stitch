@@ -4,25 +4,25 @@ import { renderWithQueryClient } from "./test/utils";
 import App from "./App";
 
 describe("App", () => {
-  it("renders Resources heading", () => {
+  it("renders OGFields heading", () => {
     renderWithQueryClient(<App />);
-    const heading = screen.getByText(/^Resources$/i);
+    const heading = screen.getByText(/^OGFields$/i);
     expect(heading).toBeInTheDocument();
   });
 
-  it("renders Resource heading", () => {
+  it("renders OGField heading", () => {
     renderWithQueryClient(<App />);
-    const heading = screen.getByText(/^Resource ID: \d+$/i);
+    const heading = screen.getByText(/^OGField ID: \d+$/i);
     expect(heading).toBeInTheDocument();
   });
 
-  it("renders both ResourcesView and ResourceView components", () => {
+  it("renders both OGFieldsView and OGFieldView components", () => {
     renderWithQueryClient(<App />);
 
-    // Check for ResourcesView content
-    expect(screen.getByText(/^Resources$/i)).toBeInTheDocument();
+    // Check for OGFieldsView content
+    expect(screen.getByText(/^OGFields$/i)).toBeInTheDocument();
 
-    // Check for ResourceView content
-    expect(screen.getByText(/^Resource ID: \d+$/i)).toBeInTheDocument();
+    // Check for OGFieldView content
+    expect(screen.getByText(/^OGField ID: \d+$/i)).toBeInTheDocument();
   });
 });

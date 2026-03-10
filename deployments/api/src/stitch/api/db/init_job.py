@@ -5,28 +5,25 @@ import sys
 import time
 from enum import Enum
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Any
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from stitch.api.db.model import (
-    CCReservoirsSourceModel,
-    GemSourceModel,
-    MembershipModel,
-    RMIManualSourceModel,
     ResourceModel,
+    MembershipModel,
     StitchBase,
     UserModel,
-    WMSourceModel,
+    OilGasFieldSourceModel,
 )
 from stitch.api.entities import (
-    GemData,
-    RMIManualData,
     User as UserEntity,
-    WMData,
 )
+
+# Domain model from stitch-ogsi package
+from stitch.ogsi.model.og_field import OilGasFieldBase
 
 """
 DB init/seed job.
@@ -257,7 +254,6 @@ def fail_partial(existing_tables: set[str], expected: set[str]) -> None:
 
 def create_seed_user() -> UserModel:
     return UserModel(
-        id=1,
         sub="seed|system",
         name="Seed User",
         email="seed@example.com",
@@ -266,97 +262,79 @@ def create_seed_user() -> UserModel:
 
 def create_dev_user() -> UserModel:
     return UserModel(
-        id=2,
         sub="dev|local-placeholder",
         name="Dev Deverson",
         email="dev@example.com",
     )
 
 
-def create_seed_sources():
-    gem_sources = [
-        GemSourceModel.from_entity(
-            GemData(name="Permian Basin Field", country="USA", lat=31.8, lon=-102.3)
-        ),
-        GemSourceModel.from_entity(
-            GemData(name="North Sea Platform", country="GBR", lat=57.5, lon=1.5)
-        ),
-    ]
-    for i, src in enumerate(gem_sources, start=1):
-        src.id = i
-
-    wm_sources = [
-        WMSourceModel.from_entity(
-            WMData(
-                field_name="Eagle Ford Shale", field_country="USA", production=125000.5
-            )
-        ),
-        WMSourceModel.from_entity(
-            WMData(field_name="Ghawar Field", field_country="SAU", production=500000.0)
-        ),
-    ]
-    for i, src in enumerate(wm_sources, start=1):
-        src.id = i
-
-    rmi_sources = [
-        RMIManualSourceModel.from_entity(
-            RMIManualData(
-                name_override="Custom Override Name",
-                gwp=25.5,
-                gor=0.45,
-                country="CAN",
-                latitude=56.7,
-                longitude=-111.4,
-            )
-        ),
-    ]
-    for i, src in enumerate(rmi_sources, start=1):
-        src.id = i
-
-    # CC Reservoir sources are intentionally omitted from the dev seed profile;
-    # the CCReservoirsSourceModel table is still created from SQLAlchemy metadata.
-    cc_sources: list[CCReservoirsSourceModel] = []
-
-    return gem_sources, wm_sources, rmi_sources, cc_sources
-
-
 def create_seed_resources(user: UserEntity) -> list[ResourceModel]:
     resources = [
-        ResourceModel.create(user, name="Multi-Source Asset", country="USA"),
-        ResourceModel.create(user, name="Single Source Asset", country="GBR"),
+        ResourceModel.create(user, name="Resource Foo01"),
+        ResourceModel.create(user, name="Resource Bar01"),
     ]
-    for i, res in enumerate(resources, start=1):
-        res.id = i
     return resources
 
 
 def create_seed_memberships(
     user: UserEntity,
     resources: list[ResourceModel],
-    gem_sources: list[GemSourceModel],
-    wm_sources: list[WMSourceModel],
-    rmi_sources: list[RMIManualSourceModel],
+    sources: list[OilGasFieldSourceModel],
 ) -> list[MembershipModel]:
     memberships = [
-        MembershipModel.create(user, resources[0], "gem", gem_sources[0].id),
-        MembershipModel.create(user, resources[0], "wm", wm_sources[0].id),
-        MembershipModel.create(user, resources[0], "rmi", rmi_sources[0].id),
-        MembershipModel.create(user, resources[1], "gem", gem_sources[1].id),
+        MembershipModel.create(user, resources[0], "gem", 1),
+        MembershipModel.create(user, resources[1], "wm", 2),
     ]
     for i, mem in enumerate(memberships, start=1):
         mem.id = i
     return memberships
 
 
-def reset_sequences(engine, tables: Iterable[str]) -> None:
-    with engine.begin() as conn:
-        for t in tables:
-            conn.execute(
-                text(
-                    f"SELECT setval('{t}_id_seq', "
-                    f"(SELECT COALESCE(MAX(id), 0) + 1 FROM {t}), false);"
-                )
-            )
+def create_seed_oil_gas_source_fields(
+    user: UserEntity,
+    resources: list[ResourceModel],
+) -> list[OilGasFieldSourceModel]:
+    """Create example OilGasField rows linked 1:1 with seeded resources."""
+
+    raw_payloads: list[dict[str, Any]] = [
+        # pretend this came from some upstream system (GEM/WM/etc)
+        {
+            "name": "Permian Alpha",
+            "country": "USA",
+            "basin": "Permian",
+            # extra keys demonstrate why we keep original_payload
+            "upstream_id": "seed-gem-0001",
+            "notes": "seed example",
+        },
+        {
+            "name": "North Sea Bravo",
+            "country": "GBR",
+            "basin": "North Sea",
+            "upstream_id": "seed-wm-0002",
+            "notes": "seed example",
+        },
+    ]
+
+    og_models: list[OilGasFieldSourceModel] = []
+
+    for resource, raw in zip(resources, raw_payloads):
+        domain = OilGasFieldBase.model_validate(raw)
+        model = OilGasFieldSourceModel(
+            created_by_id=user.id,
+            last_updated_by_id=user.id,
+        )
+        # Raw input (includes extra fields not in OilGasFieldBase)
+        model.original_payload = raw
+        # Canonical validated payload
+        model.payload = raw
+        model.name = domain.name
+        model.country = domain.country
+        model.basin = domain.basin
+        model.source = "dev-seed"
+        # Populate domain columns for queryability
+        og_models.append(model)
+
+    return og_models
 
 
 def seed_dev(engine) -> None:
@@ -376,38 +354,18 @@ def seed_dev(engine) -> None:
             name=user_model.name,
         )
 
-        dev_entity = UserEntity(
-            id=dev_model.id,
-            sub=dev_model.sub,
-            email=dev_model.email,
-            name=dev_model.name,
-        )
-
-        gem_sources, wm_sources, rmi_sources, cc_sources = create_seed_sources()
-        session.add_all(gem_sources + wm_sources + rmi_sources + cc_sources)
-
         resources = create_seed_resources(user_entity)
-        resources = create_seed_resources(dev_entity)
         session.add_all(resources)
+        session.flush()
+        #
+        # Add sample OilGasField rows for the first two resources only
+        og_fields = create_seed_oil_gas_source_fields(user_entity, resources)
+        session.add_all(og_fields)
 
-        memberships = create_seed_memberships(
-            user_entity, resources, gem_sources, wm_sources, rmi_sources
-        )
+        memberships = create_seed_memberships(user_entity, resources, og_fields)
         session.add_all(memberships)
 
         session.commit()
-
-    reset_sequences(
-        engine,
-        tables=[
-            "users",
-            "gem_sources",
-            "wm_sources",
-            "rmi_manual_sources",
-            "resources",
-            "memberships",
-        ],
-    )
 
 
 def seed(engine, profile: SeedProfile | str) -> None:

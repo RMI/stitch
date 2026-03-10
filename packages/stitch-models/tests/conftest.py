@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Literal, Mapping
+from collections.abc import Mapping
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from pydantic import Field
 import pytest
 
 from stitch.models import (
+    Resource_,
     Resource,
     Source,
     SourcePayload,
@@ -23,6 +25,11 @@ from stitch.models import (
 class FooSource(Source[int, Literal["foo"]]):
     source: Literal["foo"] = "foo"
     value: float
+
+
+class FooDupSource(Source[int, Literal["foo2"]]):
+    source: Literal["foo2"] = "foo2"
+    value: str
 
 
 class BarSource(Source[UUID, Literal["bar"]]):
@@ -61,16 +68,27 @@ class EmptyPayload(SourcePayload):
     pass
 
 
-class FooResource(Resource[int, FooPayload]):
+class FooResource(Resource_[int, FooPayload]):
     pass
 
 
-class MultiResource(Resource[int, MultiPayload]):
+class MultiResource(Resource_[int, MultiPayload]):
     pass
 
 
-class ExtendedResource(Resource[int, EmptyPayload]):
+class ExtendedResource(Resource_[int, EmptyPayload]):
     extra: str
+
+
+TestSrcUnion = Annotated[
+    FooSource | FooDupSource | BarSource | UuidSource, Field(discriminator="source")
+]
+
+
+class ResourceWithSrcUnion(Resource[int, TestSrcUnion]):
+    res_a: bool = Field(default=False)
+    res_b: float
+    res_c: str
 
 
 # ---------------------------------------------------------------------------

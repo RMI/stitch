@@ -1,11 +1,9 @@
-from collections.abc import Sequence
-from typing import Annotated, Final
+from typing import Any, Annotated, Final
 
-from pydantic import Field
+from pydantic import Field, BaseModel
 from stitch.models import (
     Resource,
     Source,
-    SourcePayload,
 )
 
 from .og_field import OilGasFieldBase, OilGasOwner, OilGasOperator
@@ -13,13 +11,13 @@ from .types import (
     GEMSrcKey,
     LLMSrcKey,
     LocationType,
+    OGSISrcKey,
     RMISrcKey,
     WMSrcKey,
 )
 
 __all__ = [
     "OGFieldSource",
-    "OGSourcePayload",
     "OGFieldResource",
     "OGFieldView",
     "LLMSource",
@@ -29,6 +27,8 @@ __all__ = [
     "LocationType",
     "OilGasOwner",
     "OilGasOperator",
+    "OGSISrcKey",
+    "OGFieldProvenance",
 ]
 
 
@@ -60,15 +60,65 @@ OGFieldSource = Annotated[
 ]
 
 
-class OGSourcePayload(SourcePayload):
-    gem: Sequence[GemSource] = Field(default_factory=lambda: [])
-    wm: Sequence[WoodMacSource] = Field(default_factory=lambda: [])
-    rmi: Sequence[RMISource] = Field(default_factory=lambda: [])
-    llm: Sequence[LLMSource] = Field(default_factory=lambda: [])
+class OGFieldProvenance(BaseModel):
+    """Which source "won" for each coalesced field."""
+
+    # Keys are OilGasFieldBase field names, values are the `source` discriminator.
+    by_field: dict[str, OGSISrcKey] = Field(default_factory=dict)
 
 
-class OGFieldResource(OilGasFieldBase, Resource[int, OGSourcePayload]): ...
+class OGFieldResource(OilGasFieldBase, Resource[int, OGFieldSource]):
+    def to_view(self) -> "OGFieldView":
+        """
+        Coalesce all source payloads into a single `OGFieldView`.
+
+        Placeholder logic (shape-first):
+          - in `source_data` order, fill any still-missing fields with the
+            first non-null value found
+        """
+        if self.id is None:
+            raise ValueError("Cannot build OGFieldView from a resource without an id")
+
+        def _is_empty(v: Any) -> bool:
+            if v is None:
+                return True
+            if isinstance(v, str) and v.strip() == "":
+                return True
+            if isinstance(v, (list, tuple, set, dict)) and len(v) == 0:
+                return True
+            return False
+
+        merged: dict[str, Any] = {}
+        prov: dict[str, OGSISrcKey] = {}
+
+        for fname in OilGasFieldBase.model_fields.keys():
+            # 1) resource-level value
+            cur = getattr(self, fname, None)
+            if not _is_empty(cur):
+                merged[fname] = cur
+                continue
+
+            # 2) first non-empty from sources
+            picked = None
+            picked_src: OGSISrcKey | None = None
+            for src in self.source_data:
+                v = getattr(src, fname, None)
+                if not _is_empty(v):
+                    picked = v
+                    picked_src = src.source
+                    break
+
+            merged[fname] = picked
+            if picked_src is not None:
+                prov[fname] = picked_src
+
+        return OGFieldView(
+            id=int(self.id) if self.id is not None else 0,
+            provenance=OGFieldProvenance(by_field=prov),
+            **merged,
+        )
 
 
 class OGFieldView(OilGasFieldBase):
     id: int
+    provenance: OGFieldProvenance

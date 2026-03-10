@@ -63,7 +63,7 @@ services:
       - .env
     environment:
       STITCH_DB_SCHEMA_MODE: "if-empty"
-      STITCH_DB_SEED_MODE: "if-needed"
+      STITCH_DB_SEED_MODE: "never"
       STITCH_DB_SEED_PROFILE: "dev"
       # db-init connects as the migrator role (DDL + seed)
       STITCH_DB_USER: stitch_migrator

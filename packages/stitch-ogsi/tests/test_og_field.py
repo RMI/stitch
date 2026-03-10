@@ -5,6 +5,7 @@ on top of stitch-models generics.  They also serve as usage examples.
 """
 
 from __future__ import annotations
+from collections.abc import Sequence
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
@@ -13,7 +14,6 @@ from stitch.ogsi.model import (
     GemSource,
     OGFieldResource,
     OGFieldSource,
-    OGSourcePayload,
     WoodMacSource,
 )
 
@@ -51,34 +51,6 @@ class TestOGFieldSourceDiscriminator:
 
 
 # ---------------------------------------------------------------------------
-# Payload (Sequence-based collections)
-# ---------------------------------------------------------------------------
-
-
-class TestOGSourcePayload:
-    """OGSourcePayload holds sequences of typed source records."""
-
-    def test_empty_payload_defaults(self):
-        payload = OGSourcePayload()
-        assert list(payload.gem) == []
-        assert list(payload.wm) == []
-        assert list(payload.rmi) == []
-        assert list(payload.llm) == []
-
-    def test_mixed_sources(self, og_payload: OGSourcePayload):
-        assert len(og_payload.gem) == 1
-        assert len(og_payload.wm) == 1
-        assert isinstance(og_payload.gem[0], GemSource)
-        assert isinstance(og_payload.wm[0], WoodMacSource)
-
-    def test_round_trip(self, og_payload: OGSourcePayload):
-        data = og_payload.model_dump()
-        restored = OGSourcePayload.model_validate(data)
-        assert restored.gem[0].name == og_payload.gem[0].name
-        assert restored.wm[0].country == og_payload.wm[0].country
-
-
-# ---------------------------------------------------------------------------
 # Resource (multiple-inheritance mixin)
 # ---------------------------------------------------------------------------
 
@@ -86,7 +58,7 @@ class TestOGSourcePayload:
 class TestOGFieldResource:
     """OGFieldResource combines OilAndGasFieldBase + Resource fields."""
 
-    def test_has_both_base_class_fields(self, og_payload: OGSourcePayload):
+    def test_has_both_base_class_fields(self, og_payload: Sequence[OGFieldSource]):
         resource = OGFieldResource(
             id=1,
             name="Merged Field",
@@ -99,11 +71,11 @@ class TestOGFieldResource:
         assert resource.location_type == "Onshore"
         # Resource fields
         assert resource.id == 1
-        assert resource.source_data is og_payload
+        assert resource.source_data == og_payload
         assert resource.repointed_to is None
         assert resource.constituents == frozenset()
 
-    def test_self_reference_rejected(self, og_payload: OGSourcePayload):
+    def test_self_reference_rejected(self, og_payload: Sequence[OGFieldSource]):
         with pytest.raises(ValidationError, match="constituent of itself"):
             OGFieldResource(
                 id=1,

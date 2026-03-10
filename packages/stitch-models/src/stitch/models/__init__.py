@@ -1,7 +1,7 @@
+from collections.abc import Sequence
 from typing import (
     ClassVar,
     NamedTuple,
-    Self,
 )
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -29,7 +29,9 @@ class Source[TId: IdType, TSrcKey: str](BaseModel):
     source: TSrcKey
 
     # we set `from_attributes=True` to accommodate ORM or other object mappings
-    model_config: ClassVar[ConfigDict] = ConfigDict(from_attributes=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(
+        from_attributes=True, extra="ignore"
+    )
 
 
 class SourcePayload(BaseModel):
@@ -47,7 +49,25 @@ class SourceRefTuple[TId: IdType, TKey: str](NamedTuple):
     source: TKey
 
 
-class Resource[
+class Resource[TResId: IdType, TSrc: Source](BaseModel):
+    id: TResId | None = None
+    source_data: Sequence[TSrc] = Field(default_factory=lambda: [])
+    repointed_to: TResId | None = Field(default=None)
+    constituents: frozenset[TResId] = Field(default_factory=frozenset)
+
+    model_config = ConfigDict(extra="ignore")
+
+    @model_validator(mode="after")
+    def _no_self_reference(self):
+        if self.id is not None:
+            if self.id in self.constituents:
+                raise ValueError("A resource cannot be a constituent of itself")
+            if self.repointed_to == self.id:
+                raise ValueError("A resource cannot be repointed to itself")
+        return self
+
+
+class Resource_[
     TResId: IdType,
     TPayload: SourcePayload,
 ](BaseModel):
@@ -56,8 +76,10 @@ class Resource[
     repointed_to: TResId | None = Field(default=None)
     constituents: frozenset[TResId] = Field(default_factory=frozenset)
 
+    model_config = ConfigDict(extra="ignore")
+
     @model_validator(mode="after")
-    def _no_self_reference(self) -> Self:
+    def _no_self_reference(self):
         if self.id is not None:
             if self.id in self.constituents:
                 raise ValueError("A resource cannot be a constituent of itself")
