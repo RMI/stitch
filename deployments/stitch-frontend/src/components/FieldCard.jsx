@@ -4,12 +4,16 @@ import { SOURCE_COLORS, DEFAULT_FIELD_COLOR } from "../constants/sourceMeta";
 // Pass `source` (one of "gem" | "wm" | "rmi" | "llm") to tint the left border by data source.
 export function FieldCard({ label, value, source }) {
   const display =
-    value === null || value === undefined || value === "" ? null : String(value);
+    value === null || value === undefined || value === ""
+      ? null
+      : String(value);
   const borderColor = SOURCE_COLORS[source] ?? DEFAULT_FIELD_COLOR;
 
   return (
     <div>
-      <p className="text-base text-gray-dark mb-1 text-left font-medium">{label}</p>
+      <p className="text-base text-gray-dark mb-1 text-left font-medium">
+        {label}
+      </p>
       <div
         className="bg-gray-light border-l-4 px-3 py-2 text-base text-gray-dark min-h-[2.25rem] rounded-sm"
         style={{ borderLeftColor: borderColor }}

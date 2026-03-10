@@ -10,9 +10,11 @@ export default function SourceMixBar({ sourceData, showLabels = false }) {
     );
   }
 
-  const activeSources = SOURCES.map((s, i) => ({ s, count: counts[i], pct: (counts[i] / total) * 100 })).filter(
-    ({ pct }) => pct > 0
-  );
+  const activeSources = SOURCES.map((s, i) => ({
+    s,
+    count: counts[i],
+    pct: (counts[i] / total) * 100,
+  })).filter(({ pct }) => pct > 0);
 
   return (
     <div className="w-full">

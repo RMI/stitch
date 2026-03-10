@@ -4,7 +4,11 @@ import { useResource } from "../hooks/useResources";
 import SourceMixBar from "../components/SourceMixBar";
 import SectionHeader from "../components/SectionHeader";
 import { FieldCard, FieldGrid } from "../components/FieldCard";
-import { FIELD_META, IDENTITY_FIELDS, PRODUCTION_FIELDS } from "../constants/fieldMeta";
+import {
+  FIELD_META,
+  IDENTITY_FIELDS,
+  PRODUCTION_FIELDS,
+} from "../constants/fieldMeta";
 
 function OrgPanel({ items, nameLabel }) {
   if (items.length === 0) return <div className="flex-1" />;
@@ -13,7 +17,11 @@ function OrgPanel({ items, nameLabel }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-5">
         {items.flatMap((o, idx) => [
           <FieldCard key={`name-${idx}`} label={nameLabel} value={o.name} />,
-          <FieldCard key={`stake-${idx}`} label="Stake" value={`${o.stake}%`} />,
+          <FieldCard
+            key={`stake-${idx}`}
+            label="Stake"
+            value={`${o.stake}%`}
+          />,
         ])}
       </div>
     </div>
@@ -63,7 +71,9 @@ export default function ResourceDetailPage() {
         <div className="space-y-12">
           {/* Header */}
           <div>
-            <h1 className="text-3xl font-bold text-gray-dark mb-4">{data.name}</h1>
+            <h1 className="text-3xl font-bold text-gray-dark mb-4">
+              {data.name}
+            </h1>
           </div>
 
           <section>
@@ -78,7 +88,11 @@ export default function ResourceDetailPage() {
             <SectionHeader title="Identity and location" />
             <FieldGrid>
               {IDENTITY_FIELDS.map((key) => (
-                <FieldCard key={key} label={FIELD_META[key].label} value={data[key]} />
+                <FieldCard
+                  key={key}
+                  label={FIELD_META[key].label}
+                  value={data[key]}
+                />
               ))}
             </FieldGrid>
           </section>
@@ -94,7 +108,11 @@ export default function ResourceDetailPage() {
             <SectionHeader title="Production and geology" />
             <FieldGrid>
               {PRODUCTION_FIELDS.map((key) => (
-                <FieldCard key={key} label={FIELD_META[key].label} value={data[key]} />
+                <FieldCard
+                  key={key}
+                  label={FIELD_META[key].label}
+                  value={data[key]}
+                />
               ))}
             </FieldGrid>
           </section>
