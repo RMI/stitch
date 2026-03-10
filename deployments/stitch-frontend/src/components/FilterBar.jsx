@@ -60,11 +60,11 @@ export default function FilterBar({ resources, filters, onFiltersChange }) {
               key={`${field}:${value}`}
               className="flex items-center gap-1 rounded-full bg-gray-light px-2 py-1.5 text-xs text-gray-dark border-gray-button-outline border"
             >
-              <span className="font-medium"></span>&nbsp;{value}
+              <span><span className="font-medium">{label}:</span> {value}</span>
               <button
                 onClick={() => removeChip(field, value)}
                 aria-label={`Remove ${label}: ${value}`}
-                className="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-gray-dark text-gray-light hover:bg-dark-gray hover:cursor-pointer"
+                className="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-gray-dark text-gray-light hover:bg-gray-dark/80 hover:cursor-pointer"
               >
                 <span className="leading-none -translate-y-px font-bold">
                   ×
