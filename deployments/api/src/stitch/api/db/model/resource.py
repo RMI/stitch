@@ -1,6 +1,7 @@
 from collections import defaultdict
 from enum import StrEnum
 from sqlalchemy import (
+    Enum,
     ForeignKey,
     Index,
     Integer,
@@ -47,7 +48,9 @@ class MembershipModel(TimestampMixin, UserAuditMixin, Base):
         String(10), nullable=False
     )  # "gem" | "wm"
     source_pk: Mapped[int] = mapped_column(PORTABLE_BIGINT, nullable=False)
-    status: Mapped[MembershipStatus]
+    status: Mapped[MembershipStatus] = mapped_column(
+        Enum(MembershipStatus), nullable=False
+    )
 
     @classmethod
     def create(
