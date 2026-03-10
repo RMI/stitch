@@ -41,7 +41,7 @@ export default function FilterDropdown({ label, options, selected, onChange }) {
             {selectedCount}
           </span>
         )}
-        <span className={`text-xs scale-y-60 text-dark-gray`}>
+        <span className={`text-xs scale-y-60 text-gray-dark`}>
           {open ? "▲" : "▼"}
         </span>
       </button>
