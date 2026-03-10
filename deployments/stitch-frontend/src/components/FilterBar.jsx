@@ -18,7 +18,10 @@ export default function FilterBar({ resources, filters, onFiltersChange }) {
   // Memoize per-field options so O(n) passes only re-run when `resources` changes,
   // not on every filter interaction.
   const optionsByField = useMemo(
-    () => Object.fromEntries(FILTER_FIELDS.map(({ key }) => [key, buildOptions(resources, key)])),
+    () =>
+      Object.fromEntries(
+        FILTER_FIELDS.map(({ key }) => [key, buildOptions(resources, key)]),
+      ),
     [resources],
   );
   // Flatten active filters into chips: [{ field, label, value }, ...]
@@ -60,7 +63,9 @@ export default function FilterBar({ resources, filters, onFiltersChange }) {
               key={`${field}:${value}`}
               className="flex items-center gap-1 rounded-full bg-gray-light px-2 py-1.5 text-xs text-gray-dark border-gray-button-outline border"
             >
-              <span><span className="font-medium">{label}:</span> {value}</span>
+              <span>
+                <span className="font-medium">{label}:</span> {value}
+              </span>
               <button
                 onClick={() => removeChip(field, value)}
                 aria-label={`Remove ${label}: ${value}`}

@@ -57,7 +57,9 @@ export default function ResourcesView({ className, endpoint }) {
         </p>
       )}
       {!isError && data && filteredData?.length === 0 && (
-        <p className="text-sm text-gray-400">No resources match the current filters.</p>
+        <p className="text-sm text-gray-400">
+          No resources match the current filters.
+        </p>
       )}
       <ResourcesTable resources={filteredData} />
     </div>

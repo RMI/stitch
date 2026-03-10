@@ -140,10 +140,14 @@ export default function ResourcesTable({ resources }) {
                       to={`/resources/${resource.id}`}
                       className="after:absolute after:inset-0 after:content-['']"
                     >
-                      {resource[col.key] ?? <span className="text-gray-300">—</span>}
+                      {resource[col.key] ?? (
+                        <span className="text-gray-300">—</span>
+                      )}
                     </Link>
                   ) : (
-                    resource[col.key] ?? <span className="text-gray-300">—</span>
+                    (resource[col.key] ?? (
+                      <span className="text-gray-300">—</span>
+                    ))
                   )}
                 </td>
               ))}
