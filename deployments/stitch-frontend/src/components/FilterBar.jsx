@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import FilterDropdown from "./FilterDropdown";
 import { FILTER_FIELDS, EMPTY_FILTERS } from "../config/filters";
 
@@ -14,6 +15,12 @@ function buildOptions(resources, field) {
 }
 
 export default function FilterBar({ resources, filters, onFiltersChange }) {
+  // Memoize per-field options so O(n) passes only re-run when `resources` changes,
+  // not on every filter interaction.
+  const optionsByField = useMemo(
+    () => Object.fromEntries(FILTER_FIELDS.map(({ key }) => [key, buildOptions(resources, key)])),
+    [resources],
+  );
   // Flatten active filters into chips: [{ field, label, value }, ...]
   const chips = FILTER_FIELDS.flatMap(({ key, label }) =>
     (filters[key] ?? []).map((value) => ({ field: key, label, value })),
@@ -38,7 +45,7 @@ export default function FilterBar({ resources, filters, onFiltersChange }) {
           <FilterDropdown
             key={key}
             label={label}
-            options={buildOptions(resources, key)}
+            options={optionsByField[key]}
             selected={filters[key] ?? []}
             onChange={(values) => handleDropdownChange(key, values)}
           />
