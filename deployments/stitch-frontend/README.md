@@ -16,6 +16,8 @@ React frontend application styled with Tailwind CSS and built with Vite.
 - **React 19.2.0** - UI library
 - **Vite 7.2.4** - Build tool and dev server
 - **Tailwind CSS 4.1.18** - Utility-first CSS framework
+- **React Router DOM 7** - Client-side routing
+- **TanStack Query 5** - Server state and cache management
 - **Vitest 3.2.4** - Unit testing framework
 - **React Testing Library 16.3.1** - React component testing utilities
 
@@ -23,20 +25,36 @@ React frontend application styled with Tailwind CSS and built with Vite.
 
 ```
 stitch-frontend/
-├── public/              # Static assets
+├── mockData/                    # Static JSON fixtures for mock data mode
+│   └── og_field_resources.json
+├── public/                      # Static assets
 ├── src/
-│   ├── test/           # Test setup and utilities
-│   │   └── setup.js    # Vitest setup file
-│   ├── App.jsx         # Root application component
-│   ├── App.test.jsx    # App component tests
-│   ├── main.jsx        # Application entry point
-│   └── index.css       # Global styles and Tailwind imports
-├── dist/               # Production build output
-├── index.html          # HTML template
-├── vite.config.js      # Vite configuration
-├── vitest.config.js    # Vitest configuration
-├── eslint.config.js    # ESLint configuration
-└── package.json        # Dependencies and scripts
+│   ├── auth/                    # Auth0 integration and gate component
+│   ├── components/              # Shared UI components
+│   │   ├── FilterBar.jsx        # Filter dropdown row + active chips
+│   │   ├── FilterDropdown.jsx   # Multi-select dropdown with counts
+│   │   ├── ResourcesTable.jsx   # Sortable resources table
+│   │   ├── ResourcesView.jsx    # Resources list page section
+│   │   ├── ResourceView.jsx     # Single resource fetch section
+│   │   └── SourceMixBar.jsx     # Data source proportion bar
+│   ├── config/
+│   │   ├── env.js               # Runtime environment config
+│   │   └── filters.js           # Filter field definitions (FILTER_FIELDS, EMPTY_FILTERS)
+│   ├── hooks/
+│   │   ├── useAuthenticatedQuery.js
+│   │   └── useResources.js      # useResources / useResource (real + mock implementations)
+│   ├── pages/
+│   │   ├── HomePage.jsx         # "/" — ResourcesView + ResourceView
+│   │   └── ResourceDetailPage.jsx  # "/resources/:id"
+│   ├── queries/                 # TanStack Query key factory and definitions
+│   ├── test/                    # Test setup and shared utilities
+│   ├── App.jsx                  # Route definitions
+│   ├── main.jsx                 # App entry point with providers
+│   └── index.css                # Global styles and Tailwind imports
+├── index.html
+├── vite.config.js               # envDir points to project root for .env
+├── eslint.config.js
+└── package.json
 ```
 
 ## Scripts
@@ -66,6 +84,26 @@ npm run test:ui
 # Run tests with coverage report
 npm run test:coverage
 ```
+
+## Mock Data
+
+The app supports a mock data mode for local UI development. When enabled, `useResources()` and `useResource(id)` serve data directly from `mockData/og_field_resources.json` instead of hitting the real API.
+
+**Note:** mock mode only affects the data hooks. `AuthGate` still enforces Auth0 authentication, so you must still have Auth0 configured to reach any page. If you want to develop without Auth0, that requires a separate change to bypass `AuthGate`.
+
+**Toggle:** set `VITE_USE_MOCK_DATA` in your `.env.local` file:
+
+```
+VITE_USE_MOCK_DATA=true
+```
+
+The flag is read at compile time in `src/hooks/useResources.js`:
+
+```js
+const USE_MOCK_DATA = import.meta.env.VITE_USE_MOCK_DATA === "true";
+```
+
+The real and mock implementations are separate functions selected once at module-load time — no conditional hook calls at render time.
 
 ## API
 
@@ -179,12 +217,17 @@ export const resourceQueries = {
 #### In Hooks
 
 ```js
-import { useQuery } from "@tanstack/react-query";
-import { resourceQueries } from "../queries/resources";
+// src/hooks/useResources.js
+export const useResources = USE_MOCK_DATA ? useResourcesMock : useResourcesReal;
+export const useResource = USE_MOCK_DATA ? useResourceMock : useResourceReal;
+```
 
-export function useResource(id) {
-  return useQuery(resourceQueries.detail(id));
-}
+Each named function always calls the same hooks unconditionally, satisfying React's rules of hooks. The choice between real and mock is made once at module evaluation time.
+
+Consumers import the hooks without knowing which implementation is active:
+
+```js
+import { useResources, useResource } from "../hooks/useResources";
 ```
 
 #### In Components (Cache Manipulation)
@@ -280,6 +323,25 @@ When adding new endpoints:
 
 - [TanStack Query Docs: Query Keys](https://tanstack.com/query/latest/docs/react/guides/query-keys)
 - [Effective React Query Keys](https://tkdodo.eu/blog/effective-react-query-keys)
+
+## Filters
+
+The resources table supports multi-select filters with OR-within / AND-across logic (e.g. region = "Asia" OR "Europe", AND basin = "Arabian").
+
+Filter fields are configured in one place:
+
+```js
+// src/config/filters.js
+export const FILTER_FIELDS = [
+  { key: "region", label: "Region" },
+  { key: "state_province", label: "State/Province" },
+  { key: "basin", label: "Basin" },
+];
+```
+
+Add a new filter by appending an entry. The `key` must match the field name on the resource object. Option counts are computed statically from the full dataset on load.
+
+Active filter selections are displayed as removable chips beneath the dropdowns. Filters are applied client-side in `ResourcesView` via `applyFilters()`. This function is a pure utility designed to be lifted server-side when pagination is introduced.
 
 ## Deployment: Azure Static Web Apps
 
