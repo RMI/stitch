@@ -151,7 +151,7 @@ def build_og_field(*, fake: Faker, rng: random.Random) -> dict[str, Any]:
 def build_payload(*, fake: Faker, rng: random.Random) -> dict[str, Any]:
     """
     POST body is Resource-Input (OpenAPI), which requires id.
-    Keep payload coherent: top-level name/country mirror the first source_data entry.
+    Keep payload coherent: top-level name mirrors the first source_data entry.
     """
     src = build_og_field(fake=fake, rng=rng)
 
