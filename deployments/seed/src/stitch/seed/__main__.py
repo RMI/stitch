@@ -11,10 +11,16 @@ def main() -> None:
 
     logger.info("Seed starting")
     logger.info("API_BASE_URL=%s", cfg.api_base_url)
-    logger.info("POST_COUNT=%s", cfg.post_count)
+    logger.info("POST_COUNT=%s", cfg.faker_post_count)
 
     validator = OpenAPIRequestValidator(cfg.api_base_url, openapi_url=cfg.openapi_url)
-    payloads = iter_payloads(cfg.post_count)
+    payloads = iter_payloads(
+        path_str=cfg.static_payload_file,
+        faker_count=cfg.faker_post_count,
+        random_seed=cfg.random_seed,
+        seed_source=cfg.seed_source,
+        null_prob=cfg.null_probability,
+    )
 
     with httpx.Client(timeout=cfg.http_timeout_seconds) as client:
         post_payloads(client, cfg.api_base_url, payloads, validator)

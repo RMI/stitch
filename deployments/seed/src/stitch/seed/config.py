@@ -17,6 +17,17 @@ def env_int(name: str, default: int) -> int:
         return default
 
 
+def env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning("%s=%r is not an int; using %s", name, raw, default)
+        return default
+
+
 def configure_logging() -> None:
     level_name = os.getenv("LOG_LEVEL", "INFO").upper()
     level = getattr(logging, level_name, logging.INFO)
@@ -29,19 +40,31 @@ def configure_logging() -> None:
 @dataclass(frozen=True)
 class SeedConfig:
     api_base_url: str
-    post_count: int
+    faker_post_count: int
     http_timeout_seconds: float
     openapi_url: str | None
+    static_payload_file: str | None
+    random_seed: str | None
+    seed_source: str
+    null_probability: float
 
 
 def load_config() -> SeedConfig:
     api_base_url = os.getenv("API_BASE_URL", "http://api:8000/api/v1")
-    post_count = env_int("POST_COUNT", 5)
+    faker_post_count = env_int("FAKER_POST_COUNT", 0)
     http_timeout_seconds = float(os.getenv("HTTP_TIMEOUT_SECONDS", "10"))
     openapi_url = os.getenv("OPENAPI_URL")  # optional override
+    static_payload_file = os.getenv("STATIC_PAYLOAD_FILE")
+    random_seed = os.getenv("RANDOM_SEED")
+    seed_source = os.getenv("SEED_SOURCE", "mixed").strip().lower()
+    null_probability = env_float("NULL_PROBABILITY", 0.2)
     return SeedConfig(
         api_base_url=api_base_url,
-        post_count=post_count,
+        faker_post_count=faker_post_count,
         http_timeout_seconds=http_timeout_seconds,
         openapi_url=openapi_url,
+        static_payload_file=static_payload_file,
+        random_seed=random_seed,
+        seed_source=seed_source,
+        null_probability=null_probability,
     )

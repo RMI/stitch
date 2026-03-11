@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import random
 from typing import Any, Iterable, get_args
 
@@ -17,15 +16,11 @@ from stitch.ogsi.model.types import (
 )
 
 
-def _load_static_payloads() -> list[dict[str, Any]]:
+def _load_static_payloads(path_str) -> list[dict[str, Any]]:
     """
     Load static payloads from JSON file.
     File path can be overridden with STATIC_PAYLOAD_FILE env var.
     """
-    path_str = os.getenv(
-        "STATIC_PAYLOAD_FILE",
-        "/mnt/data/static_payloads.json",
-    )
 
     path = Path(path_str)
     if not path.exists():
@@ -43,27 +38,25 @@ def _load_static_payloads() -> list[dict[str, Any]]:
     return [d for d in data if isinstance(d, dict)]
 
 
-def _seed() -> int | None:
-    raw = os.getenv("RANDOM_SEED")
-    if raw is None or raw.strip() == "":
+def _seed(random_seed) -> int | None:
+    if random_seed is None or random_seed.strip() == "":
         return None
     try:
-        return int(raw)
+        return int(random_seed)
     except ValueError:
         # Allow non-int seeds too (hash to int).
-        return abs(hash(raw)) % (2**31)
+        return abs(hash(random_seed)) % (2**31)
 
 
-def _source_key(rng: random.Random) -> str:
+def _source_key(seed_source: str, rng: random.Random) -> str:
     """
     Choose which discriminator `source` to use in source_data.
     Env: SEED_SOURCE=gem|wm|rmi|llm|mixed
     """
-    mode = os.getenv("SEED_SOURCE", "gem").strip().lower()
-    if mode == "mixed":
+    if seed_source == "mixed":
         return rng.choice(["gem", "wm", "rmi", "llm"])
-    if mode in {"gem", "wm", "rmi", "llm"}:
-        return mode
+    if seed_source in {"gem", "wm", "rmi", "llm"}:
+        return seed_source
     return "gem"
 
 
@@ -88,26 +81,27 @@ def _fake_companyish(fake: Faker, rng: random.Random) -> str:
     return f"{base} {suffix}"
 
 
-def _null_probability() -> float:
-    raw = os.getenv("NULL_PROBABILITY", "0.2")
+def _null_probability(prob) -> float:
     try:
-        p = float(raw)
+        p = float(prob)
     except ValueError:
         p = 0.2
     return max(0.0, min(1.0, p))
 
 
-def _maybe(value_fn, *, rng: random.Random, allow_null: bool = True):
+def _maybe(value_fn, *, rng: random.Random, allow_null: bool = True, null_prob: float):
     """
     value_fn: callable producing a value
     Returns None with probability NULL_PROBABILITY if allow_null=True.
     """
-    if allow_null and rng.random() < _null_probability():
+    if allow_null and rng.random() < _null_probability(null_prob):
         return None
     return value_fn()
 
 
-def build_og_field(*, fake: Faker, rng: random.Random) -> dict[str, Any]:
+def build_og_field(
+    *, fake: Faker, seed_source: str, rng: random.Random, null_prob: float
+) -> dict[str, Any]:
     country = fake.country_code(representation="alpha-3")
     name = _fake_companyish(fake, rng)
 
@@ -118,42 +112,62 @@ def build_og_field(*, fake: Faker, rng: random.Random) -> dict[str, Any]:
         "name": name,
         "country": country,
         # OPTIONAL — allow None
-        "latitude": _maybe(lambda: float(fake.latitude()), rng=rng),
-        "longitude": _maybe(lambda: float(fake.longitude()), rng=rng),
-        "name_local": _maybe(lambda: " ".join(fake.words()).title(), rng=rng),
-        "state_province": _maybe(lambda: fake.state(), rng=rng),
-        "region": _maybe(lambda: fake.city(), rng=rng),
-        "basin": _maybe(lambda: f"{fake.word().title()} Basin", rng=rng),
+        "latitude": _maybe(
+            lambda: float(fake.latitude()), rng=rng, null_prob=null_prob
+        ),
+        "longitude": _maybe(
+            lambda: float(fake.longitude()), rng=rng, null_prob=null_prob
+        ),
+        "name_local": _maybe(
+            lambda: " ".join(fake.words()).title(), rng=rng, null_prob=null_prob
+        ),
+        "state_province": _maybe(lambda: fake.state(), rng=rng, null_prob=null_prob),
+        "region": _maybe(lambda: fake.city(), rng=rng, null_prob=null_prob),
+        "basin": _maybe(
+            lambda: f"{fake.word().title()} Basin", rng=rng, null_prob=null_prob
+        ),
         "owners": None,  # leave structural fields alone for now
         "operators": None,
         "location_type": _maybe(
-            lambda: rng.choice(list(get_args(LocationType))), rng=rng
+            lambda: rng.choice(list(get_args(LocationType))),
+            rng=rng,
+            null_prob=null_prob,
         ),
         "production_conventionality": _maybe(
-            lambda: rng.choice(list(get_args(ProductionConventionality))), rng=rng
+            lambda: rng.choice(list(get_args(ProductionConventionality))),
+            rng=rng,
+            null_prob=null_prob,
         ),
         "primary_hydrocarbon_group": _maybe(
-            lambda: rng.choice(list(get_args(PrimaryHydrocarbonGroup))), rng=rng
+            lambda: rng.choice(list(get_args(PrimaryHydrocarbonGroup))),
+            rng=rng,
+            null_prob=null_prob,
         ),
         "reservoir_formation": _maybe(
-            lambda: f"{fake.word().title()} Formation", rng=rng
+            lambda: f"{fake.word().title()} Formation", rng=rng, null_prob=null_prob
         ),
         "discovery_year": discovery_year,
         "production_start_year": production_start_year,
         "fid_year": fid_year,
         "field_status": _maybe(
-            lambda: rng.choice(list(get_args(FieldStatus))), rng=rng
+            lambda: rng.choice(list(get_args(FieldStatus))),
+            rng=rng,
+            null_prob=null_prob,
         ),
-        "source": _source_key(rng),
+        "source": _source_key(seed_source=seed_source, rng=rng),
     }
 
 
-def build_payload(*, fake: Faker, rng: random.Random) -> dict[str, Any]:
+def build_payload(
+    *, fake: Faker, seed_source: str, rng: random.Random, null_prob: float
+) -> dict[str, Any]:
     """
     POST body is Resource-Input (OpenAPI), which requires id.
     Keep payload coherent: top-level name mirrors the first source_data entry.
     """
-    src = build_og_field(fake=fake, rng=rng)
+    src = build_og_field(
+        fake=fake, seed_source=seed_source, rng=rng, null_prob=null_prob
+    )
 
     return {
         "id": 0,
@@ -163,16 +177,26 @@ def build_payload(*, fake: Faker, rng: random.Random) -> dict[str, Any]:
     }
 
 
-def iter_payloads(count: int) -> Iterable[dict[str, Any]]:
-    seed = _seed()
+def iter_payloads(
+    path_str: str | None,
+    faker_count: int,
+    random_seed: str | None,
+    seed_source: str,
+    null_prob: float,
+) -> Iterable[dict[str, Any]]:
+    seed = _seed(random_seed)
     rng = random.Random(seed)
     fake = Faker()
     if seed is not None:
         Faker.seed(seed)
 
-    static_payloads = _load_static_payloads()
-    for payload in static_payloads:
-        yield payload
+    if path_str is not None:
+        static_payloads = _load_static_payloads(path_str)
+        for payload in static_payloads:
+            yield payload
 
-    for i in range(1, count + 1):
-        yield build_payload(fake=fake, rng=rng)
+    if faker_count > 0:
+        for i in range(1, faker_count + 1):
+            yield build_payload(
+                fake=fake, seed_source=seed_source, rng=rng, null_prob=null_prob
+            )
