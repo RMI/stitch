@@ -112,8 +112,9 @@ services:
       RANDOM_SEED: 8675309
       SEED_SOURCE: "mixed"
       NULL_PROBABILITY: 0.3
+      STATIC_PAYLOAD_DIR: "/mnt/data"
     volumes:
-      - ./deployments/seed/data/static_payloads.json:/mnt/data/static_payloads.json:ro
+      - ./deployments/seed/data:/mnt/data:ro
     restart: "no"
     depends_on:
       api:

@@ -15,7 +15,7 @@ def main() -> None:
 
     validator = OpenAPIRequestValidator(cfg.api_base_url, openapi_url=cfg.openapi_url)
     payloads = iter_payloads(
-        path_str=cfg.static_payload_file,
+        static_payload_dir=cfg.static_payload_dir,
         faker_count=cfg.faker_post_count,
         random_seed=cfg.random_seed,
         seed_source=cfg.seed_source,

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import logging
 import random
-from typing import Any, Iterable, get_args
+from typing import Any, Iterable, get_args, Iterator
 
 from faker import Faker
 
@@ -15,27 +16,7 @@ from stitch.ogsi.model.types import (
     ProductionConventionality,
 )
 
-
-def _load_static_payloads(path_str) -> list[dict[str, Any]]:
-    """
-    Load static payloads from JSON file.
-    File path can be overridden with STATIC_PAYLOAD_FILE env var.
-    """
-
-    path = Path(path_str)
-    if not path.exists():
-        return []
-
-    try:
-        with path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        return []
-
-    if not isinstance(data, list):
-        return []
-
-    return [d for d in data if isinstance(d, dict)]
+logger = logging.getLogger("stitch.seed")
 
 
 def _seed(random_seed: int | None) -> int | None:
@@ -173,8 +154,55 @@ def build_payload(
     }
 
 
+def _iter_static_payloads(static_payload_dir: str) -> Iterator[dict[str, Any]]:
+    """
+    Load JSON payloads from a directory.
+    Each file may be either:
+      - a single payload object, or
+      - a list of payload objects.
+    Files are consumed in sorted(path) order for reproducibility.
+    """
+    base = Path(static_payload_dir)
+    if not base.exists():
+        logger.warning("STATIC_PAYLOAD_DIR does not exist: %s", static_payload_dir)
+        return
+    if not base.is_dir():
+        logger.warning("STATIC_PAYLOAD_DIR is not a directory: %s", static_payload_dir)
+        return
+
+    paths = sorted(p for p in base.glob("*.json") if p.is_file())
+    if not paths:
+        logger.info("No static payload files found in %s", static_payload_dir)
+        return
+
+    logger.info(
+        "Loading %d static payload file(s) from %s", len(paths), static_payload_dir
+    )
+    for path in paths:
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            logger.exception("Failed reading static payload file: %s", path)
+            continue
+
+        if isinstance(raw, list):
+            for item in raw:
+                if isinstance(item, dict):
+                    yield item
+                else:
+                    logger.warning(
+                        "Skipping non-object item in %s: %r", path, type(item).__name__
+                    )
+        elif isinstance(raw, dict):
+            yield raw
+        else:
+            logger.warning(
+                "Skipping %s: expected object or list, got %r", path, type(raw).__name__
+            )
+
+
 def iter_payloads(
-    path_str: str | None,
+    static_payload_dir: str | None,
     faker_count: int | None,
     random_seed: int | None,
     seed_source: str,
@@ -186,10 +214,8 @@ def iter_payloads(
     if seed is not None:
         Faker.seed(seed)
 
-    if path_str is not None:
-        static_payloads = _load_static_payloads(path_str)
-        for payload in static_payloads:
-            yield payload
+    if static_payload_dir is not None:
+        yield from _iter_static_payloads(static_payload_dir)
 
     if faker_count is not None and faker_count > 0:
         for i in range(1, faker_count + 1):
