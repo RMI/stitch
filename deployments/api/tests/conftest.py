@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from stitch.ogsi.model import GemSource
 
 from stitch.api.db.config import UnitOfWork, get_uow
 from stitch.api.db.model import (
@@ -15,6 +16,7 @@ from stitch.api.db.model import (
 from stitch.api.auth import get_current_user
 from stitch.api.entities import User
 from stitch.api.main import app
+from .factories import OGFieldBaseFactory
 
 
 @pytest.fixture

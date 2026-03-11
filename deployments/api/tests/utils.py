@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel
+from stitch.ogsi.model import GemSource, WoodMacSource
 
 from stitch.api.entities import Resource
 
@@ -33,7 +34,11 @@ def make_create_resource(
     name: str | None = None,
 ) -> FactoryResult[Resource]:
     """Create a minimal Resource payload for creation tests."""
-    return FactoryResult(model=Resource(id=0, name=name))
+    src = [
+        GemSource(name="fake_gem_source", country=None),
+        WoodMacSource(name=None, country="USA"),
+    ]
+    return FactoryResult(model=Resource(id=0, name=name, source_data=src))
 
 
 def make_empty_resource(
