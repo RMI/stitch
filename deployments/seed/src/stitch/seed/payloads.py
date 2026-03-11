@@ -38,14 +38,10 @@ def _load_static_payloads(path_str) -> list[dict[str, Any]]:
     return [d for d in data if isinstance(d, dict)]
 
 
-def _seed(random_seed) -> int | None:
-    if random_seed is None or random_seed.strip() == "":
+def _seed(random_seed: int | None) -> int | None:
+    if random_seed is None:
         return None
-    try:
-        return int(random_seed)
-    except ValueError:
-        # Allow non-int seeds too (hash to int).
-        return abs(hash(random_seed)) % (2**31)
+    return int(random_seed)
 
 
 def _source_key(seed_source: str, rng: random.Random) -> str:
@@ -179,8 +175,8 @@ def build_payload(
 
 def iter_payloads(
     path_str: str | None,
-    faker_count: int,
-    random_seed: str | None,
+    faker_count: int | None,
+    random_seed: int | None,
     seed_source: str,
     null_prob: float,
 ) -> Iterable[dict[str, Any]]:
@@ -195,7 +191,7 @@ def iter_payloads(
         for payload in static_payloads:
             yield payload
 
-    if faker_count > 0:
+    if faker_count is not None and faker_count > 0:
         for i in range(1, faker_count + 1):
             yield build_payload(
                 fake=fake, seed_source=seed_source, rng=rng, null_prob=null_prob

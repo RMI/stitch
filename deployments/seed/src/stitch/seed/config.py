@@ -6,7 +6,7 @@ from dataclasses import dataclass
 logger = logging.getLogger("stitch.seed")
 
 
-def env_int(name: str, default: int) -> int:
+def env_int(name: str, default: int | None) -> int | None:
     raw = os.getenv(name)
     if raw is None or raw.strip() == "":
         return default
@@ -40,11 +40,11 @@ def configure_logging() -> None:
 @dataclass(frozen=True)
 class SeedConfig:
     api_base_url: str
-    faker_post_count: int
+    faker_post_count: int | None
     http_timeout_seconds: float
     openapi_url: str | None
     static_payload_file: str | None
-    random_seed: str | None
+    random_seed: int | None
     seed_source: str
     null_probability: float
 
@@ -55,7 +55,7 @@ def load_config() -> SeedConfig:
     http_timeout_seconds = float(os.getenv("HTTP_TIMEOUT_SECONDS", "10"))
     openapi_url = os.getenv("OPENAPI_URL")  # optional override
     static_payload_file = os.getenv("STATIC_PAYLOAD_FILE")
-    random_seed = os.getenv("RANDOM_SEED")
+    random_seed = env_int("RANDOM_SEED", None)
     seed_source = os.getenv("SEED_SOURCE", "mixed").strip().lower()
     null_probability = env_float("NULL_PROBABILITY", 0.2)
     return SeedConfig(
