@@ -24,7 +24,7 @@ def env_float(name: str, default: float) -> float:
     try:
         return float(raw)
     except ValueError:
-        logger.warning("%s=%r is not an int; using %s", name, raw, default)
+        logger.warning("%s=%r is not a float; using %s", name, raw, default)
         return default
 
 
