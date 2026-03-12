@@ -40,8 +40,6 @@ def main() -> None:
         cmd += ["--exact", "--group", "dev"]
     cmd += ["pytest", pkg_dir, *pytest_args]
 
-    print(f"Running: `{cmd}`...")
-
     sys.exit(subprocess.call(cmd))
 
 
