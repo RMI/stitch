@@ -11,7 +11,7 @@ def main() -> None:
 
     logger.info("Seed starting")
     logger.info("API_BASE_URL=%s", cfg.api_base_url)
-    logger.info("POST_COUNT=%s", cfg.faker_post_count)
+    logger.info("FAKER_POST_COUNT=%s", cfg.faker_post_count)
 
     validator = OpenAPIRequestValidator(cfg.api_base_url, openapi_url=cfg.openapi_url)
     payloads = iter_payloads(
