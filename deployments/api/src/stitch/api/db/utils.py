@@ -43,8 +43,7 @@ async def resource_model_to_entity(
 
     return Resource(
         id=model.id,
-        repointed_to=rep_res,
-        constituents=constituents,
-        name=model.name,
+        repointed_to=None if rep_res is None else rep_res.id,
+        constituents=frozenset([cm.id for cm in constituents if cm.id is not None]),
         source_data=src_data,
     )

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from polyfactory.pytest_plugin import register_fixture
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from stitch.ogsi.model import GemSource
 
@@ -16,7 +17,7 @@ from stitch.api.db.model import (
 from stitch.api.auth import get_current_user
 from stitch.api.entities import User
 from stitch.api.main import app
-from .factories import OGFieldBaseFactory
+from .factories import OGFieldBaseFactory, ResourceFactory
 
 
 @pytest.fixture
@@ -175,3 +176,7 @@ async def integration_client(
         base_url="http://test/api/v1",
     ) as ac:
         yield ac
+
+
+register_fixture(ResourceFactory, name="og_field_resource_factory")
+register_fixture(OGFieldBaseFactory, name="og_field_base_factory")

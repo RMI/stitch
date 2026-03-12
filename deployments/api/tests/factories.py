@@ -1,13 +1,15 @@
-from polyfactory import Use
+# pyright: reportUnannotatedClassAttribute=false
+from collections.abc import Sequence
+from polyfactory import Require, Use
 from polyfactory.decorators import post_generated
 from polyfactory.factories.pydantic_factory import ModelFactory
-from polyfactory.pytest_plugin import register_fixture
 
 from typing import Any, override
 
 from stitch.ogsi.model import (
     LLMSource,
     OGFieldSource,
+    OGSISrcKey,
     OilGasOperator,
     OilGasOwner,
     RMISource,
@@ -56,7 +58,6 @@ class OGFieldOwnerFactory(ModelFactory[OilGasOwner]):
         return round(v, ndigits=3)
 
 
-@register_fixture(name="og_field_base_factory")
 class OGFieldBaseFactory(ModelFactory[OilGasFieldBase]):
     __random_seed__ = 1
     __by_name__ = True
@@ -86,10 +87,41 @@ class OGFieldBaseFactory(ModelFactory[OilGasFieldBase]):
     )
 
 
-def make_source(fact: OGFieldBaseFactory) -> OGFieldSource:
+# TODO: move to `utils` make_resource with args for the collection attrs: source_data, constituents, provenance
+#  - use the base factory above to build the associated fiels or just None them all
+class ResourceFactory(ModelFactory[Resource]):
+    __random_seed__ = 1
+    __by_name__ = True
+    __allow_none_optionals__ = True
+    __randomize_collection_length__ = True
+    __min_collection_length__ = 0
+    __max_collection_length__ = 5
+
+    source_data = Require()
+
+    @post_generated
+    @classmethod
+    def repointed_to(cls, id: int | None) -> int | None:
+        return None if id is None else cls.__random__.choice([None, 9, 8, 7])
+
+    @post_generated
+    @classmethod
+    def constituents(cls, id: int | None) -> frozenset[int]:
+        if id is None:
+            return frozenset()
+        length = cls.__random__.randint(0, 5)
+        return frozenset(cls.__faker__.random_choices(range(1, id - 1), length=length))
+
+    @post_generated
+    @classmethod
+    def provenance(cls):
+        return {}
+
+
+def make_source(
+    fact: OGFieldBaseFactory, managed: bool = True, source: OGSISrcKey = "gem"
+) -> OGFieldSource:
     base = fact.build()
-    managed = fact.__random__.random() < 0.5
-    source = fact.__random__.choice(["llm", "rmi", "wm", "gem"])
     id_ = fact.__random__.randint(1, 100) if managed else None
 
     kwargs: dict[str, Any] = {**base.model_dump(), "id": id_}
@@ -103,37 +135,3 @@ def make_source(fact: OGFieldBaseFactory) -> OGFieldSource:
             return WoodMacSource(**kwargs)
         case "gem":
             return GemSource(**kwargs)
-    empty_kw = EMPTY_OG_FIELD_BASE.model_dump()
-    return GemSource(**empty_kw, id=999)
-
-
-# TODO: move to `utils` make_resource with args for the collection attrs: source_data, constituents, provenance
-#  - use the base factory above to build the associated fiels or just None them all
-@register_fixture(name="og_field_resource_factory")
-class ResourceFactory(ModelFactory[Resource]):
-    __by_name__ = True
-    __allow_none_optionals__ = True
-
-    @classmethod
-    @override
-    def get_provider_map(cls) -> dict[type, Any]:
-        providers_map = super().get_provider_map()
-        og_field_base_fact = OGFieldBaseFactory()
-        return {OGFieldSource: lambda: make_source(og_field_base_fact), **providers_map}
-
-    @post_generated
-    @classmethod
-    def repointed_to(cls, id: int | None) -> int | None:
-        return None if id is None else cls.__random__.choice([None, 9, 8, 7])
-
-    @post_generated
-    @classmethod
-    def constituents(cls, id: int | None) -> frozenset[int]:
-        if id is None:
-            return frozenset()
-        return frozenset()
-
-    @post_generated
-    @classmethod
-    def provenance(cls):
-        return {}

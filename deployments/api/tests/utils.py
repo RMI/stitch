@@ -6,33 +6,37 @@ for use in tests and HTTP client requests.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Generic, TypeVar
+from typing import TypeVar
 
 from pydantic import BaseModel
-from stitch.ogsi.model import GemSource, WoodMacSource
+from stitch.ogsi.model import GemSource, OGSISrcKey, WoodMacSource
 
-from tests.factories import ResourceFactory
+from .factories import ResourceFactory
 from stitch.api.entities import Resource
 
 T = TypeVar("T", bound=BaseModel)
 
 
-@dataclass
-class FactoryResult(Generic[T]):
-    """Holds both model and dict representations of test data."""
+def make_resource(
+    *,
+    fact: ResourceFactory,
+    empty: bool = False,
+    sources: list[tuple[OGSISrcKey, int]] = [],
+):
+    res = fact.build()
+    if empty:
+        res.source_data = []
+        res.repointed_to = None
+        res.id = None
+        res.constituents = frozenset()
+        res.provenance = {}
 
-    model: T
-
-    @property
-    def data(self) -> dict[str, Any]:
-        """Return dict representation via model_dump()."""
-        return self.model.model_dump(mode="json")
+    return fact.build()
 
 
 def make_create_resource(
     *, name: str | None = None, factory: ResourceFactory
-) -> FactoryResult[Resource]:
+) -> Resource:
     """Create a minimal Resource payload for creation tests."""
     src = [
         GemSource(name="fake_gem_source", country=None),
@@ -40,12 +44,20 @@ def make_create_resource(
     ]
     model = factory.build()
     model.id = None
-    return FactoryResult(model=Resource(id=0, name=name, source_data=src))
+    return model
 
 
 def make_empty_resource(
     *,
     name: str | None = None,
-) -> FactoryResult[Resource]:
+    factory: ResourceFactory,
+    sources: list[tuple[OGSISrcKey, int]] = [],
+) -> Resource:
     """Alias for make_create_resource() kept for readability."""
-    return make_create_resource(name=name)
+    res = factory.build()
+    res.source_data = []
+    res.repointed_to = None
+    res.id = None
+    res.constituents = frozenset()
+    res.provenance = {}
+    return make_create_resource(name=name, factory=factory)

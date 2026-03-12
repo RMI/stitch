@@ -6,6 +6,8 @@ from stitch.models import (
     Source,
 )
 
+from stitch.models.types import CountryCodeAlpha3
+
 from .og_field import OilGasFieldBase, OilGasOwner, OilGasOperator
 from .types import (
     GEMSrcKey,
@@ -67,10 +69,8 @@ class OGFieldProvenance(BaseModel):
     by_field: dict[str, OGSISrcKey] = Field(default_factory=dict)
 
 
-class OGFieldResource(OilGasFieldBase, Resource[int, OGFieldSource]):
+class OGFieldResource(Resource[int, OGFieldSource]):
     provenance: dict[str, tuple[OGSISrcKey, int]] = Field(default_factory=dict)
-
-    # TODO: override name & country to be optional, temporary until we move to `_payload: T` attribute
 
 
 class OGFieldView(OilGasFieldBase):

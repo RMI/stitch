@@ -62,7 +62,7 @@ async def create(session: AsyncSession, user: CurrentUser, resource: Resource):
         raise ResourceIntegrityError(
             f"Cannot create resource that has been repointed.\n\tNew: {repr(resource)}"
         )
-    model = ResourceModel.create(created_by=user, name=resource.name)
+    model = ResourceModel.create(created_by=user)
     session.add(model)
     await session.flush()
     if resource.source_data:

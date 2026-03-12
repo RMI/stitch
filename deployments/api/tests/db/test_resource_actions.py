@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db.model import ResourceModel
 from stitch.api.entities import User
-from tests.utils import make_create_resource, make_empty_resource
+from tests.utils import ResourceFactory, make_create_resource, make_empty_resource
 
 
 class TestCreateResourceActionIntegration:
@@ -18,13 +18,16 @@ class TestCreateResourceActionIntegration:
         self,
         seeded_integration_session: AsyncSession,
         test_user: User,
+        og_field_resource_factory: ResourceFactory,
     ):
-        resource_in = make_empty_resource(name=None)
+        resource_in = make_empty_resource(
+            factory=og_field_resource_factory, sources=[("gem", 1)]
+        )
 
         result = await resource_actions.create(
             session=seeded_integration_session,
             user=test_user,
-            resource=resource_in.model,
+            resource=resource_in,
         )
 
         assert result.id is not None
