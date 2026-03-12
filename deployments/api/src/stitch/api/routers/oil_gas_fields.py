@@ -5,9 +5,8 @@ from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db.config import UnitOfWorkDep
 from stitch.api.auth import CurrentUser
 from stitch.api.db.utils import resource_to_view
-from stitch.api.entities import Resource
 
-from stitch.ogsi.model import OGFieldView
+from stitch.ogsi.model import OGFieldView, OGFieldResource
 
 router = APIRouter(
     prefix="/oil-gas-fields",
@@ -19,7 +18,7 @@ router = APIRouter(
 @router.get("/")
 async def get_all_resources(
     *, uow: UnitOfWorkDep, user: CurrentUser
-) -> Sequence[Resource]:
+) -> Sequence[OGFieldResource]:
     return await resource_actions.get_all(session=uow.session)
 
 
@@ -27,7 +26,7 @@ async def get_all_resources(
 async def get_resource(
     *, uow: UnitOfWorkDep, user: CurrentUser, id: int
 ) -> OGFieldView:
-    res: Resource = await resource_actions.get(session=uow.session, id=id)
+    res: OGFieldResource = await resource_actions.get(session=uow.session, id=id)
 
     return resource_to_view(resource=res)
 
@@ -40,10 +39,10 @@ async def get_resource(
 #  * Are we every going to detatch a source from a resource?
 
 
-@router.post("/", response_model=Resource)
+@router.post("/", response_model=OGFieldResource)
 async def create_resource(
-    *, uow: UnitOfWorkDep, user: CurrentUser, resource_in: Resource
-) -> Resource:
+    *, uow: UnitOfWorkDep, user: CurrentUser, resource_in: OGFieldResource
+) -> OGFieldResource:
     return await resource_actions.create(
         session=uow.session, user=user, resource=resource_in
     )

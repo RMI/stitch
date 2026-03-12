@@ -13,9 +13,7 @@ from stitch.api.db.og_field_source_actions import (
     attach_sources_to_resource,
     get_or_create_sources,
 )
-from stitch.api.entities import (
-    Resource,
-)
+from stitch.ogsi.model import OGFieldResource
 
 from .model import (
     ResourceModel,
@@ -23,7 +21,7 @@ from .model import (
 from .utils import resource_model_to_entity
 
 
-async def get_all(session: AsyncSession) -> Sequence[Resource]:
+async def get_all(session: AsyncSession) -> Sequence[OGFieldResource]:
     stmt = (
         select(ResourceModel)
         .where(ResourceModel.repointed_id.is_(None))
@@ -49,7 +47,7 @@ async def get(session: AsyncSession, id: int):
     return await resource_model_to_entity(session, model)
 
 
-async def create(session: AsyncSession, user: CurrentUser, resource: Resource):
+async def create(session: AsyncSession, user: CurrentUser, resource: OGFieldResource):
     """
     Here we create a resource either from new source data or existing source data. It's also possible
     to create an empty resource with no reference to source data.

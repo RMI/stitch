@@ -10,8 +10,8 @@ from stitch.api.db.errors import (
     SourceNotFoundError,
 )
 from stitch.api.db.utils import partition_by_id_none
-from stitch.api.entities import Resource, User
-from stitch.ogsi.model import OGFieldSource
+from stitch.api.entities import User
+from stitch.ogsi.model import OGFieldSource, OGFieldResource
 
 from .model import (
     MembershipStatus,
@@ -95,7 +95,7 @@ async def attach_sources_to_resource(
     resource_id: int,
     source_rows: Sequence[OGFieldSource],
     user: User,
-) -> Resource:
+) -> OGFieldResource:
     """Link an OG field source to a resource via membership."""
     resource = await session.get(ResourceModel, resource_id)
     if resource is None:

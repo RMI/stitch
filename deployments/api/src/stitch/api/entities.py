@@ -1,9 +1,5 @@
-from collections.abc import Sequence
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field
-
-from stitch.ogsi.model import OGFieldResource, OGFieldSource
-from stitch.models.types import IdType
 
 
 class Timestamped(BaseModel):
@@ -16,21 +12,6 @@ class Timestamped(BaseModel):
 # We'll translate that data into one of the below structures, so each source will have a `UUID` or similar that
 # references their id in the "raw" table.
 # When pulling into the internal "sources" table, each will get a new unique id which is what the memberships will reference
-
-
-class ResourceBase(BaseModel):
-    name: str | None = Field(default=None)
-    country: str | None = Field(default=None)
-    repointed_to: IdType | None = Field(default=None)
-
-
-Resource = OGFieldResource
-
-
-class Resource_(ResourceBase, Timestamped):
-    id: int
-    source_data: Sequence[OGFieldSource] = Field(default_factory=lambda: [])
-    constituents: Sequence[int] = Field(default_factory=lambda: [])
 
 
 class User(BaseModel):

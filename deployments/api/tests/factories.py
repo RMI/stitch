@@ -6,18 +6,18 @@ from polyfactory.factories.pydantic_factory import ModelFactory
 
 
 from stitch.ogsi.model import (
+    OGFieldResource,
     OGFieldSource,
     OilGasOperator,
     OilGasOwner,
+    OilGasFieldBase,
 )
-from stitch.ogsi.model.og_field import OilGasFieldBase
 
-from stitch.api.entities import Resource
 
 EMPTY_OG_FIELD_BASE = OilGasFieldBase(name=None, country=None)
 DEFAULT_OG_FIELD_BASE = OilGasFieldBase(name="Default OGFieldBase Name", country="USA")
 
-type ResourceCreateFactory = Callable[..., Resource]
+type ResourceCreateFactory = Callable[..., OGFieldResource]
 type SourceFactory = Callable[..., OGFieldSource]
 
 
@@ -90,7 +90,7 @@ class OGFieldBaseFactory(ModelFactory[OilGasFieldBase]):
 
 # TODO: move to `utils` make_resource with args for the collection attrs: source_data, constituents, provenance
 #  - use the base factory above to build the associated fiels or just None them all
-class ResourceFactory(ModelFactory[Resource]):
+class ResourceFactory(ModelFactory[OGFieldResource]):
     __random_seed__ = 1
     __by_name__ = True
     __allow_none_optionals__ = True

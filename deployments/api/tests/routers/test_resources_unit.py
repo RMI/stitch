@@ -25,7 +25,6 @@ class TestGetResourceUnit:
         source_maker: SourceFactory,
     ):
         """GET /resources/{id} returns resource from repository."""
-        # expected = make_resource(id=42, name="Found Resource")
         expected = og_res_fact(
             id=42,
             empty=False,
@@ -83,7 +82,6 @@ class TestCreateResourceUnit:
         source_maker: SourceFactory,
     ):
         """POST /resources/ calls repo.create with user and data."""
-        # expected = make_resource(id=123, name="New Resource")
         src = source_maker(id=1, source="wm")
         expected = og_res_fact(id=123, source_data=[src])
         in_src = source_maker(source="wm", name="New Resource")

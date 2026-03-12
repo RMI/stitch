@@ -18,10 +18,10 @@ from stitch.ogsi.model import (
     RMISource,
     WoodMacSource,
     OGFieldSource,
+    OGFieldResource,
 )
 
 from .factories import OGFieldBaseFactory, ResourceFactory
-from stitch.api.entities import Resource
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -88,7 +88,7 @@ def make_create_resource(
     factory: ResourceFactory,
     base_factory: OGFieldBaseFactory,
     sources: list[tuple[OGSISrcKey, bool]] | None = None,
-) -> Resource:
+) -> OGFieldResource:
     """Create a minimal Resource payload for creation tests."""
     _mk_src = partial(make_source, fact=base_factory)
     if sources is None:
@@ -115,7 +115,7 @@ def make_empty_resource(
     factory: ResourceFactory,
     base_factory: OGFieldBaseFactory,
     sources: list[tuple[OGSISrcKey, bool]] = [],
-) -> Resource:
+) -> OGFieldResource:
     """Alias for make_create_resource() kept for readability."""
     return make_resource(
         fact=factory, base_fact=base_factory, empty=True, sources=sources

@@ -9,13 +9,13 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from stitch.ogsi.model import OGFieldSource, OGSISrcKey
+from stitch.ogsi.model import OGFieldSource, OGSISrcKey, OGFieldResource
 
 from .oil_gas_field_source import (
     OilGasFieldSourceModel,
 )
 
-from stitch.api.entities import Resource, User as UserEntity
+from stitch.api.entities import User as UserEntity
 from .common import Base
 from .mixins import TimestampMixin, UserAuditMixin
 from .types import PORTABLE_BIGINT
@@ -94,7 +94,7 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
     memberships: Mapped[list[MembershipModel]] = relationship()
 
     def as_empty_entity(self):
-        return Resource(
+        return OGFieldResource(
             id=self.id,
             source_data=[],
             constituents=frozenset(),
