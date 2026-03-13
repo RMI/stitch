@@ -1,8 +1,6 @@
 [
   {
     "id": 0,
-    "name": "Test Field",
-    "country": "XXY",
     "source_data": [
       {
         "source": "rmi",
@@ -20,12 +18,10 @@
   },
   {
     "id": 0,
-    "name": "Test Field",
-    "country": "XXY",
     "source_data": [
       {
         "source": "gem",
-        "name": "Test Field",
+        "name": "Test Field 2",
         "country": "XXY",
         "latitude": 3.1,
         "longitude": 4.2,
