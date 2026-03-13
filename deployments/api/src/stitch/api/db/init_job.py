@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from functools import reduce
+from itertools import cycle
 import os
 import sys
 import time
@@ -10,6 +12,7 @@ from typing import Any
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
+from stitch.ogsi.model import GemSource, RMISource, WoodMacSource
 
 from stitch.api.db.model import (
     ResourceModel,
@@ -270,8 +273,8 @@ def create_dev_user() -> UserModel:
 
 def create_seed_resources(user: UserEntity) -> list[ResourceModel]:
     resources = [
-        ResourceModel.create(user, name="Resource Foo01"),
-        ResourceModel.create(user, name="Resource Bar01"),
+        ResourceModel.create(user),
+        ResourceModel.create(user),
     ]
     return resources
 
@@ -281,60 +284,42 @@ def create_seed_memberships(
     resources: list[ResourceModel],
     sources: list[OilGasFieldSourceModel],
 ) -> list[MembershipModel]:
+    src_tups = [(s.source, s.id) for s in sources]
+
     memberships = [
-        MembershipModel.create(user, resources[0], "gem", 1),
-        MembershipModel.create(user, resources[1], "wm", 2),
+        MembershipModel.create(user, resource, sk, sid)
+        for resource, (sk, sid) in zip(resources, src_tups)
     ]
-    for i, mem in enumerate(memberships, start=1):
-        mem.id = i
+
     return memberships
 
 
 def create_seed_oil_gas_source_fields(
     user: UserEntity,
-    resources: list[ResourceModel],
 ) -> list[OilGasFieldSourceModel]:
     """Create example OilGasField rows linked 1:1 with seeded resources."""
 
-    raw_payloads: list[dict[str, Any]] = [
-        # pretend this came from some upstream system (GEM/WM/etc)
-        {
-            "name": "Permian Alpha",
-            "country": "USA",
-            "basin": "Permian",
-            # extra keys demonstrate why we keep original_payload
-            "upstream_id": "seed-gem-0001",
-            "notes": "seed example",
-        },
-        {
-            "name": "North Sea Bravo",
-            "country": "GBR",
-            "basin": "North Sea",
-            "upstream_id": "seed-wm-0002",
-            "notes": "seed example",
-        },
+    payloads = [
+        GemSource(name="Permian Alpha", country="USA", basin="Permian"),
+        WoodMacSource(
+            name="North Sea Bravo",
+            country="GBR",
+            basin="North Sea",
+            production_conventionality="Conventional",
+        ),
+        RMISource(
+            name="Permian Alpha 2",
+            country="USA",
+            basin="Permian North",
+            state_province="NM",
+            region="Southwest",
+        ),
     ]
 
-    og_models: list[OilGasFieldSourceModel] = []
-
-    for resource, raw in zip(resources, raw_payloads):
-        domain = OilGasFieldBase.model_validate(raw)
-        model = OilGasFieldSourceModel(
-            created_by_id=user.id,
-            last_updated_by_id=user.id,
-        )
-        # Raw input (includes extra fields not in OilGasFieldBase)
-        model.original_payload = raw
-        # Canonical validated payload
-        model.payload = raw
-        model.name = domain.name
-        model.country = domain.country
-        model.basin = domain.basin
-        model.source = "dev-seed"
-        # Populate domain columns for queryability
-        og_models.append(model)
-
-    return og_models
+    return [
+        OilGasFieldSourceModel.create_from_entity(ent=src, created_by=user)
+        for src in payloads
+    ]
 
 
 def seed_dev(engine) -> None:
@@ -359,8 +344,9 @@ def seed_dev(engine) -> None:
         session.flush()
         #
         # Add sample OilGasField rows for the first two resources only
-        og_fields = create_seed_oil_gas_source_fields(user_entity, resources)
+        og_fields = create_seed_oil_gas_source_fields(user_entity)
         session.add_all(og_fields)
+        session.flush()
 
         memberships = create_seed_memberships(user_entity, resources, og_fields)
         session.add_all(memberships)
@@ -419,7 +405,13 @@ def main() -> None:
         else:
             raise RuntimeError(f"Unknown STITCH_DB_SCHEMA_MODE: {settings.schema_mode}")
 
-        if settings.seed_mode is not SeedMode.NEVER and settings.seed_profile:
+        print(
+            f"[db-init]: seed_mode `{settings.seed_mode}`, seed_profile `{settings.seed_profile}`"
+        )
+        if (
+            settings.seed_mode != SeedMode.NEVER
+            and settings.seed_profile == SeedProfile.DEV
+        ):
             ensure_meta_tables(engine)
             if seed_already_applied(engine, settings.seed_profile):
                 print(

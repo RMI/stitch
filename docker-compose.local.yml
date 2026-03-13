@@ -1,4 +1,7 @@
 services:
+  db-init:
+    environment:
+      STITCH_DB_SEED_MODE: if-needed
   api:
     environment:
       LOG_LEVEL: debug
