@@ -8,6 +8,7 @@ requires-python = ">=3.12"
 [tool.uv.workspace]
 members = [
   "deployments/api",
+  "deployments/seed",
   "packages/stitch-auth",
   "packages/stitch-models",
   "packages/stitch-ogsi",

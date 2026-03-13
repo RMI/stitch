@@ -1,0 +1,31 @@
+[
+  {
+    "id": 0,
+    "name": "Complex Resource",
+    "country": "XXZ",
+    "source_data": [
+      {
+        "source": "rmi",
+        "name": "Test Field",
+        "country": "XXX",
+        "latitude": 1.1,
+        "longitude": 2.2,
+        "location_type": "Onshore",
+        "production_conventionality": "Conventional",
+        "primary_hydrocarbon_group": "Light Oil",
+        "field_status": "Producing"
+      },
+      {
+        "source": "gem",
+        "name": "Test Field",
+        "country": "XXY",
+        "latitude": 3.1,
+        "longitude": 4.2,
+        "location_type": "Offshore"
+      }
+
+    ],
+    "constituents": []
+  }
+]
+
