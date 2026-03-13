@@ -145,6 +145,9 @@ clean-docker:
 dev-docker:
 	$(DOCKER_COMPOSE_DEV) up
 
+reboot-docker: clean-docker
+	$(DOCKER_COMPOSE_DEV) up --build
+
 prod-docker:
 	$(DOCKER_COMPOSE) up
 

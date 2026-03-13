@@ -152,5 +152,8 @@ class OpenAPIRequestValidator:
             lines.append(f"- {loc}: {e.message}")
 
         message = "OpenAPI validation failed:\n" + "\n".join(lines)
+
         logger.error(message)
+        logger.debug(payload)
         raise RuntimeError(message)
+
