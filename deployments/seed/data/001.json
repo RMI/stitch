@@ -1,0 +1,33 @@
+[
+  {
+    "id": 0,
+    "source_data": [
+      {
+        "source": "rmi",
+        "name": "Test Field",
+        "country": "XXY",
+        "latitude": 1.1,
+        "longitude": 2.2,
+        "location_type": "Onshore",
+        "production_conventionality": "Conventional",
+        "primary_hydrocarbon_group": "Light Oil",
+        "field_status": "Producing"
+      }
+    ],
+    "constituents": []
+  },
+  {
+    "id": 0,
+    "source_data": [
+      {
+        "source": "gem",
+        "name": "Test Field 2",
+        "country": "XXY",
+        "latitude": 3.1,
+        "longitude": 4.2,
+        "location_type": "Offshore"
+      }
+    ],
+    "constituents": []
+  }
+]
