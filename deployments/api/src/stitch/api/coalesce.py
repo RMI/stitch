@@ -11,7 +11,7 @@ from stitch.ogsi.model import (
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
 
-SRC_PRIORITY = (RMI_SRC, GEM_SRC, WM_SRC, LLM_SRC)
+SRC_PRIORITY = (RMI_SRC, WM_SRC, GEM_SRC, LLM_SRC)
 
 
 type ProvAttrs = dict[str, tuple[Any, OGSISrcKey, int] | None]
