@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     dialect: Dialect = "postgresql"
     frontend_origin_url: OriginUrl = HttpUrl("http://localhost:3000")
     auth_disabled: bool = False
+    azure_openai_api_key: SecretStr | None = None
+    azure_openai_endpoint: HttpUrl | None = None
+    azure_openai_deployment: str | None = None
+    azure_openai_api_version: str | None = None
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env",
@@ -85,6 +89,17 @@ class Settings(BaseSettings):
         if self.dialect == "sqlite":
             return SqliteConfig().to_url()
         return PostgresConfig().to_url()
+
+    @property
+    def llm_suggestions_configured(self) -> bool:
+        return all(
+            (
+                self.azure_openai_api_key is not None,
+                self.azure_openai_endpoint is not None,
+                self.azure_openai_deployment,
+                self.azure_openai_api_version,
+            )
+        )
 
 
 @lru_cache

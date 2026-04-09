@@ -1,7 +1,8 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+import httpx
 
 from stitch.api.entities import (
     OGFieldQueryParams,
@@ -15,6 +16,15 @@ from stitch.api.db.utils import (
     resource_to_view,
     resource_to_detail_view,
 )
+from stitch.api.llm_suggestions import (
+    AzureOpenAILLMSuggestionClient,
+    LLMFieldSuggestionRequest,
+    LLMFieldSuggestionResponse,
+    build_llm_suggestion_messages,
+    parse_llm_suggestion_response,
+    validate_llm_suggestion_field,
+)
+from stitch.api.settings import Settings, get_settings
 
 from stitch.ogsi.model import (
     OGFieldDetailView,
@@ -65,6 +75,56 @@ async def get_resource_detail(
 ) -> OGFieldDetailView:
     res: OGFieldResource = await resource_actions.get(session=uow.session, id=id)
     return resource_to_detail_view(resource=res)
+
+
+@router.post("/{id}/llm-suggestions", response_model=LLMFieldSuggestionResponse)
+async def create_llm_suggestion(
+    *,
+    uow: UnitOfWorkDep,
+    _user: CurrentUser,
+    settings: Settings = Depends(get_settings),
+    id: int,
+    request: LLMFieldSuggestionRequest,
+) -> LLMFieldSuggestionResponse:
+    if not settings.llm_suggestions_configured:
+        raise HTTPException(
+            status_code=503, detail="LLM suggestions are not configured."
+        )
+
+    try:
+        validate_llm_suggestion_field(request.field)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    resource = await resource_actions.get(session=uow.session, id=id)
+    detail_view = resource_to_detail_view(resource=resource)
+    messages = build_llm_suggestion_messages(
+        resource_id=id,
+        field_name=request.field,
+        detail_view=detail_view,
+    )
+
+    try:
+        client = AzureOpenAILLMSuggestionClient(settings)
+        raw_response = await client.generate_field_suggestion(messages=messages)
+        suggestion = parse_llm_suggestion_response(
+            raw_response, requested_field=request.field
+        )
+    except httpx.HTTPError as exc:
+        logger.exception("Azure OpenAI request failed for resource %s field %s", id, request.field)
+        raise HTTPException(
+            status_code=502, detail="Failed to generate LLM suggestion."
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return LLMFieldSuggestionResponse(
+        resource_id=id,
+        field=request.field,
+        suggested_value=suggestion.value,
+        source_url=suggestion.source_url,
+        raw_response=raw_response,
+    )
 
 
 @router.post("/", response_model=OGFieldResource)
