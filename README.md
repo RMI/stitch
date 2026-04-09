@@ -30,6 +30,17 @@ cp env.example .env
 
 Edit `.env` as needed (passwords, seed settings, etc.).
 
+For the preview-only LLM suggestion flow, also set:
+
+```bash
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_ENDPOINT=https://<your-resource>.openai.azure.com
+AZURE_OPENAI_DEPLOYMENT=<your-deployment-name>
+AZURE_OPENAI_API_VERSION=2024-10-21
+```
+
+If these are unset, the LLM suggestion endpoint returns `503`.
+
 ### Running the Application
 
 Start (and build) the stack:

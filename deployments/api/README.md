@@ -24,6 +24,9 @@ VERSION=0.0.2
 POSTGRES_HOST=stitch-deploy-test.postgres.database.azure.com
 AUTH_ISSUER=https://rmi-spd.us.auth0.com/
 AUTH_AUDIENCE=https://stitch-api.local
+AZURE_OPENAI_ENDPOINT=https://<your-resource>.openai.azure.com
+AZURE_OPENAI_DEPLOYMENT=<your-deployment-name>
+AZURE_OPENAI_API_VERSION=2024-10-21
 ```
 
 ---
@@ -86,6 +89,10 @@ AUTH_DISABLED=false
 AUTH_ISSUER=<AUTH_ISSUER>
 AUTH_AUDIENCE=<AUTH_AUDIENCE>
 AUTH_JWKS_URI=<AUTH_ISSUER>/.well-known/jwks.json
+AZURE_OPENAI_API_KEY=*****
+AZURE_OPENAI_ENDPOINT=<AZURE_OPENAI_ENDPOINT>
+AZURE_OPENAI_DEPLOYMENT=<AZURE_OPENAI_DEPLOYMENT>
+AZURE_OPENAI_API_VERSION=<AZURE_OPENAI_API_VERSION>
 ```
 
 #### Ingress
@@ -147,4 +154,3 @@ ContainerAppConsoleLogs_CL
 Edit container configuration.
 Add or update environment variables.
 Create revision and wait for rollout.
-
