@@ -1,14 +1,113 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useAuth0 } from "@auth0/auth0-react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useResourceDetail } from "../hooks/useResources";
+import { createAuthenticatedFetcher } from "../auth/api";
+import { createLLMSuggestion } from "../queries/api";
 import SourceMixBar from "../components/SourceMixBar";
 import SectionHeader from "../components/SectionHeader";
 import { FieldCard, FieldGrid } from "../components/FieldCard";
 import {
+  AI_SUGGESTION_FIELDS,
   FIELD_META,
   IDENTITY_FIELDS,
   PRODUCTION_FIELDS,
 } from "../constants/fieldMeta";
+
+function AISuggestionPanel({ endpoint, resourceId }) {
+  const { getAccessTokenSilently } = useAuth0();
+  const fetcher = createAuthenticatedFetcher(getAccessTokenSilently);
+  const [selectedField, setSelectedField] = useState(AI_SUGGESTION_FIELDS[0]);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  async function handleGenerateSuggestion() {
+    setIsLoading(true);
+    setError("");
+    setResult(null);
+
+    try {
+      const suggestion = await createLLMSuggestion(
+        resourceId,
+        selectedField,
+        fetcher,
+        endpoint,
+      );
+      setResult(suggestion);
+    } catch (err) {
+      setError(err.message || "Failed to generate suggestion.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  return (
+    <section>
+      <SectionHeader title="AI Suggestion" />
+      <div className="rounded-md border border-gray-dark/20 bg-gray-light p-4 space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <label className="flex-1 text-sm text-gray-dark">
+            <span className="mb-1 block font-medium">Field</span>
+            <select
+              value={selectedField}
+              onChange={(event) => {
+                setSelectedField(event.target.value);
+                setError("");
+                setResult(null);
+              }}
+              className="w-full rounded-md border border-gray-dark bg-white px-3 py-2"
+            >
+              {AI_SUGGESTION_FIELDS.map((fieldKey) => (
+                <option key={fieldKey} value={fieldKey}>
+                  {FIELD_META[fieldKey].label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={handleGenerateSuggestion}
+            disabled={isLoading}
+            className="rounded-md border border-gray-dark bg-white px-4 py-2 text-sm hover:cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isLoading ? "Generating…" : "Generate suggestion"}
+          </button>
+        </div>
+
+        {error && <p className="text-sm text-red-500">{error}</p>}
+
+        {result && (
+          <div className="space-y-2 rounded-md bg-white p-4">
+            <p className="text-sm text-gray-dark">
+              <span className="font-medium">Field:</span>{" "}
+              {FIELD_META[result.field]?.label ?? result.field}
+            </p>
+            <p className="text-sm text-gray-dark">
+              <span className="font-medium">Suggested value:</span>{" "}
+              {result.suggested_value == null ? "—" : String(result.suggested_value)}
+            </p>
+            <p className="text-sm text-gray-dark">
+              <span className="font-medium">Source URL:</span>{" "}
+              {result.source_url ? (
+                <a
+                  href={result.source_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline"
+                >
+                  {result.source_url}
+                </a>
+              ) : (
+                "—"
+              )}
+            </p>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
 
 function OrgPanel({ items, nameLabel }) {
   if (items.length === 0) return <div className="flex-1" />;
@@ -126,6 +225,8 @@ export default function ResourceDetailPage() {
               ))}
             </FieldGrid>
           </section>
+
+          <AISuggestionPanel endpoint={endpoint} resourceId={numericId} />
 
           <section className="bg-gray-light p-4">
             <pre>{JSON.stringify(detailView, null, 2)}</pre>
