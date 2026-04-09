@@ -122,7 +122,6 @@ async def create_llm_suggestion(
         resource_id=id,
         field=request.field,
         suggested_value=suggestion.value,
-        source_url=suggestion.source_url,
         raw_response=raw_response,
     )
 

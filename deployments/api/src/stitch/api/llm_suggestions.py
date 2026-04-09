@@ -2,7 +2,7 @@ import json
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from stitch.api.settings import Settings
 from stitch.ogsi.model import OGFieldDetailView
@@ -30,7 +30,6 @@ class LLMFieldSuggestionResponse(BaseModel):
     resource_id: int
     field: str
     suggested_value: Any
-    source_url: str | None = None
     raw_response: str
 
 
@@ -39,7 +38,6 @@ class ParsedLLMFieldSuggestion(BaseModel):
 
     name: str
     value: Any
-    source_url: str | None = Field(default=None)
 
 
 def validate_llm_suggestion_field(field_name: str) -> None:
@@ -64,9 +62,10 @@ def build_llm_suggestion_messages(
         {
             "role": "system",
             "content": (
-                "You infer one field for an oil and gas field record. "
+                "You infer one field for an oil and gas field record from provided data only. "
                 "Reply with JSON only. "
-                'Return exactly these keys: "name", "value", "source_url". '
+                'Return exactly these keys: "name", "value". '
+                "Never use outside knowledge. "
                 "Do not include markdown fences or extra explanation."
             ),
         },
@@ -81,8 +80,9 @@ def build_llm_suggestion_messages(
                     "instructions": [
                         "Infer only the requested field.",
                         "Set name to the requested field name exactly.",
+                        "Use only the provided coalesced resource and source records.",
+                        "Do not use outside knowledge.",
                         "Use null for value if the field cannot be inferred.",
-                        "Use null for source_url if no citation can be provided.",
                     ],
                     "coalesced_resource": coalesced_data,
                     "source_records": source_records,
@@ -140,7 +140,6 @@ class AzureOpenAILLMSuggestionClient:
         headers = {"api-key": self._api_key, "Content-Type": "application/json"}
         payload = {
             "messages": messages,
-            "temperature": 0,
             "response_format": {"type": "json_object"},
         }
 
@@ -151,6 +150,12 @@ class AzureOpenAILLMSuggestionClient:
                 headers=headers,
                 json=payload,
             )
+            if response.is_error:
+                raise httpx.HTTPStatusError(
+                    f"Azure OpenAI request failed with status {response.status_code}: {response.text}",
+                    request=response.request,
+                    response=response,
+                )
             response.raise_for_status()
             body = response.json()
 
