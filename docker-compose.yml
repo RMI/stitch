@@ -4,6 +4,11 @@ services:
     build:
       context: .
       dockerfile: deployments/api/Dockerfile
+      args:
+        APP_VERSION: ${API_APP_VERSION:-0.1.0}
+        BUILD_ID: ${API_BUILD_ID:-docker-local}
+        GIT_SHA: ${API_GIT_SHA:-unknown}
+        BUILD_TIME: ${API_BUILD_TIME:-unknown}
     env_file:
       - .env
     environment:
@@ -59,6 +64,11 @@ services:
     build:
       context: .
       dockerfile: deployments/api/Dockerfile
+      args:
+        APP_VERSION: ${API_APP_VERSION:-0.1.0}
+        BUILD_ID: ${API_BUILD_ID:-docker-local}
+        GIT_SHA: ${API_GIT_SHA:-unknown}
+        BUILD_TIME: ${API_BUILD_TIME:-unknown}
     env_file:
       - .env
     environment:
@@ -81,6 +91,12 @@ services:
         VITE_AUTH0_CLIENT_ID: ${VITE_AUTH0_CLIENT_ID?}
         VITE_AUTH0_AUDIENCE: ${VITE_AUTH0_AUDIENCE?}
         VITE_API_URL: ${VITE_API_URL?}
+        VITE_APP_ENV: ${VITE_APP_ENV:-development-docker}
+        VITE_APP_VERSION: ${VITE_APP_VERSION:-0.0.0-dev}
+        VITE_BUILD_ID: ${VITE_BUILD_ID:-docker-local}
+        VITE_GIT_SHA: ${VITE_GIT_SHA:-unknown}
+        VITE_NODE_VERSION: ${VITE_NODE_VERSION:-20}
+        VITE_BUILD_TIME: ${VITE_BUILD_TIME:-unknown}
         VITE_ENTITY_LINKAGE_URL: ${VITE_ENTITY_LINKAGE_URL:-http://localhost:8001/api/v1}
     ports:
       - "3000:80"

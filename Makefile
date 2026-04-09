@@ -5,6 +5,15 @@ PYTEST := $(UV) run pytest
 RUFF := $(UV) run ruff
 TEST_PKG := ./scripts/test-package.py
 
+# ---- Build metadata ---------------------------------------------------------
+
+GIT_SHA        := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
+GIT_SHORT_SHA  := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+BUILD_TIME     := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+BUILD_ID       := local-$(GIT_SHORT_SHA)
+
+API_APP_VERSION := $(shell grep '^version' deployments/api/pyproject.toml | sed 's/.*"\(.*\)".*/\1/' || echo unknown)
+FRONTEND_APP_VERSION := $(shell node -p "require('./deployments/stitch-frontend/package.json').version" 2>/dev/null || echo unknown)
 # Aggregate check: can be run in parallel with -j
 check: lint test format-check lock-check
 	@echo "All checks passed."
@@ -118,6 +127,10 @@ api-dev: stack-api-dev
 
 stack-api-dev:
 	SEED_API_BASE_URL=http://host.docker.internal:8000/api/v1 \
+	VITE_GIT_SHA=$(GIT_SHA) \
+	VITE_BUILD_ID=$(BUILD_ID) \
+	VITE_BUILD_TIME=$(BUILD_TIME) \
+	VITE_APP_VERSION=$(FRONTEND_APP_VERSION) \
 	$(DOCKER_COMPOSE_DEV) \
 		--profile frontend \
 		--profile tools \
@@ -164,6 +177,10 @@ frontend-dev: $(FRONTEND_INSTALL_STAMP) stack-frontend-dev
 
 stack-frontend-dev:
 	SEED_API_BASE_URL=http://api:8000/api/v1 \
+	API_GIT_SHA=$(GIT_SHA) \
+	API_BUILD_ID=$(BUILD_ID) \
+	API_BUILD_TIME=$(BUILD_TIME) \
+	API_APP_VERSION=$(API_APP_VERSION) \
 	$(DOCKER_COMPOSE_DEV) \
 		--profile api \
 		--profile tools \

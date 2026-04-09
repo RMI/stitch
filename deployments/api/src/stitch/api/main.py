@@ -1,4 +1,6 @@
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
@@ -20,7 +22,10 @@ base_router.include_router(ogfield_source_router)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.started_at = datetime.now(UTC)
+    app.state.auth_config_validated = False
     validate_auth_config_at_startup()
+    app.state.auth_config_validated = True
     yield
     await dispose_engine()
 

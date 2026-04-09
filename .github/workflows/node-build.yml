@@ -5,6 +5,7 @@ jobs:
   build-frontend:
     name: "Build Frontend"
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -15,6 +16,38 @@ jobs:
           node-version-file: deployments/stitch-frontend/package.json
           cache: "npm"
           cache-dependency-path: deployments/stitch-frontend/package-lock.json
+
+      - name: Compute frontend build metadata
+        run: |
+          APP_VERSION=$(node -p "require('./deployments/stitch-frontend/package.json').version")
+          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          GIT_SHA="${GITHUB_SHA}"
+          BUILD_ID="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          NODE_VERSION=$(node -p "process.version")
+          VITE_VERSION=$(node -p "require('./deployments/stitch-frontend/package.json').devDependencies.vite")
+
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            APP_ENV="pr-${{ github.event.pull_request.number }}"
+          elif [ "${GITHUB_REF_NAME}" = "main" ]; then
+            APP_ENV="main"
+          else
+            APP_ENV="${GITHUB_REF_NAME}"
+          fi
+
+          echo "VITE_APP_VERSION=${APP_VERSION}" >> "$GITHUB_ENV"
+          echo "VITE_APP_VERSION=${APP_VERSION}"
+          echo "VITE_BUILD_TIME=${BUILD_TIME}" >> "$GITHUB_ENV"
+          echo "VITE_BUILD_TIME=${BUILD_TIME}" 
+          echo "VITE_GIT_SHA=${GIT_SHA}" >> "$GITHUB_ENV"
+          echo "VITE_GIT_SHA=${GIT_SHA}"
+          echo "VITE_BUILD_ID=${BUILD_ID}" >> "$GITHUB_ENV"
+          echo "VITE_BUILD_ID=${BUILD_ID}"
+          echo "VITE_NODE_VERSION=${NODE_VERSION}" >> "$GITHUB_ENV"
+          echo "VITE_NODE_VERSION=${NODE_VERSION}"
+          echo "VITE_VITE_VERSION=${VITE_VERSION}" >> "$GITHUB_ENV"
+          echo "VITE_VITE_VERSION=${VITE_VERSION}"
+          echo "VITE_APP_ENV=${APP_ENV}" >> "$GITHUB_ENV"
+          echo "VITE_APP_ENV=${APP_ENV}"
 
       - name: Build
         run: make frontend-build

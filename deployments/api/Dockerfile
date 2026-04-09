@@ -32,7 +32,16 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --locked --package stitch-api
 
-ENV PATH="/app/.venv/bin:$PATH"
-USER stitch-app
+ARG APP_VERSION=unknown
+ARG BUILD_ID=unknown
+ARG GIT_SHA=unknown
+ARG BUILD_TIME=unknown
 
+ENV PATH="/app/.venv/bin:$PATH" \
+    APP_VERSION="${APP_VERSION}" \
+    BUILD_ID="${BUILD_ID}" \
+    GIT_SHA="${GIT_SHA}" \
+    BUILD_TIME="${BUILD_TIME}"
+
+USER stitch-app
 CMD ["uvicorn", "stitch.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
