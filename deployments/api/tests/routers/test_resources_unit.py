@@ -225,7 +225,12 @@ class TestCreateLLMSuggestionUnit:
             yield mock_uow
 
         def override_get_settings() -> Settings:
-            return Settings()
+            return Settings(
+                azure_openai_api_key=None,
+                azure_openai_endpoint=None,
+                azure_openai_deployment=None,
+                azure_openai_api_version=None,
+            )
 
         app.dependency_overrides[get_uow] = override_get_uow
         app.dependency_overrides[get_settings] = override_get_settings
@@ -302,7 +307,7 @@ class TestCreateLLMSuggestionUnit:
             mock_repo.get = AsyncMock(return_value=resource)
             mock_client = mock_client_cls.return_value
             mock_client.generate_field_suggestion = AsyncMock(
-                return_value='{"name":"basin","value":"Songliao","source_url":"https://example.com/basin"}'
+                return_value='{"name":"basin","value":"Songliao"}'
             )
 
             response = await async_client.post(
@@ -315,6 +320,5 @@ class TestCreateLLMSuggestionUnit:
             "resource_id": 42,
             "field": "basin",
             "suggested_value": "Songliao",
-            "source_url": "https://example.com/basin",
-            "raw_response": '{"name":"basin","value":"Songliao","source_url":"https://example.com/basin"}',
+            "raw_response": '{"name":"basin","value":"Songliao"}',
         }

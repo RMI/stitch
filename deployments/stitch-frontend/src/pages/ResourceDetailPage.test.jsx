@@ -234,9 +234,7 @@ describe("ResourceDetailPage", () => {
           resource_id: 1,
           field: "basin",
           suggested_value: "Songliao",
-          source_url: "https://example.com/basin",
-          raw_response:
-            '{"name":"basin","value":"Songliao","source_url":"https://example.com/basin"}',
+          raw_response: '{"name":"basin","value":"Songliao"}',
         }),
       }),
     );
@@ -246,6 +244,5 @@ describe("ResourceDetailPage", () => {
     await user.click(screen.getByRole("button", { name: /generate suggestion/i }));
 
     expect(await screen.findByText("Songliao")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "https://example.com/basin" })).toBeInTheDocument();
   });
 });

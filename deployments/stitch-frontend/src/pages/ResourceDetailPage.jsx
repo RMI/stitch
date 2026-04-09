@@ -87,21 +87,6 @@ function AISuggestionPanel({ endpoint, resourceId }) {
               <span className="font-medium">Suggested value:</span>{" "}
               {result.suggested_value == null ? "—" : String(result.suggested_value)}
             </p>
-            <p className="text-sm text-gray-dark">
-              <span className="font-medium">Source URL:</span>{" "}
-              {result.source_url ? (
-                <a
-                  href={result.source_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline"
-                >
-                  {result.source_url}
-                </a>
-              ) : (
-                "—"
-              )}
-            </p>
           </div>
         )}
       </div>
