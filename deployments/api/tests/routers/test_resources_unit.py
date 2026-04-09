@@ -9,6 +9,7 @@ from stitch.ogsi.model import OGFieldListItemView, OilGasFieldBase
 
 from stitch.api.db.config import get_uow
 from stitch.api.main import app
+from stitch.api.settings import Settings, get_settings
 
 from tests.factories import ResourceCreateFactory, SourceFactory
 
@@ -213,3 +214,107 @@ class TestGetAllResourcesUnit:
         params = call_kwargs["params"]
         assert params.offset == 10
         assert params.limit == 10
+
+
+class TestCreateLLMSuggestionUnit:
+    @pytest.mark.anyio
+    async def test_returns_503_when_llm_settings_missing(
+        self, async_client, mock_uow
+    ):
+        async def override_get_uow():
+            yield mock_uow
+
+        def override_get_settings() -> Settings:
+            return Settings()
+
+        app.dependency_overrides[get_uow] = override_get_uow
+        app.dependency_overrides[get_settings] = override_get_settings
+
+        response = await async_client.post(
+            "/oil-gas-fields/42/llm-suggestions",
+            json={"field": "basin"},
+        )
+
+        assert response.status_code == 503
+        assert response.json()["detail"] == "LLM suggestions are not configured."
+
+    @pytest.mark.anyio
+    async def test_returns_400_for_disallowed_field(self, async_client, mock_uow):
+        async def override_get_uow():
+            yield mock_uow
+
+        def override_get_settings() -> Settings:
+            return Settings(
+                azure_openai_api_key="test-key",
+                azure_openai_endpoint="https://example.openai.azure.com",
+                azure_openai_deployment="test-deployment",
+                azure_openai_api_version="2024-10-21",
+            )
+
+        app.dependency_overrides[get_uow] = override_get_uow
+        app.dependency_overrides[get_settings] = override_get_settings
+
+        response = await async_client.post(
+            "/oil-gas-fields/42/llm-suggestions",
+            json={"field": "country"},
+        )
+
+        assert response.status_code == 400
+        assert "not enabled" in response.json()["detail"]
+
+    @pytest.mark.anyio
+    async def test_returns_structured_llm_suggestion(
+        self,
+        async_client,
+        mock_uow,
+        og_res_fact: ResourceCreateFactory,
+    ):
+        resource = og_res_fact(
+            id=42,
+            empty=False,
+            view=OilGasFieldBase(
+                name="Daqing",
+                country="CHN",
+                basin="Songliao",
+            ),
+        )
+
+        async def override_get_uow():
+            yield mock_uow
+
+        def override_get_settings() -> Settings:
+            return Settings(
+                azure_openai_api_key="test-key",
+                azure_openai_endpoint="https://example.openai.azure.com",
+                azure_openai_deployment="test-deployment",
+                azure_openai_api_version="2024-10-21",
+            )
+
+        app.dependency_overrides[get_uow] = override_get_uow
+        app.dependency_overrides[get_settings] = override_get_settings
+
+        with (
+            patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo,
+            patch(
+                "stitch.api.routers.oil_gas_fields.AzureOpenAILLMSuggestionClient"
+            ) as mock_client_cls,
+        ):
+            mock_repo.get = AsyncMock(return_value=resource)
+            mock_client = mock_client_cls.return_value
+            mock_client.generate_field_suggestion = AsyncMock(
+                return_value='{"name":"basin","value":"Songliao","source_url":"https://example.com/basin"}'
+            )
+
+            response = await async_client.post(
+                "/oil-gas-fields/42/llm-suggestions",
+                json={"field": "basin"},
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "resource_id": 42,
+            "field": "basin",
+            "suggested_value": "Songliao",
+            "source_url": "https://example.com/basin",
+            "raw_response": '{"name":"basin","value":"Songliao","source_url":"https://example.com/basin"}',
+        }
