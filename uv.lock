@@ -1280,6 +1280,7 @@ source = { editable = "deployments/api" }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
     { name = "greenlet" },
+    { name = "httpx" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
     { name = "sqlalchemy" },
@@ -1301,6 +1302,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.124.0" },
     { name = "greenlet", specifier = ">=3.3.0" },
+    { name = "httpx", specifier = ">=0.28.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.12" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
     { name = "sqlalchemy", specifier = ">=2.0.44" },
