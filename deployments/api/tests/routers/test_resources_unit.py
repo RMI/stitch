@@ -218,9 +218,7 @@ class TestGetAllResourcesUnit:
 
 class TestCreateLLMSuggestionUnit:
     @pytest.mark.anyio
-    async def test_returns_503_when_llm_settings_missing(
-        self, async_client, mock_uow
-    ):
+    async def test_returns_503_when_llm_settings_missing(self, async_client, mock_uow):
         async def override_get_uow():
             yield mock_uow
 

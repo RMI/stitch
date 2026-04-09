@@ -56,7 +56,9 @@ def build_llm_suggestion_messages(
     field_info = OilGasFieldBase.model_fields[field_name]
     field_description = field_info.description or field_name.replace("_", " ")
     coalesced_data = detail_view.data.model_dump(mode="json")
-    source_records = [source.model_dump(mode="json") for source in detail_view.source_data]
+    source_records = [
+        source.model_dump(mode="json") for source in detail_view.source_data
+    ]
 
     return [
         {
@@ -125,17 +127,23 @@ class AzureOpenAILLMSuggestionClient:
         if not settings.llm_suggestions_configured:
             raise ValueError("Azure OpenAI settings are not configured.")
 
-        self._api_key = settings.azure_openai_api_key.get_secret_value()  # type: ignore[union-attr]
-        self._endpoint = str(settings.azure_openai_endpoint).rstrip("/")  # type: ignore[arg-type]
-        self._deployment = settings.azure_openai_deployment
-        self._api_version = settings.azure_openai_api_version
+        api_key = settings.azure_openai_api_key
+        endpoint = settings.azure_openai_endpoint
+        deployment = settings.azure_openai_deployment
+        api_version = settings.azure_openai_api_version
 
-    async def generate_field_suggestion(
-        self, *, messages: list[dict[str, str]]
-    ) -> str:
-        url = (
-            f"{self._endpoint}/openai/deployments/{self._deployment}/chat/completions"
-        )
+        assert api_key is not None
+        assert endpoint is not None
+        assert deployment is not None
+        assert api_version is not None
+
+        self._api_key = api_key.get_secret_value()
+        self._endpoint = str(endpoint).rstrip("/")
+        self._deployment = deployment
+        self._api_version = api_version
+
+    async def generate_field_suggestion(self, *, messages: list[dict[str, str]]) -> str:
+        url = f"{self._endpoint}/openai/deployments/{self._deployment}/chat/completions"
         params = {"api-version": self._api_version}
         headers = {"api-key": self._api_key, "Content-Type": "application/json"}
         payload = {
@@ -162,4 +170,6 @@ class AzureOpenAILLMSuggestionClient:
         try:
             return body["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
-            raise ValueError("Azure OpenAI response did not contain message content.") from exc
+            raise ValueError(
+                "Azure OpenAI response did not contain message content."
+            ) from exc

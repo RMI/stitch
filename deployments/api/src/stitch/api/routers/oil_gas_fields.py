@@ -111,7 +111,9 @@ async def create_llm_suggestion(
             raw_response, requested_field=request.field
         )
     except httpx.HTTPError as exc:
-        logger.exception("Azure OpenAI request failed for resource %s field %s", id, request.field)
+        logger.exception(
+            "Azure OpenAI request failed for resource %s field %s", id, request.field
+        )
         raise HTTPException(
             status_code=502, detail="Failed to generate LLM suggestion."
         ) from exc

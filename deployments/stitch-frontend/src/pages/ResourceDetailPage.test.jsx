@@ -217,7 +217,9 @@ describe("ResourceDetailPage", () => {
     expect(
       screen.getByRole("heading", { name: /ai suggestion/i }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /generate suggestion/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /generate suggestion/i }),
+    ).toBeInTheDocument();
   });
 
   it("generates and renders an AI suggestion preview", async () => {
@@ -241,7 +243,9 @@ describe("ResourceDetailPage", () => {
     const user = userEvent.setup();
 
     renderWithQueryClient(<ResourceDetailPage />);
-    await user.click(screen.getByRole("button", { name: /generate suggestion/i }));
+    await user.click(
+      screen.getByRole("button", { name: /generate suggestion/i }),
+    );
 
     expect(await screen.findByText("Songliao")).toBeInTheDocument();
   });

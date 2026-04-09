@@ -85,7 +85,9 @@ function AISuggestionPanel({ endpoint, resourceId }) {
             </p>
             <p className="text-sm text-gray-dark">
               <span className="font-medium">Suggested value:</span>{" "}
-              {result.suggested_value == null ? "—" : String(result.suggested_value)}
+              {result.suggested_value == null
+                ? "—"
+                : String(result.suggested_value)}
             </p>
           </div>
         )}
