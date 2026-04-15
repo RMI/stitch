@@ -1,0 +1,16 @@
+[
+  {
+    "id": 0,
+    "source_data": [
+      {
+        "source": "rmi",
+        "name": "Ghawar",
+        "country": "Saudi Arabia",
+        "location_type": "Onshore",
+        "production_conventionality": "Conventional",
+        "field_status": "Producing"
+      }
+    ],
+    "constituents": []
+  }
+]
