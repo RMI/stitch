@@ -75,7 +75,7 @@ export default function EntityLinkagePage() {
             checked={applyMerges}
             onChange={(e) => setApplyMerges(e.target.checked)}
           />
-          <span>Apply merges</span>
+          <span>Initiate merges</span>
         </label>
 
         <div className="mt-4">

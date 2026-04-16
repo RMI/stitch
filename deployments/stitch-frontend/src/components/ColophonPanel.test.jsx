@@ -107,6 +107,7 @@ describe("ColophonPanel", () => {
   afterEach(() => {
     clipboardSpy?.mockRestore();
     vi.unstubAllGlobals();
+    mockConfig.apiBaseUrl = "http://localhost:8000/api/v1";
   });
 
   it("renders frontend, backend, and runtime diagnostics", async () => {
@@ -148,6 +149,29 @@ describe("ColophonPanel", () => {
         },
       },
     );
+  });
+
+  it("renders API docs link with correct URL", async () => {
+    const { default: ColophonPanel } = await import("./ColophonPanel");
+
+    render(<ColophonPanel diagnosticsOpen />);
+
+    const link = screen.getByRole("link", { name: "API docs" });
+
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute("href", "http://localhost:8000/docs");
+  });
+
+  it("renders unavailable state when API docs URL cannot be derived", async () => {
+    mockConfig.apiBaseUrl = "http://localhost:8000";
+    const { default: ColophonPanel } = await import("./ColophonPanel");
+
+    render(<ColophonPanel diagnosticsOpen />);
+
+    expect(screen.getByText("API docs unavailable")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "API docs" }),
+    ).not.toBeInTheDocument();
   });
 
   it("copies the diagnostics payload", async () => {

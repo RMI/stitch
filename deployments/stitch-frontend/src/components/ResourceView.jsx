@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useResource } from "../hooks/useResources";
 import FetchButton from "./FetchButton";
@@ -8,16 +8,28 @@ import Input from "./Input";
 import { resourceKeys } from "../queries/resources";
 import config from "../config/env";
 
-export default function ResourceView({ className, endpoint }) {
+export default function ResourceView({
+  className,
+  endpoint,
+  initialID = null,
+  showControls = true,
+}) {
   const queryClient = useQueryClient();
-  const [id, setId] = useState(1);
+  const [inputId, setInputId] = useState(1);
+  const id = initialID ?? inputId;
   const { data, isLoading, isError, error, refetch } = useResource(
     endpoint,
     id,
   );
 
+  useEffect(() => {
+    if (!showControls && initialID != null) {
+      refetch();
+    }
+  }, [showControls, initialID, refetch]);
+
   const handleClear = (id) => {
-    queryClient.resetQueries({ queryKey: resourceKeys.detail(endpoint, id) });
+    queryClient.resetQueries({ queryKey: resourceKeys.view(endpoint, id) });
   };
 
   const handleKeyDown = (e) => {
@@ -36,22 +48,26 @@ export default function ResourceView({ className, endpoint }) {
           {config.apiBaseUrl}/{endpoint}
         </span>
       </div>
-      <div className="mb-6 flex gap-3">
-        <Input
-          type="number"
-          value={id}
-          onChange={(e) => setId(Number(e.target.value))}
-          onKeyDown={handleKeyDown}
-          min={1}
-          max={1000}
-          className="w-24"
-        />
-        <FetchButton onFetch={() => refetch()} isLoading={isLoading} />
-        <ClearCacheButton
-          onClear={() => handleClear(id)}
-          disabled={!data && !error}
-        />
-      </div>
+
+      {showControls && (
+        <div className="mb-6 flex gap-3">
+          <Input
+            type="number"
+            value={inputId}
+            onChange={(e) => setInputId(Number(e.target.value))}
+            onKeyDown={handleKeyDown}
+            min={1}
+            max={1000}
+            className="w-24"
+          />
+          <FetchButton onFetch={() => refetch()} isLoading={isLoading} />
+          <ClearCacheButton
+            onClear={() => handleClear(id)}
+            disabled={!data && !error}
+          />
+        </div>
+      )}
+
       <JsonView
         data={data}
         isLoading={isLoading}

@@ -98,7 +98,7 @@ class FakeStitchApiClient(AbstractAsyncContextManager["FakeStitchApiClient"]):
             raise self.detail_error
         return self.details_by_id[resource_id]
 
-    async def post_merge(self, *, resource_ids: list[int]) -> dict:
+    async def create_merge_candidate(self, *, resource_ids: list[int]) -> dict:
         self.merge_calls.append(resource_ids)
         if self.merge_error is not None:
             raise self.merge_error

@@ -1,5 +1,6 @@
 from math import ceil
 from datetime import datetime
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, computed_field
@@ -11,6 +12,7 @@ from stitch.ogsi.model.types import (
     PrimaryHydrocarbonGroup,
     ProductionConventionality,
 )
+from stitch.ogsi.model.og_field import OilGasFieldBase
 
 
 class Timestamped(BaseModel):
@@ -101,3 +103,37 @@ class OGFieldSortParams(BaseModel):
 
 class OGFieldQueryParams(PaginationParams, OGFieldFilterParams, OGFieldSortParams):
     source: OGSISrcKey | None = None
+
+
+class MergeCandidateStatus(StrEnum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    DENIED = "DENIED"
+
+
+class MergeCandidateCreateRequest(BaseModel):
+    resource_ids: list[int] = Field(..., min_length=2)
+
+
+class MergeCandidateReviewRequest(BaseModel):
+    review_notes: str | None = None
+
+
+class MergeCandidateView(BaseModel):
+    id: int
+    resource_ids: list[int]
+    status: MergeCandidateStatus
+    review_notes: str | None = None
+    merged_resource_id: int | None = None
+    created: datetime
+    updated: datetime
+    created_by_id: int
+    last_updated_by_id: int
+    reviewed_at: datetime | None = None
+    reviewed_by_id: int | None = None
+
+
+class OGFieldMergePreviewView(BaseModel):
+    resource_ids: list[int]
+    data: OilGasFieldBase
+    provenance: dict[str, OGSISrcKey | None]

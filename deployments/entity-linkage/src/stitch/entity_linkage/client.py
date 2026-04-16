@@ -131,17 +131,17 @@ class StitchApiClient:
             country=data.get("country"),
         )
 
-    async def post_merge(
+    async def create_merge_candidate(
         self,
         *,
         resource_ids: list[int],
     ) -> dict[str, Any]:
         response = await self._client.post(
-            "/oil-gas-fields/merge",
-            json=resource_ids,
+            "/oil-gas-fields/merge-candidates",
+            json={"resource_ids": resource_ids},
             headers=self._headers(),
         )
-        self._raise_for_status(response, "POST /oil-gas-fields/merge")
+        self._raise_for_status(response, "POST /oil-gas-fields/merge-candidates")
         return response.json()
 
     @staticmethod

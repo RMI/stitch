@@ -98,6 +98,19 @@ function redactToken(token) {
   return `${token.slice(0, 12)}...${token.slice(-8)}`;
 }
 
+function getApiDocsUrl(apiBaseUrl) {
+  if (!apiBaseUrl) {
+    return null;
+  }
+
+  const match = apiBaseUrl.match(/^(.*)\/api\/v1\/?$/);
+  if (!match) {
+    return null;
+  }
+
+  return `${match[1]}/docs`;
+}
+
 export default function ColophonPanel({ diagnosticsOpen = false }) {
   const systemInfo = useSystemInfo();
   const backendDiagnostics = useBackendDiagnostics(diagnosticsOpen);
@@ -109,6 +122,8 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
   const [copyError, setCopyError] = useState(false);
   const [tokenCopied, setTokenCopied] = useState(false);
   const [tokenCopyError, setTokenCopyError] = useState(false);
+
+  const apiDocsUrl = getApiDocsUrl(config.apiBaseUrl);
 
   useEffect(() => {
     let cancelled = false;
@@ -244,6 +259,25 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
                   ? "Token copy failed"
                   : "Copy token"}
             </button>
+
+            {apiDocsUrl ? (
+              <a
+                href={apiDocsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-100"
+                title="Open FastAPI docs"
+              >
+                API docs
+              </a>
+            ) : (
+              <span
+                className="rounded border border-red-300 bg-red-50 px-3 py-1.5 text-sm text-red-700"
+                title="API docs URL unavailable for current API base URL"
+              >
+                API docs unavailable
+              </span>
+            )}
 
             <button
               type="button"

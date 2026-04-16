@@ -8,6 +8,7 @@ from .resource_coalesced_view import (
     ResourceCoalescedView,
     create_coalesced_view,
 )
+from .merge_candidate import MergeCandidateItemModel, MergeCandidateModel
 from .user import User as UserModel
 
 __all__ = [
@@ -17,6 +18,8 @@ __all__ = [
     "OGFieldSourcePriority",
     "OilGasFieldSourceModel",
     "ResourceCoalescedView",
+    "MergeCandidateItemModel",
+    "MergeCandidateModel",
     "ResourceModel",
     "StitchBase",
     "UserModel",

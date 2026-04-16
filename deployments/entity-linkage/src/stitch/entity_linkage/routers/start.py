@@ -17,7 +17,10 @@ router = APIRouter(tags=["entity-linkage"])
 class StartRequest(BaseModel):
     apply_merges: bool = Field(
         default=False,
-        description="When true, POST confirmed match groups to the Stitch API merge endpoint.",
+        description=(
+            "When true, submit confirmed match groups to the Stitch API as "
+            "merge candidates."
+        ),
     )
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=50, ge=1, le=200)
@@ -109,7 +112,7 @@ async def start(
     - group exact case-insensitive duplicate names
     - fetch detail records for candidate duplicates
     - confirm same-country matches
-    - optionally POST merge operations
+    - optionally submit merge candidates
 
     Not implemented:
     - add concurrency controls for detail fetches
@@ -132,7 +135,9 @@ async def start(
             merge_results: list[dict] = []
             if request.apply_merges:
                 for group in match_groups:
-                    response = await client.post_merge(resource_ids=group.ids)
+                    response = await client.create_merge_candidate(
+                        resource_ids=group.ids
+                    )
                     merge_results.append(
                         {
                             "ids": group.ids,

@@ -3,6 +3,7 @@ import EnvironmentBanner from "./components/EnvironmentBanner";
 import HomePage from "./pages/HomePage";
 import ResourceDetailPage from "./pages/ResourceDetailPage";
 import EntityLinkagePage from "./pages/EntityLinkagePage";
+import MergeCandidateReviewPage from "./pages/MergeCandidateReviewPage";
 import { LogoutButton } from "./components/LogoutButton";
 
 function App() {
@@ -13,6 +14,7 @@ function App() {
         <nav className="flex gap-4 mb-4" aria-label="Primary">
           <Link to="/">Home</Link>
           <Link to="/entity-linkage">Entity Linkage</Link>
+          <Link to="/merge-candidate-review">Merge Review</Link>
         </nav>
         <div className="max-w-4xl mx-auto flex justify-end mb-4">
           <LogoutButton />
@@ -21,6 +23,10 @@ function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/oil-gas-fields/:id" element={<ResourceDetailPage />} />
           <Route path="/entity-linkage" element={<EntityLinkagePage />} />
+          <Route
+            path="/merge-candidate-review"
+            element={<MergeCandidateReviewPage />}
+          />
         </Routes>
       </div>
     </div>

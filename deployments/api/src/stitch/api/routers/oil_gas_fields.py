@@ -5,12 +5,22 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 import httpx
 
 from stitch.api.entities import (
+    MergeCandidateCreateRequest,
+    MergeCandidateReviewRequest,
+    MergeCandidateView,
+    OGFieldMergePreviewView,
     OGFieldQueryParams,
     PaginatedResponse,
 )
 
 from stitch.api.db import og_field_resource_actions as resource_actions
+from stitch.api.db import merge_candidate_actions
 from stitch.api.db.config import UnitOfWorkDep
+from stitch.api.db.errors import (
+    InvalidActionError,
+    ResourceNotFoundError,
+    ResourceIntegrityError,
+)
 from stitch.api.auth import CurrentUser
 from stitch.api.db.utils import (
     resource_to_view,
@@ -59,6 +69,147 @@ async def get_all_resources(
         page=params.page,
         page_size=params.page_size,
     )
+
+
+@router.get("/merge-candidates", response_model=list[MergeCandidateView])
+async def list_merge_candidates(
+    *, uow: UnitOfWorkDep, _user: CurrentUser
+) -> list[MergeCandidateView]:
+    return await merge_candidate_actions.list_merge_candidates(session=uow.session)
+
+
+@router.get("/merge-candidates/{id}", response_model=MergeCandidateView)
+async def get_merge_candidate(
+    *, uow: UnitOfWorkDep, _user: CurrentUser, id: int
+) -> MergeCandidateView:
+    try:
+        return await merge_candidate_actions.get_merge_candidate(
+            session=uow.session,
+            candidate_id=id,
+        )
+    except ResourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/merge-candidates/{id}/preview", response_model=OGFieldMergePreviewView)
+async def preview_merge_candidate(
+    *,
+    uow: UnitOfWorkDep,
+    _user: CurrentUser,
+    id: int,
+) -> OGFieldMergePreviewView:
+    try:
+        return await merge_candidate_actions.preview_merge_candidate(
+            session=uow.session,
+            candidate_id=id,
+        )
+    except (InvalidActionError, ResourceIntegrityError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ResourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error while previewing merge candidate %s: %s", id, exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Internal error during merge candidate preview",
+        )
+
+
+@router.post("/merge-candidates", response_model=MergeCandidateView)
+async def create_merge_candidate(
+    *,
+    uow: UnitOfWorkDep,
+    user: CurrentUser,
+    request: MergeCandidateCreateRequest,
+) -> MergeCandidateView:
+    logger.info(
+        "Merge candidate requested by user=%s for resource_ids=%s",
+        getattr(user, "sub", "<anon>"),
+        request.resource_ids,
+    )
+
+    try:
+        return await merge_candidate_actions.create_merge_candidate(
+            session=uow.session,
+            user=user,
+            request=request,
+        )
+    except (InvalidActionError, ResourceIntegrityError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ResourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(
+            "Error while creating merge candidate for resource_ids %s: %s",
+            request.resource_ids,
+            exc,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Internal error during merge candidate creation",
+        )
+
+
+@router.post("/merge-candidates/{id}/approve", response_model=MergeCandidateView)
+async def approve_merge_candidate(
+    *,
+    uow: UnitOfWorkDep,
+    user: CurrentUser,
+    id: int,
+    request: MergeCandidateReviewRequest | None = None,
+) -> MergeCandidateView:
+    try:
+        return await merge_candidate_actions.approve_merge_candidate(
+            session=uow.session,
+            user=user,
+            candidate_id=id,
+            request=request,
+        )
+    except (InvalidActionError, ResourceIntegrityError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ResourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error while approving merge candidate %s: %s", id, exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Internal error during merge candidate approval",
+        )
+
+
+@router.post("/merge-candidates/{id}/deny", response_model=MergeCandidateView)
+async def deny_merge_candidate(
+    *,
+    uow: UnitOfWorkDep,
+    user: CurrentUser,
+    id: int,
+    request: MergeCandidateReviewRequest | None = None,
+) -> MergeCandidateView:
+    try:
+        return await merge_candidate_actions.deny_merge_candidate(
+            session=uow.session,
+            user=user,
+            candidate_id=id,
+            request=request,
+        )
+    except (InvalidActionError, ResourceIntegrityError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ResourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error while denying merge candidate %s: %s", id, exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Internal error during merge candidate denial",
+        )
 
 
 @router.get("/{id}", response_model=OGFieldView)
@@ -135,37 +286,3 @@ async def create_resource(
     return await resource_actions.create(
         session=uow.session, user=user, resource=resource_in
     )
-
-
-@router.post("/merge", response_model=OGFieldResource)
-async def merge_resources_endpoint(
-    *, uow: UnitOfWorkDep, user: CurrentUser, resource_ids: list[int]
-) -> OGFieldResource:
-    """
-    Merge multiple resources into one (STUB):
-    repoint resource_ids[1:] -> resource_ids[0]
-    """
-    # preserve order but drop duplicates
-    unique_ids = list(dict.fromkeys(resource_ids))
-    if len(unique_ids) < 2:
-        raise HTTPException(
-            status_code=400, detail="Provide at least 2 unique resource IDs"
-        )
-
-    logger.info(
-        "Merge requested by user=%s for resource_ids=%s",
-        getattr(user, "sub", "<anon>"),
-        unique_ids,
-    )
-
-    try:
-        return await resource_actions.merge_resources(
-            session=uow.session,
-            user=user,
-            resource_ids=unique_ids,
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception("Error while merging resources %s: %s", unique_ids, exc)
-        raise HTTPException(status_code=500, detail="Internal error during merge")

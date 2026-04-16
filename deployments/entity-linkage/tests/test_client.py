@@ -274,14 +274,14 @@ async def test_post_merge_sends_current_branch_payload_shape() -> None:
 
     client = make_client(handler)
 
-    payload = await client.post_merge(resource_ids=[7, 8])
+    payload = await client.create_merge_candidate(resource_ids=[7, 8])
 
     assert payload == {"merged": True}
     assert captured == {
         "method": "POST",
-        "path": "/api/v1/oil-gas-fields/merge",
+        "path": "/api/v1/oil-gas-fields/merge-candidates",
         "authorization": "Bearer token-123",
-        "body": [7, 8],
+        "body": {"resource_ids": [7, 8]},
     }
 
     await client.aclose()

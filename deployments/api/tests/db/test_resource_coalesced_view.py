@@ -164,7 +164,7 @@ class TestViewFreshnessAfterMutations:
         """Merged resources disappear; new merged resource appears."""
         session = seeded_integration_session
         r1, r2 = view_seed_data["r1"], view_seed_data["r2"]
-        merged = await resource_actions.merge_resources(
+        merged = await resource_actions.apply_resource_merge(
             session=session,
             user=test_user,
             resource_ids=[r1.id, r2.id],

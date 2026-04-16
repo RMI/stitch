@@ -138,7 +138,7 @@ async def create(
     return await resource_model_to_entity(session, model)
 
 
-async def merge_resources(
+async def apply_resource_merge(
     session: AsyncSession,
     user: CurrentUser,
     resource_ids: Sequence[int],
@@ -200,7 +200,7 @@ async def _repoint_memberships(
     Collect all memberships whose `resource_id` is in the `from_resoure_ids` argument. For each of these, create
     a new membership where `resource_id` = `to_resource_id`.
 
-    This all takes place after a `merge_resources` operation where a new ResourceModel is created.
+    This all takes place after an approved merge candidate is applied and a new ResourceModel is created.
 
     Args:
         session: the db session

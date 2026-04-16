@@ -37,12 +37,36 @@ function useResourcesReal(
   });
 }
 
-function useResourceReal(endpoint = "resources", id) {
-  return useAuthenticatedQuery(resourceQueries.view(endpoint, id));
+function useResourceReal(endpoint = "resources", id, enabled = false) {
+  return useAuthenticatedQuery({
+    ...resourceQueries.view(endpoint, id),
+    enabled,
+  });
 }
 
-function useResourceDetailReal(endpoint = "resources", id) {
-  return useAuthenticatedQuery(resourceQueries.detail(endpoint, id));
+function useResourceDetailReal(endpoint = "resources", id, enabled = false) {
+  return useAuthenticatedQuery({
+    ...resourceQueries.detail(endpoint, id),
+    enabled,
+  });
+}
+
+function useMergeCandidatesReal(endpoint = "oil-gas-fields", enabled = false) {
+  return useAuthenticatedQuery({
+    ...resourceQueries.mergeCandidates(endpoint),
+    enabled,
+  });
+}
+
+function useMergeCandidateReal(
+  endpoint = "oil-gas-fields",
+  id,
+  enabled = false,
+) {
+  return useAuthenticatedQuery({
+    ...resourceQueries.mergeCandidate(endpoint, id),
+    enabled,
+  });
 }
 
 //--------------------------------
@@ -59,21 +83,64 @@ function useResourcesMock(
   });
 }
 
-function useResourceMock(endpoint = "resources", id) {
+function useResourceMock(endpoint = "resources", id, enabled = false) {
   return useQuery({
     queryKey: resourceKeys.detail(endpoint, id),
     queryFn: () =>
       Promise.resolve(mockResources.find((r) => r.id === id) ?? null),
-    enabled: false,
+    enabled,
   });
 }
 
-function useResourceDetailMock(endpoint = "resources", id) {
+function useResourceDetailMock(endpoint = "resources", id, enabled = false) {
   return useQuery({
     queryKey: resourceKeys.detail(endpoint, id),
     queryFn: () =>
       Promise.resolve(mockResources.find((r) => r.id === id) ?? null),
-    enabled: false,
+    enabled,
+  });
+}
+
+function useMergeCandidatesMock(endpoint = "oil-gas-fields", enabled = false) {
+  return useQuery({
+    queryKey: resourceKeys.mergeCandidates(endpoint),
+    queryFn: () => Promise.resolve([]),
+    enabled,
+  });
+}
+
+function useMergeCandidateMock(
+  endpoint = "oil-gas-fields",
+  id,
+  enabled = false,
+) {
+  return useQuery({
+    queryKey: resourceKeys.mergeCandidate(endpoint, id),
+    queryFn: () => Promise.resolve(null),
+    enabled,
+  });
+}
+
+function useMergeCandidatePreviewMock(
+  endpoint = "oil-gas-fields",
+  id,
+  enabled = false,
+) {
+  return useQuery({
+    queryKey: resourceKeys.preview(endpoint, id),
+    queryFn: () => Promise.resolve(null),
+    enabled,
+  });
+}
+
+function useMergeCandidatePreviewReal(
+  endpoint = "oil-gas-fields",
+  id,
+  enabled = false,
+) {
+  return useAuthenticatedQuery({
+    ...resourceQueries.mergeCandidatePreview(endpoint, id),
+    enabled,
   });
 }
 
@@ -83,3 +150,12 @@ export const useResource = USE_MOCK_DATA ? useResourceMock : useResourceReal;
 export const useResourceDetail = USE_MOCK_DATA
   ? useResourceDetailMock
   : useResourceDetailReal;
+export const useMergeCandidates = USE_MOCK_DATA
+  ? useMergeCandidatesMock
+  : useMergeCandidatesReal;
+export const useMergeCandidate = USE_MOCK_DATA
+  ? useMergeCandidateMock
+  : useMergeCandidateReal;
+export const useMergeCandidatePreview = USE_MOCK_DATA
+  ? useMergeCandidatePreviewMock
+  : useMergeCandidatePreviewReal;

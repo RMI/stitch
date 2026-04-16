@@ -75,3 +75,84 @@ export async function createLLMSuggestion(
 
   return await response.json();
 }
+
+export async function getMergeCandidates(fetcher, endpoint = "oil-gas-fields") {
+  const url = `${config.apiBaseUrl}/${endpoint}/merge-candidates`;
+  const response = await fetcher(url);
+
+  if (!response.ok) {
+    const error = new Error(`HTTP error! status: ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return await response.json();
+}
+
+export async function getMergeCandidate(
+  id,
+  fetcher,
+  endpoint = "oil-gas-fields",
+) {
+  const url = `${config.apiBaseUrl}/${endpoint}/merge-candidates/${id}`;
+  const response = await fetcher(url);
+
+  if (!response.ok) {
+    const error = new Error(`HTTP error! status: ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return await response.json();
+}
+
+export async function reviewMergeCandidate(
+  id,
+  action,
+  fetcher,
+  endpoint = "oil-gas-fields",
+  review_notes = "",
+) {
+  const url = `${config.apiBaseUrl}/${endpoint}/merge-candidates/${id}/${action}`;
+  const response = await fetcher(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ review_notes }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    let detail = text;
+
+    try {
+      detail = text ? JSON.parse(text) : null;
+    } catch {
+      // leave as text
+    }
+
+    const error = new Error(
+      typeof detail === "string" ? detail : JSON.stringify(detail, null, 2),
+    );
+    error.status = response.status;
+    throw error;
+  }
+
+  return await response.json();
+}
+
+export async function getMergeCandidatePreview(
+  id,
+  fetcher,
+  endpoint = "oil-gas-fields",
+) {
+  const url = `${config.apiBaseUrl}/${endpoint}/merge-candidates/${id}/preview`;
+  const response = await fetcher(url);
+
+  if (!response.ok) {
+    const error = new Error(`HTTP error! status: ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return await response.json();
+}
