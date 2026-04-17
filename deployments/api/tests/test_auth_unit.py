@@ -7,12 +7,12 @@ from starlette.testclient import TestClient
 
 from stitch.api.auth import validate_auth_config_at_startup
 from stitch.api.main import app
-from stitch.api.settings import Environment, Settings
+from stitch.api.settings import Settings
 from stitch.auth.settings import OIDCSettings
 
 
 def _make_settings(
-    *, auth_disabled: bool = False, environment: Environment = Environment.DEV
+    *, auth_disabled: bool = False, environment: str = "dev"
 ) -> Settings:
     """Build a Settings instance with overridden fields."""
     return Settings(
@@ -35,25 +35,42 @@ class TestValidateAuthConfigAtStartup:
 
     def test_allows_disabled_in_dev(self):
         """No error when auth_disabled=True in DEV environment."""
-        settings = _make_settings(auth_disabled=True, environment=Environment.DEV)
+        settings = _make_settings(auth_disabled=True, environment="development")
+        with patch("stitch.api.auth.get_settings", return_value=settings):
+            validate_auth_config_at_startup()
+
+    def test_allows_disabled_in_pr_environment_lowercase(self):
+        settings = _make_settings(auth_disabled=True, environment="pr-123")
+        with patch("stitch.api.auth.get_settings", return_value=settings):
+            validate_auth_config_at_startup()
+
+    def test_allows_disabled_in_pr_environment_uppercase(self):
+        settings = _make_settings(auth_disabled=True, environment="PR-123")
+        with patch("stitch.api.auth.get_settings", return_value=settings):
+            validate_auth_config_at_startup()
+
+    def test_allows_disabled_in_main(self):
+        settings = _make_settings(auth_disabled=True, environment="main")
         with patch("stitch.api.auth.get_settings", return_value=settings):
             validate_auth_config_at_startup()
 
     def test_blocks_disabled_in_prod(self):
         """RuntimeError when auth_disabled=True in PROD environment."""
-        settings = _make_settings(auth_disabled=True, environment=Environment.PROD)
+        settings = _make_settings(auth_disabled=True, environment="production")
         with patch("stitch.api.auth.get_settings", return_value=settings):
             with pytest.raises(
-                RuntimeError, match="only permitted when ENVIRONMENT=dev"
+                RuntimeError,
+                match="only permitted when ENVIRONMENT=dev",
             ):
                 validate_auth_config_at_startup()
 
     def test_blocks_disabled_in_test(self):
         """RuntimeError when auth_disabled=True in TEST environment."""
-        settings = _make_settings(auth_disabled=True, environment=Environment.TEST)
+        settings = _make_settings(auth_disabled=True, environment="TEST")
         with patch("stitch.api.auth.get_settings", return_value=settings):
             with pytest.raises(
-                RuntimeError, match="only permitted when ENVIRONMENT=dev"
+                RuntimeError,
+                match="only permitted when ENVIRONMENT=dev",
             ):
                 validate_auth_config_at_startup()
 
@@ -73,7 +90,7 @@ class TestGetTokenClaims:
 
     def test_returns_dev_claims_when_disabled(self):
         """Returns _DEV_CLAIMS when auth is disabled."""
-        settings = _make_settings(auth_disabled=True, environment=Environment.DEV)
+        settings = _make_settings(auth_disabled=True, environment="development")
         oidc_settings = _make_oidc_settings()
 
         with (

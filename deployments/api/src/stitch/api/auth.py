@@ -15,7 +15,7 @@ from stitch.auth.errors import AuthError, JWKSFetchError
 from stitch.api.db.config import UnitOfWorkDep
 from stitch.api.db.model.user import User as UserModel
 from stitch.api.entities import User
-from stitch.api.settings import Environment, get_settings
+from stitch.api.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +46,9 @@ def validate_auth_config_at_startup() -> None:
     """Called from FastAPI lifespan. Fail fast if misconfigured."""
     settings = get_settings()
     if settings.auth_disabled:
-        if settings.environment != Environment.DEV:
+        if not settings.allows_disabled_auth:
             raise RuntimeError(
-                "AUTH_DISABLED=true is only permitted when ENVIRONMENT=dev"
+                "AUTH_DISABLED=true is only permitted when ENVIRONMENT=dev, ENVIRONMENT=main, or ENVIRONMENT starts with 'pr-'"
             )
         logger.warning("Auth is disabled — all requests use dev credentials")
         return

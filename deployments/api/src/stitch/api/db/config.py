@@ -49,7 +49,7 @@ def get_engine() -> AsyncEngine:
     settings = get_settings()
     return create_async_engine(
         settings.get_database_url(),
-        echo=settings.environment != "prod",
+        echo=not settings.is_prod,
         pool_pre_ping=True,
     )
 

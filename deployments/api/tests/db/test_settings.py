@@ -159,7 +159,33 @@ class TestSettings:
         """Verify default environment is dev."""
         settings = Settings()
 
-        assert settings.environment.value == "dev"
+        assert settings.environment == "dev"
+
+    def test_environment_name_normalizes_case_and_whitespace(self):
+        settings = Settings(environment=" PR-8 ")
+
+        assert settings.environment == " PR-8 "
+        assert settings.environment_name == "pr-8"
+
+    def test_is_prod_for_prod(self):
+        settings = Settings(environment="prod")
+
+        assert settings.is_prod is True
+
+    def test_is_prod_for_production(self):
+        settings = Settings(environment="production")
+
+        assert settings.is_prod is True
+
+    def test_allows_disabled_auth_for_pr(self):
+        settings = Settings(environment="PR-8", auth_disabled=True)
+
+        assert settings.allows_disabled_auth is True
+
+    def test_allows_disabled_auth_for_next_is_false(self):
+        settings = Settings(environment="next", auth_disabled=True)
+
+        assert settings.allows_disabled_auth is False
 
     def test_default_frontend_origin_url(self, monkeypatch):
         """Verify default frontend origin URL is http://localhost:3000."""
