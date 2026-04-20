@@ -1,0 +1,45 @@
+name: Comment PR summary
+
+on:
+  workflow_call:
+
+jobs:
+  comment-summary:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Download comment JSON artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: comment-json-*
+          path: .comment-artifacts
+          merge-multiple: true
+
+      - name: Inspect downloaded comment JSON artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Downloaded comment artifacts:"
+          find .comment-artifacts -maxdepth 2 -type f | sort | sed -n '1,200p'
+
+      - name: Build summary comment
+        id: build-comment
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 .github/scripts/build_pr_summary_comment.py
+
+          echo "comment_body_path=.comment-body.md" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update summary comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-path: ${{ steps.build-comment.outputs.comment_body_path }}
