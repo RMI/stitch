@@ -157,4 +157,4 @@ jobs:
     if: ${{ always() && github.event_name == 'pull_request' }}
     uses: ./.github/workflows/comment-pr-summary.yml
     secrets: inherit
-    needs: [build_api_docker_image, build_entity_linkage_docker_image, build_seed_docker_image, deploy-db, run-db-init, deploy-api, deploy-entity-linkage, run-seed, deploy-frontend]
+    needs: [build_api_docker_image, build_entity_linkage_docker_image, build_seed_docker_image, deploy-db, run-db-init, deploy-api, deploy-entity-linkage, run-seed]
