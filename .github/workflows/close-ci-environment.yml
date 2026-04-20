@@ -130,3 +130,71 @@ jobs:
             --yes
 
           echo "Container App '$CONTAINER_APP_NAME' deleted."
+
+  delete-entity-linkage-container-app:
+    permissions:
+      id-token: write
+      contents: read
+    runs-on: ubuntu-latest
+
+    env:
+      CONTAINER_APP_NAME: ${{
+          github.event_name == 'pull_request' && format('{0}{1}', 'pr', github.event.pull_request.number) ||
+          github.ref_name
+        }}-entity-linkage
+      RESOURCE_GROUP: STITCH-DEV-RG
+
+    steps:
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure containerapp extension is available
+        run: |
+          az extension add --name containerapp --upgrade --allow-preview true
+
+      - name: Delete Container App if it exists
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Checking for Container App: $CONTAINER_APP_NAME"
+
+          EXISTS="$(
+            az containerapp show \
+              --name "$CONTAINER_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query "name" \
+              --output tsv 2>/dev/null || true
+          )"
+
+          if [ -z "$EXISTS" ]; then
+            echo "Container App '$CONTAINER_APP_NAME' does not exist. Skipping."
+            exit 0
+          fi
+
+          az containerapp delete \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --yes
+
+          echo "Container App '$CONTAINER_APP_NAME' deleted."
+
+  close-static-web-app-preview:
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      contents: read
+      id-token: write
+      pull-requests: write
+
+    steps:
+      - name: Close Azure Static Web Apps preview
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: "close"
