@@ -26,14 +26,6 @@ jobs:
           NODE_VERSION=$(node -p "process.version")
           VITE_VERSION=$(node -p "require('./deployments/stitch-frontend/package.json').devDependencies.vite")
 
-          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
-            APP_ENV="pr-${{ github.event.pull_request.number }}"
-          elif [ "${GITHUB_REF_NAME}" = "main" ]; then
-            APP_ENV="main"
-          else
-            APP_ENV="${GITHUB_REF_NAME}"
-          fi
-
           echo "VITE_APP_VERSION=${APP_VERSION}" >> "$GITHUB_ENV"
           echo "VITE_APP_VERSION=${APP_VERSION}"
           echo "VITE_BUILD_TIME=${BUILD_TIME}" >> "$GITHUB_ENV"
@@ -46,8 +38,6 @@ jobs:
           echo "VITE_NODE_VERSION=${NODE_VERSION}"
           echo "VITE_VITE_VERSION=${VITE_VERSION}" >> "$GITHUB_ENV"
           echo "VITE_VITE_VERSION=${VITE_VERSION}"
-          echo "VITE_APP_ENV=${APP_ENV}" >> "$GITHUB_ENV"
-          echo "VITE_APP_ENV=${APP_ENV}"
 
       - name: Build
         run: make frontend-build
