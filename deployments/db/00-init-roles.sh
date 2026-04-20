@@ -42,7 +42,6 @@ if [ -z "$(
     -c "CREATE ROLE stitch_migrator LOGIN PASSWORD '$MIG_ESCAPED';"
 else
   echo "stitch_migrator already exists"
-  exit 1
 fi
 
 # 2) create stitch_app
@@ -55,7 +54,6 @@ if [ -z "$(
     -c "CREATE ROLE stitch_app LOGIN PASSWORD '$APP_ESCAPED';"
 else
   echo "stitch_app already exists"
-  exit 1
 fi
 
 # 3) Grants: connect to DB (DB name is an identifier; we can use double-quoting safely via shell)

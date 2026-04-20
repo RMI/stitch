@@ -101,14 +101,14 @@ Portal → Databases
 Create database named:
 
 ```
-stitch
+<database_name>
 ```
 
 #### Verify Connectivity
 
 ```bash
-pg_isready -d stitch -U postgres -h <POSTGRES_HOST>
-psql -d stitch -U postgres -h <POSTGRES_HOST>
+pg_isready -d <database_name> -U postgres -h <POSTGRES_HOST>
+psql -d <database_name> -U postgres -h <POSTGRES_HOST>
 ```
 
 If connection fails, verify firewall rules.
@@ -118,7 +118,7 @@ If connection fails, verify firewall rules.
 #### Initialize Roles
 
 ```bash
-POSTGRES_DB=stitch \
+POSTGRES_DB=<database_name> \
     POSTGRES_USER=postgres \
     PGHOST=<POSTGRES_HOST> \
     STITCH_MIGRATOR_PASSWORD=CHANGE_ME123! \
@@ -129,8 +129,8 @@ POSTGRES_DB=stitch \
 Verify:
 
 ```bash
-psql -d stitch -U stitch_migrator -h <POSTGRES_HOST>
-psql -d stitch -U stitch_app -h <POSTGRES_HOST>
+psql -d <database_name> -U stitch_migrator -h <POSTGRES_HOST>
+psql -d <database_name> -U stitch_app -h <POSTGRES_HOST>
 ```
 
 ---
@@ -141,11 +141,10 @@ psql -d stitch -U stitch_app -h <POSTGRES_HOST>
 docker run \
   -e LOG_LEVEL='info' \
   -e POSTGRES_HOST=<POSTGRES_HOST> \
-  -e POSTGRES_USER=stitch_migrator \
-  -e POSTGRES_PASSWORD=CHANGE_ME123! \
   -e POSTGRES_PORT='5432' \
   -e POSTGRES_USER='stitch_migrator' \
   -e POSTGRES_PASSWORD='CHANGE_ME123!' \
+  -e POSTGRES_DB=<database_name> \
   --rm \
   stitch-api:latest python -m stitch.api.db.init_job
 ```
