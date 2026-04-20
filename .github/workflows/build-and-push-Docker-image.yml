@@ -1,0 +1,188 @@
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        required: true
+        type: string
+      image-tag:
+        required: true
+        type: string
+      dockerfile:
+        required: true
+        type: string
+    outputs:
+      full-image-name:
+        description: "Full pushed image name including host/registry, name, and tag"
+        value: ${{ jobs.docker-build.outputs.full-image-name }}
+      digest-image-name:
+        description: "Full pushed image name including host/registry, name, and digest"
+        value: ${{ jobs.docker-build.outputs.digest-image-name }}
+
+jobs:
+  docker-build:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    timeout-minutes: 25
+    outputs:
+      full-image-name: ${{ steps.export-outputs.outputs.full-image-name }}
+      digest-image-name: ${{ steps.export-outputs.outputs.digest-image-name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Prepare Environment
+        id: prepare-environment
+        env:
+          registry: "ghcr.io"
+          image_name: ${{ github.repository_owner }}/${{ inputs.image-name }}
+        run: |
+          NOW="$(date -u +'%Y%m%dT%H%M%SZ')"
+          BUILD_TIME="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+          echo "now=$NOW" >> "$GITHUB_OUTPUT"
+          echo "now=$NOW"
+          echo "build-time=$BUILD_TIME" >> "$GITHUB_OUTPUT"
+          echo "build-time=$BUILD_TIME"
+
+          registry_image=$(
+            echo "$registry/$image_name" | \
+            tr '[:upper:]' '[:lower:]' \
+          )
+          REGISTRY_IMAGE=${registry_image}
+          echo "registry-image=$REGISTRY_IMAGE"
+          echo "registry-image=$REGISTRY_IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Identify LABELs in dockerfile
+        id: custom-labels
+        run: |
+          DOCKERFILE_LABELS="$(grep "^LABEL" ${{ inputs.dockerfile }} | sed 's/^LABEL[[:space:]]*//')"
+          echo "$DOCKERFILE_LABELS"
+          echo "DOCKERFILE_LABELS<<EOF" >> "$GITHUB_ENV"
+          echo "$DOCKERFILE_LABELS" >> "$GITHUB_ENV"
+          echo 'EOF' >> "$GITHUB_ENV"
+          echo 'dockerfile-labels<<EOF' >> "$GITHUB_OUTPUT"
+          echo "$DOCKERFILE_LABELS" >> "$GITHUB_OUTPUT"
+          echo 'EOF' >> "$GITHUB_OUTPUT"
+
+      # Setup docker metadata, including tags and labels (and annotations)
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v6
+        env:
+          now: ${{ steps.prepare-environment.outputs.now }}
+        with:
+          images: ${{ steps.prepare-environment.outputs.registry-image }}
+          annotations: |
+            ${{ env.DOCKERFILE_LABELS }}
+          labels: |
+            ${{ env.DOCKERFILE_LABELS }}
+          tags: |
+            type=schedule,enable=true,pattern={{date 'YYYYMMDD[T]HHmmss[Z]' tz='UTC'}}
+            type=schedule,enable=true,pattern=nightly,priority=950
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=ref,event=tag
+            type=ref,event=pr
+            type=raw,value=${{ inputs.image-tag }},priority=1100
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      # Actually build the image (for a single architecture)!
+      - name: Build
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./${{ inputs.dockerfile }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            APP_VERSION=${{
+              (github.event_name == 'pull_request' && format('{0}{1}-{2}', 'pr', github.event.pull_request.number, github.event.pull_request.head.sha)) ||
+              github.ref_name
+            }}
+            BUILD_ID=gha-${{ github.run_id }}.${{ github.run_attempt }}
+            GIT_SHA=${{ github.sha }}
+            BUILD_TIME=${{ steps.prepare-environment.outputs.build-time }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
+
+      - name: Export Outputs
+        id: export-outputs
+        env:
+          build_time: ${{ steps.prepare-environment.outputs.build-time }}
+          commit_time: ${{ github.event.pull_request.updated_at || github.event.head_commit.timestamp || '' }}
+          git_sha: ${{ github.sha }}
+          head_sha: ${{ github.event.pull_request.head.sha }}
+        run: |
+          echo "DOCKER_METADATA_OUTPUT_JSON=$DOCKER_METADATA_OUTPUT_JSON"
+          jq --version
+
+          full_image_name=$(echo "$DOCKER_METADATA_OUTPUT_JSON" | jq -r '.tags[0]')
+          digest_image_name="${full_image_name%@*}@${{ steps.build.outputs.digest }}"
+
+          echo "full-image-name=$full_image_name"
+          echo "full-image-name=$full_image_name" >> "$GITHUB_OUTPUT"
+
+          echo "digest-image-name=$digest_image_name"
+          echo "digest-image-name=$digest_image_name" >> "$GITHUB_OUTPUT"
+
+          mkdir -p /tmp/comment-json
+          json_filename=$(
+            echo "comment-json-image-${{ inputs.image-name }}.json" | \
+            tr '/' '-'
+          )
+          echo "json-filename=$json_filename"
+          echo "json-filename=$json_filename" >> "$GITHUB_ENV"
+          json_file="/tmp/comment-json/$json_filename"
+          echo "json-file=$json_file"
+
+          jq \
+            -n \
+            --arg section "images" \
+            --arg kind "docker_image" \
+            --arg name "${{ inputs.image-name }}" \
+            --arg build_time "$build_time" \
+            --arg commit_time "$commit_time" \
+            --arg git_sha "$git_sha" \
+            --arg full_image_name "$full_image_name" \
+            --arg digest_image_name "$digest_image_name" \
+            '{
+              "section": $section,
+              "kind": $kind,
+              "name": $name,
+              "warnings": [],
+              "data": {
+                "build_time": $build_time,
+                "commit_time": $commit_time,
+                "git_sha": $git_sha,
+                "image": ("`" + $full_image_name + "`"),
+                "image_digest": ("`" + $digest_image_name + "`")
+              }
+            }' \
+            > "$json_file"
+
+          echo "Generated comment JSON:"
+          cat "$json_file"
+
+      - name: Upload comment JSON
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.json-filename }}
+          path: /tmp/comment-json/*
+          if-no-files-found: error
+          retention-days: 1
