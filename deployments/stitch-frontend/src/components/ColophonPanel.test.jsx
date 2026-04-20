@@ -194,9 +194,18 @@ describe("ColophonPanel", () => {
   });
 
   it("renders API docs link with correct URL", async () => {
+    vi.mocked(useAuth0).mockReturnValue({
+      isAuthenticated: false,
+      isLoading: false,
+      error: null,
+      user: null,
+      getAccessTokenSilently,
+      loginWithRedirect: vi.fn(),
+      logout: vi.fn(),
+    });
     const { default: ColophonPanel } = await import("./ColophonPanel");
 
-    render(<ColophonPanel diagnosticsOpen />);
+    render(<ColophonPanel diagnosticsOpen={false} />);
 
     const link = screen.getByRole("link", { name: "API docs" });
 
@@ -206,9 +215,18 @@ describe("ColophonPanel", () => {
 
   it("renders unavailable state when API docs URL cannot be derived", async () => {
     mockConfig.apiBaseUrl = "http://localhost:8000";
+    vi.mocked(useAuth0).mockReturnValue({
+      isAuthenticated: false,
+      isLoading: false,
+      error: null,
+      user: null,
+      getAccessTokenSilently,
+      loginWithRedirect: vi.fn(),
+      logout: vi.fn(),
+    });
     const { default: ColophonPanel } = await import("./ColophonPanel");
 
-    render(<ColophonPanel diagnosticsOpen />);
+    render(<ColophonPanel diagnosticsOpen={false} />);
 
     expect(screen.getByText("API docs unavailable")).toBeInTheDocument();
     expect(
