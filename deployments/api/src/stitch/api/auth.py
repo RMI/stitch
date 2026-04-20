@@ -48,7 +48,7 @@ def validate_auth_config_at_startup() -> None:
     if settings.auth_disabled:
         if not settings.allows_disabled_auth:
             raise RuntimeError(
-                "AUTH_DISABLED=true is only permitted when ENVIRONMENT=dev, ENVIRONMENT=main, or ENVIRONMENT starts with 'pr-'"
+                "AUTH_DISABLED=true is only permitted when ENVIRONMENT is one of dev, development, main, or starts with dev-* or pr-*."
             )
         logger.warning("Auth is disabled — all requests use dev credentials")
         return
