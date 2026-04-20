@@ -60,7 +60,7 @@ class TestValidateAuthConfigAtStartup:
         with patch("stitch.api.auth.get_settings", return_value=settings):
             with pytest.raises(
                 RuntimeError,
-                match="only permitted when ENVIRONMENT=dev",
+                match="AUTH_DISABLED=true is only permitted when ENVIRONMENT is one of",
             ):
                 validate_auth_config_at_startup()
 
@@ -70,7 +70,7 @@ class TestValidateAuthConfigAtStartup:
         with patch("stitch.api.auth.get_settings", return_value=settings):
             with pytest.raises(
                 RuntimeError,
-                match="only permitted when ENVIRONMENT=dev",
+                match="AUTH_DISABLED=true is only permitted when ENVIRONMENT is one of",
             ):
                 validate_auth_config_at_startup()
 
