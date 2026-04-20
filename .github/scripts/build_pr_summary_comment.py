@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from os import getenv
 
 
 def build_comment_body(root: Path) -> str:
@@ -31,7 +32,7 @@ def build_comment_body(root: Path) -> str:
 
     short_sha = ""
     for item in items:
-        git_sha = str(item.get("data", {}).get("git_sha", "")).strip()
+        git_sha = str(getenv("HEAD_SHA")).strip()
         if git_sha:
             short_sha = git_sha[:7]
             break

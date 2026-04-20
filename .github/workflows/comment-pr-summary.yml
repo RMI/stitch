@@ -31,6 +31,8 @@ jobs:
       - name: Build summary comment
         id: build-comment
         shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
 
