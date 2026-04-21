@@ -13,14 +13,16 @@ def build_comment_body(root: Path) -> str:
     print("Parsing comment artifact files:")
     for path in files:
         print(f" - {path}")
+        text = None
         try:
             text = path.read_text()
             items.append(json.loads(text))
         except Exception as exc:
             parse_warnings.append(f"{path.name}: failed to parse JSON ({exc})")
             print(f"   ERROR parsing {path}: {exc}")
-            print("   File contents:")
-            print(text)
+            if text is not None:
+                print("   File contents:")
+                print(text)
 
     warnings = list(parse_warnings)
     sections = {}
