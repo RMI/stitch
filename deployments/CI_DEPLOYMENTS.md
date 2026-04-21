@@ -27,8 +27,27 @@ Permissions for Azure Resources are handled through a managed identity, which GH
 Actions runners use with `Azure/login` step.
 For this repo, we're using `GHActions-stitch-cicd`.
 
-Note that a federated identity record for the GH repository needs to be added to
-the MSI
+The repo secrets must point at that exact identity:
+
+* `AZURE_CLIENT_ID`: managed identity client ID
+* `AZURE_SUBSCRIPTION_ID`: Azure subscription containing the target resources
+* `AZURE_TENANT_ID`: tenant for the managed identity
+
+Note that federated identity records for this GitHub repository need to be
+added to the managed identity. For the current workflows, the required subjects
+are:
+
+* `repo:RMI/stitch:pull_request`
+* `repo:RMI/stitch:ref:refs/heads/main`
+
+All federated credential fields must match exactly:
+
+* Issuer: `https://token.actions.githubusercontent.com`
+* Audience: `api://AzureADTokenExchange`
+* Subject: case-sensitive exact match
+
+If Azure starts returning `AADSTS7002138`, recreating the affected federated
+credential is usually faster than editing it in place.
 
 Roles for MSI:
 
@@ -55,9 +74,9 @@ In Repo settings, under "Secrets and variables"/"Actions", add:
 
 ### Secrets
 
-* `AZURE_CLIENT_ID`: For Managed Identity
-* `AZURE_SUBSCRIPTION_ID`: For Managed Identity
-* `AZURE_TENANT_ID`: For Managed Identity
+* `AZURE_CLIENT_ID`: Client ID for `GHActions-stitch-cicd`
+* `AZURE_SUBSCRIPTION_ID`: Subscription for the target Azure resources
+* `AZURE_TENANT_ID`: Tenant for `GHActions-stitch-cicd`
 * `PGPASSWORD_DEV`: superuser (`postgres`) password for DB
 * `STITCH_APP_PASSWORD_DEV`: password that API user will connect to DB
 * `STITCH_MIGRATOR_PASSWORD_DEV`: password that migrator user will connect to DB
