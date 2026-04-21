@@ -267,3 +267,56 @@ class TestBaseQuerySortAndPagination:
         """OGFieldSortParams with invalid sort_by raises ValidationError."""
         with pytest.raises(Exception):
             OGFieldSortParams(sort_by="owners")
+
+
+class TestBaseQueryDistinctValues:
+    """Tests for distinct text value helper used by filter option endpoints."""
+
+    @pytest.mark.anyio
+    async def test_distinct_values_returns_sorted_unique_strings(
+        self,
+        seeded_integration_session,
+        seeded_sources,
+    ):
+        values = await OilGasFieldSourceModel.distinct_values(
+            seeded_integration_session,
+            "region",
+        )
+        assert values == ["Alaska", "Texas"]
+
+    @pytest.mark.anyio
+    async def test_distinct_values_excludes_null_and_blank(
+        self,
+        seeded_integration_session,
+        seeded_sources,
+        test_user,
+    ):
+        seeded_integration_session.add(
+            OilGasFieldSourceModel(
+                source="gem",
+                name="Blank Region Field",
+                country="USA",
+                region="",
+                created_by_id=test_user.id,
+                last_updated_by_id=test_user.id,
+            )
+        )
+        await seeded_integration_session.flush()
+
+        values = await OilGasFieldSourceModel.distinct_values(
+            seeded_integration_session,
+            "region",
+        )
+        assert values == ["Alaska", "Texas"]
+
+    @pytest.mark.anyio
+    async def test_distinct_values_for_state_province(
+        self,
+        seeded_integration_session,
+        seeded_sources,
+    ):
+        values = await OilGasFieldSourceModel.distinct_values(
+            seeded_integration_session,
+            "state_province",
+        )
+        assert values == ["New Mexico"]

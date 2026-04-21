@@ -7,6 +7,8 @@ from stitch.api.entities import (
     MergeCandidateCreateRequest,
     MergeCandidateReviewRequest,
     MergeCandidateView,
+    OGFieldFilterOptionField,
+    OGFieldFilterOptionsResponse,
     OGFieldMergePreviewView,
     OGFieldQueryParams,
     PaginatedResponse,
@@ -58,6 +60,19 @@ async def get_all_resources(
         total_count=total_count,
         page=params.page,
         page_size=params.page_size,
+    )
+
+
+@router.get("/filter-options", response_model=OGFieldFilterOptionsResponse)
+async def get_filter_options(
+    *,
+    uow: UnitOfWorkDep,
+    _user: CurrentUser,
+    field: OGFieldFilterOptionField,
+) -> OGFieldFilterOptionsResponse:
+    return await resource_actions.get_filter_options(
+        session=uow.session,
+        field=field,
     )
 
 

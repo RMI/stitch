@@ -15,7 +15,11 @@ from stitch.api.db.errors import (
 )
 from stitch.api.auth import CurrentUser
 from stitch.api.db.model.resource_coalesced_view import ResourceCoalescedView
-from stitch.api.entities import OGFieldQueryParams
+from stitch.api.entities import (
+    OGFieldFilterOptionField,
+    OGFieldFilterOptionsResponse,
+    OGFieldQueryParams,
+)
 from stitch.api.db.og_field_source_actions import (
     attach_sources_to_resource,
     get_or_create_sources,
@@ -59,6 +63,15 @@ async def query(
         items.append(OGFieldListItemView(id=v.id, data=data, provenance=provenance))
 
     return items, total
+
+
+async def get_filter_options(
+    session: AsyncSession,
+    field: OGFieldFilterOptionField,
+) -> OGFieldFilterOptionsResponse:
+    """Return distinct, non-null, non-empty values for a supported filter field."""
+    values = await ResourceCoalescedView.distinct_values(session, field)
+    return OGFieldFilterOptionsResponse(field=field, values=values)
 
 
 async def _load_provenance(

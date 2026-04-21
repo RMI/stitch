@@ -80,6 +80,12 @@ SortableField = Literal[
     "longitude",
 ]
 
+OGFieldFilterOptionField = Literal[
+    "region",
+    "basin",
+    "state_province",
+]
+
 
 class OGFieldFilterParams(BaseModel):
     q: str | None = None
@@ -103,6 +109,11 @@ class OGFieldSortParams(BaseModel):
 
 class OGFieldQueryParams(PaginationParams, OGFieldFilterParams, OGFieldSortParams):
     source: OGSISrcKey | None = None
+
+
+class OGFieldFilterOptionsResponse(BaseModel):
+    field: OGFieldFilterOptionField
+    values: list[str]
 
 
 class MergeCandidateStatus(StrEnum):

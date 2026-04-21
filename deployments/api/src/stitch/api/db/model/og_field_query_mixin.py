@@ -20,7 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, declarative_mixin, mapped_column
 
-from stitch.api.entities import OGFieldQueryParams
+from stitch.api.entities import OGFieldFilterOptionField, OGFieldQueryParams
 from stitch.ogsi.model import LocationType
 from stitch.ogsi.model.types import (
     FieldStatus,
@@ -123,6 +123,24 @@ class OGFieldQueryMixin:
         else:
             stmt = select(func.count()).select_from(cls._base_query(params).subquery())
         return await session.scalar(stmt) or 0
+
+    @classmethod
+    async def distinct_values(
+        cls,
+        session: AsyncSession,
+        field: OGFieldFilterOptionField,
+    ) -> list[str]:
+        """Return distinct non-null, non-empty values for a supported text field."""
+        col = getattr(cls, field)
+
+        stmt = (
+            select(col)
+            .where(col.is_not(None))
+            .where(col != "")
+            .distinct()
+            .order_by(asc(col))
+        )
+        return list((await session.scalars(stmt)).all())
 
     # ------------------------------------------------------------------
     # Internal helpers (overridable)
