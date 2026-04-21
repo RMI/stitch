@@ -4,8 +4,6 @@ name: Close CI environment
 on:
   pull_request:
     types: [closed]
-    branches:
-      - main
   workflow_call:
 
 jobs:
