@@ -55,37 +55,6 @@ jobs:
       container-app-fqdn: ${{ steps.export-app-url.outputs.container_app_fqdn }}
 
     steps:
-      - name: Dump OIDC claims
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
-            echo "GitHub OIDC request variables are unavailable"
-            exit 1
-          fi
-
-          response="$(
-            curl -sS \
-              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=api://AzureADTokenExchange"
-          )"
-
-          token="$(echo "$response" | jq -r '.value')"
-          if [ -z "$token" ] || [ "$token" = "null" ]; then
-            echo "Failed to mint GitHub OIDC token"
-            echo "$response" | jq .
-            exit 1
-          fi
-
-          payload_b64="$(echo "$token" | cut -d '.' -f2)"
-          payload_json="$(
-            python3 -c 'import base64, json, sys; payload = sys.argv[1]; padding = "=" * (-len(payload) % 4); obj = json.loads(base64.urlsafe_b64decode(payload + padding)); keys = ["iss", "aud", "sub", "repository", "repository_owner", "ref", "sha", "event_name", "job_workflow_ref"]; print(json.dumps({k: obj.get(k) for k in keys}, indent=2, sort_keys=True))' "$payload_b64"
-          )"
-
-          echo "GitHub OIDC token claims:"
-          echo "$payload_json"
-
       - name: Azure login
         uses: azure/login@v3
         with:
