@@ -1,21 +1,21 @@
 # CI/CD Deployments
 
-The CD pipeline is managed by the github workflow `build-and-deploy.yml`.
+The CD pipeline is managed by the GitHub workflow `build-and-deploy.yml`.
 
-It builds:
-* the docker images for:
-    * `api` (which is also used for DB migration)
-    * `entity-linkage,`
-    * `seed`, 
+It builds Docker images for:
 
-It then handles deployments:
+* `api` (also used for DB migration)
+* `entity-linkage`
+* `seed`
 
-* DB (assumes an existing Azure PostgreSQL flexible host)
-* API Container app (Assumes an existing Container Apps environment)
-* entity-linkage Container app (deploys to same environment)
+It then handles deployments for:
 
-Note that for PR Preview environments, all preview databases are on the same
-shared Postgres Host, and the container apps are all in the same dev ACA
+* the database, assuming an existing Azure PostgreSQL flexible server
+* the API Container App, assuming an existing Container Apps environment
+* the entity-linkage Container App in the same environment
+
+For PR preview environments, all preview databases are on the same shared
+Postgres host, and the container apps are all in the same dev ACA
 environment.
 
 It also handles running `db-init` (`api` container with different script) and
@@ -49,28 +49,15 @@ All federated credential fields must match exactly:
 If Azure starts returning `AADSTS7002138`, recreating the affected federated
 credential is usually faster than editing it in place.
 
-Roles for MSI:
+Managed identity roles:
 
-Reader
- stitch-dev
-Container Apps Environment
-GHActions-stitch-cicd
-
-Reader
- STITCH-DEV-RG
-Resource Group
-GHActions-stitch-cicd
-
-Container Apps Contributor
- STITCH-DEV-RG
-Resource Group
-GHActions-stitch-cicd
+* `Reader` on `stitch-dev` (Container Apps Environment)
+* `Reader` on `STITCH-DEV-RG` (Resource Group)
+* `Container Apps Contributor` on `STITCH-DEV-RG` (Resource Group)
 
 ## Setup Notes
 
-Setting up Secrets:
-
-In Repo settings, under "Secrets and variables"/"Actions", add:
+In repo settings, under `Secrets and variables` > `Actions`, add:
 
 ### Secrets
 
