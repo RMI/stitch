@@ -80,28 +80,7 @@ jobs:
 
           payload_b64="$(echo "$token" | cut -d '.' -f2)"
           payload_json="$(
-            python3 - <<'PY' "$payload_b64"
-              import base64
-              import json
-              import sys
-
-              payload = sys.argv[1]
-              padding = '=' * (-len(payload) % 4)
-              decoded = base64.urlsafe_b64decode(payload + padding)
-              obj = json.loads(decoded)
-              keys = [
-                  "iss",
-                  "aud",
-                  "sub",
-                  "repository",
-                  "repository_owner",
-                  "ref",
-                  "sha",
-                  "event_name",
-                  "job_workflow_ref",
-              ]
-              print(json.dumps({k: obj.get(k) for k in keys}, indent=2, sort_keys=True))
-              PY
+            python3 -c 'import base64, json, sys; payload = sys.argv[1]; padding = "=" * (-len(payload) % 4); obj = json.loads(base64.urlsafe_b64decode(payload + padding)); keys = ["iss", "aud", "sub", "repository", "repository_owner", "ref", "sha", "event_name", "job_workflow_ref"]; print(json.dumps({k: obj.get(k) for k in keys}, indent=2, sort_keys=True))' "$payload_b64"
           )"
 
           echo "GitHub OIDC token claims:"
