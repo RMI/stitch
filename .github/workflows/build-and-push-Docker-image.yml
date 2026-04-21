@@ -180,7 +180,7 @@ jobs:
           cat "$json_file"
 
       - name: Upload comment JSON
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.json-filename }}
           path: /tmp/comment-json/*
