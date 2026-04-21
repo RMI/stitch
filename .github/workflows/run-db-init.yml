@@ -1,0 +1,101 @@
+---
+on:
+  workflow_call:
+    inputs:
+      full-image-name:
+        description: "Full pushed image name including host/registry, name, and digest"
+        required: true
+        type: string
+      postgres-host:
+        required: true
+        type: string
+      postgres-port:
+        required: false
+        default: "5432"
+        type: string
+      postgres-db:
+        required: true
+        type: string
+      postgres-sslmode:
+        required: false
+        default: "require"
+        type: string
+
+name: Run DB Init
+
+jobs:
+  run-db-init:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    timeout-minutes: 25
+
+    steps:
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Pull init image
+        run: docker pull "${{ inputs.full-image-name }}"
+
+      - name: Run DB init job
+        env:
+          LOG_LEVEL: info
+          POSTGRES_HOST: ${{ inputs.postgres-host }}
+          POSTGRES_PORT: ${{ inputs.postgres-port }}
+          POSTGRES_DB: ${{ inputs.postgres-db }}
+          POSTGRES_USER: stitch_migrator
+          POSTGRES_PASSWORD: ${{ secrets.STITCH_MIGRATOR_PASSWORD_DEV }}
+          PGSSLMODE: ${{ inputs.postgres-sslmode }}
+        run: |
+          set -euo pipefail
+
+          docker run --rm \
+            -e LOG_LEVEL \
+            -e POSTGRES_HOST \
+            -e POSTGRES_PORT \
+            -e POSTGRES_DB \
+            -e POSTGRES_USER \
+            -e POSTGRES_PASSWORD \
+            -e PGSSLMODE \
+            "${{ inputs.full-image-name }}" \
+            python -m stitch.api.db.init_job
+
+
+      - name: Write comment JSON
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/comment-json
+          json_file="/tmp/comment-json/comment-json-db-init.json"
+
+          jq -n \
+            --arg section "jobs" \
+            --arg kind "db_init" \
+            --arg name "db-init" \
+            --arg job "db-init" \
+            --arg image '`${{ inputs.full-image-name }}`' \
+            --arg postgres_db '`${{ inputs.postgres-db }}`' \
+            '{
+              "section": $section,
+              "kind": $kind,
+              "name": $name,
+              "warnings": [],
+              "data": {
+                "job": $job,
+                "image": $image,
+                "postgres_db": $postgres_db
+              }
+            }' > "$json_file"
+
+          jq empty "$json_file"
+          cat "$json_file"
+
+      - name: Upload comment JSON artifact
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: comment-json-db-init
+          path: /tmp/comment-json/*.json
+          if-no-files-found: error

@@ -1,0 +1,166 @@
+---
+on:
+  workflow_call:
+    outputs:
+      postgres-host:
+        description: "Database server hostname"
+        value: ${{ jobs.create-db.outputs.postgres-host }}
+      postgres-port:
+        description: "Database server port"
+        value: ${{ jobs.create-db.outputs.postgres-port }}
+      postgres-db:
+        description: "Database name"
+        value: ${{ jobs.create-db.outputs.postgres-db }}
+      postgres-user:
+        description: "Application database user"
+        value: ${{ jobs.create-db.outputs.postgres-user }}
+
+name: Create Database
+
+jobs:
+  create-db:
+    runs-on: ubuntu-latest
+    outputs:
+      postgres-host: ${{ steps.export-db-config.outputs.postgres-host }}
+      postgres-port: ${{ steps.export-db-config.outputs.postgres-port }}
+      postgres-db: ${{ steps.export-db-config.outputs.postgres-db }}
+      postgres-user: ${{ steps.export-db-config.outputs.postgres-user }}
+
+    env:
+      PGHOST: ${{ vars.PGHOST_DEV }}
+      PGPORT: ${{ vars.PGPORT || '5432' }}
+      PGUSER: ${{ vars.PGUSER_DEV || 'postgres' }}
+      PGPASSWORD: ${{ secrets.PGPASSWORD_DEV }}
+      PGSSLMODE: ${{ vars.PGSSLMODE || 'require' }}
+      PGDATABASE: ${{ vars.PGDATABASE || 'postgres' }}
+      DB_NAME_RAW: ${{
+          (github.event_name == 'push' && github.ref_name) ||
+          (github.event_name == 'pull_request' && github.base_ref == 'production' && github.head_ref) ||
+          (github.event_name == 'pull_request' && format('{0}-{1}', 'pr', github.event.pull_request.number)) ||
+          github.ref_name
+        }}
+
+    steps:
+      - name: Install psql client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Normalize DB name
+        id: normalize-name
+        run: |
+          set -euox pipefail
+          RAW_NAME="${DB_NAME_RAW}"
+          # Lowercase
+          CLEAN=$(echo "$RAW_NAME" | tr '[:upper:]' '[:lower:]')
+          # Replace anything not a-z, 0-9, or underscore with underscore
+          CLEAN=$(echo "$CLEAN" | sed -E 's/[^a-z0-9_]/_/g')
+          # Trim to 63 chars (Postgres identifier limit)
+          CLEAN=$(echo "$CLEAN" | cut -c1-63)
+          echo "db-name=$CLEAN" >> "$GITHUB_OUTPUT"
+
+      - name: Export DB config
+        id: export-db-config
+        run: |
+          set -euo pipefail
+          echo "postgres-host=${PGHOST}" >> "$GITHUB_OUTPUT"
+          echo "postgres-port=${PGPORT}" >> "$GITHUB_OUTPUT"
+          echo "postgres-db=${{ steps.normalize-name.outputs.db-name }}" >> "$GITHUB_OUTPUT"
+          echo "postgres-user=stitch_app" >> "$GITHUB_OUTPUT"
+
+      - name: Drop database on push to main
+        if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+        env:
+          DB_NAME: ${{ steps.normalize-name.outputs.db-name }}
+        run: |
+          set -euo pipefail
+
+          echo "Target server: $PGHOST"
+          echo "Resetting DB: $DB_NAME"
+
+          EXISTS=$(psql -X -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" || true)
+
+          if [ "$EXISTS" = "1" ]; then
+            psql -X -v ON_ERROR_STOP=1 -c "
+              SELECT pg_terminate_backend(pid)
+              FROM pg_stat_activity
+              WHERE datname = '${DB_NAME}'
+                AND pid <> pg_backend_pid();
+            "
+
+            psql -X -v ON_ERROR_STOP=1 -c "DROP DATABASE \"${DB_NAME}\";"
+            echo "Database '$DB_NAME' dropped."
+          else
+            echo "Database '$DB_NAME' does not exist. Nothing to drop."
+          fi
+
+      - name: Create database if it doesn't exist
+        env:
+          DB_NAME: ${{ steps.normalize-name.outputs.db-name }}
+        run: |
+          set -euo pipefail
+
+          echo "Target server: $PGHOST"
+          echo "Creating DB: $DB_NAME"
+
+          # Check existence first (CREATE DATABASE doesn't support IF NOT EXISTS)
+          EXISTS=$(psql -X -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" || true)
+
+          if [ "$EXISTS" = "1" ]; then
+            echo "Database '$DB_NAME' already exists. Skipping."
+          else
+            psql -X -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"${DB_NAME}\";"
+            echo "Database '$DB_NAME' created."
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Run DB initialization script
+        env:
+          POSTGRES_DB: ${{ steps.normalize-name.outputs.db-name }}
+          POSTGRES_USER: ${{ env.PGUSER }}
+          STITCH_MIGRATOR_PASSWORD: ${{ secrets.STITCH_MIGRATOR_PASSWORD_DEV }}
+          STITCH_APP_PASSWORD: ${{ secrets.STITCH_APP_PASSWORD_DEV }}
+        run: deployments/db/00-init-roles.sh
+
+
+      - name: Write comment JSON
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/comment-json
+          json_file="/tmp/comment-json/comment-json-db-deploy.json"
+
+          jq -n \
+            --arg section "database" \
+            --arg kind "postgres_database" \
+            --arg name "db" \
+            --arg db_name "${{ steps.normalize-name.outputs.db-name }}" \
+            --arg postgres_host "\`${PGHOST}\`" \
+            --arg postgres_port "\`${PGPORT}\`" \
+            --arg postgres_db "\`${{ steps.normalize-name.outputs.db-name }}\`" \
+            '{
+              "section": $section,
+              "kind": $kind,
+              "name": $name,
+              "warnings": [],
+              "data": {
+                "db_name": $db_name,
+                "postgres_host": $postgres_host,
+                "postgres_port": $postgres_port,
+                "postgres_db": $postgres_db
+              }
+            }' > "$json_file"
+
+          jq empty "$json_file"
+          cat "$json_file"
+
+      - name: Upload comment JSON artifact
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: comment-json-db-deploy
+          path: /tmp/comment-json/*.json
+          if-no-files-found: error
