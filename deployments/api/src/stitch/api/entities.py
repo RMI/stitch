@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, computed_field
 
+from stitch.ogsi.model import GEM_SRC, LLM_SRC, RMI_SRC, WM_SRC
 from stitch.ogsi.model.types import (
     FieldStatus,
     LocationType,
@@ -78,6 +79,7 @@ SortableField = Literal[
     "fid_year",
     "latitude",
     "longitude",
+    "resource_id",
 ]
 
 
@@ -102,7 +104,9 @@ class OGFieldSortParams(BaseModel):
 
 
 class OGFieldQueryParams(PaginationParams, OGFieldFilterParams, OGFieldSortParams):
-    source: OGSISrcKey | None = None
+    source: list[OGSISrcKey, ...] = Field(
+        default_factory=[RMI_SRC, GEM_SRC, WM_SRC, LLM_SRC]
+    )
 
 
 class MergeCandidateStatus(StrEnum):

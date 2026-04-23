@@ -2,9 +2,9 @@ from collections.abc import Sequence
 from itertools import groupby
 
 from fastapi import HTTPException
-from sqlalchemy import Row, select
+from sqlalchemy import Row, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import base, selectinload
 from starlette.status import HTTP_404_NOT_FOUND
 
 from stitch.api.coalesce import ProvAttrs, coalesce_og_field_resource
@@ -20,7 +20,7 @@ from stitch.api.db.og_field_source_actions import (
     attach_sources_to_resource,
     get_or_create_sources,
 )
-from stitch.ogsi.model import OGFieldListItemView, OGFieldResource
+from stitch.ogsi.model import OGFieldListItemView, OGFieldResource, OGFieldSource
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
 
@@ -32,6 +32,63 @@ from .model import (
     ResourceModel,
 )
 from .utils import resource_model_to_entity
+
+
+async def query_no_view(
+    session: AsyncSession, params: OGFieldQueryParams
+) -> tuple[list[OGFieldListItemView], int]:
+    """Query Oil & Gas Fields based on passed `params`.
+
+    Args:
+        session: the db sessionn
+        params: the query params
+
+    Returns:
+        2 tuple of the OG Field View items and total count
+    """
+    # get the base `source` subquery
+    # select distinct * from sources src
+    # join memberships m on m.source_pk = src.id
+    # where m.status = active and src.source not in params.hide_sources
+
+    """
+    select res.id as resource_id, src_p.priority as priority, src.*
+    from og_field_resources res
+    join og_field_memberships m on m.resource_id = res.id
+    join oil_gas_field_sources src on m.source_pk = src.id
+    join og_field_source_priority src_p on src_p.source = src.source
+    where m.status = "ACTIVE" and res.repointed_id = NULL and src.source NOT IN ("wm",)
+    order by priority asc;
+
+    (select src.*, mem.resource_id
+    from oil_gas_field_sources src
+    join og_field_memberships mem on mem.source_pk = src.id
+    where mem.status = "ACTIVE" and src.source not in ("wm",) and 
+    ) as filtered_sources
+    """
+    # don't need priorities because this is purely for getting an accurate query & count
+    # coalesce happens after we actually fetch via limit + offset
+    # base query select the unique resource ids
+    base_query = (
+        select(
+            ResourceModel.id.label("id").distinct(),
+        )
+        .join(MembershipModel, MembershipModel.resource_id == ResourceModel.id)
+        .join(
+            OilGasFieldSourceModel,
+            MembershipModel.source_pk == OilGasFieldSourceModel.id,
+        )
+        .where(
+            ResourceModel.repointed_id.is_(None),
+            MembershipModel.status == MembershipStatus.ACTIVE,
+        )
+        # apply the query params to the source table
+        .where(*OilGasFieldSourceModel.construct_query_clauses(params))
+    )
+    q_count = select(func.count()).select_from(
+        base_query.distinct(base_query.c.id).subquery()
+    )
+    total = await session.execute(q_count)
 
 
 async def query(

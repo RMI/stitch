@@ -4,11 +4,7 @@ from collections.abc import Sequence
 from typing import Any, ClassVar, override
 
 from pydantic import TypeAdapter
-from sqlalchemy import (
-    JSON,
-    inspect,
-    select,
-)
+from sqlalchemy import JSON, inspect, select, ColumnElement, or_
 from sqlalchemy.orm import Mapped, mapped_column
 from stitch.ogsi.model import OGFieldSource, OilGasOperator, OilGasOwner
 from stitch.ogsi.model.types import (
@@ -23,7 +19,6 @@ from stitch.api.db.model.types import PORTABLE_BIGINT
 from stitch.api.entities import OGFieldQueryParams, User
 
 from .common import Base
-from .membership import MembershipModel, MembershipStatus
 from .mixins import TimestampMixin, UserAuditMixin
 from .og_field_query_mixin import OGFieldQueryMixin
 
@@ -34,6 +29,7 @@ class OilGasFieldSourceModel(OGFieldQueryMixin, TimestampMixin, UserAuditMixin, 
     type_adapter: ClassVar[TypeAdapter[OGFieldSource]] = TypeAdapter(OGFieldSource)
 
     __tablename__: str = "oil_gas_field_sources"
+    __primary_sort_col__ = "id"
 
     id: Mapped[int] = mapped_column(PORTABLE_BIGINT, primary_key=True)
 
@@ -47,18 +43,41 @@ class OilGasFieldSourceModel(OGFieldQueryMixin, TimestampMixin, UserAuditMixin, 
     @classmethod
     @override
     def _base_query(cls, params: OGFieldQueryParams):
-        """Filter to sources with at least one active membership."""
+        """Create the necessary query statement to filter to sources based on the passed params."""
 
-        active_membership = (
-            select(1)
-            .where(MembershipModel.source_pk == cls.id)
-            .where(MembershipModel.status == MembershipStatus.ACTIVE)
-            .exists()
-        )
-        stmt = select(cls).where(active_membership)
+        stmt = select(cls)
         for cond in cls._build_conditions(params):
             stmt = stmt.where(cond)
         return cls._apply_sort(stmt, params)
+
+    @classmethod
+    def construct_query_clauses(
+        cls, params: OGFieldQueryParams
+    ) -> list[ColumnElement[bool]]:
+        """Build WHERE conditions from filter params."""
+        conditions: list[ColumnElement[bool]] = []
+
+        if params.q:
+            q_term = f"%{params.q}%"
+            q_conds: list[ColumnElement[bool]] = []
+            for field_name in cls._q_fields:
+                col: ColumnElement[bool] | None = getattr(cls, field_name, None)
+                if col is not None:
+                    q_conds.append(col.ilike(q_term))
+            if q_conds:
+                conditions.append(or_(*q_conds))
+
+        for field_name in cls._exact_match_fields:
+            value = getattr(params, field_name, None)
+            if value is not None:
+                col = getattr(cls, field_name, None)
+                if col is not None:
+                    conditions.append(col == value)
+
+        if params.exclude_sources and len(params.exclude_sources) > 0:
+            conditions.append(cls.source.not_in(params.exclude_sources))
+
+        return conditions
 
     @classmethod
     def create(
