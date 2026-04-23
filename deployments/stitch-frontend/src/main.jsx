@@ -19,10 +19,12 @@ const queryClient = new QueryClient({
   },
 });
 
+const root = createRoot(document.getElementById("root"));
+
 async function bootstrap() {
   const config = await loadConfig();
 
-  createRoot(document.getElementById("root")).render(
+  root.render(
     <StrictMode>
       <ConfigProvider config={config}>
         <Auth0Provider
@@ -50,7 +52,7 @@ async function bootstrap() {
 bootstrap().catch((error) => {
   console.error("Failed to bootstrap app:", error);
 
-  createRoot(document.getElementById("root")).render(
+  root.render(
     <StrictMode>
       <div style={{ padding: "1rem", fontFamily: "sans-serif" }}>
         <h1>Configuration error</h1>
