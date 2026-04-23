@@ -1,6 +1,6 @@
 import { useState } from "react";
 import ColophonPanel from "./ColophonPanel";
-import { getConfig } from "../config/env";
+import { useConfig } from "../config/context";
 
 function normalizeEnvLabel(value) {
   return (value ?? "").trim();
@@ -30,7 +30,7 @@ function getBannerClasses(label) {
 }
 
 export default function EnvironmentBanner() {
-  const config = getConfig();
+  const config = useConfig();
   const [isOpen, setIsOpen] = useState(false);
   const label = normalizeEnvLabel(config.appEnv);
 

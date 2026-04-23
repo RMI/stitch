@@ -1,33 +1,29 @@
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setConfigForTests } from "../config/env";
+import { renderWithQueryClient } from "../test/utils";
 
-const mockConfig = vi.hoisted(() => ({
-  appEnv: "local",
-  apiBaseUrl: "http://localhost:8000/api/v1",
-  entityLinkageBaseUrl: "http://localhost:8001/api/v1",
-  auth0: {
-    domain: "example.auth0.com",
-    clientId: "client-id",
-    audience: "https://stitch-api.local",
-  },
-  build: {
-    appVersion: "0.0.0",
-    buildId: "local-build",
-    gitSha: "abcdef123456",
-    nodeVersion: "v20.0.0",
-    viteVersion: "^7.2.4",
-    buildTime: "2026-04-06T12:00:00Z",
-  },
-}));
-
-vi.mock("../config/env", async (importOriginal) => {
-  const actual = await importOriginal();
+function createMockConfig() {
   return {
-    ...actual,
-    getConfig: vi.fn(() => mockConfig),
+    appEnv: "local",
+    apiBaseUrl: "http://localhost:8000/api/v1",
+    entityLinkageBaseUrl: "http://localhost:8001/api/v1",
+    auth0: {
+      domain: "example.auth0.com",
+      clientId: "client-id",
+      audience: "https://stitch-api.local",
+    },
+    build: {
+      appVersion: "0.0.0",
+      buildId: "local-build",
+      gitSha: "abcdef123456",
+      nodeVersion: "v20.0.0",
+      viteVersion: "^7.2.4",
+      buildTime: "2026-04-06T12:00:00Z",
+    },
   };
-});
+}
 
 vi.mock("./ColophonPanel", () => ({
   default: ({ diagnosticsOpen }) => (
@@ -38,14 +34,17 @@ vi.mock("./ColophonPanel", () => ({
 }));
 
 describe("EnvironmentBanner", () => {
+  let mockConfig;
+
   beforeEach(() => {
-    mockConfig.appEnv = "local";
+    mockConfig = createMockConfig();
+    setConfigForTests(mockConfig);
   });
 
   it("renders for a non-production environment", async () => {
     const { default: EnvironmentBanner } = await import("./EnvironmentBanner");
 
-    render(<EnvironmentBanner />);
+    renderWithQueryClient(<EnvironmentBanner />);
 
     expect(screen.getByText("LOCAL Environment")).toBeInTheDocument();
     expect(
@@ -55,10 +54,13 @@ describe("EnvironmentBanner", () => {
   });
 
   it("hides entirely for production", async () => {
-    mockConfig.appEnv = "production";
+    setConfigForTests({
+      ...createMockConfig(),
+      appEnv: "production",
+    });
     const { default: EnvironmentBanner } = await import("./EnvironmentBanner");
 
-    const { container } = render(<EnvironmentBanner />);
+    const { container } = renderWithQueryClient(<EnvironmentBanner />);
 
     expect(container).toBeEmptyDOMElement();
   });
@@ -67,7 +69,7 @@ describe("EnvironmentBanner", () => {
     const user = userEvent.setup();
     const { default: EnvironmentBanner } = await import("./EnvironmentBanner");
 
-    render(<EnvironmentBanner />);
+    renderWithQueryClient(<EnvironmentBanner />);
 
     const toggle = screen.getByRole("button", { name: "Show diagnostics" });
 

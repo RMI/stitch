@@ -13,10 +13,10 @@ import {
   DEFAULT_PAGE_SIZE,
   DEFAULT_PAGE,
 } from "../queries/resources";
-import { getConfig } from "../config/env";
+import { useConfig } from "../config/context";
 
 export default function ResourcesView({ className, endpoint }) {
-  const config = getConfig();
+  const config = useConfig();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const page = Number(searchParams.get("page") ?? DEFAULT_PAGE);

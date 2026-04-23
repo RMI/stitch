@@ -50,8 +50,8 @@ export default function MergeCandidateReviewPage() {
   const { getAccessTokenSilently } = useAuth0();
   const queryClient = useQueryClient();
   const fetcher = useMemo(
-    () => createAuthenticatedFetcher(getAccessTokenSilently),
-    [getAccessTokenSilently],
+    () => createAuthenticatedFetcher(config, getAccessTokenSilently),
+    [config, getAccessTokenSilently],
   );
 
   const [selectedId, setSelectedId] = useState(null);

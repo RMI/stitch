@@ -2,12 +2,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createAuthenticatedFetcher } from "./api";
 
 describe("createAuthenticatedFetcher", () => {
+  const config = {
+    auth0: {
+      audience: "https://stitch-api.local",
+    },
+  };
   let getAccessTokenSilently;
   let fetcher;
 
   beforeEach(() => {
     getAccessTokenSilently = vi.fn().mockResolvedValue("test-token");
-    fetcher = createAuthenticatedFetcher(getAccessTokenSilently);
+    fetcher = createAuthenticatedFetcher(config, getAccessTokenSilently);
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }))),
@@ -54,7 +59,7 @@ describe("createAuthenticatedFetcher", () => {
 
   it("propagates token acquisition errors", async () => {
     getAccessTokenSilently.mockRejectedValue(new Error("token error"));
-    fetcher = createAuthenticatedFetcher(getAccessTokenSilently);
+    fetcher = createAuthenticatedFetcher(config, getAccessTokenSilently);
 
     await expect(fetcher("http://api.test/data")).rejects.toThrow(
       "token error",

@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
-import { getConfig } from "../config/env";
+import { useConfig } from "../config/context";
 
 export default function EntityLinkagePage() {
-  const config = getConfig();
+  const config = useConfig();
   const { getAccessTokenSilently } = useAuth0();
 
   const [applyMerges, setApplyMerges] = useState(false);

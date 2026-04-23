@@ -6,7 +6,7 @@ import ClearCacheButton from "./ClearCacheButton";
 import JsonView from "./JsonView";
 import Input from "./Input";
 import { resourceKeys } from "../queries/resources";
-import { getConfig } from "../config/env";
+import { useConfig } from "../config/context";
 
 export default function ResourceView({
   className,
@@ -14,7 +14,7 @@ export default function ResourceView({
   initialID = null,
   showControls = true,
 }) {
-  const config = getConfig();
+  const config = useConfig();
   const queryClient = useQueryClient();
   const [inputId, setInputId] = useState(1);
   const id = initialID ?? inputId;
