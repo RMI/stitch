@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuthenticatedQuery } from "./useAuthenticatedQuery";
+import { useConfig } from "../config/context";
 import {
   resourceQueries,
   resourceKeys,
@@ -24,8 +25,10 @@ function useResourcesReal(
     sort_order,
   } = {},
 ) {
+  const config = useConfig();
   return useAuthenticatedQuery({
     ...resourceQueries.list(
+      config,
       endpoint,
       page,
       page_size,
@@ -38,22 +41,25 @@ function useResourcesReal(
 }
 
 function useResourceReal(endpoint = "resources", id, enabled = false) {
+  const config = useConfig();
   return useAuthenticatedQuery({
-    ...resourceQueries.view(endpoint, id),
+    ...resourceQueries.view(config, endpoint, id),
     enabled,
   });
 }
 
 function useResourceDetailReal(endpoint = "resources", id, enabled = false) {
+  const config = useConfig();
   return useAuthenticatedQuery({
-    ...resourceQueries.detail(endpoint, id),
+    ...resourceQueries.detail(config, endpoint, id),
     enabled,
   });
 }
 
 function useMergeCandidatesReal(endpoint = "oil-gas-fields", enabled = false) {
+  const config = useConfig();
   return useAuthenticatedQuery({
-    ...resourceQueries.mergeCandidates(endpoint),
+    ...resourceQueries.mergeCandidates(config, endpoint),
     enabled,
   });
 }
@@ -63,8 +69,9 @@ function useMergeCandidateReal(
   id,
   enabled = false,
 ) {
+  const config = useConfig();
   return useAuthenticatedQuery({
-    ...resourceQueries.mergeCandidate(endpoint, id),
+    ...resourceQueries.mergeCandidate(config, endpoint, id),
     enabled,
   });
 }
@@ -138,8 +145,9 @@ function useMergeCandidatePreviewReal(
   id,
   enabled = false,
 ) {
+  const config = useConfig();
   return useAuthenticatedQuery({
-    ...resourceQueries.mergeCandidatePreview(endpoint, id),
+    ...resourceQueries.mergeCandidatePreview(config, endpoint, id),
     enabled,
   });
 }

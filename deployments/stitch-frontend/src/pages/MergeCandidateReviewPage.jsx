@@ -12,6 +12,7 @@ import {
 } from "../hooks/useResources";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { reviewMergeCandidate } from "../queries/api";
+import { useConfig } from "../config/context";
 import { resourceKeys } from "../queries/resources";
 import JsonView from "../components/JsonView";
 
@@ -45,6 +46,7 @@ function SummaryRow({ candidate, isSelected, onSelect }) {
 }
 
 export default function MergeCandidateReviewPage() {
+  const config = useConfig();
   const { getAccessTokenSilently } = useAuth0();
   const queryClient = useQueryClient();
   const fetcher = useMemo(
@@ -121,6 +123,7 @@ export default function MergeCandidateReviewPage() {
 
     try {
       await reviewMergeCandidate(
+        config,
         candidate.id,
         action,
         fetcher,
