@@ -52,6 +52,9 @@ describe("config/env", () => {
     expect(config.build.buildId).toBe("gha-123");
     expect(config.build.gitSha).toBe("abcdef123");
     expect(config.build.buildTime).toBe("2026-04-17T10:00:00Z");
+    expect(Object.isFrozen(config)).toBe(true);
+    expect(Object.isFrozen(config.auth0)).toBe(true);
+    expect(Object.isFrozen(config.build)).toBe(true);
   });
 
   it("throws when required runtime config values are missing", async () => {
@@ -67,6 +70,26 @@ describe("config/env", () => {
     const { loadConfig } = await import("./env.js");
 
     await expect(loadConfig()).rejects.toThrow("auth0Domain");
+  });
+
+  it("throws when runtime config values have the wrong type", async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        appEnv: "test",
+        apiUrl: 1234,
+        entityLinkageUrl: "https://entity-linkage.test/api/v1",
+        auth0Domain: "my.auth0.com",
+        auth0ClientId: "my-client-id",
+        auth0Audience: "https://my-api",
+      }),
+    });
+
+    const { loadConfig } = await import("./env.js");
+
+    await expect(loadConfig()).rejects.toThrow(
+      'Runtime config value "apiUrl" must be a string.',
+    );
   });
 
   it("uses default API URLs when runtime values are unset", async () => {

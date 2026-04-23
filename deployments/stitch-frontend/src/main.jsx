@@ -6,6 +6,7 @@ import { Auth0Provider } from "@auth0/auth0-react";
 import "./index.css";
 import App from "./App.jsx";
 import AuthGate from "./auth/AuthGate";
+import { ConfigProvider } from "./config/context";
 import { loadConfig } from "./config/env";
 
 // Set global defaults for QueryClient
@@ -23,23 +24,25 @@ async function bootstrap() {
 
   createRoot(document.getElementById("root")).render(
     <StrictMode>
-      <Auth0Provider
-        domain={config.auth0.domain}
-        clientId={config.auth0.clientId}
-        authorizationParams={{
-          redirect_uri: window.location.origin,
-          audience: config.auth0.audience,
-        }}
-        useRefreshTokens={true}
-      >
-        <QueryClientProvider client={queryClient}>
-          <AuthGate>
-            <BrowserRouter>
-              <App />
-            </BrowserRouter>
-          </AuthGate>
-        </QueryClientProvider>
-      </Auth0Provider>
+      <ConfigProvider config={config}>
+        <Auth0Provider
+          domain={config.auth0.domain}
+          clientId={config.auth0.clientId}
+          authorizationParams={{
+            redirect_uri: window.location.origin,
+            audience: config.auth0.audience,
+          }}
+          useRefreshTokens={true}
+        >
+          <QueryClientProvider client={queryClient}>
+            <AuthGate>
+              <BrowserRouter>
+                <App />
+              </BrowserRouter>
+            </AuthGate>
+          </QueryClientProvider>
+        </Auth0Provider>
+      </ConfigProvider>
     </StrictMode>,
   );
 }

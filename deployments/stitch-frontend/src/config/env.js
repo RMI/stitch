@@ -2,8 +2,34 @@ let resolvedConfig = null;
 let configPromise = null;
 
 const REQUIRED_CONFIG_KEYS = ["auth0Domain", "auth0ClientId", "auth0Audience"];
+const OPTIONAL_STRING_CONFIG_KEYS = ["appEnv", "apiUrl", "entityLinkageUrl"];
 
 const DEFAULT_CONFIG_PATH = "/config.json";
+
+function validateStringValue(config, key, { required = false } = {}) {
+  const value = config[key];
+
+  if (value == null || value === "") {
+    if (required) {
+      throw new Error(`Missing required runtime config values: ${key}.`);
+    }
+    return "";
+  }
+
+  if (typeof value !== "string") {
+    throw new Error(`Runtime config value "${key}" must be a string.`);
+  }
+
+  const normalizedValue = value.trim();
+  if (!normalizedValue) {
+    if (required) {
+      throw new Error(`Missing required runtime config values: ${key}.`);
+    }
+    return "";
+  }
+
+  return normalizedValue;
+}
 
 function freezeConfig(runtimeConfig) {
   return Object.freeze({
@@ -32,14 +58,18 @@ function validateRuntimeConfig(config) {
     throw new Error("Runtime config is missing or invalid.");
   }
 
-  const missing = REQUIRED_CONFIG_KEYS.filter((key) => !config[key]);
-  if (missing.length > 0) {
-    throw new Error(
-      `Missing required runtime config values: ${missing.join(", ")}.`,
-    );
+  const normalizedConfig = Object.fromEntries(
+    REQUIRED_CONFIG_KEYS.map((key) => [
+      key,
+      validateStringValue(config, key, { required: true }),
+    ]),
+  );
+
+  for (const key of OPTIONAL_STRING_CONFIG_KEYS) {
+    normalizedConfig[key] = validateStringValue(config, key);
   }
 
-  return config;
+  return normalizedConfig;
 }
 
 export async function loadConfig() {
