@@ -6,22 +6,22 @@ import { renderWithQueryClient } from "../test/utils";
 
 function createMockConfig() {
   return {
-  appEnv: "local",
-  apiBaseUrl: "http://localhost:8000/api/v1",
-  entityLinkageBaseUrl: "http://localhost:8001/api/v1",
-  auth0: {
-    domain: "example.auth0.com",
-    clientId: "client-id",
-    audience: "https://stitch-api.local",
-  },
-  build: {
-    appVersion: "0.0.0",
-    buildId: "local-build",
-    gitSha: "abcdef1",
-    nodeVersion: "v20.19.0",
-    viteVersion: "^7.2.4",
-    buildTime: "2026-04-06T12:00:00Z",
-  },
+    appEnv: "local",
+    apiBaseUrl: "http://localhost:8000/api/v1",
+    entityLinkageBaseUrl: "http://localhost:8001/api/v1",
+    auth0: {
+      domain: "example.auth0.com",
+      clientId: "client-id",
+      audience: "https://stitch-api.local",
+    },
+    build: {
+      appVersion: "0.0.0",
+      buildId: "local-build",
+      gitSha: "abcdef1",
+      nodeVersion: "v20.19.0",
+      viteVersion: "^7.2.4",
+      buildTime: "2026-04-06T12:00:00Z",
+    },
   };
 }
 
@@ -125,7 +125,6 @@ describe("ColophonPanel", () => {
       configurable: true,
       value: 2,
     });
-
   });
 
   afterEach(() => {
