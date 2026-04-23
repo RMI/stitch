@@ -61,6 +61,7 @@ describe("config/env", () => {
     global.fetch.mockResolvedValue({
       ok: true,
       json: async () => ({
+        appEnv: "test",
         auth0Domain: "",
         auth0ClientId: "",
         auth0Audience: "",
@@ -70,6 +71,21 @@ describe("config/env", () => {
     const { loadConfig } = await import("./env.js");
 
     await expect(loadConfig()).rejects.toThrow("auth0Domain");
+  });
+
+  it("throws when appEnv is missing", async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        auth0Domain: "my.auth0.com",
+        auth0ClientId: "my-client-id",
+        auth0Audience: "https://my-api",
+      }),
+    });
+
+    const { loadConfig } = await import("./env.js");
+
+    await expect(loadConfig()).rejects.toThrow("appEnv");
   });
 
   it("throws when runtime config values have the wrong type", async () => {

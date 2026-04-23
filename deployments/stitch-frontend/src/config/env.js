@@ -1,8 +1,13 @@
 let resolvedConfig = null;
 let configPromise = null;
 
-const REQUIRED_CONFIG_KEYS = ["auth0Domain", "auth0ClientId", "auth0Audience"];
-const OPTIONAL_STRING_CONFIG_KEYS = ["appEnv", "apiUrl", "entityLinkageUrl"];
+const REQUIRED_CONFIG_KEYS = [
+  "appEnv",
+  "auth0Domain",
+  "auth0ClientId",
+  "auth0Audience",
+];
+const OPTIONAL_STRING_CONFIG_KEYS = ["apiUrl", "entityLinkageUrl"];
 
 const DEFAULT_CONFIG_PATH = "/config.json";
 
@@ -39,7 +44,7 @@ function freezeConfig(runtimeConfig) {
       audience: runtimeConfig.auth0Audience,
     }),
     apiBaseUrl: runtimeConfig.apiUrl || "http://localhost:8000/api/v1",
-    appEnv: runtimeConfig.appEnv || "development",
+    appEnv: runtimeConfig.appEnv,
     build: Object.freeze({
       appVersion: import.meta.env.VITE_APP_VERSION || "0.0.0-dev",
       buildId: import.meta.env.VITE_BUILD_ID || "local",
