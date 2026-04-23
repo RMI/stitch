@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
-import { useConfig } from "../config/context";
+import { useConfig } from "../config/useConfig";
 
 export default function EntityLinkagePage() {
   const config = useConfig();

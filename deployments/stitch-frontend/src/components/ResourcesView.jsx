@@ -13,7 +13,7 @@ import {
   DEFAULT_PAGE_SIZE,
   DEFAULT_PAGE,
 } from "../queries/resources";
-import { useConfig } from "../config/context";
+import { useConfig } from "../config/useConfig";
 
 export default function ResourcesView({ className, endpoint }) {
   const config = useConfig();

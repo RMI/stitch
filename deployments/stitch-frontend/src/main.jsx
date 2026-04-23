@@ -6,7 +6,7 @@ import { Auth0Provider } from "@auth0/auth0-react";
 import "./index.css";
 import App from "./App.jsx";
 import AuthGate from "./auth/AuthGate";
-import { ConfigProvider } from "./config/context";
+import { ConfigProvider } from "./config/context-provider";
 import { loadConfig } from "./config/env";
 
 // Set global defaults for QueryClient

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuthenticatedQuery } from "./useAuthenticatedQuery";
-import { useConfig } from "../config/context";
+import { useConfig } from "../config/useConfig";
 import {
   resourceQueries,
   resourceKeys,

@@ -12,7 +12,7 @@ import {
 } from "../hooks/useResources";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { reviewMergeCandidate } from "../queries/api";
-import { useConfig } from "../config/context";
+import { useConfig } from "../config/useConfig";
 import { resourceKeys } from "../queries/resources";
 import JsonView from "../components/JsonView";
 

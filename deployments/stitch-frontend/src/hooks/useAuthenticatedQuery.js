@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth0 } from "@auth0/auth0-react";
 import { createAuthenticatedFetcher } from "../auth/api";
-import { useConfig } from "../config/context";
+import { useConfig } from "../config/useConfig";
 
 /**
  * Wraps `useQuery` so that every request carries a valid Auth0 bearer token.
