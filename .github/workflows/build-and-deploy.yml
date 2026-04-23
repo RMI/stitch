@@ -1,0 +1,160 @@
+name: CD Pipeline
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build_api_docker_image:
+    name: "Build and publish API"
+    uses: ./.github/workflows/build-and-push-Docker-image.yml
+    secrets: inherit
+    permissions:
+      packages: write
+      contents: read
+    with:
+      dockerfile: deployments/api/Dockerfile
+      image-name: ${{ github.event.repository.name }}-api
+      image-tag: ${{
+          github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
+          github.event_name == 'schedule' && 'nightly' ||
+          github.event_name == 'push' && github.ref_name ||
+          github.event_name == 'workflow_dispatch' && github.ref_name ||
+          github.sha
+        }}
+
+  build_entity_linkage_docker_image:
+    name: "Build and publish Entity Linkage"
+    uses: ./.github/workflows/build-and-push-Docker-image.yml
+    secrets: inherit
+    permissions:
+      packages: write
+      contents: read
+    with:
+      dockerfile: deployments/entity-linkage/Dockerfile
+      image-name: ${{ github.event.repository.name }}-entity-linkage
+      image-tag: ${{
+          github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
+          github.event_name == 'schedule' && 'nightly' ||
+          github.event_name == 'push' && github.ref_name ||
+          github.event_name == 'workflow_dispatch' && github.ref_name ||
+          github.sha
+        }}
+
+  build_seed_docker_image:
+    name: "Build and publish Seed"
+    uses: ./.github/workflows/build-and-push-Docker-image.yml
+    secrets: inherit
+    permissions:
+      packages: write
+      contents: read
+    with:
+      dockerfile: deployments/seed/Dockerfile
+      image-name: ${{ github.event.repository.name }}-seed
+      image-tag: ${{
+          github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
+          github.event_name == 'schedule' && 'nightly' ||
+          github.event_name == 'push' && github.ref_name ||
+          github.event_name == 'workflow_dispatch' && github.ref_name ||
+          github.sha
+        }}
+
+  deploy-db:
+    name: "Create DB"
+    uses: ./.github/workflows/deploy-db.yml
+    secrets: inherit
+
+  run-db-init:
+    name: "Run DB init"
+    uses: ./.github/workflows/run-db-init.yml
+    secrets: inherit
+    needs: [build_api_docker_image, deploy-db]
+    with:
+      full-image-name: ${{ needs.build_api_docker_image.outputs.digest-image-name }}
+      postgres-host: ${{ needs.deploy-db.outputs.postgres-host }}
+      postgres-port: ${{ needs.deploy-db.outputs.postgres-port }}
+      postgres-db: ${{ needs.deploy-db.outputs.postgres-db }}
+
+  deploy-api:
+    name: "Deploy API"
+    uses: ./.github/workflows/deploy-container.yml
+    secrets: inherit
+    needs: [build_api_docker_image, deploy-db, run-db-init]
+    with:
+      full-image-name: ${{ needs.build_api_docker_image.outputs.digest-image-name }}
+      containerAppName: ${{
+          github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
+          github.event_name == 'schedule' && 'nightly' ||
+          github.event_name == 'push' && github.ref_name ||
+          github.event_name == 'workflow_dispatch' && github.ref_name ||
+          github.sha
+        }}-api
+      environment-variables: >-
+        LOG_LEVEL=debug
+        FRONTEND_ORIGIN_URL=${{
+          github.event_name == 'pull_request' &&
+          format('https://witty-mushroom-017a3dc1e-{0}.westus2.1.azurestaticapps.net', github.event.pull_request.number) ||
+          github.event_name == 'push' && github.ref_name == 'main' &&
+          'https://witty-mushroom-017a3dc1e.1.azurestaticapps.net' ||
+          github.event_name == 'push' &&
+          format('https://witty-mushroom-017a3dc1e-{0}.westus2.1.azurestaticapps.net', github.ref_name) ||
+          'http://localhost:3000'
+        }}
+        AUTH_DISABLED=true
+        ENVIRONMENT=${{
+          (github.event_name == 'pull_request' && format('{0}-{1}', 'pr', github.event.pull_request.number)) ||
+          github.ref_name
+        }}
+        POSTGRES_HOST=${{ needs.deploy-db.outputs.postgres-host }}
+        POSTGRES_PORT=${{ needs.deploy-db.outputs.postgres-port }}
+        POSTGRES_DB=${{ needs.deploy-db.outputs.postgres-db }}
+        POSTGRES_USER=${{ needs.deploy-db.outputs.postgres-user }}
+        PGSSLMODE=require
+      inject-stitch-app-password: true
+      deployment-label: api
+
+  deploy-entity-linkage:
+    name: "Deploy entity linkage"
+    uses: ./.github/workflows/deploy-container.yml
+    secrets: inherit
+    needs: [build_entity_linkage_docker_image, deploy-api]
+    with:
+      full-image-name: ${{ needs.build_entity_linkage_docker_image.outputs.digest-image-name }}
+      containerAppName: ${{
+          github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
+          github.event_name == 'schedule' && 'nightly' ||
+          github.event_name == 'push' && github.ref_name ||
+          github.event_name == 'workflow_dispatch' && github.ref_name ||
+          github.sha
+        }}-entity-linkage
+      environment-variables: >-
+        LOG_LEVEL=info
+        AUTH_DISABLED=true
+        ENTITY_LINKAGE_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
+        ENTITY_LINKAGE_FRONTEND_ORIGIN_URL=${{
+          github.event_name == 'pull_request' &&
+          format('https://witty-mushroom-017a3dc1e-{0}.westus2.1.azurestaticapps.net', github.event.pull_request.number) ||
+          github.event_name == 'push' && github.ref_name == 'main' &&
+          'https://witty-mushroom-017a3dc1e.1.azurestaticapps.net' ||
+          github.event_name == 'push' &&
+          format('https://witty-mushroom-017a3dc1e-{0}.westus2.1.azurestaticapps.net', github.ref_name) ||
+          'http://localhost:3000'
+        }}
+      deployment-label: entity-linkage
+
+  run-seed:
+    name: "Run seed"
+    uses: ./.github/workflows/run-seed.yml
+    secrets: inherit
+    needs: [build_seed_docker_image, deploy-api]
+    with:
+      full-image-name: ${{ needs.build_seed_docker_image.outputs.digest-image-name }}
+      api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
+
+  comment-summary:
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    uses: ./.github/workflows/comment-pr-summary.yml
+    secrets: inherit
+    needs: [build_api_docker_image, build_entity_linkage_docker_image, build_seed_docker_image, deploy-db, run-db-init, deploy-api, deploy-entity-linkage, run-seed]
