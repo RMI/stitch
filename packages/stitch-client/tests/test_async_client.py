@@ -45,6 +45,28 @@ async def test_injected_client_allows_omitting_base_url() -> None:
     await raw_client.aclose()
 
 
+@pytest.mark.anyio
+async def test_aclose_does_not_close_injected_client() -> None:
+    raw_client = httpx.AsyncClient(base_url="http://example.test/api/v1")
+    client = AsyncStitchClient(client=raw_client)
+
+    await client.aclose()
+
+    assert raw_client.is_closed is False
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_aclose_closes_owned_client() -> None:
+    client = AsyncStitchClient(base_url="http://example.test/api/v1")
+    raw_client = client._client
+
+    await client.aclose()
+
+    assert raw_client.is_closed is True
+
+
 def test_init_requires_base_url_without_injected_client() -> None:
     with pytest.raises(ValueError) as exc_info:
         AsyncStitchClient()

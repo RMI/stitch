@@ -23,6 +23,7 @@ class AsyncStitchClient:
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._headers_provider = headers_provider
+        self._owns_client = client is None
         if client is None:
             if base_url is None:
                 raise ValueError("base_url is required when client is not provided")
@@ -46,7 +47,8 @@ class AsyncStitchClient:
         await self.aclose()
 
     async def aclose(self) -> None:
-        await self._client.aclose()
+        if self._owns_client:
+            await self._client.aclose()
 
     async def wait_for_health(
         self,
