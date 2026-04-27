@@ -23,9 +23,6 @@ async def run() -> None:
         null_prob=cfg.null_probability,
     )
 
-    # TODO: If client/server version skew becomes a real problem, add contract
-    # drift checks in CI or integration tests instead of fetching OpenAPI at
-    # runtime inside this seeding process.
     async with AsyncStitchClient(
         base_url=cfg.api_base_url,
         timeout=cfg.http_timeout_seconds,

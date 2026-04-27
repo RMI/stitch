@@ -182,8 +182,6 @@ class AsyncStitchClient:
 
     @staticmethod
     def _expect_dict(payload: Any, operation: str) -> dict[str, Any]:
-        # TODO: Replace raw dict payloads with shared transport DTOs once API and
-        # client contract models are centralized in one package.
         if isinstance(payload, dict):
             return payload
         raise StitchAPIError(f"{operation} returned non-object JSON payload")

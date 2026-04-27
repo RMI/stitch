@@ -79,8 +79,6 @@ class StitchApiClient:
 
     @staticmethod
     def _to_candidates(items: list[dict[str, Any]]) -> list[FieldCandidate]:
-        # TODO: Replace this local JSON-to-model mapping once the API transport
-        # DTOs are shared between server and clients.
         candidates: list[FieldCandidate] = []
         for item in items:
             data = item.get("data") or {}
