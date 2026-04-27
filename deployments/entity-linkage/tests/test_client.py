@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 import pytest
 
+from stitch.client import AsyncStitchClient
 from stitch.entity_linkage.client import StitchApiClient
 from stitch.entity_linkage.entities import RequestAuthContext, User
 from stitch.entity_linkage.errors import StitchAPIError
@@ -32,12 +33,18 @@ def make_client(
     bearer_token: str | None = "token-123",
     base_url: str = "http://example.test/api/v1",
 ) -> StitchApiClient:
-    client = StitchApiClient(auth_context=make_auth_context(bearer_token=bearer_token))
-    client._client = httpx.AsyncClient(
-        transport=httpx.MockTransport(handler),
+    auth_context = make_auth_context(bearer_token=bearer_token)
+    shared_client = AsyncStitchClient(
         base_url=base_url,
+        headers_provider=lambda: StitchApiClient._headers_from_auth_context(
+            auth_context
+        ),
+        client=httpx.AsyncClient(
+            transport=httpx.MockTransport(handler),
+            base_url=base_url,
+        ),
     )
-    return client
+    return StitchApiClient(auth_context=auth_context, client=shared_client)
 
 
 @pytest.mark.anyio
@@ -257,6 +264,30 @@ async def test_get_oil_gas_field_detail_maps_payload() -> None:
     assert detail.id == 42
     assert detail.name == "Alpha"
     assert detail.country == "US"
+
+    await client.aclose()
+
+
+@pytest.mark.anyio
+async def test_collect_oil_gas_fields_ignores_non_object_items() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "items": [
+                    {"id": 1, "data": {"name": "Alpha", "country": "US"}},
+                    "not-a-dict",
+                ],
+                "total_pages": 1,
+            },
+        )
+
+    client = make_client(handler)
+
+    items, pages_fetched = await client.collect_oil_gas_fields()
+
+    assert pages_fetched == 1
+    assert [item.id for item in items] == [1]
 
     await client.aclose()
 
