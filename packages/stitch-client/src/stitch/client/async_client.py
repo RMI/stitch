@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 import httpx
+from stitch.ogsi.model import OGFieldResource
 
 from .errors import StitchAPIError
 
@@ -157,13 +158,14 @@ class AsyncStitchClient:
 
     async def create_oil_gas_field(
         self,
-        payload: Mapping[str, Any],
+        payload: OGFieldResource | Mapping[str, Any],
     ) -> dict[str, Any]:
+        validated_payload = self._validate_oil_gas_field_payload(payload)
         response_payload = await self._request_json(
             method="POST",
             path="/oil-gas-fields/",
             operation="POST /oil-gas-fields/",
-            json=dict(payload),
+            json=validated_payload.model_dump(mode="json", exclude_unset=True),
         )
         return self._expect_dict(response_payload, "POST /oil-gas-fields/")
 
@@ -219,6 +221,14 @@ class AsyncStitchClient:
         if isinstance(items, list):
             return len(items)
         return 0
+
+    @staticmethod
+    def _validate_oil_gas_field_payload(
+        payload: OGFieldResource | Mapping[str, Any],
+    ) -> OGFieldResource:
+        if isinstance(payload, OGFieldResource):
+            return payload
+        return OGFieldResource.model_validate(payload)
 
     @staticmethod
     def _raise_for_status(response: httpx.Response, operation: str) -> None:

@@ -5,6 +5,8 @@ from typing import Any
 
 import httpx
 import pytest
+from pydantic import ValidationError
+from stitch.ogsi.model import OGFieldResource
 
 from stitch.client import AsyncStitchClient, StitchAPIError
 
@@ -24,6 +26,21 @@ def make_client(
         client=raw_client,
     )
     return client, raw_client
+
+
+def make_valid_og_field_payload() -> dict[str, Any]:
+    return {
+        "id": None,
+        "source_data": [
+            {
+                "id": None,
+                "source": "gem",
+                "name": "Alpha Field",
+                "country": "USA",
+            }
+        ],
+        "constituents": [],
+    }
 
 
 @pytest.mark.anyio
@@ -372,14 +389,62 @@ async def test_create_oil_gas_field_sends_expected_request() -> None:
 
     client, raw_client = make_client(handler)
 
-    payload = await client.create_oil_gas_field({"source_data": [], "id": None})
+    validated_payload = make_valid_og_field_payload()
+    payload = await client.create_oil_gas_field(validated_payload)
 
     assert payload == {"id": 7}
     assert captured == {
         "method": "POST",
         "path": "/api/v1/oil-gas-fields/",
-        "body": {"source_data": [], "id": None},
+        "body": validated_payload,
     }
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_create_oil_gas_field_accepts_typed_model() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(200, json={"id": 7})
+
+    client, raw_client = make_client(handler)
+    model_payload = OGFieldResource.model_validate(make_valid_og_field_payload())
+
+    await client.create_oil_gas_field(model_payload)
+
+    assert captured["body"] == make_valid_og_field_payload()
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_create_oil_gas_field_rejects_invalid_mapping_before_request() -> None:
+    called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(200, json={"id": 7})
+
+    client, raw_client = make_client(handler)
+
+    with pytest.raises(ValidationError):
+        await client.create_oil_gas_field(
+            {
+                "id": None,
+                "source_data": [
+                    {
+                        "source": "gem",
+                        "country": "USA",
+                    }
+                ],
+            }
+        )
+
+    assert called is False
 
     await raw_client.aclose()
 

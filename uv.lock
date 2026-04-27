@@ -1223,6 +1223,7 @@ version = "0.1.0"
 source = { editable = "packages/stitch-client" }
 dependencies = [
     { name = "httpx" },
+    { name = "stitch-ogsi" },
 ]
 
 [package.dev-dependencies]
@@ -1232,7 +1233,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "httpx", specifier = ">=0.28.0" }]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "stitch-ogsi", editable = "packages/stitch-ogsi" },
+]
 
 [package.metadata.requires-dev]
 dev = [
