@@ -1,0 +1,152 @@
+on:
+  workflow_call:
+    inputs:
+      full-image-name:
+        description: "Full pushed image name including host/registry, name, and tag"
+        required: true
+        type: string
+      containerAppName:
+        description: "The name of the Azure Container App."
+        required: true
+        type: string
+      containerAppEnvironment:
+        description: "The name of the Azure Container App environment to deploy to."
+        required: false
+        default: "stitch-dev"
+        type: string
+      targetPort:
+        description: "Port the application listens on"
+        required: false
+        default: 8000
+        type: number
+      deployment-label:
+        description: "Short label for reporting"
+        required: false
+        default: "container-app"
+        type: string
+      environment-variables:
+        description: "Whitespace-delimited non-secret KEY=value pairs"
+        required: false
+        default: ""
+        type: string
+      inject-stitch-app-password:
+        required: false
+        default: false
+        type: boolean
+
+    outputs:
+      container-app-url:
+        description: "HTTPS URL of the deployed Azure Container App"
+        value: ${{ jobs.deploy-container-app.outputs.container-app-url }}
+      container-app-fqdn:
+        description: "Ingress FQDN of the deployed Azure Container App"
+        value: ${{ jobs.deploy-container-app.outputs.container-app-fqdn }}
+
+jobs:
+  deploy-container-app:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      packages: read
+    timeout-minutes: 25
+    outputs:
+      container-app-url: ${{ steps.export-app-url.outputs.container_app_url }}
+      container-app-fqdn: ${{ steps.export-app-url.outputs.container_app_fqdn }}
+
+    steps:
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - run: echo "fullname=${{ inputs.full-image-name }}"
+
+      - name: Assemble environment variables
+        id: envvars
+        shell: bash
+        run: |
+          set -euo pipefail
+          envvars='${{ inputs.environment-variables }}'
+          echo "$envvars"
+          if [ "${{ inputs.inject-stitch-app-password }}" = "true" ]; then
+            envvars="$envvars POSTGRES_PASSWORD=${{ secrets.STITCH_APP_PASSWORD_DEV }}"
+            echo "Also adding POSTGRES_PASSWORD"
+          fi
+          echo "environment_variables<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$envvars" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Build and deploy Container App
+        uses: azure/container-apps-deploy-action@v1
+        with:
+          imageToDeploy: ${{ inputs.full-image-name }}
+          resourceGroup: STITCH-DEV-RG
+          containerAppName: ${{ inputs.containerAppName }}
+          containerAppEnvironment: ${{ inputs.containerAppEnvironment }}
+          targetPort: ${{ inputs.targetPort }}
+          environmentVariables: ${{ steps.envvars.outputs.environment_variables }}
+          ingress: "external"
+
+      - name: Export application URL
+        id: export-app-url
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          fqdn="$(
+            az containerapp show \
+              --name "${{ inputs.containerAppName }}" \
+              --resource-group "STITCH-DEV-RG" \
+              --query "properties.configuration.ingress.fqdn" \
+              --output tsv
+          )"
+
+          if [ -z "$fqdn" ]; then
+            echo "Failed to resolve container app ingress FQDN" >&2
+            exit 1
+          fi
+
+          echo "Resolved FQDN: $fqdn"
+          echo "container_app_fqdn=$fqdn" >> "$GITHUB_OUTPUT"
+          echo "container_app_url=https://$fqdn" >> "$GITHUB_OUTPUT"
+
+      - name: Write comment JSON
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/comment-json
+          json_file="/tmp/comment-json/comment-json-deploy-${{ inputs.deployment-label }}.json"
+
+          jq -n \
+            --arg section "deployments" \
+            --arg kind "container_app" \
+            --arg name "${{ inputs.deployment-label }}" \
+            --arg service "${{ inputs.deployment-label }}" \
+            --arg url "[open](${{ steps.export-app-url.outputs.container_app_url }})" \
+            --arg fqdn '`${{ steps.export-app-url.outputs.container_app_fqdn }}`' \
+            '{
+              "section": $section,
+              "kind": $kind,
+              "name": $name,
+              "warnings": [],
+              "data": {
+                "service": $service,
+                "url": $url,
+                "fqdn": $fqdn
+              }
+            }' > "$json_file"
+
+          jq empty "$json_file"
+          cat "$json_file"
+
+      - name: Upload comment JSON artifact
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: comment-json-deploy-${{ inputs.deployment-label }}
+          path: /tmp/comment-json/*.json
+          if-no-files-found: error
