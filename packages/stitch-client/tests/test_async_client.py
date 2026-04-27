@@ -68,6 +68,21 @@ async def test_init_rejects_mismatched_injected_client_base_url() -> None:
 
 
 @pytest.mark.anyio
+async def test_init_rejects_mismatched_injected_client_base_path() -> None:
+    raw_client = httpx.AsyncClient(base_url="http://example.test/api/v2")
+
+    with pytest.raises(ValueError) as exc_info:
+        AsyncStitchClient(
+            base_url="http://example.test/api/v1",
+            client=raw_client,
+        )
+
+    assert str(exc_info.value) == "base_url does not match injected client base_url"
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
 async def test_headers_provider_is_applied_to_each_request() -> None:
     calls = {"count": 0}
     captured: list[str | None] = []

@@ -4,6 +4,7 @@ import asyncio
 import logging
 from collections.abc import Callable, Mapping
 from typing import Any
+from urllib.parse import SplitResult, urlsplit, urlunsplit
 
 import httpx
 
@@ -224,4 +225,13 @@ class AsyncStitchClient:
 
     @staticmethod
     def _normalize_base_url(url: httpx.URL | str) -> str:
-        return str(httpx.URL(str(url)).join("/"))
+        parsed = urlsplit(str(url))
+        normalized_path = parsed.path.rstrip("/") or "/"
+        normalized = SplitResult(
+            scheme=parsed.scheme,
+            netloc=parsed.netloc,
+            path=normalized_path,
+            query="",
+            fragment="",
+        )
+        return urlunsplit(normalized)
