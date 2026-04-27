@@ -131,6 +131,9 @@ class AsyncStitchClient:
             if isinstance(total_pages, int) and page >= total_pages:
                 break
 
+            if not isinstance(total_pages, int) and not page_items:
+                break
+
             if raw_item_count < page_size:
                 break
 
