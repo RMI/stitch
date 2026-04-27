@@ -40,6 +40,7 @@ class AsyncStitchClient:
         self,
         retries: int = 30,
         delay: float = 2.0,
+        request_timeout: float = 2.0,
     ) -> None:
         operation = "GET /health"
 
@@ -48,6 +49,7 @@ class AsyncStitchClient:
                 response = await self._client.get(
                     "/health",
                     headers=self._headers(),
+                    timeout=request_timeout,
                 )
                 if response.is_success:
                     logger.info("API ready after %s attempt(s)", attempt)

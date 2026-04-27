@@ -53,9 +53,11 @@ async def test_headers_provider_is_applied_to_each_request() -> None:
 @pytest.mark.anyio
 async def test_wait_for_health_succeeds_after_retry() -> None:
     calls: list[int] = []
+    observed_timeouts: list[dict[str, float]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(len(calls) + 1)
+        observed_timeouts.append(request.extensions["timeout"])
         assert request.url.path == "/api/v1/health"
         if len(calls) == 1:
             return httpx.Response(503, text="warming up")
@@ -66,6 +68,10 @@ async def test_wait_for_health_succeeds_after_retry() -> None:
     await client.wait_for_health(retries=2, delay=0)
 
     assert calls == [1, 2]
+    assert observed_timeouts == [
+        {"connect": 2.0, "read": 2.0, "write": 2.0, "pool": 2.0},
+        {"connect": 2.0, "read": 2.0, "write": 2.0, "pool": 2.0},
+    ]
 
     await raw_client.aclose()
 
