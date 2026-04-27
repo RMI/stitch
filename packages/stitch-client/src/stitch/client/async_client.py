@@ -4,7 +4,6 @@ import asyncio
 import logging
 from collections.abc import Callable, Mapping
 from typing import Any
-from urllib.parse import SplitResult, urlsplit, urlunsplit
 
 import httpx
 
@@ -18,27 +17,31 @@ class AsyncStitchClient:
         self,
         base_url: str | None = None,
         *,
-        timeout: float = 30.0,
+        timeout: float | None = None,
         headers_provider: Callable[[], Mapping[str, str]] | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._headers_provider = headers_provider
         self._owns_client = client is None
-        if client is None:
-            if base_url is None:
-                raise ValueError("base_url is required when client is not provided")
-            self._client = httpx.AsyncClient(
-                base_url=base_url,
-                timeout=timeout,
-            )
+        if client is not None:
+            if base_url is not None:
+                raise ValueError(
+                    "base_url cannot be provided when client is already configured"
+                )
+            if timeout is not None:
+                raise ValueError(
+                    "timeout cannot be provided when client is already configured"
+                )
+            self._client = client
             return
 
-        if base_url is not None and self._normalize_base_url(
-            client.base_url
-        ) != self._normalize_base_url(base_url):
-            raise ValueError("base_url does not match injected client base_url")
+        if base_url is None:
+            raise ValueError("base_url is required when client is not provided")
 
-        self._client = client
+        self._client = httpx.AsyncClient(
+            base_url=base_url,
+            timeout=timeout if timeout is not None else 30.0,
+        )
 
     async def __aenter__(self) -> "AsyncStitchClient":
         return self
@@ -224,16 +227,3 @@ class AsyncStitchClient:
         raise StitchAPIError(
             f"{operation} failed with status {response.status_code}: {response.text}"
         )
-
-    @staticmethod
-    def _normalize_base_url(url: httpx.URL | str) -> str:
-        parsed = urlsplit(str(url))
-        normalized_path = parsed.path.rstrip("/") or "/"
-        normalized = SplitResult(
-            scheme=parsed.scheme,
-            netloc=parsed.netloc,
-            path=normalized_path,
-            query="",
-            fragment="",
-        )
-        return urlunsplit(normalized)

@@ -20,7 +20,6 @@ def make_client(
         base_url=base_url,
     )
     client = AsyncStitchClient(
-        base_url=base_url,
         headers_provider=headers_provider,
         client=raw_client,
     )
@@ -75,23 +74,8 @@ def test_init_requires_base_url_without_injected_client() -> None:
 
 
 @pytest.mark.anyio
-async def test_init_rejects_mismatched_injected_client_base_url() -> None:
+async def test_init_rejects_base_url_when_client_is_injected() -> None:
     raw_client = httpx.AsyncClient(base_url="http://example.test/api/v1")
-
-    with pytest.raises(ValueError) as exc_info:
-        AsyncStitchClient(
-            base_url="http://other.test/api/v1",
-            client=raw_client,
-        )
-
-    assert str(exc_info.value) == "base_url does not match injected client base_url"
-
-    await raw_client.aclose()
-
-
-@pytest.mark.anyio
-async def test_init_rejects_mismatched_injected_client_base_path() -> None:
-    raw_client = httpx.AsyncClient(base_url="http://example.test/api/v2")
 
     with pytest.raises(ValueError) as exc_info:
         AsyncStitchClient(
@@ -99,7 +83,28 @@ async def test_init_rejects_mismatched_injected_client_base_path() -> None:
             client=raw_client,
         )
 
-    assert str(exc_info.value) == "base_url does not match injected client base_url"
+    assert (
+        str(exc_info.value)
+        == "base_url cannot be provided when client is already configured"
+    )
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_init_rejects_timeout_when_client_is_injected() -> None:
+    raw_client = httpx.AsyncClient(base_url="http://example.test/api/v1")
+
+    with pytest.raises(ValueError) as exc_info:
+        AsyncStitchClient(
+            timeout=10.0,
+            client=raw_client,
+        )
+
+    assert (
+        str(exc_info.value)
+        == "timeout cannot be provided when client is already configured"
+    )
 
     await raw_client.aclose()
 

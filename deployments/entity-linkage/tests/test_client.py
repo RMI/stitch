@@ -34,7 +34,6 @@ def make_client(
 ) -> StitchApiClient:
     auth_context = make_auth_context(bearer_token=bearer_token)
     shared_client = AsyncStitchClient(
-        base_url=base_url,
         headers_provider=lambda: StitchApiClient._headers_from_auth_context(
             auth_context
         ),
