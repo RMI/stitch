@@ -6,8 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12.12"
 dependencies = [
   "faker>=24.0.0",
-  "httpx>=0.28.0",
-  "jsonschema>=4.23.0",
+  "stitch-client",
   "stitch-ogsi",
 ]
 
@@ -21,5 +20,19 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = "stitch.seed"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = ["-v", "--strict-markers", "--tb=short"]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+  "pytest-anyio>=0.0.0",
+]
+
 [tool.uv.sources]
+stitch-client = { workspace = true }
 stitch-ogsi = { workspace = true }

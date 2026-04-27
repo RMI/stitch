@@ -46,8 +46,8 @@ py-lint: uv-dev
 py-test: py-deployment-test pkg-test
 py-test-exact: py-deployment-test-exact pkg-test-exact
 
-py-deployment-test: api-test entity-linkage-test
-py-deployment-test-exact: api-test-exact entity-linkage-test-exact
+py-deployment-test: api-test entity-linkage-test seed-test
+py-deployment-test-exact: api-test-exact entity-linkage-test-exact seed-test-exact
 
 py-format-check: uv-dev
 	$(RUFF) format --check
@@ -84,6 +84,13 @@ pkg-test-auth:
 pkg-test-exact-auth:
 	$(MAKE) uv-test-target-exact PKG=stitch-auth TEST_PATH=packages/stitch-auth
 
+pkg-build-client:
+	$(UV) build --package stitch-client
+pkg-test-client:
+	$(MAKE) uv-test-target PKG=stitch-client TEST_PATH=packages/stitch-client
+pkg-test-exact-client:
+	$(MAKE) uv-test-target-exact PKG=stitch-client TEST_PATH=packages/stitch-client
+
 pkg-build-models:
 	$(UV) build --package stitch-models
 pkg-test-models:
@@ -98,9 +105,9 @@ pkg-test-ogsi:
 pkg-test-exact-ogsi:
 	$(MAKE) uv-test-target-exact PKG=stitch-ogsi TEST_PATH=packages/stitch-ogsi
 
-pkg-build: pkg-build-auth pkg-build-models pkg-build-ogsi
-pkg-test: pkg-test-auth pkg-test-models pkg-test-ogsi
-pkg-test-exact: pkg-test-exact-auth pkg-test-exact-models pkg-test-exact-ogsi
+pkg-build: pkg-build-auth pkg-build-client pkg-build-models pkg-build-ogsi
+pkg-test: pkg-test-auth pkg-test-client pkg-test-models pkg-test-ogsi
+pkg-test-exact: pkg-test-exact-auth pkg-test-exact-client pkg-test-exact-models pkg-test-exact-ogsi
 
 # ---------------------------------------------------------------------
 # Deployments
@@ -145,6 +152,11 @@ entity-linkage-test:
 	$(MAKE) uv-test-target PKG=stitch-entity-linkage TEST_PATH=deployments/entity-linkage
 entity-linkage-test-exact:
 	$(MAKE) uv-test-target-exact PKG=stitch-entity-linkage TEST_PATH=deployments/entity-linkage
+
+seed-test:
+	$(MAKE) uv-test-target PKG=stitch-seed TEST_PATH=deployments/seed
+seed-test-exact:
+	$(MAKE) uv-test-target-exact PKG=stitch-seed TEST_PATH=deployments/seed
 
 # ---------------------------------------------------------------------
 # stitch-frontend
@@ -251,11 +263,13 @@ follow-stack-logs:
 	# Packages
 	pkg-test pkg-test-exact \
 	pkg-build-auth pkg-test-auth pkg-test-exact-auth \
+	pkg-build-client pkg-test-client pkg-test-exact-client \
 	pkg-build-models pkg-test-models pkg-test-exact-models \
 	pkg-build-ogsi pkg-test-ogsi pkg-test-exact-ogsi \
 	\
 	# API
 	api-build api-test api-test-exact api-dev stack-api-dev \
+	seed-test seed-test-exact \
 	\
 	# Frontend
 	frontend frontend-install frontend-build frontend-test frontend-lint \
