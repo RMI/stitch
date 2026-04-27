@@ -211,6 +211,41 @@ async def test_collect_oil_gas_fields_treats_non_list_items_as_empty() -> None:
 
 
 @pytest.mark.anyio
+async def test_collect_oil_gas_fields_does_not_stop_on_filtered_full_page() -> None:
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        page = int(request.url.params["page"])
+        calls.append(page)
+        payloads = {
+            1: {
+                "items": [
+                    {"id": 1, "data": {"name": "Alpha", "country": "US"}},
+                    "not-a-dict",
+                ],
+                "total_pages": 2,
+            },
+            2: {
+                "items": [
+                    {"id": 2, "data": {"name": "Beta", "country": "CA"}},
+                ],
+                "total_pages": 2,
+            },
+        }
+        return httpx.Response(200, json=payloads[page])
+
+    client, raw_client = make_client(handler)
+
+    items, pages_fetched = await client.collect_oil_gas_fields(page_size=2)
+
+    assert calls == [1, 2]
+    assert pages_fetched == 2
+    assert [item["id"] for item in items] == [1, 2]
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
 async def test_collect_oil_gas_fields_respects_max_pages() -> None:
     calls: list[int] = []
 

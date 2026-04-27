@@ -107,10 +107,11 @@ class AsyncStitchClient:
                 page=page,
                 page_size=page_size,
             )
+            raw_item_count = self._item_count(payload)
             page_items = self._extract_items(payload)
             pages_fetched += 1
 
-            if not page_items:
+            if raw_item_count == 0:
                 break
 
             items.extend(page_items)
@@ -119,7 +120,7 @@ class AsyncStitchClient:
             if isinstance(total_pages, int) and page >= total_pages:
                 break
 
-            if len(page_items) < page_size:
+            if raw_item_count < page_size:
                 break
 
             page += 1
@@ -193,6 +194,13 @@ class AsyncStitchClient:
         if isinstance(items, list):
             return [item for item in items if isinstance(item, dict)]
         return []
+
+    @staticmethod
+    def _item_count(payload: dict[str, Any]) -> int:
+        items = payload.get("items")
+        if isinstance(items, list):
+            return len(items)
+        return 0
 
     @staticmethod
     def _raise_for_status(response: httpx.Response, operation: str) -> None:
