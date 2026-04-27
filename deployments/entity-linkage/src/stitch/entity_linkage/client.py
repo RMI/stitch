@@ -106,7 +106,3 @@ class StitchApiClient:
         resource_ids: list[int],
     ) -> dict[str, Any]:
         return await self._client.create_merge_candidate(resource_ids)
-
-    @staticmethod
-    def _raise_for_status(response, operation: str) -> None:
-        AsyncStitchClient._raise_for_status(response, operation)
