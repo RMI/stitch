@@ -15,17 +15,28 @@ logger = logging.getLogger("stitch.client")
 class AsyncStitchClient:
     def __init__(
         self,
-        base_url: str,
+        base_url: str | None = None,
         *,
         timeout: float = 30.0,
         headers_provider: Callable[[], Mapping[str, str]] | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._headers_provider = headers_provider
-        self._client = client or httpx.AsyncClient(
-            base_url=base_url,
-            timeout=timeout,
-        )
+        if client is None:
+            if base_url is None:
+                raise ValueError("base_url is required when client is not provided")
+            self._client = httpx.AsyncClient(
+                base_url=base_url,
+                timeout=timeout,
+            )
+            return
+
+        if base_url is not None and self._normalize_base_url(
+            client.base_url
+        ) != self._normalize_base_url(base_url):
+            raise ValueError("base_url does not match injected client base_url")
+
+        self._client = client
 
     async def __aenter__(self) -> "AsyncStitchClient":
         return self
@@ -207,3 +218,7 @@ class AsyncStitchClient:
         raise StitchAPIError(
             f"{operation} failed with status {response.status_code}: {response.text}"
         )
+
+    @staticmethod
+    def _normalize_base_url(url: httpx.URL | str) -> str:
+        return str(httpx.URL(str(url)).join("/"))

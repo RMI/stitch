@@ -6,10 +6,9 @@ from typing import Any
 import httpx
 import pytest
 
-from stitch.client import AsyncStitchClient
+from stitch.client import AsyncStitchClient, StitchAPIError
 from stitch.entity_linkage.client import StitchApiClient
 from stitch.entity_linkage.entities import RequestAuthContext, User
-from stitch.entity_linkage.errors import StitchAPIError
 
 
 def make_auth_context(
@@ -334,7 +333,7 @@ def test_raise_for_status_raises_stitch_api_error(
     response = httpx.Response(status_code, text=text)
 
     with pytest.raises(StitchAPIError) as exc_info:
-        StitchApiClient._raise_for_status(response, operation)
+        AsyncStitchClient._raise_for_status(response, operation)
 
     assert (
         str(exc_info.value) == f"{operation} failed with status {status_code}: {text}"

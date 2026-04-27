@@ -28,6 +28,46 @@ def make_client(
 
 
 @pytest.mark.anyio
+async def test_injected_client_allows_omitting_base_url() -> None:
+    raw_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json={"items": [], "total_pages": 1})
+        ),
+        base_url="http://example.test/api/v1",
+    )
+
+    client = AsyncStitchClient(client=raw_client)
+
+    payload = await client.list_oil_gas_fields_page()
+
+    assert payload == {"items": [], "total_pages": 1}
+
+    await raw_client.aclose()
+
+
+def test_init_requires_base_url_without_injected_client() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        AsyncStitchClient()
+
+    assert str(exc_info.value) == "base_url is required when client is not provided"
+
+
+@pytest.mark.anyio
+async def test_init_rejects_mismatched_injected_client_base_url() -> None:
+    raw_client = httpx.AsyncClient(base_url="http://example.test/api/v1")
+
+    with pytest.raises(ValueError) as exc_info:
+        AsyncStitchClient(
+            base_url="http://other.test/api/v1",
+            client=raw_client,
+        )
+
+    assert str(exc_info.value) == "base_url does not match injected client base_url"
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
 async def test_headers_provider_is_applied_to_each_request() -> None:
     calls = {"count": 0}
     captured: list[str | None] = []
