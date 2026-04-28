@@ -127,6 +127,7 @@ api-dev: stack-api-dev
 
 stack-api-dev:
 	SEED_API_BASE_URL=http://host.docker.internal:8000/api/v1 \
+	ENTITY_LINKAGE_API_BASE_URL=http://host.docker.internal:8000/api/v1 \
 	VITE_GIT_SHA=$(GIT_SHA) \
 	VITE_BUILD_ID=$(BUILD_ID) \
 	VITE_BUILD_TIME=$(BUILD_TIME) \
@@ -172,7 +173,6 @@ FRONTEND_BUILD_INPUTS := \
 frontend: frontend-build
 
 frontend-dev: $(FRONTEND_INSTALL_STAMP) stack-frontend-dev
-	VITE_API_URL=http://localhost:8000/api/v1 \
 	$(NPM) run dev
 
 stack-frontend-dev:

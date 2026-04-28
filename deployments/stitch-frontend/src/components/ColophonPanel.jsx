@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
-import config from "../config/env";
 import useBackendDiagnostics from "../hooks/useBackendDiagnostics";
+import { useConfig } from "../config/useConfig";
 
 function getConnectionInfo() {
   const nav = navigator;
@@ -34,7 +34,7 @@ function useSystemInfo() {
   );
 }
 
-function formatBackendSection(state) {
+function formatBackendSection(config, state) {
   if (state.loading) {
     return {
       Status: "Loading...",
@@ -112,8 +112,12 @@ function getApiDocsUrl(apiBaseUrl) {
 }
 
 export default function ColophonPanel({ diagnosticsOpen = false }) {
+  const config = useConfig();
   const systemInfo = useSystemInfo();
-  const backendDiagnostics = useBackendDiagnostics(diagnosticsOpen);
+  const backendDiagnostics = useBackendDiagnostics(
+    config.apiBaseUrl,
+    diagnosticsOpen,
+  );
   const { getAccessTokenSilently, isAuthenticated, isLoading } = useAuth0();
 
   const [accessToken, setAccessToken] = useState("");
@@ -163,29 +167,27 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
     };
   }, [getAccessTokenSilently, isAuthenticated, isLoading]);
 
-  const sections = useMemo(() => {
-    return {
-      "Frontend Build Info": {
-        Environment: config.appEnv,
-        "API Base URL": config.apiBaseUrl,
-        "App Version": config.build.appVersion,
-        "Build ID": config.build.buildId,
-        "Git SHA": config.build.gitSha.slice(0, 7),
-        "Node Version": config.build.nodeVersion,
-        "Vite Version": config.build.viteVersion,
-        "Build Time": config.build.buildTime,
-        "Bearer Token": accessToken ? redactToken(accessToken) : tokenStatus,
-      },
-      "Backend Diagnostics": formatBackendSection(backendDiagnostics),
-      "Runtime Info": {
-        "User Agent": systemInfo.userAgent,
-        "Screen Resolution": systemInfo.screenResolution,
-        "Device Pixel Ratio": systemInfo.devicePixelRatio,
-        Language: systemInfo.language,
-        Connection: systemInfo.connectionType,
-      },
-    };
-  }, [systemInfo, backendDiagnostics, accessToken, tokenStatus]);
+  const sections = {
+    "Frontend Build Info": {
+      Environment: config.appEnv,
+      "API Base URL": config.apiBaseUrl,
+      "App Version": config.build.appVersion,
+      "Build ID": config.build.buildId,
+      "Git SHA": config.build.gitSha.slice(0, 7),
+      "Node Version": config.build.nodeVersion,
+      "Vite Version": config.build.viteVersion,
+      "Build Time": config.build.buildTime,
+      "Bearer Token": accessToken ? redactToken(accessToken) : tokenStatus,
+    },
+    "Backend Diagnostics": formatBackendSection(config, backendDiagnostics),
+    "Runtime Info": {
+      "User Agent": systemInfo.userAgent,
+      "Screen Resolution": systemInfo.screenResolution,
+      "Device Pixel Ratio": systemInfo.devicePixelRatio,
+      Language: systemInfo.language,
+      Connection: systemInfo.connectionType,
+    },
+  };
 
   async function handleCopy() {
     const safeSections = {

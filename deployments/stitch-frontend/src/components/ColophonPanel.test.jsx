@@ -1,28 +1,51 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useAuth0 } from "@auth0/auth0-react";
+import { setConfigForTests } from "../config/env";
+import { renderWithQueryClient } from "../test/utils";
 
-const mockConfig = vi.hoisted(() => ({
-  appEnv: "local",
-  apiBaseUrl: "http://localhost:8000/api/v1",
-  build: {
-    appVersion: "0.0.0",
-    buildId: "local-build",
-    gitSha: "abcdef123456",
-    nodeVersion: "v20.19.0",
-    viteVersion: "^7.2.4",
-    buildTime: "2026-04-06T12:00:00Z",
-  },
-}));
-
-vi.mock("../config/env", () => ({
-  default: mockConfig,
-}));
+function createMockConfig() {
+  return {
+    appEnv: "local",
+    apiBaseUrl: "http://localhost:8000/api/v1",
+    entityLinkageBaseUrl: "http://localhost:8001/api/v1",
+    auth0: {
+      domain: "example.auth0.com",
+      clientId: "client-id",
+      audience: "https://stitch-api.local",
+    },
+    build: {
+      appVersion: "0.0.0",
+      buildId: "local-build",
+      gitSha: "abcdef1",
+      nodeVersion: "v20.19.0",
+      viteVersion: "^7.2.4",
+      buildTime: "2026-04-06T12:00:00Z",
+    },
+  };
+}
 
 describe("ColophonPanel", () => {
   let fetchMock;
   let clipboardSpy;
+  let getAccessTokenSilently;
+  let mockConfig;
 
   beforeEach(() => {
+    mockConfig = createMockConfig();
+    setConfigForTests(mockConfig);
+    getAccessTokenSilently = vi.fn().mockResolvedValue("test-access-token");
+
+    vi.mocked(useAuth0).mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      error: null,
+      user: { sub: "test-user-id", email: "test@example.com" },
+      getAccessTokenSilently,
+      loginWithRedirect: vi.fn(),
+      logout: vi.fn(),
+    });
+
     fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue({
@@ -107,13 +130,12 @@ describe("ColophonPanel", () => {
   afterEach(() => {
     clipboardSpy?.mockRestore();
     vi.unstubAllGlobals();
-    mockConfig.apiBaseUrl = "http://localhost:8000/api/v1";
   });
 
   it("renders frontend, backend, and runtime diagnostics", async () => {
     const { default: ColophonPanel } = await import("./ColophonPanel");
 
-    render(<ColophonPanel diagnosticsOpen />);
+    renderWithQueryClient(<ColophonPanel diagnosticsOpen />);
 
     expect(screen.getByText("Frontend Build Info")).toBeInTheDocument();
     expect(screen.getByText("Backend Diagnostics")).toBeInTheDocument();
@@ -140,21 +162,32 @@ describe("ColophonPanel", () => {
     expect(screen.getByText("2x")).toBeInTheDocument();
     expect(screen.getByText("4g (10 Mbps)")).toBeInTheDocument();
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:8000/api/v1/health/details",
-      {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://localhost:8000/api/v1/health/details",
+        {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+          },
         },
-      },
-    );
+      );
+    });
   });
 
   it("renders API docs link with correct URL", async () => {
+    vi.mocked(useAuth0).mockReturnValue({
+      isAuthenticated: false,
+      isLoading: false,
+      error: null,
+      user: null,
+      getAccessTokenSilently,
+      loginWithRedirect: vi.fn(),
+      logout: vi.fn(),
+    });
     const { default: ColophonPanel } = await import("./ColophonPanel");
 
-    render(<ColophonPanel diagnosticsOpen />);
+    renderWithQueryClient(<ColophonPanel diagnosticsOpen={false} />);
 
     const link = screen.getByRole("link", { name: "API docs" });
 
@@ -163,10 +196,22 @@ describe("ColophonPanel", () => {
   });
 
   it("renders unavailable state when API docs URL cannot be derived", async () => {
-    mockConfig.apiBaseUrl = "http://localhost:8000";
+    setConfigForTests({
+      ...createMockConfig(),
+      apiBaseUrl: "http://localhost:8000",
+    });
+    vi.mocked(useAuth0).mockReturnValue({
+      isAuthenticated: false,
+      isLoading: false,
+      error: null,
+      user: null,
+      getAccessTokenSilently,
+      loginWithRedirect: vi.fn(),
+      logout: vi.fn(),
+    });
     const { default: ColophonPanel } = await import("./ColophonPanel");
 
-    render(<ColophonPanel diagnosticsOpen />);
+    renderWithQueryClient(<ColophonPanel diagnosticsOpen={false} />);
 
     expect(screen.getByText("API docs unavailable")).toBeInTheDocument();
     expect(
@@ -177,7 +222,7 @@ describe("ColophonPanel", () => {
   it("copies the diagnostics payload", async () => {
     const { default: ColophonPanel } = await import("./ColophonPanel");
 
-    render(<ColophonPanel diagnosticsOpen />);
+    renderWithQueryClient(<ColophonPanel diagnosticsOpen />);
 
     await waitFor(() => {
       expect(screen.getByText("stitch-api")).toBeInTheDocument();

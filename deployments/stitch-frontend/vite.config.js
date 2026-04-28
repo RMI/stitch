@@ -29,7 +29,6 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, "../../", "");
 
   const buildMeta = {
-    VITE_APP_ENV: env.VITE_APP_ENV || mode || "development",
     VITE_APP_VERSION: env.VITE_APP_VERSION || getPackageVersion(),
     VITE_BUILD_ID:
       env.VITE_BUILD_ID || safeExec("git rev-parse --short HEAD") || "local",
