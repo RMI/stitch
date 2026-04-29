@@ -114,7 +114,7 @@ async def _execute(session: AsyncSession, **overrides):
     base = select(M).distinct()
     for cond in M._build_conditions(params):
         base = base.where(cond)
-    base = M._apply_sort(base, params)
+    base = base.order_by(*M._create_sort_clauses(params))
 
     total = await session.scalar(select(func.count()).select_from(base.subquery())) or 0
     stmt = M._apply_pagination(base, params)

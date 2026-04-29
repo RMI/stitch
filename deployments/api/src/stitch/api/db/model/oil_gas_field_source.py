@@ -58,7 +58,7 @@ class OilGasFieldSourceModel(OGFieldQueryMixin, TimestampMixin, UserAuditMixin, 
         stmt = select(cls).where(active_membership)
         for cond in cls._build_conditions(params):
             stmt = stmt.where(cond)
-        return cls._apply_sort(stmt, params)
+        return stmt.order_by(*cls._create_sort_clauses(params))
 
     @classmethod
     def create(

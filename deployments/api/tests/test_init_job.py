@@ -73,14 +73,14 @@ def test_classify_db_state_ok_with_view(monkeypatch):
         "inspect",
         lambda engine: DummyInspector(
             ["users"],
-            ["resource_coalesced_view"],
+            ["reporting_view"],
         ),
     )
     dummy_engine = object()
-    expected = {"users", "resource_coalesced_view"}
+    expected = {"users", "reporting_view"}
     state, existing = ij.classify_db_state(dummy_engine, expected)
     assert state == "ok"
-    assert existing == {"users", "resource_coalesced_view"}
+    assert existing == {"users", "reporting_view"}
 
 
 # ---------- seed_already_applied tests (mock engine.connect()) ----------

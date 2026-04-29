@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import ClassVar, Self, Any
+from typing import Any, ClassVar, Self
 
 from sqlalchemy import (
     ColumnElement,
@@ -11,7 +11,6 @@ from sqlalchemy import (
     Integer,
     Select,
     String,
-    UnaryExpression,
     asc,
     desc,
     func,
@@ -175,34 +174,18 @@ class OGFieldQueryMixin:
         return conditions
 
     @classmethod
-    def _create_sort_clauses[QM: OGFieldQueryMixin](
-        cls: type[QM], params: OGFieldQueryParams
-    ):
-        clauses: list[UnaryExpression[Any]] = []
-        sc = getattr(cls, params.sort_by, None)
-        if sc is not None:
-            dir_ = desc if params.sort_order == "desc" else asc
-            clauses.append(dir_(sc).nulls_last())
-        if params.sort_by != cls.__primary_sort_col__:
-            sc = getattr(cls, cls.__primary_sort_col__, None)
-            if sc is not None:
-                clauses.append(asc(sc))
-        return clauses
-
-    @classmethod
-    def _apply_sort[QM: OGFieldQueryMixin](
-        cls: type[QM], stmt: Select[tuple[QM]], params: OGFieldQueryParams
-    ) -> Select[tuple[QM]]:
-        """Apply ORDER BY with id tie-breaker."""
+    def _create_sort_clauses(cls, params: OGFieldQueryParams) -> list[Any]:
+        """Create ORDER BY clauses with a stable primary-key tie-breaker."""
+        clauses: list[Any] = []
         sort_col = getattr(cls, params.sort_by, None)
         if sort_col is not None:
             direction = desc if params.sort_order == "desc" else asc
-            stmt = stmt.order_by(direction(sort_col).nulls_last())
+            clauses.append(direction(sort_col).nulls_last())
         if params.sort_by != cls.__primary_sort_col__:
-            sort_col = getattr(cls, cls.__primary_sort_col__, None)
-            if sort_col is not None:
-                stmt = stmt.order_by(asc(sort_col))
-        return stmt
+            primary_sort_col = getattr(cls, cls.__primary_sort_col__, None)
+            if primary_sort_col is not None:
+                clauses.append(asc(primary_sort_col))
+        return clauses
 
     @classmethod
     def _apply_pagination[QM: OGFieldQueryMixin](
