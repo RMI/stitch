@@ -1,0 +1,198 @@
+from __future__ import annotations
+
+from contextlib import AbstractAsyncContextManager
+
+import pytest
+from fastapi.testclient import TestClient
+from stitch.client import StitchAPIError
+
+from stitch.llm.auth import get_current_user
+from stitch.llm.azure_responses import AzureResponsesResult
+from stitch.llm.entities import User
+from stitch.llm.errors import LLMConfigurationError
+from stitch.llm.main import app
+from stitch.llm.routers import oil_gas_fields as route_module
+from stitch.ogsi.model import GemSource, OGFieldDetailView
+from stitch.ogsi.model.og_field import OilGasFieldBase
+
+
+def make_detail_view(**data) -> OGFieldDetailView:
+    return OGFieldDetailView(
+        id=42,
+        data=OilGasFieldBase(name="Alpha", country="USA", **data),
+        provenance={},
+        source_data=[
+            GemSource(source="gem", name="Alpha", country="USA", **data),
+        ],
+    )
+
+
+class FakeStitchApiClient(AbstractAsyncContextManager["FakeStitchApiClient"]):
+    def __init__(
+        self,
+        *,
+        detail_view: OGFieldDetailView | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self.detail_view = detail_view
+        self.error = error
+        self.detail_calls: list[int] = []
+
+    async def __aenter__(self) -> "FakeStitchApiClient":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    async def get_oil_gas_field_detail(self, resource_id: int) -> OGFieldDetailView:
+        self.detail_calls.append(resource_id)
+        if self.error is not None:
+            raise self.error
+        assert self.detail_view is not None
+        return self.detail_view
+
+
+class FakeAzureResponsesClient(AbstractAsyncContextManager["FakeAzureResponsesClient"]):
+    def __init__(
+        self,
+        *,
+        output_text: str = '{"field":"basin","value":"Permian Basin"}',
+        model: str = "test-model",
+        error: Exception | None = None,
+    ) -> None:
+        self.output_text = output_text
+        self.model = model
+        self.error = error
+        self.calls: list[dict] = []
+
+    async def __aenter__(self) -> "FakeAzureResponsesClient":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    async def generate_field_suggestion(self, *, field, input_messages):
+        self.calls.append({"field": field, "input_messages": input_messages})
+        if self.error is not None:
+            raise self.error
+        return AzureResponsesResult(output_text=self.output_text, model=self.model)
+
+@pytest.fixture
+def test_client():
+    async def override_current_user() -> User:
+        return User(
+            id=1,
+            sub="test|user",
+            email="test@example.com",
+            name="Test User",
+        )
+
+    app.dependency_overrides[get_current_user] = override_current_user
+
+    with TestClient(app) as client:
+        yield client
+
+    app.dependency_overrides.clear()
+
+
+def install_fakes(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    stitch_client: FakeStitchApiClient,
+    azure_client: FakeAzureResponsesClient | None = None,
+) -> FakeAzureResponsesClient:
+    azure_client = azure_client or FakeAzureResponsesClient()
+    monkeypatch.setattr(route_module, "StitchApiClient", lambda: stitch_client)
+    monkeypatch.setattr(route_module, "AzureResponsesClient", lambda: azure_client)
+    return azure_client
+
+
+def test_get_suggestion_returns_validated_value(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stitch_client = FakeStitchApiClient(detail_view=make_detail_view(basin=None))
+    azure_client = install_fakes(
+        monkeypatch,
+        stitch_client=stitch_client,
+        azure_client=FakeAzureResponsesClient(
+            output_text='{"field":"basin","value":"  Permian Basin  "}'
+        ),
+    )
+
+    response = test_client.get("/api/v1/oil-gas-fields/42?field=basin")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "resource_id": 42,
+        "field": "basin",
+        "value": "Permian Basin",
+        "model": "test-model",
+    }
+    assert stitch_client.detail_calls == [42]
+    assert azure_client.calls[0]["field"] == "basin"
+
+
+def test_get_suggestion_returns_409_when_field_populated(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stitch_client = FakeStitchApiClient(
+        detail_view=make_detail_view(basin="Permian Basin")
+    )
+    azure_client = install_fakes(monkeypatch, stitch_client=stitch_client)
+
+    response = test_client.get("/api/v1/oil-gas-fields/42?field=basin")
+
+    assert response.status_code == 409
+    assert azure_client.calls == []
+
+
+def test_get_suggestion_maps_stitch_404(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stitch_client = FakeStitchApiClient(
+        error=StitchAPIError("missing", status_code=404)
+    )
+    install_fakes(monkeypatch, stitch_client=stitch_client)
+
+    response = test_client.get("/api/v1/oil-gas-fields/42?field=basin")
+
+    assert response.status_code == 404
+
+
+def test_get_suggestion_maps_missing_azure_config(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stitch_client = FakeStitchApiClient(detail_view=make_detail_view(basin=None))
+    install_fakes(
+        monkeypatch,
+        stitch_client=stitch_client,
+        azure_client=FakeAzureResponsesClient(
+            error=LLMConfigurationError("Azure OpenAI settings are not configured.")
+        ),
+    )
+
+    response = test_client.get("/api/v1/oil-gas-fields/42?field=basin")
+
+    assert response.status_code == 503
+
+
+def test_get_suggestion_maps_invalid_model_output(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stitch_client = FakeStitchApiClient(detail_view=make_detail_view(basin=None))
+    install_fakes(
+        monkeypatch,
+        stitch_client=stitch_client,
+        azure_client=FakeAzureResponsesClient(
+            output_text='{"field":"basin","value":123}'
+        ),
+    )
+
+    response = test_client.get("/api/v1/oil-gas-fields/42?field=basin")
+
+    assert response.status_code == 502

@@ -6,6 +6,7 @@ It builds Docker images for:
 
 * `api` (also used for DB migration)
 * `entity-linkage`
+* `stitch-llm`
 * `seed`
 
 It then handles deployments for:
@@ -13,6 +14,7 @@ It then handles deployments for:
 * the database, assuming an existing Azure PostgreSQL flexible server
 * the API Container App, assuming an existing Container Apps environment
 * the entity-linkage Container App in the same environment
+* the stitch-llm Container App in the same environment
 
 For PR preview environments, all preview databases are on the same shared
 Postgres host, and the container apps are all in the same dev ACA
