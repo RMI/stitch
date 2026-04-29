@@ -307,3 +307,50 @@ def test_get_suggestion_returns_null_when_no_public_citation_found(
     assert response.json()["value"] is None
     assert response.json()["citations"] == []
     assert response.json()["query_succeeded"] is True
+
+
+def test_get_suggestion_uses_structured_citations_when_annotations_absent(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_text = (
+        '{"field":"basin","value":"Songliao Basin","citations":['
+        '{"url":"https://en.wikipedia.org/wiki/Daqing_Oil_Field",'
+        '"title":"Daqing Oil Field - Wikipedia"}]}'
+    )
+    stitch_client = FakeStitchApiClient(detail_view=make_detail_view(basin=None))
+    install_fakes(
+        monkeypatch,
+        stitch_client=stitch_client,
+        azure_client=FakeAzureResponsesClient(
+            output_text=output_text,
+            response_payload={
+                "id": "resp_test",
+                "model": "test-model",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "annotations": [],
+                                "text": output_text,
+                            }
+                        ],
+                    }
+                ],
+            },
+        ),
+    )
+
+    response = test_client.get("/api/v1/oil-gas-fields/42?field=basin")
+
+    assert response.status_code == 200
+    assert response.json()["value"] == "Songliao Basin"
+    assert response.json()["citations"] == [
+        {
+            "url": "https://en.wikipedia.org/wiki/Daqing_Oil_Field",
+            "title": "Daqing Oil Field - Wikipedia",
+        }
+    ]
+    assert response.json()["query_succeeded"] is True
