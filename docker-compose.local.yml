@@ -39,6 +39,7 @@ services:
       - .env
     environment:
       LOG_LEVEL: ${ENTITY_LINKAGE_LOG_LEVEL:-info}
+      ENTITY_LINKAGE_API_BASE_URL: ${ENTITY_LINKAGE_API_BASE_URL:-http://api:8000/api/v1}
     healthcheck:
       test:
         [
