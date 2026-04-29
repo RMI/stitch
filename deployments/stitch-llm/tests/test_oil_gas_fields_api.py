@@ -75,7 +75,22 @@ class FakeAzureResponsesClient(AbstractAsyncContextManager["FakeAzureResponsesCl
         self.calls.append({"field": field, "input_messages": input_messages})
         if self.error is not None:
             raise self.error
-        return AzureResponsesResult(output_text=self.output_text, model=self.model)
+        return AzureResponsesResult(
+            output_text=self.output_text,
+            model=self.model,
+            request_payload={
+                "model": self.model,
+                "input": input_messages,
+                "store": False,
+                "text": {"format": {"type": "json_schema"}},
+            },
+            response_payload={
+                "id": "resp_test",
+                "model": self.model,
+                "output_text": self.output_text,
+            },
+        )
+
 
 @pytest.fixture
 def test_client():
@@ -128,6 +143,17 @@ def test_get_suggestion_returns_validated_value(
         "field": "basin",
         "value": "Permian Basin",
         "model": "test-model",
+        "foundry_request": {
+            "model": "test-model",
+            "input": azure_client.calls[0]["input_messages"],
+            "store": False,
+            "text": {"format": {"type": "json_schema"}},
+        },
+        "foundry_response": {
+            "id": "resp_test",
+            "model": "test-model",
+            "output_text": '{"field":"basin","value":"  Permian Basin  "}',
+        },
     }
     assert stitch_client.detail_calls == [42]
     assert azure_client.calls[0]["field"] == "basin"

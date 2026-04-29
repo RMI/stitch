@@ -74,6 +74,12 @@ async def test_generate_field_suggestion_posts_responses_request() -> None:
     assert result.output_text == '{"field":"basin","value":"Permian"}'
     assert result.model == "test-model"
     assert result.response_id == "resp_123"
+    assert result.request_payload == captured["body"]
+    assert result.response_payload == {
+        "id": "resp_123",
+        "model": "test-model",
+        "output_text": '{"field":"basin","value":"Permian"}',
+    }
     assert captured["method"] == "POST"
     assert captured["path"] == "/openai/v1/responses"
     assert captured["api_key"] == "azure-key"

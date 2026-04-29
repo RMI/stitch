@@ -16,3 +16,5 @@ class FieldSuggestionResponse(BaseModel):
     field: str
     value: Any
     model: str
+    foundry_request: dict[str, Any]
+    foundry_response: dict[str, Any]

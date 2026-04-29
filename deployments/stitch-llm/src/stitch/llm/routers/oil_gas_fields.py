@@ -112,4 +112,6 @@ async def suggest_oil_gas_field_value(
         field=field,
         value=value,
         model=llm_result.model,
+        foundry_request=llm_result.request_payload,
+        foundry_response=llm_result.response_payload,
     )

@@ -14,6 +14,8 @@ from stitch.llm.suggestions import AllowedSuggestionField, suggestion_response_s
 class AzureResponsesResult:
     output_text: str
     model: str
+    request_payload: dict[str, Any]
+    response_payload: dict[str, Any]
     response_id: str | None = None
 
 
@@ -55,6 +57,19 @@ class AzureResponsesClient:
         field: AllowedSuggestionField,
         input_messages: list[dict[str, str]],
     ) -> AzureResponsesResult:
+        request_payload = {
+            "model": self._model,
+            "input": input_messages,
+            "store": False,
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "oil_gas_field_suggestion",
+                    "strict": True,
+                    "schema": suggestion_response_schema(field),
+                }
+            },
+        }
         try:
             response = await self._client.post(
                 f"{self._base_url}/responses",
@@ -62,19 +77,7 @@ class AzureResponsesClient:
                     "Content-Type": "application/json",
                     "api-key": self._api_key,
                 },
-                json={
-                    "model": self._model,
-                    "input": input_messages,
-                    "store": False,
-                    "text": {
-                        "format": {
-                            "type": "json_schema",
-                            "name": "oil_gas_field_suggestion",
-                            "strict": True,
-                            "schema": suggestion_response_schema(field),
-                        }
-                    },
-                },
+                json=request_payload,
             )
         except httpx.HTTPError as exc:
             raise AzureResponsesError("Azure Responses request failed.") from exc
@@ -100,6 +103,8 @@ class AzureResponsesClient:
         return AzureResponsesResult(
             output_text=output_text,
             model=body.get("model") or self._model,
+            request_payload=request_payload,
+            response_payload=body,
             response_id=body.get("id"),
         )
 
