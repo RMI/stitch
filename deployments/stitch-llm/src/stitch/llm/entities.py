@@ -11,10 +11,17 @@ class User(BaseModel):
     name: str
 
 
+class Citation(BaseModel):
+    url: str
+    title: str | None = None
+
+
 class FieldSuggestionResponse(BaseModel):
     resource_id: int
     field: str
     value: Any
+    citations: list[Citation]
+    query_succeeded: bool
     model: str
     foundry_request: dict[str, Any]
     foundry_response: dict[str, Any]

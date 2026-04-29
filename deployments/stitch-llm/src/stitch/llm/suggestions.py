@@ -42,6 +42,14 @@ class ParsedFieldSuggestion(BaseModel):
 
     field: AllowedSuggestionField
     value: Any
+    citations: list["ParsedCitation"]
+
+
+class ParsedCitation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    url: str
+    title: str | None = None
 
 
 def is_missing_value(value: Any) -> bool:
@@ -77,6 +85,8 @@ def build_field_suggestion_input(
         "field_description": field_description,
         "instructions": [
             "Use only the provided coalesced_resource and source_records.",
+            "Use web search to find publicly available evidence for the requested value.",
+            "If you cannot support the value with one or more public citations, return null for value and an empty citations list.",
             "Return null when the value cannot be inferred from the provided data.",
             "Do not use outside knowledge.",
             "Do not return a value for any field except the requested field.",
@@ -106,10 +116,22 @@ def suggestion_response_schema(field: AllowedSuggestionField) -> dict[str, Any]:
     return {
         "type": "object",
         "additionalProperties": False,
-        "required": ["field", "value"],
+        "required": ["field", "value", "citations"],
         "properties": {
             "field": {"type": "string", "enum": [field]},
             "value": _value_schema_for_field(field),
+            "citations": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["url"],
+                    "properties": {
+                        "url": {"type": "string"},
+                        "title": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                    },
+                },
+            },
         },
     }
 

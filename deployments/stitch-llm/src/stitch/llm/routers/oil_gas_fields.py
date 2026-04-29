@@ -13,9 +13,9 @@ from starlette.status import (
 from stitch.client import StitchAPIError
 
 from stitch.llm.auth import CurrentUser
-from stitch.llm.azure_responses import AzureResponsesClient
+from stitch.llm.azure_responses import AzureResponsesClient, extract_public_citations
 from stitch.llm.client import StitchApiClient
-from stitch.llm.entities import FieldSuggestionResponse
+from stitch.llm.entities import Citation, FieldSuggestionResponse
 from stitch.llm.errors import (
     AzureResponsesError,
     FieldAlreadyPopulatedError,
@@ -91,11 +91,16 @@ async def suggest_oil_gas_field_value(
             llm_result.output_text,
             requested_field=field,
         )
-        value = sanitize_and_validate_suggested_value(
-            detail_data=detail_view.data,
-            field=field,
-            value=parsed.value,
-        )
+        citations = extract_public_citations(llm_result.response_payload)
+        if parsed.value is None or not citations:
+            value = None
+            citations = []
+        else:
+            value = sanitize_and_validate_suggested_value(
+                detail_data=detail_view.data,
+                field=field,
+                value=parsed.value,
+            )
     except LLMConfigurationError as exc:
         raise HTTPException(
             status_code=HTTP_503_SERVICE_UNAVAILABLE,
@@ -111,6 +116,8 @@ async def suggest_oil_gas_field_value(
         resource_id=id,
         field=field,
         value=value,
+        citations=citations,
+        query_succeeded=True,
         model=llm_result.model,
         foundry_request=llm_result.request_payload,
         foundry_response=llm_result.response_payload,

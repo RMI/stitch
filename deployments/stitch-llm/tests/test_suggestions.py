@@ -40,8 +40,16 @@ def test_ensure_field_is_missing_accepts_blank_string() -> None:
 def test_parse_field_suggestion_response_rejects_wrong_field() -> None:
     with pytest.raises(ModelOutputError):
         parse_field_suggestion_response(
-            '{"field":"basin","value":"Permian Basin"}',
+            '{"field":"basin","value":"Permian Basin","citations":[]}',
             requested_field="state_province",
+        )
+
+
+def test_parse_field_suggestion_response_requires_citations_key() -> None:
+    with pytest.raises(ModelOutputError):
+        parse_field_suggestion_response(
+            '{"field":"basin","value":"Permian Basin"}',
+            requested_field="basin",
         )
 
 
@@ -78,6 +86,7 @@ def test_suggestion_response_schema_is_field_specific() -> None:
     schema = suggestion_response_schema("field_status")
 
     assert schema["properties"]["field"]["enum"] == ["field_status"]
+    assert schema["properties"]["citations"]["type"] == "array"
     assert {
         "Producing",
         "Non-Producing",

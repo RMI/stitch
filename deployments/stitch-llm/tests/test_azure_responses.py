@@ -6,7 +6,11 @@ import httpx
 import pytest
 
 from stitch.llm.errors import AzureResponsesError
-from stitch.llm.azure_responses import AzureResponsesClient, _extract_output_text
+from stitch.llm.azure_responses import (
+    AzureResponsesClient,
+    _extract_output_text,
+    extract_public_citations,
+)
 from stitch.llm.settings import Settings
 
 
@@ -59,7 +63,7 @@ async def test_generate_field_suggestion_posts_responses_request() -> None:
             json={
                 "id": "resp_123",
                 "model": "test-model",
-                "output_text": '{"field":"basin","value":"Permian"}',
+                "output_text": '{"field":"basin","value":"Permian","citations":[]}',
             },
         )
 
@@ -71,19 +75,20 @@ async def test_generate_field_suggestion_posts_responses_request() -> None:
         input_messages=[{"role": "user", "content": "payload"}],
     )
 
-    assert result.output_text == '{"field":"basin","value":"Permian"}'
+    assert result.output_text == '{"field":"basin","value":"Permian","citations":[]}'
     assert result.model == "test-model"
     assert result.response_id == "resp_123"
     assert result.request_payload == captured["body"]
     assert result.response_payload == {
         "id": "resp_123",
         "model": "test-model",
-        "output_text": '{"field":"basin","value":"Permian"}',
+        "output_text": '{"field":"basin","value":"Permian","citations":[]}',
     }
     assert captured["method"] == "POST"
     assert captured["path"] == "/openai/v1/responses"
     assert captured["api_key"] == "azure-key"
     assert captured["body"]["model"] == "test-model"
+    assert captured["body"]["tools"] == [{"type": "web_search"}]
     assert captured["body"]["text"]["format"]["type"] == "json_schema"
 
     await raw_client.aclose()
@@ -105,3 +110,34 @@ async def test_generate_field_suggestion_wraps_non_json_payload() -> None:
         )
 
     await raw_client.aclose()
+
+
+def test_extract_public_citations_reads_url_annotations() -> None:
+    citations = extract_public_citations(
+        {
+            "output": [
+                {
+                    "content": [
+                        {
+                            "annotations": [
+                                {
+                                    "type": "url_citation",
+                                    "url": "https://example.com/article",
+                                    "title": "Example Article",
+                                },
+                                {
+                                    "type": "url_citation",
+                                    "url": "https://example.com/article",
+                                    "title": "Example Article",
+                                },
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    )
+
+    assert [citation.model_dump() for citation in citations] == [
+        {"url": "https://example.com/article", "title": "Example Article"}
+    ]

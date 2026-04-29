@@ -5,6 +5,7 @@ from typing import Any
 
 import httpx
 
+from stitch.llm.entities import Citation
 from stitch.llm.errors import AzureResponsesError, LLMConfigurationError
 from stitch.llm.settings import Settings, get_settings
 from stitch.llm.suggestions import AllowedSuggestionField, suggestion_response_schema
@@ -61,6 +62,7 @@ class AzureResponsesClient:
             "model": self._model,
             "input": input_messages,
             "store": False,
+            "tools": [{"type": "web_search"}],
             "text": {
                 "format": {
                     "type": "json_schema",
@@ -133,3 +135,45 @@ def _extract_output_text(body: dict[str, Any]) -> str | None:
                     return text
 
     return None
+
+
+def extract_public_citations(body: dict[str, Any]) -> list[Citation]:
+    citations: list[Citation] = []
+    seen: set[tuple[str, str | None]] = set()
+
+    output = body.get("output")
+    if not isinstance(output, list):
+        return citations
+
+    for item in output:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        for content_item in content:
+            if not isinstance(content_item, dict):
+                continue
+            annotations = content_item.get("annotations")
+            if not isinstance(annotations, list):
+                continue
+            for annotation in annotations:
+                if not isinstance(annotation, dict):
+                    continue
+                if annotation.get("type") != "url_citation":
+                    continue
+                url = annotation.get("url")
+                title = annotation.get("title")
+                if not isinstance(url, str):
+                    continue
+                if not url.startswith(("http://", "https://")):
+                    continue
+                if title is not None and not isinstance(title, str):
+                    title = None
+                key = (url, title)
+                if key in seen:
+                    continue
+                seen.add(key)
+                citations.append(Citation(url=url, title=title))
+
+    return citations

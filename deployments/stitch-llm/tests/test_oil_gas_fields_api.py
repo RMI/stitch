@@ -56,12 +56,14 @@ class FakeAzureResponsesClient(AbstractAsyncContextManager["FakeAzureResponsesCl
     def __init__(
         self,
         *,
-        output_text: str = '{"field":"basin","value":"Permian Basin"}',
+        output_text: str = '{"field":"basin","value":"Permian Basin","citations":[]}',
         model: str = "test-model",
+        response_payload: dict | None = None,
         error: Exception | None = None,
     ) -> None:
         self.output_text = output_text
         self.model = model
+        self.response_payload = response_payload
         self.error = error
         self.calls: list[dict] = []
 
@@ -82,9 +84,11 @@ class FakeAzureResponsesClient(AbstractAsyncContextManager["FakeAzureResponsesCl
                 "model": self.model,
                 "input": input_messages,
                 "store": False,
+                "tools": [{"type": "web_search"}],
                 "text": {"format": {"type": "json_schema"}},
             },
-            response_payload={
+            response_payload=self.response_payload
+            or {
                 "id": "resp_test",
                 "model": self.model,
                 "output_text": self.output_text,
@@ -131,7 +135,27 @@ def test_get_suggestion_returns_validated_value(
         monkeypatch,
         stitch_client=stitch_client,
         azure_client=FakeAzureResponsesClient(
-            output_text='{"field":"basin","value":"  Permian Basin  "}'
+            output_text='{"field":"basin","value":"  Permian Basin  ","citations":[{"url":"https://example.com/article","title":"Example Article"}]}',
+            response_payload={
+                "id": "resp_test",
+                "model": "test-model",
+                "output_text": '{"field":"basin","value":"  Permian Basin  ","citations":[{"url":"https://example.com/article","title":"Example Article"}]}',
+                "output": [
+                    {
+                        "content": [
+                            {
+                                "annotations": [
+                                    {
+                                        "type": "url_citation",
+                                        "url": "https://example.com/article",
+                                        "title": "Example Article",
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ],
+            },
         ),
     )
 
@@ -142,17 +166,37 @@ def test_get_suggestion_returns_validated_value(
         "resource_id": 42,
         "field": "basin",
         "value": "Permian Basin",
+        "citations": [
+            {"url": "https://example.com/article", "title": "Example Article"}
+        ],
+        "query_succeeded": True,
         "model": "test-model",
         "foundry_request": {
             "model": "test-model",
             "input": azure_client.calls[0]["input_messages"],
             "store": False,
+            "tools": [{"type": "web_search"}],
             "text": {"format": {"type": "json_schema"}},
         },
         "foundry_response": {
             "id": "resp_test",
             "model": "test-model",
-            "output_text": '{"field":"basin","value":"  Permian Basin  "}',
+            "output_text": '{"field":"basin","value":"  Permian Basin  ","citations":[{"url":"https://example.com/article","title":"Example Article"}]}',
+            "output": [
+                {
+                    "content": [
+                        {
+                            "annotations": [
+                                {
+                                    "type": "url_citation",
+                                    "url": "https://example.com/article",
+                                    "title": "Example Article",
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
         },
     }
     assert stitch_client.detail_calls == [42]
@@ -215,10 +259,51 @@ def test_get_suggestion_maps_invalid_model_output(
         monkeypatch,
         stitch_client=stitch_client,
         azure_client=FakeAzureResponsesClient(
-            output_text='{"field":"basin","value":123}'
+            output_text='{"field":"basin","value":123,"citations":[{"url":"https://example.com/article","title":"Example Article"}]}',
+            response_payload={
+                "id": "resp_test",
+                "model": "test-model",
+                "output_text": '{"field":"basin","value":123,"citations":[{"url":"https://example.com/article","title":"Example Article"}]}',
+                "output": [
+                    {
+                        "content": [
+                            {
+                                "annotations": [
+                                    {
+                                        "type": "url_citation",
+                                        "url": "https://example.com/article",
+                                        "title": "Example Article",
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ],
+            },
         ),
     )
 
     response = test_client.get("/api/v1/oil-gas-fields/42?field=basin")
 
     assert response.status_code == 502
+
+
+def test_get_suggestion_returns_null_when_no_public_citation_found(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stitch_client = FakeStitchApiClient(detail_view=make_detail_view(basin=None))
+    install_fakes(
+        monkeypatch,
+        stitch_client=stitch_client,
+        azure_client=FakeAzureResponsesClient(
+            output_text='{"field":"basin","value":"Permian Basin","citations":[]}'
+        ),
+    )
+
+    response = test_client.get("/api/v1/oil-gas-fields/42?field=basin")
+
+    assert response.status_code == 200
+    assert response.json()["value"] is None
+    assert response.json()["citations"] == []
+    assert response.json()["query_succeeded"] is True
