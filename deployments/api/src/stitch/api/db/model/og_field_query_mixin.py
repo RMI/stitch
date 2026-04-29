@@ -21,11 +21,10 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, declarative_mixin, mapped_column
 
-from stitch.api.entities import OGFieldQueryParams
+from stitch.api.entities import OGFieldQueryParams, OGSI_SOURCE_DEFAULT
 from stitch.ogsi.model import LocationType
 from stitch.ogsi.model.types import (
     FieldStatus,
-    OGSISrcKey,
     PrimaryHydrocarbonGroup,
     ProductionConventionality,
 )
@@ -142,8 +141,7 @@ class OGFieldQueryMixin:
         stmt: Select[tuple[QM]] = select(cls).distinct()
         for cond in cls._build_conditions(params):
             stmt = stmt.where(cond)
-        stmt.order_by(cls._create_sort_clauses(params))
-        return cls._apply_sort(stmt, params)
+        return stmt.order_by(*cls._create_sort_clauses(params))
 
     @classmethod
     def _build_conditions(cls, params: OGFieldQueryParams) -> list[ColumnElement[bool]]:
@@ -167,12 +165,12 @@ class OGFieldQueryMixin:
                 if col is not None:
                     conditions.append(col == value)
 
-        if len(src_set := set(params.source)) < 4:
-            # if user has passed explicit `source` list to filter against that differs from all
-            # i.e.
-            #   - only show resources with "gem" or "wm" sources attached
-            #   - only show "gem" or "wm" sources (if directly querying sources)
-            conditions.append(cls.source.in_(src_set))
+        source_col = getattr(cls, "source", None)
+        if source_col is not None:
+            sources = list(
+                dict.fromkeys(getattr(params, "source", OGSI_SOURCE_DEFAULT))
+            )
+            conditions.append(source_col.in_(sources))
 
         return conditions
 

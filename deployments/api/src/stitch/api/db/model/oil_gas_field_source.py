@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from typing import Any, ClassVar, override
 
 from pydantic import TypeAdapter
-from sqlalchemy import JSON, inspect, select, ColumnElement, or_
+from sqlalchemy import JSON, inspect, select, ColumnElement
 from sqlalchemy.orm import Mapped, mapped_column
 from stitch.ogsi.model import OGFieldSource, OilGasOperator, OilGasOwner
 from stitch.ogsi.model.types import (
@@ -55,29 +55,7 @@ class OilGasFieldSourceModel(OGFieldQueryMixin, TimestampMixin, UserAuditMixin, 
         cls, params: OGFieldQueryParams
     ) -> list[ColumnElement[bool]]:
         """Build WHERE conditions from filter params."""
-        conditions: list[ColumnElement[bool]] = []
-
-        if params.q:
-            q_term = f"%{params.q}%"
-            q_conds: list[ColumnElement[bool]] = []
-            for field_name in cls._q_fields:
-                col: ColumnElement[bool] | None = getattr(cls, field_name, None)
-                if col is not None:
-                    q_conds.append(col.ilike(q_term))
-            if q_conds:
-                conditions.append(or_(*q_conds))
-
-        for field_name in cls._exact_match_fields:
-            value = getattr(params, field_name, None)
-            if value is not None:
-                col = getattr(cls, field_name, None)
-                if col is not None:
-                    conditions.append(col == value)
-
-        if params.exclude_sources and len(params.exclude_sources) > 0:
-            conditions.append(cls.source.not_in(params.exclude_sources))
-
-        return conditions
+        return cls._build_conditions(params)
 
     @classmethod
     def create(

@@ -15,6 +15,8 @@ from stitch.ogsi.model.types import (
 )
 from stitch.ogsi.model.og_field import OilGasFieldBase
 
+OGSI_SOURCE_DEFAULT: tuple[OGSISrcKey, ...] = (RMI_SRC, GEM_SRC, WM_SRC, LLM_SRC)
+
 
 class Timestamped(BaseModel):
     created: datetime = Field(default_factory=datetime.now)
@@ -104,9 +106,7 @@ class OGFieldSortParams(BaseModel):
 
 
 class OGFieldQueryParams(PaginationParams, OGFieldFilterParams, OGFieldSortParams):
-    source: list[OGSISrcKey, ...] = Field(
-        default_factory=[RMI_SRC, GEM_SRC, WM_SRC, LLM_SRC]
-    )
+    source: list[OGSISrcKey] = Field(default_factory=lambda: list(OGSI_SOURCE_DEFAULT))
 
 
 class MergeCandidateStatus(StrEnum):
