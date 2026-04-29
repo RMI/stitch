@@ -4,7 +4,11 @@ from collections.abc import Sequence
 from typing import Any, ClassVar, override
 
 from pydantic import TypeAdapter
-from sqlalchemy import JSON, inspect, select, ColumnElement
+from sqlalchemy import (
+    JSON,
+    inspect,
+    select,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 from stitch.ogsi.model import OGFieldSource, OilGasOperator, OilGasOwner
 from stitch.ogsi.model.types import (
@@ -19,6 +23,7 @@ from stitch.api.db.model.types import PORTABLE_BIGINT
 from stitch.api.entities import OGFieldQueryParams, User
 
 from .common import Base
+from .membership import MembershipModel, MembershipStatus
 from .mixins import TimestampMixin, UserAuditMixin
 from .og_field_query_mixin import OGFieldQueryMixin
 
@@ -29,7 +34,6 @@ class OilGasFieldSourceModel(OGFieldQueryMixin, TimestampMixin, UserAuditMixin, 
     type_adapter: ClassVar[TypeAdapter[OGFieldSource]] = TypeAdapter(OGFieldSource)
 
     __tablename__: str = "oil_gas_field_sources"
-    __primary_sort_col__ = "id"
 
     id: Mapped[int] = mapped_column(PORTABLE_BIGINT, primary_key=True)
 
@@ -43,19 +47,18 @@ class OilGasFieldSourceModel(OGFieldQueryMixin, TimestampMixin, UserAuditMixin, 
     @classmethod
     @override
     def _base_query(cls, params: OGFieldQueryParams):
-        """Create the necessary query statement to filter to sources based on the passed params."""
+        """Filter to sources with at least one active membership."""
 
-        stmt = select(cls)
+        active_membership = (
+            select(1)
+            .where(MembershipModel.source_pk == cls.id)
+            .where(MembershipModel.status == MembershipStatus.ACTIVE)
+            .exists()
+        )
+        stmt = select(cls).where(active_membership)
         for cond in cls._build_conditions(params):
             stmt = stmt.where(cond)
         return cls._apply_sort(stmt, params)
-
-    @classmethod
-    def construct_query_clauses(
-        cls, params: OGFieldQueryParams
-    ) -> list[ColumnElement[bool]]:
-        """Build WHERE conditions from filter params."""
-        return cls._build_conditions(params)
 
     @classmethod
     def create(
