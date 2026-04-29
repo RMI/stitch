@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { renderWithQueryClient } from "../test/utils";
 import ResourceDetailPage from "./ResourceDetailPage";
 import { useResourceDetail } from "../hooks/useResources";
@@ -53,6 +54,8 @@ const defaultHookReturn = {
 };
 
 beforeEach(() => {
+  vi.clearAllMocks();
+  vi.unstubAllGlobals();
   vi.mocked(useResourceDetail).mockReturnValue({
     ...defaultHookReturn,
     refetch: vi.fn(),
@@ -185,9 +188,9 @@ describe("ResourceDetailPage", () => {
     });
 
     renderWithQueryClient(<ResourceDetailPage />);
-    expect(screen.getByText("Field Status")).toBeInTheDocument();
+    expect(screen.getAllByText("Field Status").length).toBeGreaterThan(0);
     expect(screen.getByText("Producing")).toBeInTheDocument();
-    expect(screen.getByText("Discovery Year")).toBeInTheDocument();
+    expect(screen.getAllByText("Discovery Year").length).toBeGreaterThan(0);
     expect(screen.getByText("1938")).toBeInTheDocument();
   });
 
@@ -201,5 +204,49 @@ describe("ResourceDetailPage", () => {
     expect(
       screen.getByRole("heading", { name: /data source mix/i }),
     ).toBeInTheDocument();
+  });
+
+  it("renders the AI Suggestion section", () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(
+      screen.getByRole("heading", { name: /ai suggestion/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /generate suggestion/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("generates and renders an AI suggestion preview", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          resource_id: 1,
+          field: "basin",
+          suggested_value: "Songliao",
+          raw_response: '{"name":"basin","value":"Songliao"}',
+        }),
+      }),
+    );
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(
+      screen.getByRole("button", { name: /generate suggestion/i }),
+    );
+
+    expect(await screen.findByText("Songliao")).toBeInTheDocument();
   });
 });

@@ -45,6 +45,37 @@ export async function getResourceDetail(id, fetcher, endpoint = "resources") {
   return data;
 }
 
+export async function createLLMSuggestion(
+  id,
+  field,
+  fetcher,
+  endpoint = "resources",
+) {
+  const url = `${config.apiBaseUrl}/${endpoint}/${id}/llm-suggestions`;
+  const response = await fetcher(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ field }),
+  });
+
+  if (!response.ok) {
+    let detail = `HTTP error! status: ${response.status}`;
+    try {
+      const payload = await response.json();
+      if (payload?.detail) detail = payload.detail;
+    } catch {
+      // Ignore JSON parsing failures and fall back to status text.
+    }
+    const error = new Error(detail);
+    error.status = response.status;
+    throw error;
+  }
+
+  return await response.json();
+}
+
 export async function getMergeCandidates(fetcher, endpoint = "oil-gas-fields") {
   const url = `${config.apiBaseUrl}/${endpoint}/merge-candidates`;
   const response = await fetcher(url);
