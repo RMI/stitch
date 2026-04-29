@@ -235,8 +235,17 @@ describe("ResourceDetailPage", () => {
         json: async () => ({
           resource_id: 1,
           field: "basin",
-          suggested_value: "Songliao",
-          raw_response: '{"name":"basin","value":"Songliao"}',
+          value: "Songliao",
+          citations: [
+            {
+              url: "https://example.com/daqing",
+              title: "Daqing citation",
+            },
+          ],
+          query_succeeded: true,
+          model: "test-model",
+          foundry_request: {},
+          foundry_response: {},
         }),
       }),
     );
@@ -248,5 +257,8 @@ describe("ResourceDetailPage", () => {
     );
 
     expect(await screen.findByText("Songliao")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Daqing citation" }),
+    ).toHaveAttribute("href", "https://example.com/daqing");
   });
 });

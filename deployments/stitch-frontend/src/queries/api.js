@@ -51,13 +51,10 @@ export async function createLLMSuggestion(
   fetcher,
   endpoint = "resources",
 ) {
-  const url = `${config.apiBaseUrl}/${endpoint}/${id}/llm-suggestions`;
+  const url = new URL(`${config.stitchLlmBaseUrl}/${endpoint}/${id}`);
+  url.searchParams.set("field", field);
   const response = await fetcher(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ field }),
+    method: "GET",
   });
 
   if (!response.ok) {

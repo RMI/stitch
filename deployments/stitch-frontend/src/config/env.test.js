@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 describe("config/env", () => {
   beforeEach(() => {
     vi.resetModules();
+    vi.unstubAllEnvs();
   });
 
   it("returns correct config when all vars are present", async () => {
@@ -10,6 +11,7 @@ describe("config/env", () => {
     vi.stubEnv("VITE_AUTH0_CLIENT_ID", "my-client-id");
     vi.stubEnv("VITE_AUTH0_AUDIENCE", "https://my-api");
     vi.stubEnv("VITE_API_URL", "http://localhost:9000/api/v1");
+    vi.stubEnv("VITE_STITCH_LLM_URL", "http://localhost:9002/api/v1");
 
     const { default: config } = await import("./env.js");
 
@@ -17,6 +19,7 @@ describe("config/env", () => {
     expect(config.auth0.clientId).toBe("my-client-id");
     expect(config.auth0.audience).toBe("https://my-api");
     expect(config.apiBaseUrl).toBe("http://localhost:9000/api/v1");
+    expect(config.stitchLlmBaseUrl).toBe("http://localhost:9002/api/v1");
   });
 
   it("throws when required vars are missing", async () => {
@@ -36,5 +39,6 @@ describe("config/env", () => {
     const { default: config } = await import("./env.js");
 
     expect(config.apiBaseUrl).toBe("http://localhost:8000/api/v1");
+    expect(config.stitchLlmBaseUrl).toBe("http://localhost:8002/api/v1");
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getResources, getResource } from "./api";
+import { createLLMSuggestion, getResources, getResource } from "./api";
 
 describe("API Functions", () => {
   let mockFetcher;
@@ -160,6 +160,38 @@ describe("API Functions", () => {
       await expect(getResource(1, mockFetcher)).rejects.toThrow(
         "Failed to fetch",
       );
+    });
+  });
+
+  describe("createLLMSuggestion", () => {
+    it("calls the stitch-llm GET endpoint with the requested field", async () => {
+      mockFetcher.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          resource_id: 42,
+          field: "basin",
+          value: "Songliao Basin",
+          citations: [],
+          query_succeeded: true,
+          model: "test-model",
+          foundry_request: {},
+          foundry_response: {},
+        }),
+      });
+
+      const result = await createLLMSuggestion(
+        42,
+        "basin",
+        mockFetcher,
+        "oil-gas-fields",
+      );
+
+      expect(mockFetcher).toHaveBeenCalledWith(
+        new URL("http://localhost:8002/api/v1/oil-gas-fields/42?field=basin"),
+        { method: "GET" },
+      );
+      expect(result.value).toBe("Songliao Basin");
     });
   });
 });

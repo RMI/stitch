@@ -34,6 +34,8 @@ function loadConfig() {
     }),
     entityLinkageBaseUrl:
       import.meta.env.VITE_ENTITY_LINKAGE_URL || "http://localhost:8001/api/v1",
+    stitchLlmBaseUrl:
+      import.meta.env.VITE_STITCH_LLM_URL || "http://localhost:8002/api/v1",
   });
 }
 

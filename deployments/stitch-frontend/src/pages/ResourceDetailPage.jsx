@@ -85,10 +85,27 @@ function AISuggestionPanel({ endpoint, resourceId }) {
             </p>
             <p className="text-sm text-gray-dark">
               <span className="font-medium">Suggested value:</span>{" "}
-              {result.suggested_value == null
-                ? "—"
-                : String(result.suggested_value)}
+              {result.value == null ? "—" : String(result.value)}
             </p>
+            {Array.isArray(result.citations) && result.citations.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-gray-dark">Citations</p>
+                <ul className="space-y-1 text-sm text-gray-dark">
+                  {result.citations.map((citation) => (
+                    <li key={`${citation.url}-${citation.title ?? ""}`}>
+                      <a
+                        href={citation.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-700 underline"
+                      >
+                        {citation.title ?? citation.url}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
       </div>
