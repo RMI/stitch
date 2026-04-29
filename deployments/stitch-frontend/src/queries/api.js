@@ -1,6 +1,5 @@
-import config from "../config/env";
-
 export async function getResources(
+  config,
   fetcher,
   endpoint = "resources",
   { page = 1, page_size = 50, filters = {}, sort_by, sort_order } = {},
@@ -21,7 +20,7 @@ export async function getResources(
   return await response.json();
 }
 
-export async function getResource(id, fetcher, endpoint = "resources") {
+export async function getResource(config, id, fetcher, endpoint = "resources") {
   const url = `${config.apiBaseUrl}/${endpoint}/${id}`;
   const response = await fetcher(url);
   if (!response.ok) {
@@ -33,7 +32,12 @@ export async function getResource(id, fetcher, endpoint = "resources") {
   return data;
 }
 
-export async function getResourceDetail(id, fetcher, endpoint = "resources") {
+export async function getResourceDetail(
+  config,
+  id,
+  fetcher,
+  endpoint = "resources",
+) {
   const url = `${config.apiBaseUrl}/${endpoint}/${id}/detail`;
   const response = await fetcher(url);
   if (!response.ok) {
@@ -45,7 +49,11 @@ export async function getResourceDetail(id, fetcher, endpoint = "resources") {
   return data;
 }
 
-export async function getMergeCandidates(fetcher, endpoint = "oil-gas-fields") {
+export async function getMergeCandidates(
+  config,
+  fetcher,
+  endpoint = "oil-gas-fields",
+) {
   const url = `${config.apiBaseUrl}/${endpoint}/merge-candidates`;
   const response = await fetcher(url);
 
@@ -59,6 +67,7 @@ export async function getMergeCandidates(fetcher, endpoint = "oil-gas-fields") {
 }
 
 export async function getMergeCandidate(
+  config,
   id,
   fetcher,
   endpoint = "oil-gas-fields",
@@ -76,6 +85,7 @@ export async function getMergeCandidate(
 }
 
 export async function reviewMergeCandidate(
+  config,
   id,
   action,
   fetcher,
@@ -110,6 +120,7 @@ export async function reviewMergeCandidate(
 }
 
 export async function getMergeCandidatePreview(
+  config,
   id,
   fetcher,
   endpoint = "oil-gas-fields",
