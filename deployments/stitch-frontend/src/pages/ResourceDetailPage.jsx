@@ -3,6 +3,7 @@ import { useAuth0 } from "@auth0/auth0-react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useResourceDetail } from "../hooks/useResources";
 import { createAuthenticatedFetcher } from "../auth/api";
+import { useConfig } from "../config/useConfig";
 import { createLLMSuggestion } from "../queries/api";
 import SourceMixBar from "../components/SourceMixBar";
 import SectionHeader from "../components/SectionHeader";
@@ -15,8 +16,9 @@ import {
 } from "../constants/fieldMeta";
 
 function AISuggestionPanel({ endpoint, resourceId }) {
+  const config = useConfig();
   const { getAccessTokenSilently } = useAuth0();
-  const fetcher = createAuthenticatedFetcher(getAccessTokenSilently);
+  const fetcher = createAuthenticatedFetcher(config, getAccessTokenSilently);
   const [selectedField, setSelectedField] = useState(AI_SUGGESTION_FIELDS[0]);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
@@ -29,6 +31,7 @@ function AISuggestionPanel({ endpoint, resourceId }) {
 
     try {
       const suggestion = await createLLMSuggestion(
+        config,
         resourceId,
         selectedField,
         fetcher,

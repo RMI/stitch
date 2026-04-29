@@ -1,17 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { useAuth0 } from "@auth0/auth0-react";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { renderWithQueryClient } from "../test/utils";
+import { auth0TestDefaults, renderWithQueryClient } from "../test/utils";
 import ResourceDetailPage from "./ResourceDetailPage";
 import { useResourceDetail } from "../hooks/useResources";
+import * as apiModule from "../queries/api";
 
 vi.mock("../hooks/useResources");
+
+let mockedRouteId = "1";
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual("react-router-dom");
   return {
     ...actual,
-    useParams: () => ({ id: "1" }),
+    useParams: () => ({ id: mockedRouteId }),
     useNavigate: () => vi.fn(),
   };
 });
@@ -56,6 +60,8 @@ const defaultHookReturn = {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.unstubAllGlobals();
+  mockedRouteId = "1";
+  vi.mocked(useAuth0).mockReturnValue(auth0TestDefaults);
   vi.mocked(useResourceDetail).mockReturnValue({
     ...defaultHookReturn,
     refetch: vi.fn(),
@@ -64,14 +70,7 @@ beforeEach(() => {
 
 describe("ResourceDetailPage", () => {
   it("shows an invalid ID message for a non-numeric route param", () => {
-    vi.mock("react-router-dom", async () => {
-      const actual = await vi.importActual("react-router-dom");
-      return {
-        ...actual,
-        useParams: () => ({ id: "not-a-number" }),
-        useNavigate: () => vi.fn(),
-      };
-    });
+    mockedRouteId = "not-a-number";
 
     renderWithQueryClient(<ResourceDetailPage />);
     expect(screen.getByText(/invalid resource id/i)).toBeInTheDocument();
@@ -227,28 +226,21 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          resource_id: 1,
-          field: "basin",
-          value: "Songliao",
-          citations: [
-            {
-              url: "https://example.com/daqing",
-              title: "Daqing citation",
-            },
-          ],
-          query_succeeded: true,
-          model: "test-model",
-          foundry_request: {},
-          foundry_response: {},
-        }),
-      }),
-    );
+    vi.spyOn(apiModule, "createLLMSuggestion").mockResolvedValue({
+      resource_id: 1,
+      field: "basin",
+      value: "Songliao",
+      citations: [
+        {
+          url: "https://example.com/daqing",
+          title: "Daqing citation",
+        },
+      ],
+      query_succeeded: true,
+      model: "test-model",
+      foundry_request: {},
+      foundry_response: {},
+    });
     const user = userEvent.setup();
 
     renderWithQueryClient(<ResourceDetailPage />);

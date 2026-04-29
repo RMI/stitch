@@ -9,6 +9,7 @@ describe("API Functions", () => {
     mockFetcher = vi.fn();
     config = {
       apiBaseUrl: "http://localhost:8000/api/v1",
+      stitchLlmBaseUrl: "http://localhost:8002/api/v1",
     };
   });
 
@@ -189,6 +190,7 @@ describe("API Functions", () => {
       });
 
       const result = await createLLMSuggestion(
+        config,
         42,
         "basin",
         mockFetcher,

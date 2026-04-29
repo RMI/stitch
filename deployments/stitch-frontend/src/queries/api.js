@@ -50,6 +50,7 @@ export async function getResourceDetail(
 }
 
 export async function createLLMSuggestion(
+  config,
   id,
   field,
   fetcher,
