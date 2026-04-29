@@ -272,6 +272,168 @@ class TestResourceQueryAction:
         assert items[0].provenance["reservoir_formation"] == "wm"
 
     @pytest.mark.anyio
+    async def test_no_redaction_uses_priority_coalesced_owner_operator_lists(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        resource_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {
+                "source": "rmi",
+                "name": "RMI Name",
+                "country": "USA",
+                "owners": [{"name": "RMI Owner", "stake": 55.0}],
+                "operators": [{"name": "RMI Operator", "stake": 100.0}],
+            },
+            {
+                "source": "gem",
+                "name": "GEM Name",
+                "country": "USA",
+                "owners": [{"name": "GEM Owner", "stake": 45.0}],
+                "operators": [{"name": "GEM Operator", "stake": 100.0}],
+            },
+        )
+
+        params = _QueryParams(page=1, page_size=10)
+        items, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 1
+        assert [item.id for item in items] == [resource_id]
+        assert items[0].data.owners is not None
+        assert [(owner.name, owner.stake) for owner in items[0].data.owners] == [
+            ("RMI Owner", 55.0)
+        ]
+        assert items[0].provenance["owners"] == "rmi"
+        assert items[0].data.operators is not None
+        assert [
+            (operator.name, operator.stake) for operator in items[0].data.operators
+        ] == [("RMI Operator", 100.0)]
+        assert items[0].provenance["operators"] == "rmi"
+
+    @pytest.mark.anyio
+    async def test_null_owner_operator_lists_fall_through_to_lower_priority_source(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        resource_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {
+                "source": "rmi",
+                "name": "RMI Name",
+                "country": "USA",
+                "owners": None,
+                "operators": None,
+            },
+            {
+                "source": "gem",
+                "name": "GEM Name",
+                "country": "USA",
+                "owners": [{"name": "GEM Owner", "stake": 45.0}],
+                "operators": [{"name": "GEM Operator", "stake": 100.0}],
+            },
+        )
+
+        params = _QueryParams(page=1, page_size=10)
+        items, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 1
+        assert [item.id for item in items] == [resource_id]
+        assert items[0].data.owners is not None
+        assert [(owner.name, owner.stake) for owner in items[0].data.owners] == [
+            ("GEM Owner", 45.0)
+        ]
+        assert items[0].provenance["owners"] == "gem"
+        assert items[0].data.operators is not None
+        assert [
+            (operator.name, operator.stake) for operator in items[0].data.operators
+        ] == [("GEM Operator", 100.0)]
+        assert items[0].provenance["operators"] == "gem"
+
+    @pytest.mark.anyio
+    async def test_empty_owner_operator_lists_win_over_lower_priority_values(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        resource_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {
+                "source": "rmi",
+                "name": "RMI Name",
+                "country": "USA",
+                "owners": [],
+                "operators": [],
+            },
+            {
+                "source": "gem",
+                "name": "GEM Name",
+                "country": "USA",
+                "owners": [{"name": "GEM Owner", "stake": 45.0}],
+                "operators": [{"name": "GEM Operator", "stake": 100.0}],
+            },
+        )
+
+        params = _QueryParams(page=1, page_size=10)
+        items, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 1
+        assert [item.id for item in items] == [resource_id]
+        assert items[0].data.owners == []
+        assert items[0].provenance["owners"] == "rmi"
+        assert items[0].data.operators == []
+        assert items[0].provenance["operators"] == "rmi"
+
+    @pytest.mark.anyio
+    async def test_redacted_owner_operator_lists_fall_through_to_lower_priority_source(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        resource_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {
+                "source": "rmi",
+                "name": "RMI Name",
+                "country": "USA",
+                "owners": [{"name": "RMI Owner", "stake": 55.0}],
+                "operators": [{"name": "RMI Operator", "stake": 100.0}],
+            },
+            {
+                "source": "gem",
+                "name": "GEM Name",
+                "country": "USA",
+                "owners": [{"name": "GEM Owner", "stake": 45.0}],
+                "operators": [{"name": "GEM Operator", "stake": 100.0}],
+            },
+        )
+
+        params = _QueryParams(page=1, page_size=10)
+        items, total = await resource_actions.query(
+            seeded_integration_session,
+            params,
+            redacted_sources=["rmi"],
+        )
+
+        assert total == 1
+        assert [item.id for item in items] == [resource_id]
+        assert items[0].data.owners is not None
+        assert [(owner.name, owner.stake) for owner in items[0].data.owners] == [
+            ("GEM Owner", 45.0)
+        ]
+        assert items[0].provenance["owners"] == "gem"
+        assert items[0].data.operators is not None
+        assert [
+            (operator.name, operator.stake) for operator in items[0].data.operators
+        ] == [("GEM Operator", 100.0)]
+        assert items[0].provenance["operators"] == "gem"
+
+    @pytest.mark.anyio
     async def test_redacted_source_falls_through_to_lower_priority_source(
         self,
         seeded_integration_session: AsyncSession,
@@ -319,8 +481,12 @@ class TestResourceQueryAction:
         assert [item.id for item in items] == [resource_id]
         assert items[0].data.name is None
         assert items[0].data.country is None
+        assert items[0].data.owners is None
+        assert items[0].data.operators is None
         assert items[0].provenance["name"] is None
         assert items[0].provenance["country"] is None
+        assert items[0].provenance["owners"] is None
+        assert items[0].provenance["operators"] is None
 
     @pytest.mark.anyio
     async def test_filters_apply_to_final_coalesced_values_after_redaction(

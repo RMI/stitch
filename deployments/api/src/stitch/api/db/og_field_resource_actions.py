@@ -2,7 +2,18 @@ from collections.abc import Collection, Sequence
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import ColumnElement, and_, asc, case, desc, func, or_, select
+from sqlalchemy import (
+    ColumnElement,
+    String,
+    and_,
+    asc,
+    case,
+    cast,
+    desc,
+    func,
+    or_,
+    select,
+)
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -34,12 +45,13 @@ from .model.og_field_source_priority import DEFAULT_PRIORITIES
 from .utils import resource_model_to_entity
 
 
-_OWNERS_OPERATORS = frozenset({"owners", "operators"})
+_LIST_JSON_FIELDS = ("owners", "operators")
 _LIST_SCALAR_FIELDS = tuple(
     field_name
     for field_name in OilGasFieldBase.model_fields
-    if field_name not in _OWNERS_OPERATORS
+    if field_name not in _LIST_JSON_FIELDS
 )
+_LIST_DATA_FIELDS = (*_LIST_SCALAR_FIELDS, *_LIST_JSON_FIELDS)
 _PROVENANCE_SUFFIX = "__provenance_source"
 
 
@@ -111,7 +123,7 @@ def _build_redacted_resource_list_cte(
         )
     )
 
-    for field_name in _LIST_SCALAR_FIELDS:
+    for field_name in _LIST_DATA_FIELDS:
         qualified = qualified.add_columns(getattr(s, field_name).label(field_name))
 
     qualified_cte = qualified.cte("qualified_resource_sources")
@@ -144,7 +156,44 @@ def _build_redacted_resource_list_cte(
             ),
         )
 
+    for field_name in _LIST_JSON_FIELDS:
+        value_alias = qualified_cte.alias(f"{field_name}_value_source")
+        provenance_alias = qualified_cte.alias(f"{field_name}_provenance_source")
+        value_col = getattr(value_alias.c, field_name)
+        provenance_col = getattr(provenance_alias.c, field_name)
+        value_is_present = _json_value_is_present(value_col)
+        provenance_is_present = _json_value_is_present(provenance_col)
+
+        value_subquery = (
+            select(value_col)
+            .where(
+                value_alias.c.id == qualified_cte.c.id,
+                value_is_present,
+            )
+            .order_by(value_alias.c.priority.asc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        provenance_subquery = (
+            select(provenance_alias.c.source)
+            .where(
+                provenance_alias.c.id == qualified_cte.c.id,
+                provenance_is_present,
+            )
+            .order_by(provenance_alias.c.priority.asc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        coalesced = coalesced.add_columns(
+            value_subquery.label(field_name),
+            provenance_subquery.label(f"{field_name}{_PROVENANCE_SUFFIX}"),
+        )
+
     return coalesced.cte("redacted_resource_list")
+
+
+def _json_value_is_present(col) -> ColumnElement[bool]:
+    return and_(col.is_not(None), cast(col, String) != "null")
 
 
 def _build_final_conditions(
@@ -194,14 +243,12 @@ def _resource_list_column(coalesced, field_name: str):
 def _list_item_from_row(row: RowMapping) -> OGFieldListItemView:
     data = OilGasFieldBase(
         **{
-            field_name: None if field_name in _OWNERS_OPERATORS else row.get(field_name)
+            field_name: row.get(field_name)
             for field_name in OilGasFieldBase.model_fields
         }
     )
     provenance: dict[str, OGSISrcKey | None] = {
-        field_name: None
-        if field_name in _OWNERS_OPERATORS
-        else row.get(f"{field_name}{_PROVENANCE_SUFFIX}")
+        field_name: row.get(f"{field_name}{_PROVENANCE_SUFFIX}")
         for field_name in OilGasFieldBase.model_fields
     }
     return OGFieldListItemView(id=row["id"], data=data, provenance=provenance)
