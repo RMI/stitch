@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import config from "../config/env";
 
-export default function useBackendDiagnostics(enabled) {
+export default function useBackendDiagnostics(apiBaseUrl, enabled) {
   const [state, setState] = useState({
     loading: false,
     error: null,
@@ -23,7 +22,7 @@ export default function useBackendDiagnostics(enabled) {
       }));
 
       try {
-        const response = await fetch(`${config.apiBaseUrl}/health/details`, {
+        const response = await fetch(`${apiBaseUrl}/health/details`, {
           method: "GET",
           headers: {
             Accept: "application/json",
@@ -66,7 +65,7 @@ export default function useBackendDiagnostics(enabled) {
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, [apiBaseUrl, enabled]);
 
   return state;
 }
