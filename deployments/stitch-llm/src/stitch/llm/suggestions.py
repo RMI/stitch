@@ -125,7 +125,7 @@ def suggestion_response_schema(field: AllowedSuggestionField) -> dict[str, Any]:
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
-                    "required": ["url"],
+                    "required": ["url", "title"],
                     "properties": {
                         "url": {"type": "string"},
                         "title": {"anyOf": [{"type": "string"}, {"type": "null"}]},
