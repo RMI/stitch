@@ -196,7 +196,7 @@ jobs:
         }}
         STITCH_LLM_MACHINE_TOKEN=${{
           github.event_name == 'pull_request' && '' ||
-          secrets.STITCH_LLM_MACHINE_TOKEN
+          'secrets.STITCH_LLM_MACHINE_TOKEN'
         }}
         STITCH_LLM_AZURE_OPENAI_BASE_URL=${{
           github.event_name == 'pull_request' && '' ||
@@ -208,7 +208,7 @@ jobs:
         }}
         STITCH_LLM_AZURE_OPENAI_API_KEY=${{
           github.event_name == 'pull_request' && '' ||
-          secrets.STITCH_LLM_AZURE_OPENAI_API_KEY
+          'secrets.STITCH_LLM_AZURE_OPENAI_API_KEY'
         }}
       deployment-label: stitch-llm
 
