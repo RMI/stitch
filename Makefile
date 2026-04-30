@@ -61,7 +61,7 @@ py-format: uv-dev
 py-clean-cache:
 	rm -rf .ruff_cache .pytest_cache
 
-py-build: api-build pkg-build
+py-build: api-build entity-linkage-build stitch-llm-build pkg-build
 
 uv-sync:
 	$(UV) sync
