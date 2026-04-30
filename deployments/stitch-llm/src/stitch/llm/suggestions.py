@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import json
 from typing import Any, Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import ValidationError
 
 from stitch.llm.errors import FieldAlreadyPopulatedError, ModelOutputError
 from stitch.ogsi.model import OGFieldDetailView
@@ -37,19 +36,10 @@ ENUM_VALUES_BY_FIELD: dict[str, tuple[str, ...]] = {
 }
 
 
-class ParsedFieldSuggestion(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    field: AllowedSuggestionField
-    value: Any
-    citations: list["ParsedCitation"]
-
-
-class ParsedCitation(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    url: str
-    title: str | None = None
+class ParsedFieldSuggestion:
+    def __init__(self, *, value: Any, rationale: str) -> None:
+        self.value = value
+        self.rationale = rationale
 
 
 def is_missing_value(value: Any) -> bool:
@@ -86,8 +76,8 @@ def build_field_suggestion_input(
         "instructions": [
             "Use only the provided coalesced_resource and source_records.",
             "Use web search to find publicly available evidence for the requested value.",
-            "If you cannot support the value with one or more public citations, return null for value and an empty citations list.",
-            "Return null when the value cannot be inferred from the provided data.",
+            "If you cannot support the value with one or more public citations, return VALUE: null.",
+            "Return VALUE: null when the value cannot be inferred from the provided data.",
             "Do not use outside knowledge.",
             "Do not return a value for any field except the requested field.",
         ],
@@ -102,38 +92,24 @@ def build_field_suggestion_input(
             "role": "system",
             "content": (
                 "You infer one missing oil and gas field value from Stitch data. "
-                "Respond only with structured JSON matching the supplied schema."
+                "Use public web search evidence when needed. "
+                "Respond using exactly two lines in this format:\n"
+                "VALUE: <value or null>\n"
+                "RATIONALE: <one short sentence>\n"
+                "Do not output JSON. Do not add any extra lines."
             ),
         },
         {
             "role": "user",
-            "content": json.dumps(payload, ensure_ascii=False, indent=2),
+            "content": _serialize_prompt_payload(payload),
         },
     ]
 
 
-def suggestion_response_schema(field: AllowedSuggestionField) -> dict[str, Any]:
-    return {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["field", "value", "citations"],
-        "properties": {
-            "field": {"type": "string", "enum": [field]},
-            "value": _value_schema_for_field(field),
-            "citations": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "required": ["url", "title"],
-                    "properties": {
-                        "url": {"type": "string"},
-                        "title": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                    },
-                },
-            },
-        },
-    }
+def _serialize_prompt_payload(payload: dict[str, Any]) -> str:
+    import json
+
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def _value_schema_for_field(field: AllowedSuggestionField) -> dict[str, Any]:
@@ -161,15 +137,31 @@ def parse_field_suggestion_response(
     *,
     requested_field: AllowedSuggestionField,
 ) -> ParsedFieldSuggestion:
-    try:
-        parsed = ParsedFieldSuggestion.model_validate(json.loads(raw_output_text))
-    except (json.JSONDecodeError, ValidationError) as exc:
-        raise ModelOutputError("Model did not return valid suggestion JSON.") from exc
+    value_line: str | None = None
+    rationale_line: str | None = None
 
-    if parsed.field != requested_field:
-        raise ModelOutputError("Model returned a suggestion for the wrong field.")
+    for raw_line in raw_output_text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("VALUE:"):
+            value_line = line.partition(":")[2].strip()
+        elif line.startswith("RATIONALE:"):
+            rationale_line = line.partition(":")[2].strip()
 
-    return parsed
+    if value_line is None or rationale_line is None:
+        raise ModelOutputError(
+            "Model did not return the expected VALUE/RATIONALE format."
+        )
+
+    value: Any
+    if value_line.lower() == "null":
+        value = None
+    else:
+        value = value_line
+
+    if not rationale_line:
+        raise ModelOutputError("Model did not return a rationale.")
+
+    return ParsedFieldSuggestion(value=value, rationale=rationale_line)
 
 
 def sanitize_and_validate_suggested_value(

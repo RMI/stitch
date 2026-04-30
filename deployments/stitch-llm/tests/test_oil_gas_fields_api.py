@@ -56,7 +56,7 @@ class FakeAzureResponsesClient(AbstractAsyncContextManager["FakeAzureResponsesCl
     def __init__(
         self,
         *,
-        output_text: str = '{"field":"basin","value":"Permian Basin","citations":[]}',
+        output_text: str = "VALUE: Permian Basin\nRATIONALE: Public sources identify the basin.",
         model: str = "test-model",
         response_payload: dict | None = None,
         error: Exception | None = None,
@@ -85,7 +85,6 @@ class FakeAzureResponsesClient(AbstractAsyncContextManager["FakeAzureResponsesCl
                 "input": input_messages,
                 "store": False,
                 "tools": [{"type": "web_search"}],
-                "text": {"format": {"type": "json_schema"}},
             },
             response_payload=self.response_payload
             or {
@@ -135,11 +134,11 @@ def test_get_suggestion_returns_validated_value(
         monkeypatch,
         stitch_client=stitch_client,
         azure_client=FakeAzureResponsesClient(
-            output_text='{"field":"basin","value":"  Permian Basin  ","citations":[{"url":"https://example.com/article","title":"Example Article"}]}',
+            output_text="VALUE:   Permian Basin  \nRATIONALE: Public sources identify the basin.",
             response_payload={
                 "id": "resp_test",
                 "model": "test-model",
-                "output_text": '{"field":"basin","value":"  Permian Basin  ","citations":[{"url":"https://example.com/article","title":"Example Article"}]}',
+                "output_text": "VALUE:   Permian Basin  \nRATIONALE: Public sources identify the basin.",
                 "output": [
                     {
                         "content": [
@@ -171,17 +170,17 @@ def test_get_suggestion_returns_validated_value(
         ],
         "query_succeeded": True,
         "model": "test-model",
+        "rationale": "Public sources identify the basin.",
         "foundry_request": {
             "model": "test-model",
             "input": azure_client.calls[0]["input_messages"],
             "store": False,
             "tools": [{"type": "web_search"}],
-            "text": {"format": {"type": "json_schema"}},
         },
         "foundry_response": {
             "id": "resp_test",
             "model": "test-model",
-            "output_text": '{"field":"basin","value":"  Permian Basin  ","citations":[{"url":"https://example.com/article","title":"Example Article"}]}',
+            "output_text": "VALUE:   Permian Basin  \nRATIONALE: Public sources identify the basin.",
             "output": [
                 {
                     "content": [
@@ -254,16 +253,18 @@ def test_get_suggestion_maps_invalid_model_output(
     test_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    stitch_client = FakeStitchApiClient(detail_view=make_detail_view(basin=None))
+    stitch_client = FakeStitchApiClient(
+        detail_view=make_detail_view(location_type=None)
+    )
     install_fakes(
         monkeypatch,
         stitch_client=stitch_client,
         azure_client=FakeAzureResponsesClient(
-            output_text='{"field":"basin","value":123,"citations":[{"url":"https://example.com/article","title":"Example Article"}]}',
+            output_text="VALUE: Subsea\nRATIONALE: Public sources identify the location type.",
             response_payload={
                 "id": "resp_test",
                 "model": "test-model",
-                "output_text": '{"field":"basin","value":123,"citations":[{"url":"https://example.com/article","title":"Example Article"}]}',
+                "output_text": "VALUE: Subsea\nRATIONALE: Public sources identify the location type.",
                 "output": [
                     {
                         "content": [
@@ -283,7 +284,7 @@ def test_get_suggestion_maps_invalid_model_output(
         ),
     )
 
-    response = test_client.get("/api/v1/oil-gas-fields/42?field=basin")
+    response = test_client.get("/api/v1/oil-gas-fields/42?field=location_type")
 
     assert response.status_code == 502
 
@@ -297,7 +298,7 @@ def test_get_suggestion_returns_null_when_no_public_citation_found(
         monkeypatch,
         stitch_client=stitch_client,
         azure_client=FakeAzureResponsesClient(
-            output_text='{"field":"basin","value":"Permian Basin","citations":[]}'
+            output_text="VALUE: Permian Basin\nRATIONALE: I could not verify the basin with public citations."
         ),
     )
 
@@ -309,14 +310,13 @@ def test_get_suggestion_returns_null_when_no_public_citation_found(
     assert response.json()["query_succeeded"] is True
 
 
-def test_get_suggestion_uses_structured_citations_when_annotations_absent(
+def test_get_suggestion_returns_null_when_annotations_absent(
     test_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     output_text = (
-        '{"field":"basin","value":"Songliao Basin","citations":['
-        '{"url":"https://en.wikipedia.org/wiki/Daqing_Oil_Field",'
-        '"title":"Daqing Oil Field - Wikipedia"}]}'
+        "VALUE: Songliao Basin\n"
+        "RATIONALE: Public sources describing Daqing Oil Field place it in the Songliao Basin."
     )
     stitch_client = FakeStitchApiClient(detail_view=make_detail_view(basin=None))
     install_fakes(
@@ -346,11 +346,10 @@ def test_get_suggestion_uses_structured_citations_when_annotations_absent(
     response = test_client.get("/api/v1/oil-gas-fields/42?field=basin")
 
     assert response.status_code == 200
-    assert response.json()["value"] == "Songliao Basin"
-    assert response.json()["citations"] == [
-        {
-            "url": "https://en.wikipedia.org/wiki/Daqing_Oil_Field",
-            "title": "Daqing Oil Field - Wikipedia",
-        }
-    ]
+    assert response.json()["value"] is None
+    assert response.json()["citations"] == []
+    assert (
+        response.json()["rationale"]
+        == "Public sources describing Daqing Oil Field place it in the Songliao Basin."
+    )
     assert response.json()["query_succeeded"] is True

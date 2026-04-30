@@ -7,7 +7,6 @@ from stitch.llm.suggestions import (
     ensure_field_is_missing,
     parse_field_suggestion_response,
     sanitize_and_validate_suggested_value,
-    suggestion_response_schema,
 )
 from stitch.ogsi.model import GemSource, OGFieldDetailView
 from stitch.ogsi.model.og_field import OilGasFieldBase
@@ -38,17 +37,19 @@ def test_ensure_field_is_missing_accepts_blank_string() -> None:
 
 
 def test_parse_field_suggestion_response_rejects_wrong_field() -> None:
-    with pytest.raises(ModelOutputError):
-        parse_field_suggestion_response(
-            '{"field":"basin","value":"Permian Basin","citations":[]}',
-            requested_field="state_province",
-        )
+    parsed = parse_field_suggestion_response(
+        "VALUE: Permian Basin\nRATIONALE: Public sources identify the basin.",
+        requested_field="state_province",
+    )
+
+    assert parsed.value == "Permian Basin"
+    assert parsed.rationale == "Public sources identify the basin."
 
 
-def test_parse_field_suggestion_response_requires_citations_key() -> None:
+def test_parse_field_suggestion_response_requires_value_and_rationale_lines() -> None:
     with pytest.raises(ModelOutputError):
         parse_field_suggestion_response(
-            '{"field":"basin","value":"Permian Basin"}',
+            "VALUE: Permian Basin",
             requested_field="basin",
         )
 
@@ -80,16 +81,3 @@ def test_sanitize_and_validate_suggested_value_rejects_invalid_year() -> None:
             field="discovery_year",
             value="unknown",
         )
-
-
-def test_suggestion_response_schema_is_field_specific() -> None:
-    schema = suggestion_response_schema("field_status")
-
-    assert schema["properties"]["field"]["enum"] == ["field_status"]
-    assert schema["properties"]["citations"]["type"] == "array"
-    assert {
-        "Producing",
-        "Non-Producing",
-        "Abandoned",
-        "Planned",
-    }.issubset(set(schema["properties"]["value"]["anyOf"][0]["enum"]))

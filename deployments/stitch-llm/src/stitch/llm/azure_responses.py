@@ -8,7 +8,7 @@ import httpx
 from stitch.llm.entities import Citation
 from stitch.llm.errors import AzureResponsesError, LLMConfigurationError
 from stitch.llm.settings import Settings, get_settings
-from stitch.llm.suggestions import AllowedSuggestionField, suggestion_response_schema
+from stitch.llm.suggestions import AllowedSuggestionField
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,14 +63,6 @@ class AzureResponsesClient:
             "input": input_messages,
             "store": False,
             "tools": [{"type": "web_search"}],
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": "oil_gas_field_suggestion",
-                    "strict": True,
-                    "schema": suggestion_response_schema(field),
-                }
-            },
         }
         try:
             response = await self._client.post(

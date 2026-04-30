@@ -23,5 +23,6 @@ class FieldSuggestionResponse(BaseModel):
     citations: list[Citation]
     query_succeeded: bool
     model: str
+    rationale: str
     foundry_request: dict[str, Any]
     foundry_response: dict[str, Any]

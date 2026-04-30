@@ -24,9 +24,9 @@ def make_settings() -> Settings:
 
 
 def test_extract_output_text_prefers_shortcut_field() -> None:
-    assert _extract_output_text({"output_text": '{"field":"basin","value":null}'}) == (
-        '{"field":"basin","value":null}'
-    )
+    assert _extract_output_text(
+        {"output_text": "VALUE: null\nRATIONALE: No source found."}
+    ) == ("VALUE: null\nRATIONALE: No source found.")
 
 
 def test_extract_output_text_falls_back_to_output_content() -> None:
@@ -38,14 +38,14 @@ def test_extract_output_text_falls_back_to_output_content() -> None:
                         "content": [
                             {
                                 "type": "output_text",
-                                "text": '{"field":"basin","value":"Permian"}',
+                                "text": "VALUE: Permian Basin\nRATIONALE: Public sources identify the basin.",
                             }
                         ]
                     }
                 ]
             }
         )
-        == '{"field":"basin","value":"Permian"}'
+        == "VALUE: Permian Basin\nRATIONALE: Public sources identify the basin."
     )
 
 
@@ -63,7 +63,7 @@ async def test_generate_field_suggestion_posts_responses_request() -> None:
             json={
                 "id": "resp_123",
                 "model": "test-model",
-                "output_text": '{"field":"basin","value":"Permian","citations":[]}',
+                "output_text": "VALUE: Permian Basin\nRATIONALE: Public sources identify the basin.",
             },
         )
 
@@ -75,21 +75,24 @@ async def test_generate_field_suggestion_posts_responses_request() -> None:
         input_messages=[{"role": "user", "content": "payload"}],
     )
 
-    assert result.output_text == '{"field":"basin","value":"Permian","citations":[]}'
+    assert (
+        result.output_text
+        == "VALUE: Permian Basin\nRATIONALE: Public sources identify the basin."
+    )
     assert result.model == "test-model"
     assert result.response_id == "resp_123"
     assert result.request_payload == captured["body"]
     assert result.response_payload == {
         "id": "resp_123",
         "model": "test-model",
-        "output_text": '{"field":"basin","value":"Permian","citations":[]}',
+        "output_text": "VALUE: Permian Basin\nRATIONALE: Public sources identify the basin.",
     }
     assert captured["method"] == "POST"
     assert captured["path"] == "/openai/v1/responses"
     assert captured["api_key"] == "azure-key"
     assert captured["body"]["model"] == "test-model"
     assert captured["body"]["tools"] == [{"type": "web_search"}]
-    assert captured["body"]["text"]["format"]["type"] == "json_schema"
+    assert "text" not in captured["body"]
 
     await raw_client.aclose()
 

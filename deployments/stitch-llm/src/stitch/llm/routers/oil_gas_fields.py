@@ -15,7 +15,7 @@ from stitch.client import StitchAPIError
 from stitch.llm.auth import CurrentUser
 from stitch.llm.azure_responses import AzureResponsesClient, extract_public_citations
 from stitch.llm.client import StitchApiClient
-from stitch.llm.entities import Citation, FieldSuggestionResponse
+from stitch.llm.entities import FieldSuggestionResponse
 from stitch.llm.errors import (
     AzureResponsesError,
     FieldAlreadyPopulatedError,
@@ -24,7 +24,6 @@ from stitch.llm.errors import (
 )
 from stitch.llm.suggestions import (
     AllowedSuggestionField,
-    ParsedCitation,
     build_field_suggestion_input,
     ensure_field_is_missing,
     parse_field_suggestion_response,
@@ -38,22 +37,6 @@ router = APIRouter(
     tags=["oil_gas_fields"],
     responses={404: {"description": "Not found"}},
 )
-
-
-def _public_citations_from_parsed(citations: list[ParsedCitation]) -> list[Citation]:
-    deduped: list[Citation] = []
-    seen: set[tuple[str, str | None]] = set()
-
-    for citation in citations:
-        if not citation.url.startswith(("http://", "https://")):
-            continue
-        key = (citation.url, citation.title)
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(Citation(url=citation.url, title=citation.title))
-
-    return deduped
 
 
 @router.get("/{id}", response_model=FieldSuggestionResponse)
@@ -108,9 +91,7 @@ async def suggest_oil_gas_field_value(
             llm_result.output_text,
             requested_field=field,
         )
-        citations = extract_public_citations(
-            llm_result.response_payload
-        ) or _public_citations_from_parsed(parsed.citations)
+        citations = extract_public_citations(llm_result.response_payload)
         if parsed.value is None or not citations:
             value = None
             citations = []
@@ -138,6 +119,7 @@ async def suggest_oil_gas_field_value(
         citations=citations,
         query_succeeded=True,
         model=llm_result.model,
+        rationale=parsed.rationale,
         foundry_request=llm_result.request_payload,
         foundry_response=llm_result.response_payload,
     )
