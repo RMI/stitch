@@ -11,6 +11,7 @@ from stitch.auth import JWTValidator, OIDCSettings, TokenClaims
 from stitch.auth.errors import AuthError, JWKSFetchError
 
 from stitch.llm.entities import User
+from stitch.llm.errors import LLMConfigurationError
 from stitch.llm.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,12 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 
 def validate_auth_config_at_startup() -> None:
     settings = get_settings()
+
+    if settings.auth_disabled and settings.azure_openai_configured:
+        raise LLMConfigurationError(
+            "AUTH_DISABLED=true cannot be combined with Azure OpenAI settings. "
+            "Use auth-disabled offline placeholder mode or enable auth for live Foundry access."
+        )
 
     if settings.auth_disabled:
         logger.warning("Auth is disabled — all requests use dev credentials")

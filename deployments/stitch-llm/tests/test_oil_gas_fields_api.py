@@ -11,7 +11,9 @@ from stitch.llm.azure_responses import AzureResponsesResult
 from stitch.llm.entities import User
 from stitch.llm.errors import LLMConfigurationError
 from stitch.llm.main import app
+from stitch.llm import auth as auth_module
 from stitch.llm.routers import oil_gas_fields as route_module
+from stitch.llm.settings import Settings, get_settings
 from stitch.ogsi.model import GemSource, OGFieldDetailView
 from stitch.ogsi.model.og_field import OilGasFieldBase
 
@@ -96,7 +98,7 @@ class FakeAzureResponsesClient(AbstractAsyncContextManager["FakeAzureResponsesCl
 
 
 @pytest.fixture
-def test_client():
+def test_client(monkeypatch: pytest.MonkeyPatch):
     async def override_current_user() -> User:
         return User(
             id=1,
@@ -105,6 +107,14 @@ def test_client():
             name="Test User",
         )
 
+    test_settings = Settings(
+        auth_disabled=True,
+        azure_openai_base_url=None,
+        azure_openai_api_key=None,
+        azure_openai_model=None,
+    )
+    monkeypatch.setattr(auth_module, "get_settings", lambda: test_settings)
+    monkeypatch.setattr(route_module, "get_settings", lambda: test_settings)
     app.dependency_overrides[get_current_user] = override_current_user
 
     with TestClient(app) as client:
@@ -125,10 +135,16 @@ def install_fakes(
     return azure_client
 
 
+def override_settings_for_test(monkeypatch: pytest.MonkeyPatch, **overrides) -> None:
+    settings = get_settings().model_copy(update=overrides)
+    monkeypatch.setattr(route_module, "get_settings", lambda: settings)
+
+
 def test_get_suggestion_returns_validated_value(
     test_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    override_settings_for_test(monkeypatch, auth_disabled=False)
     stitch_client = FakeStitchApiClient(detail_view=make_detail_view(basin=None))
     azure_client = install_fakes(
         monkeypatch,
@@ -236,6 +252,7 @@ def test_get_suggestion_maps_missing_azure_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     stitch_client = FakeStitchApiClient(detail_view=make_detail_view(basin=None))
+    override_settings_for_test(monkeypatch, auth_disabled=False)
     install_fakes(
         monkeypatch,
         stitch_client=stitch_client,
@@ -249,10 +266,59 @@ def test_get_suggestion_maps_missing_azure_config(
     assert response.status_code == 503
 
 
+def test_get_suggestion_returns_placeholder_when_auth_disabled_and_azure_missing(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stitch_client = FakeStitchApiClient(detail_view=make_detail_view(basin=None))
+    override_settings_for_test(
+        monkeypatch,
+        auth_disabled=True,
+        azure_openai_base_url=None,
+        azure_openai_api_key=None,
+        azure_openai_model=None,
+    )
+    azure_client = install_fakes(monkeypatch, stitch_client=stitch_client)
+
+    response = test_client.get("/api/v1/oil-gas-fields/42?field=basin")
+
+    assert response.status_code == 200
+    assert response.json()["value"] == ":warning: placeholder LLM value"
+    assert response.json()["citations"] == []
+    assert response.json()["model"] == "placeholder-llm"
+    assert azure_client.calls == []
+
+
+def test_get_suggestion_returns_null_for_non_string_placeholder_fallback(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stitch_client = FakeStitchApiClient(
+        detail_view=make_detail_view(discovery_year=None)
+    )
+    override_settings_for_test(
+        monkeypatch,
+        auth_disabled=True,
+        azure_openai_base_url=None,
+        azure_openai_api_key=None,
+        azure_openai_model=None,
+    )
+    azure_client = install_fakes(monkeypatch, stitch_client=stitch_client)
+
+    response = test_client.get("/api/v1/oil-gas-fields/42?field=discovery_year")
+
+    assert response.status_code == 200
+    assert response.json()["value"] is None
+    assert response.json()["citations"] == []
+    assert response.json()["model"] == "placeholder-llm"
+    assert azure_client.calls == []
+
+
 def test_get_suggestion_maps_invalid_model_output(
     test_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    override_settings_for_test(monkeypatch, auth_disabled=False)
     stitch_client = FakeStitchApiClient(
         detail_view=make_detail_view(location_type=None)
     )
@@ -293,6 +359,7 @@ def test_get_suggestion_returns_null_when_no_public_citation_found(
     test_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    override_settings_for_test(monkeypatch, auth_disabled=False)
     stitch_client = FakeStitchApiClient(detail_view=make_detail_view(basin=None))
     install_fakes(
         monkeypatch,
@@ -314,6 +381,7 @@ def test_get_suggestion_returns_null_when_annotations_absent(
     test_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    override_settings_for_test(monkeypatch, auth_disabled=False)
     output_text = (
         "VALUE: Songliao Basin\n"
         "RATIONALE: Public sources describing Daqing Oil Field place it in the Songliao Basin."
