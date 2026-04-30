@@ -65,6 +65,22 @@ def test_validate_auth_config_rejects_auth_disabled_with_azure_config(
         validate_auth_config_at_startup()
 
 
+def test_settings_treat_blank_optional_values_as_unset() -> None:
+    settings = Settings(
+        auth_disabled=True,
+        machine_token="",
+        azure_openai_base_url="",
+        azure_openai_api_key="",
+        azure_openai_model="",
+    )
+
+    assert settings.machine_token is None
+    assert settings.azure_openai_base_url is None
+    assert settings.azure_openai_api_key is None
+    assert settings.azure_openai_model is None
+    assert settings.azure_openai_configured is False
+
+
 @pytest.mark.anyio
 async def test_stitch_api_client_validates_detail_payload() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
