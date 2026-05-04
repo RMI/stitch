@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import ClassVar, Literal
 
-from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
+from pydantic import AnyHttpUrl, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -50,19 +50,6 @@ class Settings(BaseSettings):
         extra="ignore",
         populate_by_name=True,
     )
-
-    @field_validator(
-        "machine_token",
-        "azure_openai_base_url",
-        "azure_openai_api_key",
-        "azure_openai_model",
-        mode="before",
-    )
-    @classmethod
-    def empty_strings_to_none(cls, value: object) -> object:
-        if isinstance(value, str) and value.strip() == "":
-            return None
-        return value
 
     @property
     def azure_openai_configured(self) -> bool:

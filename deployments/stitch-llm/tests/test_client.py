@@ -4,7 +4,6 @@ import httpx
 import pytest
 
 from stitch.client import AsyncStitchClient
-from stitch.llm.auth import validate_auth_config_at_startup
 from stitch.llm.client import StitchApiClient, downstream_auth_headers
 from stitch.llm.errors import LLMConfigurationError
 from stitch.llm.settings import Settings
@@ -48,37 +47,6 @@ def test_downstream_auth_headers_requires_machine_token_when_auth_enabled() -> N
 
     with pytest.raises(LLMConfigurationError):
         downstream_auth_headers(settings)
-
-
-def test_validate_auth_config_rejects_auth_disabled_with_azure_config(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    settings = Settings(
-        auth_disabled=True,
-        azure_openai_base_url="https://example.openai.azure.com/openai/v1",
-        azure_openai_api_key="azure-key",
-        azure_openai_model="model",
-    )
-    monkeypatch.setattr("stitch.llm.auth.get_settings", lambda: settings)
-
-    with pytest.raises(LLMConfigurationError):
-        validate_auth_config_at_startup()
-
-
-def test_settings_treat_blank_optional_values_as_unset() -> None:
-    settings = Settings(
-        auth_disabled=True,
-        machine_token="",
-        azure_openai_base_url="",
-        azure_openai_api_key="",
-        azure_openai_model="",
-    )
-
-    assert settings.machine_token is None
-    assert settings.azure_openai_base_url is None
-    assert settings.azure_openai_api_key is None
-    assert settings.azure_openai_model is None
-    assert settings.azure_openai_configured is False
 
 
 @pytest.mark.anyio

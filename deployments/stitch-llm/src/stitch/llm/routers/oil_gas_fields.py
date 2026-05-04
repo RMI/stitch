@@ -22,20 +22,15 @@ from stitch.llm.errors import (
     LLMConfigurationError,
     ModelOutputError,
 )
-from stitch.llm.settings import get_settings
 from stitch.llm.suggestions import (
     AllowedSuggestionField,
     build_field_suggestion_input,
     ensure_field_is_missing,
-    is_string_suggestion_field,
     parse_field_suggestion_response,
     sanitize_and_validate_suggested_value,
 )
 
 logger = logging.getLogger(__name__)
-
-PLACEHOLDER_LLM_VALUE = ":warning: placeholder LLM value"
-PLACEHOLDER_LLM_MODEL = "placeholder-llm"
 
 router = APIRouter(
     prefix="/oil-gas-fields",
@@ -85,29 +80,6 @@ async def suggest_oil_gas_field_value(
         field=field,
         detail_view=detail_view,
     )
-    settings = get_settings()
-
-    if settings.auth_disabled and not settings.azure_openai_configured:
-        fallback_value = (
-            PLACEHOLDER_LLM_VALUE if is_string_suggestion_field(field) else None
-        )
-        return FieldSuggestionResponse(
-            resource_id=id,
-            field=field,
-            value=fallback_value,
-            citations=[],
-            query_succeeded=True,
-            model=PLACEHOLDER_LLM_MODEL,
-            rationale=(
-                "Foundry is not configured in auth-disabled mode; returned a local "
-                "placeholder value."
-                if fallback_value is not None
-                else "Foundry is not configured in auth-disabled mode; no safe "
-                "placeholder exists for this field type."
-            ),
-            foundry_request={},
-            foundry_response={},
-        )
 
     try:
         async with AzureResponsesClient() as llm_client:

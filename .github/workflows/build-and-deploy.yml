@@ -48,24 +48,6 @@ jobs:
           github.sha
         }}
 
-  build_stitch_llm_docker_image:
-    name: "Build and publish Stitch LLM"
-    uses: ./.github/workflows/build-and-push-Docker-image.yml
-    secrets: inherit
-    permissions:
-      packages: write
-      contents: read
-    with:
-      dockerfile: deployments/stitch-llm/Dockerfile
-      image-name: ${{ github.event.repository.name }}-stitch-llm
-      image-tag: ${{
-          github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
-          github.event_name == 'schedule' && 'nightly' ||
-          github.event_name == 'push' && github.ref_name ||
-          github.event_name == 'workflow_dispatch' && github.ref_name ||
-          github.sha
-        }}
-
   build_seed_docker_image:
     name: "Build and publish Seed"
     uses: ./.github/workflows/build-and-push-Docker-image.yml
@@ -166,56 +148,6 @@ jobs:
           'http://localhost:3000'
         }}
       deployment-label: entity-linkage
-
-  deploy-stitch-llm:
-    name: "Deploy stitch-llm"
-    uses: ./.github/workflows/deploy-container.yml
-    secrets: inherit
-    needs: [build_stitch_llm_docker_image, deploy-api]
-    with:
-      full-image-name: ${{ needs.build_stitch_llm_docker_image.outputs.digest-image-name }}
-      containerAppName: ${{
-          github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
-          github.event_name == 'schedule' && 'nightly' ||
-          github.event_name == 'push' && github.ref_name ||
-          github.event_name == 'workflow_dispatch' && github.ref_name ||
-          github.sha
-        }}-stitch-llm
-      environment-variables: >-
-        STITCH_LLM_LOG_LEVEL=info
-        AUTH_DISABLED=${{
-          github.event_name == 'pull_request' && 'true' ||
-          github.event_name == 'push' && github.ref_name == 'main' && 'false' ||
-          github.event_name == 'workflow_dispatch' && 'false' ||
-          'true'
-        }}
-        STITCH_LLM_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
-        STITCH_LLM_FRONTEND_ORIGIN_URL=${{
-          github.event_name == 'pull_request' &&
-          format('https://witty-mushroom-017a3dc1e-{0}.westus2.1.azurestaticapps.net', github.event.pull_request.number) ||
-          github.event_name == 'push' && github.ref_name == 'main' &&
-          'https://witty-mushroom-017a3dc1e.1.azurestaticapps.net' ||
-          github.event_name == 'push' &&
-          format('https://witty-mushroom-017a3dc1e-{0}.westus2.1.azurestaticapps.net', github.ref_name) ||
-          'http://localhost:3000'
-        }}
-        STITCH_LLM_MACHINE_TOKEN=${{
-          github.event_name == 'pull_request' && '' ||
-          'secrets.STITCH_LLM_MACHINE_TOKEN'
-        }}
-        STITCH_LLM_AZURE_OPENAI_BASE_URL=${{
-          github.event_name == 'pull_request' && '' ||
-          vars.STITCH_LLM_AZURE_OPENAI_BASE_URL
-        }}
-        STITCH_LLM_AZURE_OPENAI_MODEL=${{
-          github.event_name == 'pull_request' && '' ||
-          vars.STITCH_LLM_AZURE_OPENAI_MODEL
-        }}
-        STITCH_LLM_AZURE_OPENAI_API_KEY=${{
-          github.event_name == 'pull_request' && '' ||
-          'secrets.STITCH_LLM_AZURE_OPENAI_API_KEY'
-        }}
-      deployment-label: stitch-llm
 
   run-seed:
     name: "Run seed"
