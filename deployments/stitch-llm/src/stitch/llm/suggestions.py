@@ -42,6 +42,10 @@ class ParsedFieldSuggestion:
         self.rationale = rationale
 
 
+def is_string_suggestion_field(field: AllowedSuggestionField) -> bool:
+    return field in STRING_FIELDS
+
+
 def is_missing_value(value: Any) -> bool:
     if value is None:
         return True
