@@ -42,7 +42,6 @@ class SeedConfig:
     api_base_url: str
     faker_post_count: int | None
     http_timeout_seconds: float
-    openapi_url: str | None
     static_payload_dir: str | None
     random_seed: int | None
     seed_source: str
@@ -53,7 +52,6 @@ def load_config() -> SeedConfig:
     api_base_url = os.getenv("API_BASE_URL", "http://api:8000/api/v1")
     faker_post_count = env_int("FAKER_POST_COUNT", 0)
     http_timeout_seconds = float(os.getenv("HTTP_TIMEOUT_SECONDS", "10"))
-    openapi_url = os.getenv("OPENAPI_URL")  # optional override
     static_payload_dir = os.getenv("STATIC_PAYLOAD_DIR")
     random_seed = env_int("RANDOM_SEED", None)
     seed_source = os.getenv("SEED_SOURCE", "mixed").strip().lower()
@@ -62,7 +60,6 @@ def load_config() -> SeedConfig:
         api_base_url=api_base_url,
         faker_post_count=faker_post_count,
         http_timeout_seconds=http_timeout_seconds,
-        openapi_url=openapi_url,
         static_payload_dir=static_payload_dir,
         random_seed=random_seed,
         seed_source=seed_source,

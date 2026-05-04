@@ -10,6 +10,7 @@ dependencies = [
   "httpx>=0.28.0",
   "pydantic-settings>=2.12.0",
   "stitch-auth",
+  "stitch-client",
   "stitch-models",
   "stitch-ogsi",
 ]
@@ -42,5 +43,6 @@ addopts = ["-v", "--strict-markers", "--tb=short"]
 
 [tool.uv.sources]
 stitch-auth = { workspace = true }
+stitch-client = { workspace = true }
 stitch-models = { workspace = true }
 stitch-ogsi = { workspace = true }
