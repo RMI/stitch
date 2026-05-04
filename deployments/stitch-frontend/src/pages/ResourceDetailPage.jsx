@@ -79,7 +79,7 @@ function SuggestionResult({ result }) {
                 <a
                   href={citation.url}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="text-blue-700 underline"
                 >
                   {citation.title ?? citation.url}
