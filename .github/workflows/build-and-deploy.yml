@@ -183,12 +183,7 @@ jobs:
         }}-stitch-llm
       environment-variables: >-
         STITCH_LLM_LOG_LEVEL=info
-        AUTH_DISABLED=${{
-          github.event_name == 'pull_request' && 'true' ||
-          github.event_name == 'push' && github.ref_name == 'main' && 'false' ||
-          github.event_name == 'workflow_dispatch' && 'false' ||
-          'true'
-        }}
+        AUTH_DISABLED=true
         STITCH_LLM_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
         STITCH_LLM_FRONTEND_ORIGIN_URL=${{
           github.event_name == 'pull_request' &&
@@ -198,22 +193,6 @@ jobs:
           github.event_name == 'push' &&
           format('https://witty-mushroom-017a3dc1e-{0}.westus2.1.azurestaticapps.net', github.ref_name) ||
           'http://localhost:3000'
-        }}
-        STITCH_LLM_MACHINE_TOKEN=${{
-          github.event_name == 'pull_request' && '' ||
-          secrets.STITCH_LLM_MACHINE_TOKEN
-        }}
-        STITCH_LLM_AZURE_OPENAI_BASE_URL=${{
-          github.event_name == 'pull_request' && '' ||
-          vars.STITCH_LLM_AZURE_OPENAI_BASE_URL
-        }}
-        STITCH_LLM_AZURE_OPENAI_MODEL=${{
-          github.event_name == 'pull_request' && '' ||
-          vars.STITCH_LLM_AZURE_OPENAI_MODEL
-        }}
-        STITCH_LLM_AZURE_OPENAI_API_KEY=${{
-          github.event_name == 'pull_request' && '' ||
-          secrets.STITCH_LLM_AZURE_OPENAI_API_KEY
         }}
       deployment-label: stitch-llm
 
