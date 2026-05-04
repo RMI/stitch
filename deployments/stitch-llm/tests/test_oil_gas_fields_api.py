@@ -6,12 +6,14 @@ import pytest
 from fastapi.testclient import TestClient
 from stitch.client import StitchAPIError
 
+from stitch.llm import auth as auth_module
 from stitch.llm.auth import get_current_user
 from stitch.llm.azure_responses import AzureResponsesResult
 from stitch.llm.entities import User
 from stitch.llm.errors import LLMConfigurationError
 from stitch.llm.main import app
 from stitch.llm.routers import oil_gas_fields as route_module
+from stitch.llm.settings import Settings
 from stitch.ogsi.model import GemSource, OGFieldDetailView
 from stitch.ogsi.model.og_field import OilGasFieldBase
 
@@ -96,7 +98,7 @@ class FakeAzureResponsesClient(AbstractAsyncContextManager["FakeAzureResponsesCl
 
 
 @pytest.fixture
-def test_client():
+def test_client(monkeypatch: pytest.MonkeyPatch):
     async def override_current_user() -> User:
         return User(
             id=1,
@@ -105,6 +107,13 @@ def test_client():
             name="Test User",
         )
 
+    test_settings = Settings(
+        auth_disabled=True,
+        azure_openai_base_url=None,
+        azure_openai_api_key=None,
+        azure_openai_model=None,
+    )
+    monkeypatch.setattr(auth_module, "get_settings", lambda: test_settings)
     app.dependency_overrides[get_current_user] = override_current_user
 
     with TestClient(app) as client:
