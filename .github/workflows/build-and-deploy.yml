@@ -151,9 +151,10 @@ jobs:
 
   run-seed:
     name: "Run seed"
+    if: ${{ needs.deploy-db.outputs.database-created == 'true' }}
     uses: ./.github/workflows/run-seed.yml
     secrets: inherit
-    needs: [build_seed_docker_image, deploy-api]
+    needs: [build_seed_docker_image, deploy-db, deploy-api]
     with:
       full-image-name: ${{ needs.build_seed_docker_image.outputs.digest-image-name }}
       api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
