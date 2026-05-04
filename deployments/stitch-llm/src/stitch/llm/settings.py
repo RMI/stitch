@@ -1,12 +1,15 @@
 from functools import lru_cache
 from typing import ClassVar, Literal
 
-from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
+from pydantic import AliasChoices, AnyHttpUrl, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    log_level: str = Field(default="INFO", alias="STITCH_LLM_LOG_LEVEL")
+    log_level: str = Field(
+        default="INFO",
+        validation_alias=AliasChoices("LOG_LEVEL", "STITCH_LLM_LOG_LEVEL"),
+    )
     frontend_origin_url: AnyHttpUrl = Field(
         default="http://localhost:3000",
         alias="STITCH_LLM_FRONTEND_ORIGIN_URL",
