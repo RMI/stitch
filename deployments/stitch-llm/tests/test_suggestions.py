@@ -36,10 +36,9 @@ def test_ensure_field_is_missing_accepts_blank_string() -> None:
     ensure_field_is_missing(detail_view, "basin")
 
 
-def test_parse_field_suggestion_response_rejects_wrong_field() -> None:
+def test_parse_field_suggestion_response_parses_value_and_rationale() -> None:
     parsed = parse_field_suggestion_response(
-        "VALUE: Permian Basin\nRATIONALE: Public sources identify the basin.",
-        requested_field="state_province",
+        "VALUE: Permian Basin\nRATIONALE: Public sources identify the basin."
     )
 
     assert parsed.value == "Permian Basin"
@@ -48,10 +47,7 @@ def test_parse_field_suggestion_response_rejects_wrong_field() -> None:
 
 def test_parse_field_suggestion_response_requires_value_and_rationale_lines() -> None:
     with pytest.raises(ModelOutputError):
-        parse_field_suggestion_response(
-            "VALUE: Permian Basin",
-            requested_field="basin",
-        )
+        parse_field_suggestion_response("VALUE: Permian Basin")
 
 
 def test_sanitize_and_validate_suggested_value_trims_strings() -> None:

@@ -116,30 +116,8 @@ def _serialize_prompt_payload(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-def _value_schema_for_field(field: AllowedSuggestionField) -> dict[str, Any]:
-    if field in STRING_FIELDS:
-        return {"anyOf": [{"type": "string"}, {"type": "null"}]}
-    if field in YEAR_FIELDS:
-        return {
-            "anyOf": [
-                {"type": "integer", "minimum": 1800, "maximum": 2100},
-                {"type": "null"},
-            ]
-        }
-    if field in ENUM_VALUES_BY_FIELD:
-        return {
-            "anyOf": [
-                {"type": "string", "enum": list(ENUM_VALUES_BY_FIELD[field])},
-                {"type": "null"},
-            ]
-        }
-    raise AssertionError(f"Unsupported suggestion field: {field}")
-
-
 def parse_field_suggestion_response(
     raw_output_text: str,
-    *,
-    requested_field: AllowedSuggestionField,
 ) -> ParsedFieldSuggestion:
     value_line: str | None = None
     rationale_line: str | None = None

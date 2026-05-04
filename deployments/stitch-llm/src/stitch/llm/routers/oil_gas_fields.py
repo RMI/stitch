@@ -115,10 +115,7 @@ async def suggest_oil_gas_field_value(
                 field=field,
                 input_messages=input_messages,
             )
-        parsed = parse_field_suggestion_response(
-            llm_result.output_text,
-            requested_field=field,
-        )
+        parsed = parse_field_suggestion_response(llm_result.output_text)
         citations = extract_public_citations(llm_result.response_payload)
         if parsed.value is None or not citations:
             value = None
