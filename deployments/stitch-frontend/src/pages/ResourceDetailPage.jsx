@@ -15,6 +15,84 @@ import {
   PRODUCTION_FIELDS,
 } from "../constants/fieldMeta";
 
+function formatSuggestionValue(value) {
+  if (value == null) return null;
+  return String(value);
+}
+
+function SuggestionResult({ result }) {
+  const fieldLabel = FIELD_META[result.field]?.label ?? result.field;
+  const value = formatSuggestionValue(result.value);
+  const hasCitations =
+    Array.isArray(result.citations) && result.citations.length > 0;
+  const isPlaceholder = result.model === "placeholder-llm";
+
+  if (value == null) {
+    return (
+      <div className="rounded-md border border-gray-dark/10 bg-white p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-gray-dark">{fieldLabel}</p>
+            <p className="mt-1 text-sm text-gray-dark/80">
+              No grounded suggestion was returned for this field.
+            </p>
+          </div>
+          <span className="rounded border border-gray-dark/15 bg-gray-light px-2 py-1 text-xs text-gray-dark/70">
+            {isPlaceholder ? "Offline mode" : "No answer"}
+          </span>
+        </div>
+        {result.rationale && (
+          <p className="mt-3 text-sm leading-6 text-gray-dark/80">
+            {result.rationale}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-md border border-gray-dark/10 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-gray-dark">{fieldLabel}</p>
+          <p className="mt-1 text-2xl font-semibold text-gray-dark">{value}</p>
+        </div>
+        <span className="rounded border border-gray-dark/15 bg-gray-light px-2 py-1 text-xs text-gray-dark/70">
+          {isPlaceholder ? "Offline mode" : "Suggested"}
+        </span>
+      </div>
+
+      {result.rationale && (
+        <p className="mt-3 text-sm leading-6 text-gray-dark/80">
+          {result.rationale}
+        </p>
+      )}
+
+      {hasCitations && (
+        <div className="mt-4 border-t border-gray-dark/10 pt-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-dark/60">
+            Sources
+          </p>
+          <ul className="mt-2 space-y-2 text-sm text-gray-dark">
+            {result.citations.map((citation) => (
+              <li key={`${citation.url}-${citation.title ?? ""}`}>
+                <a
+                  href={citation.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-blue-700 underline"
+                >
+                  {citation.title ?? citation.url}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AISuggestionPanel({ endpoint, resourceId }) {
   const config = useConfig();
   const { getAccessTokenSilently } = useAuth0();
@@ -78,39 +156,13 @@ function AISuggestionPanel({ endpoint, resourceId }) {
           </button>
         </div>
 
-        {error && <p className="text-sm text-red-500">{error}</p>}
-
-        {result && (
-          <div className="space-y-2 rounded-md bg-white p-4">
-            <p className="text-sm text-gray-dark">
-              <span className="font-medium">Field:</span>{" "}
-              {FIELD_META[result.field]?.label ?? result.field}
-            </p>
-            <p className="text-sm text-gray-dark">
-              <span className="font-medium">Suggested value:</span>{" "}
-              {result.value == null ? "—" : String(result.value)}
-            </p>
-            {Array.isArray(result.citations) && result.citations.length > 0 && (
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-gray-dark">Citations</p>
-                <ul className="space-y-1 text-sm text-gray-dark">
-                  {result.citations.map((citation) => (
-                    <li key={`${citation.url}-${citation.title ?? ""}`}>
-                      <a
-                        href={citation.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-blue-700 underline"
-                      >
-                        {citation.title ?? citation.url}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+        {error && (
+          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
           </div>
         )}
+
+        {result && <SuggestionResult result={result} />}
       </div>
     </section>
   );

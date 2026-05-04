@@ -238,6 +238,7 @@ describe("ResourceDetailPage", () => {
       ],
       query_succeeded: true,
       model: "test-model",
+      rationale: "Public sources place Daqing in the Songliao Basin.",
       foundry_request: {},
       foundry_response: {},
     });
@@ -250,7 +251,43 @@ describe("ResourceDetailPage", () => {
 
     expect(await screen.findByText("Songliao")).toBeInTheDocument();
     expect(
+      screen.getByText("Public sources place Daqing in the Songliao Basin."),
+    ).toBeInTheDocument();
+    expect(
       screen.getByRole("link", { name: "Daqing citation" }),
     ).toHaveAttribute("href", "https://example.com/daqing");
+  });
+
+  it("renders a no-answer suggestion state without treating it as an error", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    vi.spyOn(apiModule, "createLLMSuggestion").mockResolvedValue({
+      resource_id: 1,
+      field: "basin",
+      value: null,
+      citations: [],
+      query_succeeded: true,
+      model: "test-model",
+      rationale: "I could not find a grounded public source for this field.",
+      foundry_request: {},
+      foundry_response: {},
+    });
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(
+      screen.getByRole("button", { name: /generate suggestion/i }),
+    );
+
+    expect(
+      await screen.findByText(/no grounded suggestion was returned/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "I could not find a grounded public source for this field.",
+      ),
+    ).toBeInTheDocument();
   });
 });
