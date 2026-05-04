@@ -71,7 +71,6 @@ SortableField = Literal[
     "region",
     "id",
     "country",
-    "source",
     "field_status",
     "location_type",
     "production_conventionality",

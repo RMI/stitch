@@ -96,13 +96,3 @@ class TestSourceRouterParamValidation:
             "/oil-gas-field-sources/", params={"source": "not_a_source"}
         )
         assert resp.status_code == 422
-
-    @pytest.mark.anyio
-    async def test_sort_by_source_is_allowed_for_sources(
-        self, integration_client: AsyncClient
-    ):
-        """Direct source-table query keeps source ordering available."""
-        resp = await integration_client.get(
-            "/oil-gas-field-sources/", params={"sort_by": "source"}
-        )
-        assert resp.status_code == 200

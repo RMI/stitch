@@ -623,15 +623,3 @@ class TestResourceQueryAction:
 
         assert total == 1
         assert [item.id for item in items] == [root_id]
-
-    @pytest.mark.anyio
-    async def test_resource_query_rejects_sort_by_source(
-        self,
-        seeded_integration_session: AsyncSession,
-    ):
-        params = _QueryParams(sort_by="source")
-
-        with pytest.raises(HTTPException) as exc_info:
-            await resource_actions.query(seeded_integration_session, params)
-
-        assert exc_info.value.status_code == 422
