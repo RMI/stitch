@@ -2,6 +2,9 @@
 on:
   workflow_call:
     outputs:
+      database-created:
+        description: "Whether this workflow created the database during this run"
+        value: ${{ jobs.create-db.outputs.database-created }}
       postgres-host:
         description: "Database server hostname"
         value: ${{ jobs.create-db.outputs.postgres-host }}
@@ -21,6 +24,7 @@ jobs:
   create-db:
     runs-on: ubuntu-latest
     outputs:
+      database-created: ${{ steps.create-db.outputs.database-created }}
       postgres-host: ${{ steps.export-db-config.outputs.postgres-host }}
       postgres-port: ${{ steps.export-db-config.outputs.postgres-port }}
       postgres-db: ${{ steps.export-db-config.outputs.postgres-db }}
@@ -95,6 +99,7 @@ jobs:
           fi
 
       - name: Create database if it doesn't exist
+        id: create-db
         env:
           DB_NAME: ${{ steps.normalize-name.outputs.db-name }}
         run: |
@@ -108,9 +113,11 @@ jobs:
 
           if [ "$EXISTS" = "1" ]; then
             echo "Database '$DB_NAME' already exists. Skipping."
+            echo "database-created=false" >> "$GITHUB_OUTPUT"
           else
             psql -X -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"${DB_NAME}\";"
             echo "Database '$DB_NAME' created."
+            echo "database-created=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Checkout code

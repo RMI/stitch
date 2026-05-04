@@ -7,6 +7,11 @@ on:
   workflow_dispatch:
 
 jobs:
+  build-frontend:
+    name: "Build frontend"
+    uses: ./.github/workflows/node-build.yml
+    secrets: inherit
+
   build_api_docker_image:
     name: "Build and publish API"
     uses: ./.github/workflows/build-and-push-Docker-image.yml
@@ -214,15 +219,33 @@ jobs:
 
   run-seed:
     name: "Run seed"
+    if: ${{ needs.deploy-db.outputs.database-created == 'true' }}
     uses: ./.github/workflows/run-seed.yml
     secrets: inherit
-    needs: [build_seed_docker_image, deploy-api]
+    needs: [build_seed_docker_image, deploy-db, deploy-api]
     with:
       full-image-name: ${{ needs.build_seed_docker_image.outputs.digest-image-name }}
       api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
+
+  deploy-frontend:
+    name: "Deploy frontend"
+    uses: ./.github/workflows/azure-static-web-apps.yml
+    secrets: inherit
+    needs: [build-frontend, deploy-api, deploy-entity-linkage]
+    with:
+      artifact-name: dist-tgz
+      app-env: ${{
+          github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) ||
+          github.ref_name
+        }}
+      api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
+      entity-linkage-url: ${{ format('{0}/api/v1', needs.deploy-entity-linkage.outputs.container-app-url) }}
+      auth0-domain: rmi-spd.us.auth0.com
+      auth0-client-id: TS1V1soQbccAV1sitFFCfUaIlSwHD2S2
+      auth0-audience: https://stitch-api.local
 
   comment-summary:
     if: ${{ always() && github.event_name == 'pull_request' }}
     uses: ./.github/workflows/comment-pr-summary.yml
     secrets: inherit
-    needs: [build_api_docker_image, build_entity_linkage_docker_image, build_stitch_llm_docker_image, build_seed_docker_image, deploy-db, run-db-init, deploy-api, deploy-entity-linkage, deploy-stitch-llm, run-seed]
+    needs: [build_api_docker_image, build_entity_linkage_docker_image, build_stitch_llm_docker_image, build_seed_docker_image, deploy-db, run-db-init, deploy-api, deploy-entity-linkage, deploy-stitch-llm, run-seed, deploy-frontend]
