@@ -6,9 +6,9 @@ from typing import Any
 import httpx
 import pytest
 
+from stitch.client import AsyncStitchClient, StitchAPIError
 from stitch.entity_linkage.client import StitchApiClient
 from stitch.entity_linkage.entities import RequestAuthContext, User
-from stitch.entity_linkage.errors import StitchAPIError
 
 
 def make_auth_context(
@@ -32,12 +32,17 @@ def make_client(
     bearer_token: str | None = "token-123",
     base_url: str = "http://example.test/api/v1",
 ) -> StitchApiClient:
-    client = StitchApiClient(auth_context=make_auth_context(bearer_token=bearer_token))
-    client._client = httpx.AsyncClient(
-        transport=httpx.MockTransport(handler),
-        base_url=base_url,
+    auth_context = make_auth_context(bearer_token=bearer_token)
+    shared_client = AsyncStitchClient(
+        headers_provider=lambda: StitchApiClient._headers_from_auth_context(
+            auth_context
+        ),
+        client=httpx.AsyncClient(
+            transport=httpx.MockTransport(handler),
+            base_url=base_url,
+        ),
     )
-    return client
+    return StitchApiClient(auth_context=auth_context, client=shared_client)
 
 
 @pytest.mark.anyio
@@ -262,6 +267,30 @@ async def test_get_oil_gas_field_detail_maps_payload() -> None:
 
 
 @pytest.mark.anyio
+async def test_collect_oil_gas_fields_ignores_non_object_items() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "items": [
+                    {"id": 1, "data": {"name": "Alpha", "country": "US"}},
+                    "not-a-dict",
+                ],
+                "total_pages": 1,
+            },
+        )
+
+    client = make_client(handler)
+
+    items, pages_fetched = await client.collect_oil_gas_fields()
+
+    assert pages_fetched == 1
+    assert [item.id for item in items] == [1]
+
+    await client.aclose()
+
+
+@pytest.mark.anyio
 async def test_post_merge_sends_current_branch_payload_shape() -> None:
     captured: dict[str, Any] = {}
 
@@ -303,7 +332,7 @@ def test_raise_for_status_raises_stitch_api_error(
     response = httpx.Response(status_code, text=text)
 
     with pytest.raises(StitchAPIError) as exc_info:
-        StitchApiClient._raise_for_status(response, operation)
+        AsyncStitchClient._raise_for_status(response, operation)
 
     assert (
         str(exc_info.value) == f"{operation} failed with status {status_code}: {text}"
