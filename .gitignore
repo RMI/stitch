@@ -220,3 +220,7 @@ __marimo__/
 
 # macOS
 **/.DS_Store
+
+# codex
+#   Ignores directory used for local `codex` context. These are often PR specific `.md` files.
+.codex/
