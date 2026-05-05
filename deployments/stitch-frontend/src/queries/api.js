@@ -2,14 +2,7 @@ export async function getResources(
   config,
   fetcher,
   endpoint = "resources",
-  {
-    page = 1,
-    page_size = 50,
-    filters = {},
-    q,
-    sort_by,
-    sort_order,
-  } = {},
+  { page = 1, page_size = 50, filters = {}, q, sort_by, sort_order } = {},
 ) {
   const params = new URLSearchParams({ page, page_size });
   for (const [key, values] of Object.entries(filters)) {
