@@ -10,10 +10,6 @@ from stitch.llm.settings import Settings, get_settings
 DEV_PLACEHOLDER_TOKEN = "dev-placeholder-token"
 
 
-def _get_api_base_url() -> str:
-    return str(get_settings().api_base_url)
-
-
 def downstream_auth_headers(settings: Settings | None = None) -> dict[str, str]:
     settings = settings or get_settings()
 
@@ -35,7 +31,7 @@ class StitchApiClient:
     ) -> None:
         self._settings = settings or get_settings()
         self._client = client or AsyncStitchClient(
-            base_url=_get_api_base_url(),
+            base_url=str(self._settings.api_base_url),
             timeout=30.0,
             headers_provider=lambda: downstream_auth_headers(self._settings),
         )

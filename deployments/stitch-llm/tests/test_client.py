@@ -94,3 +94,14 @@ async def test_stitch_api_client_validates_detail_payload() -> None:
     assert detail_view.data.basin is None
 
     await raw_client.aclose()
+
+
+def test_stitch_api_client_uses_injected_settings_for_base_url() -> None:
+    settings = Settings(
+        auth_disabled=True,
+        api_base_url="http://injected.example/api/v1",
+    )
+
+    client = StitchApiClient(settings=settings)
+
+    assert str(client._client._client.base_url) == "http://injected.example/api/v1/"
