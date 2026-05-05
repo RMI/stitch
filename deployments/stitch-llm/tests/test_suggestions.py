@@ -50,6 +50,13 @@ def test_parse_field_suggestion_response_requires_value_and_rationale_lines() ->
         parse_field_suggestion_response("VALUE: Permian Basin")
 
 
+def test_parse_field_suggestion_response_rejects_extra_non_empty_lines() -> None:
+    with pytest.raises(ModelOutputError):
+        parse_field_suggestion_response(
+            "VALUE: Permian Basin\nRATIONALE: Supported by sources.\nEXTRA: nope"
+        )
+
+
 def test_sanitize_and_validate_suggested_value_trims_strings() -> None:
     value = sanitize_and_validate_suggested_value(
         detail_data=OilGasFieldBase(name="Alpha", country="USA", basin=None),

@@ -119,20 +119,27 @@ def _serialize_prompt_payload(payload: dict[str, Any]) -> str:
 def parse_field_suggestion_response(
     raw_output_text: str,
 ) -> ParsedFieldSuggestion:
-    value_line: str | None = None
-    rationale_line: str | None = None
+    non_empty_lines = [
+        line.strip() for line in raw_output_text.splitlines() if line.strip()
+    ]
+    if len(non_empty_lines) != 2:
+        raise ModelOutputError(
+            "Model did not return the expected two-line VALUE/RATIONALE format."
+        )
 
-    for raw_line in raw_output_text.splitlines():
-        line = raw_line.strip()
-        if line.startswith("VALUE:"):
-            value_line = line.partition(":")[2].strip()
-        elif line.startswith("RATIONALE:"):
-            rationale_line = line.partition(":")[2].strip()
+    value_prefix = "VALUE:"
+    rationale_prefix = "RATIONALE:"
+    value_raw, rationale_raw = non_empty_lines
 
-    if value_line is None or rationale_line is None:
+    if not value_raw.startswith(value_prefix) or not rationale_raw.startswith(
+        rationale_prefix
+    ):
         raise ModelOutputError(
             "Model did not return the expected VALUE/RATIONALE format."
         )
+
+    value_line = value_raw.partition(":")[2].strip()
+    rationale_line = rationale_raw.partition(":")[2].strip()
 
     value: Any
     if value_line.lower() == "null":
