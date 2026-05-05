@@ -1,12 +1,12 @@
-import { useState } from "react";
+import { useDeferredValue, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useResources } from "../hooks/useResources";
-import FetchButton from "./FetchButton";
 import ClearCacheButton from "./ClearCacheButton";
 import ResourcesTable from "./ResourcesTable";
 import FilterBar from "./FilterBar";
 import Pagination from "./Pagination";
+import Input from "./Input";
 import { EMPTY_FILTERS } from "../config/filters";
 import {
   resourceKeys,
@@ -21,31 +21,31 @@ export default function ResourcesView({ className, endpoint }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const page = Number(searchParams.get("page") ?? DEFAULT_PAGE);
   const pageSize = Number(searchParams.get("page_size") ?? DEFAULT_PAGE_SIZE);
-  const [enabled, setEnabled] = useState(false);
+  const [searchText, setSearchText] = useState("");
+  const deferredSearchText = useDeferredValue(searchText.trim());
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [sortConfig, setSortConfig] = useState({
     column: null,
     direction: "asc",
   });
 
-  const { data, isLoading, isError, refetch } = useResources(endpoint, {
+  const { data, isLoading, isError } = useResources(endpoint, {
     page,
     page_size: pageSize,
-    enabled,
     filters,
+    q: deferredSearchText || undefined,
     sort_by: sortConfig.column ?? undefined,
     sort_order: sortConfig.column ? sortConfig.direction : undefined,
   });
 
-  const handleFetch = () => {
-    setEnabled(true);
-    refetch();
-  };
-
   const handleClear = () => {
-    queryClient.removeQueries({ queryKey: resourceKeys.lists(endpoint) });
-    setEnabled(false);
+    queryClient.resetQueries({ queryKey: resourceKeys.lists(endpoint) });
+    setSearchText("");
     setFilters(EMPTY_FILTERS);
+    setSortConfig({
+      column: null,
+      direction: "asc",
+    });
     setSearchParams({});
   };
 
@@ -62,6 +62,11 @@ export default function ResourcesView({ className, endpoint }) {
     setSearchParams({ page: DEFAULT_PAGE, page_size: pageSize });
   };
 
+  const handleSearchChange = (event) => {
+    setSearchText(event.target.value);
+    setSearchParams({ page: DEFAULT_PAGE, page_size: pageSize });
+  };
+
   const handleSortChange = (newSortConfig) => {
     setSortConfig(newSortConfig);
     setSearchParams({ page: DEFAULT_PAGE, page_size: pageSize });
@@ -75,8 +80,15 @@ export default function ResourcesView({ className, endpoint }) {
           {config.apiBaseUrl}/{endpoint}
         </span>
       </div>
-      <div className="mb-4 flex gap-3">
-        <FetchButton onFetch={handleFetch} isLoading={isLoading} />
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <Input
+          type="search"
+          value={searchText}
+          onChange={handleSearchChange}
+          placeholder="Search fields"
+          aria-label="Search resources"
+          className="w-full sm:max-w-md"
+        />
         <ClearCacheButton
           onClear={handleClear}
           disabled={!data?.items?.length && !isError}
@@ -96,9 +108,14 @@ export default function ResourcesView({ className, endpoint }) {
           Failed to load resources. Check your connection and try again.
         </p>
       )}
+      {isLoading && (
+        <p className="rounded-md border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+          Loading resources...
+        </p>
+      )}
       {!isError && data && data.items?.length === 0 && (
         <p className="text-sm text-gray-400">
-          No resources match the current filters.
+          No resources match the current search and filters.
         </p>
       )}
       <ResourcesTable

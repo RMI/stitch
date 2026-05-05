@@ -52,13 +52,11 @@ const defaultHookReturn = {
   isLoading: false,
   isError: false,
   error: null,
-  refetch: vi.fn(),
 };
 
 beforeEach(() => {
   vi.mocked(useResources).mockReturnValue({
     ...defaultHookReturn,
-    refetch: vi.fn(),
   });
 });
 
@@ -72,10 +70,12 @@ describe("ResourcesView", () => {
     expect(screen.getByText(new RegExp(ENDPOINT))).toBeInTheDocument();
   });
 
-  it("renders Fetch and Clear Cache buttons", () => {
+  it("renders search and Clear Cache controls", () => {
     renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
 
-    expect(screen.getByRole("button", { name: /fetch/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("searchbox", { name: /search resources/i }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /clear cache/i }),
     ).toBeInTheDocument();
@@ -95,9 +95,7 @@ describe("ResourcesView", () => {
 
     renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
 
-    const fetchButton = screen.getByRole("button", { name: /loading/i });
-    expect(fetchButton).toBeInTheDocument();
-    expect(fetchButton).toBeDisabled();
+    expect(screen.getByText("Loading resources...")).toBeInTheDocument();
   });
 
   it("renders table rows when data is available", () => {
@@ -246,6 +244,7 @@ describe("ResourcesView", () => {
           page: DEFAULT_PAGE,
           page_size: DEFAULT_PAGE_SIZE,
           filters: expect.any(Object),
+          q: undefined,
           sort_by: undefined,
           sort_order: undefined,
         }),
@@ -307,6 +306,28 @@ describe("ResourcesView", () => {
         expect.objectContaining({ sort_by: "basin", sort_order: "desc" }),
       );
     });
+
+    it("resets pagination to page 1 when sorting changes", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: { ...mockResourceData, total_pages: 3, total_count: 30 },
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      fireEvent.click(screen.getByLabelText("Next page"));
+      const table = screen.getByRole("table");
+      fireEvent.click(within(table).getByRole("button", { name: /^basin/i }));
+
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({
+          page: DEFAULT_PAGE,
+          sort_by: "basin",
+          sort_order: "asc",
+        }),
+      );
+    });
   });
 
   describe("filtering", () => {
@@ -329,6 +350,31 @@ describe("ResourcesView", () => {
       expect(useResources).toHaveBeenLastCalledWith(
         ENDPOINT,
         expect.objectContaining({
+          filters: expect.objectContaining({ region: ["Middle East"] }),
+        }),
+      );
+    });
+
+    it("resets pagination to page 1 when filters change", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: { ...mockResourceData, total_pages: 3, total_count: 30 },
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      fireEvent.click(screen.getByLabelText("Next page"));
+      fireEvent.click(
+        within(screen.getByTestId("filter-bar")).getByRole("button", {
+          name: /region/i,
+        }),
+      );
+      fireEvent.click(screen.getByRole("checkbox", { name: /middle east/i }));
+
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({
+          page: DEFAULT_PAGE,
           filters: expect.objectContaining({ region: ["Middle East"] }),
         }),
       );
@@ -358,6 +404,49 @@ describe("ResourcesView", () => {
             basin: [],
             state_province: [],
           }),
+        }),
+      );
+    });
+  });
+
+  describe("search", () => {
+    it("passes q to useResources when search text changes", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      fireEvent.change(
+        screen.getByRole("searchbox", { name: /search resources/i }),
+        {
+          target: { value: "ghawar" },
+        },
+      );
+
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({ q: "ghawar" }),
+      );
+    });
+
+    it("resets pagination to page 1 when search text changes", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: { ...mockResourceData, total_pages: 3, total_count: 30 },
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      fireEvent.click(screen.getByLabelText("Next page"));
+      fireEvent.change(
+        screen.getByRole("searchbox", { name: /search resources/i }),
+        {
+          target: { value: "ghawar" },
+        },
+      );
+
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({
+          page: DEFAULT_PAGE,
+          q: "ghawar",
         }),
       );
     });

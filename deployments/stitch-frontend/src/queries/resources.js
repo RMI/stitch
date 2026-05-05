@@ -55,6 +55,7 @@ export const resourceQueries = {
     page = DEFAULT_PAGE,
     page_size = DEFAULT_PAGE_SIZE,
     filters = {},
+    q,
     sort_by,
     sort_order,
   ) => ({
@@ -62,6 +63,7 @@ export const resourceQueries = {
       page,
       page_size,
       ...filters,
+      q,
       sort_by,
       sort_order,
     }),
@@ -70,6 +72,7 @@ export const resourceQueries = {
         page,
         page_size,
         filters,
+        q,
         sort_by,
         sort_order,
       }),

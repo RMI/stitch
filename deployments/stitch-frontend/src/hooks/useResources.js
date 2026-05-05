@@ -19,8 +19,9 @@ function useResourcesReal(
   {
     page = DEFAULT_PAGE,
     page_size = DEFAULT_PAGE_SIZE,
-    enabled = false,
+    enabled = true,
     filters = {},
+    q,
     sort_by,
     sort_order,
   } = {},
@@ -33,6 +34,7 @@ function useResourcesReal(
       page,
       page_size,
       filters,
+      q,
       sort_by,
       sort_order,
     ),
@@ -81,12 +83,12 @@ function useMergeCandidateReal(
 //--------------------------------
 function useResourcesMock(
   endpoint = "resources",
-  { page = DEFAULT_PAGE, page_size = DEFAULT_PAGE_SIZE } = {},
+  { page = DEFAULT_PAGE, page_size = DEFAULT_PAGE_SIZE, q } = {},
 ) {
   return useQuery({
-    queryKey: resourceKeys.list(endpoint, { page, page_size }),
+    queryKey: resourceKeys.list(endpoint, { page, page_size, q }),
     queryFn: () => Promise.resolve(mockResources),
-    enabled: false,
+    enabled: true,
   });
 }
 
