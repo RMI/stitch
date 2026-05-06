@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import Any
 
 import jwt
 from jwt import PyJWKClient
@@ -8,7 +9,27 @@ from .errors import JWKSFetchError, TokenExpiredError, TokenValidationError
 from .settings import OIDCSettings
 
 
+def _extract_permissions(payload: dict[str, Any]) -> frozenset[str]:
+    """Extract RBAC permissions from the token payload.
+
+    Auth0-specific: reads the `permissions` array claim. To support another
+    IdP, dispatch here off OIDCSettings rather than expanding TokenClaims.
+    """
+    if "permissions" not in payload or payload["permissions"] is None:
+        return frozenset()
+
+    value = payload["permissions"]
+    if not isinstance(value, list):
+        raise TokenValidationError("permissions claim must be a list of strings")
+    if not all(isinstance(item, str) for item in value):
+        raise TokenValidationError("permissions claim must be a list of strings")
+    return frozenset(value)
+
+
 class JWTValidator:
+    _settings: OIDCSettings
+    _jwks_client: PyJWKClient
+
     def __init__(self, settings: OIDCSettings) -> None:
         self._settings = settings
         self._jwks_client = PyJWKClient(
@@ -47,10 +68,12 @@ class JWTValidator:
 
         email = payload.get("email") or payload.get("preferred_username")
         name = payload.get("name")
+        permissions = _extract_permissions(payload)
 
         return TokenClaims(
             sub=payload["sub"],
             email=email,
             name=name,
+            permissions=permissions,
             raw=payload,
         )
