@@ -1,20 +1,30 @@
-from collections.abc import Sequence
-from itertools import groupby
+from collections.abc import Collection, Sequence
+from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import Row, select
+from sqlalchemy import (
+    ColumnElement,
+    String,
+    and_,
+    asc,
+    case,
+    cast,
+    desc,
+    func,
+    or_,
+    select,
+)
+from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.status import HTTP_404_NOT_FOUND
 
-from stitch.api.coalesce import ProvAttrs, coalesce_og_field_resource
 from stitch.api.db.errors import (
     InvalidActionError,
     ResourceIntegrityError,
     ResourceNotFoundError,
 )
 from stitch.api.auth import CurrentUser
-from stitch.api.db.model.resource_coalesced_view import ResourceCoalescedView
 from stitch.api.entities import OGFieldQueryParams
 from stitch.api.db.og_field_source_actions import (
     attach_sources_to_resource,
@@ -31,68 +41,217 @@ from .model import (
     OilGasFieldSourceModel,
     ResourceModel,
 )
+from .model.og_field_source_priority import DEFAULT_PRIORITIES
 from .utils import resource_model_to_entity
+
+
+_LIST_JSON_FIELDS = ("owners", "operators")
+_LIST_SCALAR_FIELDS = tuple(
+    field_name
+    for field_name in OilGasFieldBase.model_fields
+    if field_name not in _LIST_JSON_FIELDS
+)
+_LIST_DATA_FIELDS = (*_LIST_SCALAR_FIELDS, *_LIST_JSON_FIELDS)
+_PROVENANCE_SUFFIX = "__provenance_source"
+
+
+def _priority_values() -> tuple[int, ...]:
+    return tuple(int(priority["priority"]) for priority in DEFAULT_PRIORITIES)
 
 
 async def query(
     session: AsyncSession,
     params: OGFieldQueryParams,
+    redacted_sources: Collection[OGSISrcKey] = (),
 ) -> tuple[list[OGFieldListItemView], int]:
-    """Query coalesced view for list items with provenance."""
-    views = await ResourceCoalescedView.query(session, params)
-    total = await ResourceCoalescedView.count(session, params)
-    if not views:
-        return [], total
-
-    resource_ids = [v.id for v in views]
-    prov_map = await _load_provenance(session, resource_ids)
-
-    items: list[OGFieldListItemView] = []
-    for v in views:
-        data = OilGasFieldBase(
-            **{f: getattr(v, f, None) for f in OilGasFieldBase.model_fields}
+    """Query redaction-aware coalesced resource list items with provenance."""
+    if params.sort_by == "source":
+        raise HTTPException(
+            status_code=422,
+            detail="sort_by=source is not supported for resource list queries.",
         )
-        raw_prov = prov_map.get(v.id, {})
-        provenance: dict[str, OGSISrcKey | None] = {
-            k: (None if val is None else val[1]) for k, val in raw_prov.items()
-        }
-        items.append(OGFieldListItemView(id=v.id, data=data, provenance=provenance))
 
-    return items, total
+    coalesced = _build_redacted_resource_list_cte(params, redacted_sources)
+    filtered = select(coalesced)
+    for condition in _build_final_conditions(coalesced, params):
+        filtered = filtered.where(condition)
 
+    total_stmt = select(func.count()).select_from(filtered.subquery())
+    total = await session.scalar(total_stmt) or 0
 
-async def _load_provenance(
-    session: AsyncSession, resource_ids: Sequence[int]
-) -> dict[int, ProvAttrs]:
-    """Batch-load provenance for resources via memberships → sources → coalesce."""
-    stmt = (
-        select(MembershipModel.resource_id, OilGasFieldSourceModel)
-        .join(
-            OilGasFieldSourceModel,
-            MembershipModel.source_pk == OilGasFieldSourceModel.id,
-        )
-        .where(MembershipModel.resource_id.in_(resource_ids))
-        .where(MembershipModel.status == MembershipStatus.ACTIVE)
-        .order_by(MembershipModel.resource_id)
+    page_stmt = (
+        filtered.order_by(*_build_sort_clauses(coalesced, params))
+        .offset(params.offset)
+        .limit(params.limit)
     )
-    rows: Sequence[Row[tuple[int, OilGasFieldSourceModel]]] = (
-        await session.execute(stmt)
-    ).all()
-    priorities = (
-        await session.scalars(
-            select(OGFieldSourcePriority.source).order_by(
-                OGFieldSourcePriority.priority
-            )
+    rows = (await session.execute(page_stmt)).mappings().all()
+
+    return [_list_item_from_row(row) for row in rows], total
+
+
+def _build_redacted_resource_list_cte(
+    params: OGFieldQueryParams,
+    redacted_sources: Collection[OGSISrcKey],
+):
+    s = OilGasFieldSourceModel
+    m = MembershipModel
+    r = ResourceModel
+    p = OGFieldSourcePriority
+
+    selected_sources = list(dict.fromkeys(params.source))
+    redacted = list(dict.fromkeys(redacted_sources))
+    source_join_conditions = [
+        s.id == m.source_pk,
+        s.source == m.source,
+    ]
+    if redacted:
+        source_join_conditions.append(s.source.not_in(redacted))
+
+    qualified = (
+        select(
+            r.id.label("id"),
+            m.source.label("source"),
+            p.priority.label("priority"),
         )
-    ).all()
+        .join(m, m.resource_id == r.id)
+        .join(p, p.source == m.source)
+        .outerjoin(s, and_(*source_join_conditions))
+        .where(
+            r.repointed_id.is_(None),
+            m.status == MembershipStatus.ACTIVE,
+            m.source.in_(selected_sources),
+        )
+    )
 
-    result: dict[int, ProvAttrs] = {}
-    for rid, group in groupby(rows, key=lambda r: r[0]):
-        sources = [src.as_entity() for _, src in group]
-        _, prov = coalesce_og_field_resource(sources, priorities)
-        result[rid] = prov
+    for field_name in _LIST_DATA_FIELDS:
+        qualified = qualified.add_columns(getattr(s, field_name).label(field_name))
 
-    return result
+    qualified_cte = qualified.cte("qualified_resource_sources")
+    coalesced = select(qualified_cte.c.id.label("id")).group_by(qualified_cte.c.id)
+
+    for field_name in _LIST_SCALAR_FIELDS:
+        field_col = getattr(qualified_cte.c, field_name)
+        value_by_priority = [
+            func.max(case((qualified_cte.c.priority == priority, field_col)))
+            for priority in _priority_values()
+        ]
+        provenance_by_priority = [
+            func.max(
+                case(
+                    (
+                        and_(
+                            qualified_cte.c.priority == priority,
+                            field_col.is_not(None),
+                        ),
+                        qualified_cte.c.source,
+                    )
+                )
+            )
+            for priority in _priority_values()
+        ]
+        coalesced = coalesced.add_columns(
+            func.coalesce(*value_by_priority).label(field_name),
+            func.coalesce(*provenance_by_priority).label(
+                f"{field_name}{_PROVENANCE_SUFFIX}"
+            ),
+        )
+
+    for field_name in _LIST_JSON_FIELDS:
+        value_alias = qualified_cte.alias(f"{field_name}_value_source")
+        provenance_alias = qualified_cte.alias(f"{field_name}_provenance_source")
+        value_col = getattr(value_alias.c, field_name)
+        provenance_col = getattr(provenance_alias.c, field_name)
+        value_is_present = _json_value_is_present(value_col)
+        provenance_is_present = _json_value_is_present(provenance_col)
+
+        value_subquery = (
+            select(value_col)
+            .where(
+                value_alias.c.id == qualified_cte.c.id,
+                value_is_present,
+            )
+            .order_by(value_alias.c.priority.asc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        provenance_subquery = (
+            select(provenance_alias.c.source)
+            .where(
+                provenance_alias.c.id == qualified_cte.c.id,
+                provenance_is_present,
+            )
+            .order_by(provenance_alias.c.priority.asc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        coalesced = coalesced.add_columns(
+            value_subquery.label(field_name),
+            provenance_subquery.label(f"{field_name}{_PROVENANCE_SUFFIX}"),
+        )
+
+    return coalesced.cte("redacted_resource_list")
+
+
+def _json_value_is_present(col) -> ColumnElement[bool]:
+    return and_(col.is_not(None), cast(col, String) != "null")
+
+
+def _build_final_conditions(
+    coalesced,
+    params: OGFieldQueryParams,
+) -> list[ColumnElement[bool]]:
+    conditions: list[ColumnElement[bool]] = []
+
+    if params.q:
+        q_term = f"%{params.q}%"
+        q_conditions: list[ColumnElement[bool]] = []
+        for field_name in OilGasFieldSourceModel._q_fields:
+            col = getattr(coalesced.c, field_name, None)
+            if col is not None:
+                q_conditions.append(col.ilike(q_term))
+        if q_conditions:
+            conditions.append(or_(*q_conditions))
+
+    for field_name in OilGasFieldSourceModel._exact_match_fields:
+        value = getattr(params, field_name, None)
+        if value is None:
+            continue
+        col = _resource_list_column(coalesced, field_name)
+        if col is not None:
+            conditions.append(col == value)
+
+    return conditions
+
+
+def _build_sort_clauses(coalesced, params: OGFieldQueryParams) -> list[Any]:
+    sort_col = _resource_list_column(coalesced, params.sort_by)
+    clauses: list[Any] = []
+    if sort_col is not None:
+        direction = desc if params.sort_order == "desc" else asc
+        clauses.append(direction(sort_col).nulls_last())
+    if params.sort_by not in {"id", "resource_id"}:
+        clauses.append(asc(coalesced.c.id))
+    return clauses
+
+
+def _resource_list_column(coalesced, field_name: str):
+    if field_name == "resource_id":
+        return coalesced.c.id
+    return getattr(coalesced.c, field_name, None)
+
+
+def _list_item_from_row(row: RowMapping) -> OGFieldListItemView:
+    data = OilGasFieldBase(
+        **{
+            field_name: row.get(field_name)
+            for field_name in OilGasFieldBase.model_fields
+        }
+    )
+    provenance: dict[str, OGSISrcKey | None] = {
+        field_name: row.get(f"{field_name}{_PROVENANCE_SUFFIX}")
+        for field_name in OilGasFieldBase.model_fields
+    }
+    return OGFieldListItemView(id=row["id"], data=data, provenance=provenance)
 
 
 async def get(session: AsyncSession, id: int) -> OGFieldResource:

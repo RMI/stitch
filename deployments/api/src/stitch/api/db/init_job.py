@@ -6,6 +6,7 @@ import time
 import logging
 from enum import Enum
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import OperationalError
@@ -13,10 +14,7 @@ import hashlib
 import json
 from sqlalchemy.sql.schema import Column
 
-from stitch.api.db.model import (
-    StitchBase,
-    create_coalesced_view,
-)
+from stitch.api.db.model import StitchBase
 
 logger = logging.getLogger("db-init")
 
@@ -206,7 +204,7 @@ def fail_partial(existing_tables: set[str], expected: set[str]) -> None:
     )
 
 
-def _type_repr(col: Column) -> str:
+def _type_repr(col: Column[Any]) -> str:
     # compile-like string is better than repr() for stability
     return str(col.type)
 
@@ -322,8 +320,6 @@ def main() -> None:
                     if not t.info.get("is_view")
                 ]
                 StitchBase.metadata.create_all(engine, tables=non_view_tables)
-                with engine.begin() as conn:
-                    create_coalesced_view(conn)
                 ensure_meta_tables(engine)
                 version = schema_fingerprint(StitchBase.metadata)
                 mark_schema_version(engine, version=version)

@@ -5,18 +5,52 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from stitch.api.db import og_field_resource_actions as resource_actions
-from stitch.api.db.model import ResourceModel
+from stitch.api.db.model import (
+    MembershipModel,
+    MembershipStatus,
+    OilGasFieldSourceModel,
+    ResourceModel,
+)
 from stitch.api.entities import (
-    OGFieldFilterParams,
-    OGFieldSortParams,
-    PaginationParams,
+    OGFieldQueryParams,
     User,
 )
 from tests.factories import ResourceCreateFactory
 
 
-class _QueryParams(PaginationParams, OGFieldFilterParams, OGFieldSortParams):
-    pass
+_QueryParams = OGFieldQueryParams
+
+
+async def _create_resource_with_sources(
+    session: AsyncSession,
+    user: User,
+    *source_rows: dict,
+    repointed_to: int | None = None,
+) -> int:
+    resource = ResourceModel.create(created_by=user, repointed_to=repointed_to)
+    session.add(resource)
+    await session.flush()
+
+    for row in source_rows:
+        source = OilGasFieldSourceModel(
+            **row,
+            created_by_id=user.id,
+            last_updated_by_id=user.id,
+        )
+        session.add(source)
+        await session.flush()
+        session.add(
+            MembershipModel.create(
+                created_by=user,
+                resource_id=resource.id,
+                source=source.source,
+                source_pk=source.id,
+                status=MembershipStatus.ACTIVE,
+            )
+        )
+
+    await session.flush()
+    return resource.id
 
 
 class TestCreateResourceActionIntegration:
@@ -171,3 +205,421 @@ class TestResourceQueryAction:
             assert item.id is not None
             assert item.data is not None
             assert isinstance(item.provenance, dict)
+
+    @pytest.mark.anyio
+    async def test_explicit_source_filter_narrows_participating_memberships(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        included_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "rmi", "name": "RMI Name", "country": "USA"},
+            {"source": "gem", "name": "GEM Name", "country": "USA"},
+        )
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "rmi", "name": "Only RMI", "country": "USA"},
+        )
+
+        params = _QueryParams(source=["gem"], page=1, page_size=10)
+        items, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 1
+        assert [item.id for item in items] == [included_id]
+        assert items[0].data.name == "GEM Name"
+        assert items[0].provenance["name"] == "gem"
+
+    @pytest.mark.anyio
+    async def test_no_redaction_uses_priority_coalesced_scalar_fields(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        resource_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "rmi", "name": "RMI Name", "country": None},
+            {
+                "source": "gem",
+                "name": "GEM Name",
+                "country": "CAN",
+                "basin": "GEM Basin",
+            },
+            {
+                "source": "wm",
+                "name": "WM Name",
+                "country": "USA",
+                "basin": "WM Basin",
+                "reservoir_formation": "WM Formation",
+            },
+        )
+
+        params = _QueryParams(page=1, page_size=10)
+        items, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 1
+        assert [item.id for item in items] == [resource_id]
+        assert items[0].data.name == "RMI Name"
+        assert items[0].provenance["name"] == "rmi"
+        assert items[0].data.country == "CAN"
+        assert items[0].provenance["country"] == "gem"
+        assert items[0].data.basin == "GEM Basin"
+        assert items[0].provenance["basin"] == "gem"
+        assert items[0].data.reservoir_formation == "WM Formation"
+        assert items[0].provenance["reservoir_formation"] == "wm"
+
+    @pytest.mark.anyio
+    async def test_no_redaction_uses_priority_coalesced_owner_operator_lists(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        resource_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {
+                "source": "rmi",
+                "name": "RMI Name",
+                "country": "USA",
+                "owners": [{"name": "RMI Owner", "stake": 55.0}],
+                "operators": [{"name": "RMI Operator", "stake": 100.0}],
+            },
+            {
+                "source": "gem",
+                "name": "GEM Name",
+                "country": "USA",
+                "owners": [{"name": "GEM Owner", "stake": 45.0}],
+                "operators": [{"name": "GEM Operator", "stake": 100.0}],
+            },
+        )
+
+        params = _QueryParams(page=1, page_size=10)
+        items, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 1
+        assert [item.id for item in items] == [resource_id]
+        assert items[0].data.owners is not None
+        assert [(owner.name, owner.stake) for owner in items[0].data.owners] == [
+            ("RMI Owner", 55.0)
+        ]
+        assert items[0].provenance["owners"] == "rmi"
+        assert items[0].data.operators is not None
+        assert [
+            (operator.name, operator.stake) for operator in items[0].data.operators
+        ] == [("RMI Operator", 100.0)]
+        assert items[0].provenance["operators"] == "rmi"
+
+    @pytest.mark.anyio
+    async def test_null_owner_operator_lists_fall_through_to_lower_priority_source(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        resource_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {
+                "source": "rmi",
+                "name": "RMI Name",
+                "country": "USA",
+                "owners": None,
+                "operators": None,
+            },
+            {
+                "source": "gem",
+                "name": "GEM Name",
+                "country": "USA",
+                "owners": [{"name": "GEM Owner", "stake": 45.0}],
+                "operators": [{"name": "GEM Operator", "stake": 100.0}],
+            },
+        )
+
+        params = _QueryParams(page=1, page_size=10)
+        items, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 1
+        assert [item.id for item in items] == [resource_id]
+        assert items[0].data.owners is not None
+        assert [(owner.name, owner.stake) for owner in items[0].data.owners] == [
+            ("GEM Owner", 45.0)
+        ]
+        assert items[0].provenance["owners"] == "gem"
+        assert items[0].data.operators is not None
+        assert [
+            (operator.name, operator.stake) for operator in items[0].data.operators
+        ] == [("GEM Operator", 100.0)]
+        assert items[0].provenance["operators"] == "gem"
+
+    @pytest.mark.anyio
+    async def test_empty_owner_operator_lists_win_over_lower_priority_values(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        resource_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {
+                "source": "rmi",
+                "name": "RMI Name",
+                "country": "USA",
+                "owners": [],
+                "operators": [],
+            },
+            {
+                "source": "gem",
+                "name": "GEM Name",
+                "country": "USA",
+                "owners": [{"name": "GEM Owner", "stake": 45.0}],
+                "operators": [{"name": "GEM Operator", "stake": 100.0}],
+            },
+        )
+
+        params = _QueryParams(page=1, page_size=10)
+        items, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 1
+        assert [item.id for item in items] == [resource_id]
+        assert items[0].data.owners == []
+        assert items[0].provenance["owners"] == "rmi"
+        assert items[0].data.operators == []
+        assert items[0].provenance["operators"] == "rmi"
+
+    @pytest.mark.anyio
+    async def test_redacted_owner_operator_lists_fall_through_to_lower_priority_source(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        resource_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {
+                "source": "rmi",
+                "name": "RMI Name",
+                "country": "USA",
+                "owners": [{"name": "RMI Owner", "stake": 55.0}],
+                "operators": [{"name": "RMI Operator", "stake": 100.0}],
+            },
+            {
+                "source": "gem",
+                "name": "GEM Name",
+                "country": "USA",
+                "owners": [{"name": "GEM Owner", "stake": 45.0}],
+                "operators": [{"name": "GEM Operator", "stake": 100.0}],
+            },
+        )
+
+        params = _QueryParams(page=1, page_size=10)
+        items, total = await resource_actions.query(
+            seeded_integration_session,
+            params,
+            redacted_sources=["rmi"],
+        )
+
+        assert total == 1
+        assert [item.id for item in items] == [resource_id]
+        assert items[0].data.owners is not None
+        assert [(owner.name, owner.stake) for owner in items[0].data.owners] == [
+            ("GEM Owner", 45.0)
+        ]
+        assert items[0].provenance["owners"] == "gem"
+        assert items[0].data.operators is not None
+        assert [
+            (operator.name, operator.stake) for operator in items[0].data.operators
+        ] == [("GEM Operator", 100.0)]
+        assert items[0].provenance["operators"] == "gem"
+
+    @pytest.mark.anyio
+    async def test_redacted_source_falls_through_to_lower_priority_source(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        resource_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "wm", "name": "WoodMac Name", "country": "USA"},
+            {"source": "llm", "name": "LLM Name", "country": "USA"},
+        )
+
+        params = _QueryParams(page=1, page_size=10)
+        items, total = await resource_actions.query(
+            seeded_integration_session,
+            params,
+            redacted_sources=["wm"],
+        )
+
+        assert total == 1
+        assert [item.id for item in items] == [resource_id]
+        assert items[0].data.name == "LLM Name"
+        assert items[0].provenance["name"] == "llm"
+
+    @pytest.mark.anyio
+    async def test_only_redacted_selected_sources_still_return_resource(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        resource_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "wm", "name": "Hidden Name", "country": "USA"},
+        )
+
+        params = _QueryParams(source=["wm"], page=1, page_size=10)
+        items, total = await resource_actions.query(
+            seeded_integration_session,
+            params,
+            redacted_sources=["wm"],
+        )
+
+        assert total == 1
+        assert [item.id for item in items] == [resource_id]
+        assert items[0].data.name is None
+        assert items[0].data.country is None
+        assert items[0].data.owners is None
+        assert items[0].data.operators is None
+        assert items[0].provenance["name"] is None
+        assert items[0].provenance["country"] is None
+        assert items[0].provenance["owners"] is None
+        assert items[0].provenance["operators"] is None
+
+    @pytest.mark.anyio
+    async def test_filters_apply_to_final_coalesced_values_after_redaction(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        resource_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {
+                "source": "rmi",
+                "name": "State Test",
+                "country": "USA",
+                "state_province": "New Mexico",
+            },
+            {
+                "source": "gem",
+                "name": "State Test",
+                "country": "USA",
+                "state_province": "Texas",
+            },
+        )
+
+        params = _QueryParams(state_province="Texas", page=1, page_size=10)
+        items, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 0
+        assert items == []
+
+        items, total = await resource_actions.query(
+            seeded_integration_session,
+            params,
+            redacted_sources=["rmi"],
+        )
+
+        assert total == 1
+        assert [item.id for item in items] == [resource_id]
+        assert items[0].data.state_province == "Texas"
+        assert items[0].provenance["state_province"] == "gem"
+
+    @pytest.mark.anyio
+    async def test_count_is_after_redacted_coalesced_filter_before_pagination(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "rmi", "name": "Hidden", "country": "USA"},
+            {"source": "gem", "name": "Target Alpha", "country": "USA"},
+        )
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "Target Bravo", "country": "USA"},
+        )
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "Other", "country": "USA"},
+        )
+
+        params = _QueryParams(q="Target", page=1, page_size=1)
+        items, total = await resource_actions.query(
+            seeded_integration_session,
+            params,
+            redacted_sources=["rmi"],
+        )
+
+        assert total == 2
+        assert len(items) == 1
+        assert items[0].data.name == "Target Alpha"
+
+    @pytest.mark.anyio
+    async def test_sort_uses_final_values_nulls_last_and_id_tiebreak(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        null_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": None, "country": "USA"},
+        )
+        bravo_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "Bravo", "country": "USA"},
+        )
+        alpha_one_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "Alpha", "country": "USA"},
+        )
+        alpha_two_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "Alpha", "country": "USA"},
+        )
+
+        params = _QueryParams(sort_by="name", page=1, page_size=10)
+        items, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 4
+        assert [item.id for item in items] == [
+            alpha_one_id,
+            alpha_two_id,
+            bravo_id,
+            null_id,
+        ]
+
+    @pytest.mark.anyio
+    async def test_repointed_resources_are_excluded(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        root_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "Root", "country": "USA"},
+        )
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "Repointed", "country": "USA"},
+            repointed_to=root_id,
+        )
+
+        params = _QueryParams(page=1, page_size=10)
+        items, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 1
+        assert [item.id for item in items] == [root_id]

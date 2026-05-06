@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import ClassVar, Self
+from typing import Any, ClassVar, Self
 
 from sqlalchemy import (
     ColumnElement,
@@ -20,7 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, declarative_mixin, mapped_column
 
-from stitch.api.entities import OGFieldQueryParams
+from stitch.api.entities import OGFieldQueryParams, OGSI_SOURCE_DEFAULT
 from stitch.ogsi.model import LocationType
 from stitch.ogsi.model.types import (
     FieldStatus,
@@ -56,7 +56,6 @@ class OGFieldQueryMixin:
         *_q_fields,
         "id",
         "country",
-        "source",
         "field_status",
         "location_type",
         "production_conventionality",
@@ -128,6 +127,8 @@ class OGFieldQueryMixin:
     # Internal helpers (overridable)
     # ------------------------------------------------------------------
 
+    __primary_sort_col__: ClassVar[str] = "id"
+
     @classmethod
     def _base_query[QM: OGFieldQueryMixin](
         cls: type[QM], params: OGFieldQueryParams
@@ -139,7 +140,7 @@ class OGFieldQueryMixin:
         stmt: Select[tuple[QM]] = select(cls).distinct()
         for cond in cls._build_conditions(params):
             stmt = stmt.where(cond)
-        return cls._apply_sort(stmt, params)
+        return stmt.order_by(*cls._create_sort_clauses(params))
 
     @classmethod
     def _build_conditions(cls, params: OGFieldQueryParams) -> list[ColumnElement[bool]]:
@@ -163,19 +164,28 @@ class OGFieldQueryMixin:
                 if col is not None:
                     conditions.append(col == value)
 
+        source_col = getattr(cls, "source", None)
+        if source_col is not None:
+            sources = list(
+                dict.fromkeys(getattr(params, "source", OGSI_SOURCE_DEFAULT))
+            )
+            conditions.append(source_col.in_(sources))
+
         return conditions
 
     @classmethod
-    def _apply_sort[QM: OGFieldQueryMixin](
-        cls: type[QM], stmt: Select[tuple[QM]], params: OGFieldQueryParams
-    ) -> Select[tuple[QM]]:
-        """Apply ORDER BY with id tie-breaker."""
-        sort_col = getattr(cls, params.sort_by)
-        direction = desc if params.sort_order == "desc" else asc
-        stmt = stmt.order_by(direction(sort_col).nulls_last())
-        if params.sort_by != "id":
-            stmt = stmt.order_by(asc(cls.id))
-        return stmt
+    def _create_sort_clauses(cls, params: OGFieldQueryParams) -> list[Any]:
+        """Create ORDER BY clauses with a stable primary-key tie-breaker."""
+        clauses: list[Any] = []
+        sort_col = getattr(cls, params.sort_by, None)
+        if sort_col is not None:
+            direction = desc if params.sort_order == "desc" else asc
+            clauses.append(direction(sort_col).nulls_last())
+        if params.sort_by != cls.__primary_sort_col__:
+            primary_sort_col = getattr(cls, cls.__primary_sort_col__, None)
+            if primary_sort_col is not None:
+                clauses.append(asc(primary_sort_col))
+        return clauses
 
     @classmethod
     def _apply_pagination[QM: OGFieldQueryMixin](

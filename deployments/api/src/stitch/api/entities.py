@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, computed_field
 
+from stitch.ogsi.model import GEM_SRC, LLM_SRC, RMI_SRC, WM_SRC
 from stitch.ogsi.model.types import (
     FieldStatus,
     LocationType,
@@ -13,6 +14,8 @@ from stitch.ogsi.model.types import (
     ProductionConventionality,
 )
 from stitch.ogsi.model.og_field import OilGasFieldBase
+
+OGSI_SOURCE_DEFAULT: tuple[OGSISrcKey, ...] = (RMI_SRC, GEM_SRC, WM_SRC, LLM_SRC)
 
 
 class Timestamped(BaseModel):
@@ -68,7 +71,6 @@ SortableField = Literal[
     "region",
     "id",
     "country",
-    "source",
     "field_status",
     "location_type",
     "production_conventionality",
@@ -78,6 +80,7 @@ SortableField = Literal[
     "fid_year",
     "latitude",
     "longitude",
+    "resource_id",
 ]
 
 
@@ -102,7 +105,7 @@ class OGFieldSortParams(BaseModel):
 
 
 class OGFieldQueryParams(PaginationParams, OGFieldFilterParams, OGFieldSortParams):
-    source: OGSISrcKey | None = None
+    source: list[OGSISrcKey] = Field(default_factory=lambda: list(OGSI_SOURCE_DEFAULT))
 
 
 class MergeCandidateStatus(StrEnum):

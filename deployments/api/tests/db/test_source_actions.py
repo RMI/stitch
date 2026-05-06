@@ -6,16 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db import og_field_source_actions as source_actions
 from stitch.api.entities import (
-    OGFieldFilterParams,
-    OGFieldSortParams,
-    PaginationParams,
+    OGFieldQueryParams,
     User,
 )
 from tests.factories import ResourceCreateFactory
 
 
-class _QueryParams(PaginationParams, OGFieldFilterParams, OGFieldSortParams):
-    pass
+_QueryParams = OGFieldQueryParams
 
 
 class TestSourceQueryAction:
