@@ -94,4 +94,4 @@ class TestTokenClaimsPermissions:
         claims = TokenClaims(sub="auth0|abc", permissions=["a"])
 
         with pytest.raises(AttributeError):
-            claims.permissions.add("b")  # type: ignore[attr-defined]
+            claims.permissions.add("b")
