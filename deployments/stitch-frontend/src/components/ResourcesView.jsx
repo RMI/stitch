@@ -1,7 +1,8 @@
-import { useDeferredValue, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useResources } from "../hooks/useResources";
+import Button from "./Button";
 import ClearCacheButton from "./ClearCacheButton";
 import ResourcesTable from "./ResourcesTable";
 import FilterBar from "./FilterBar";
@@ -22,7 +23,7 @@ export default function ResourcesView({ className, endpoint }) {
   const page = Number(searchParams.get("page") ?? DEFAULT_PAGE);
   const pageSize = Number(searchParams.get("page_size") ?? DEFAULT_PAGE_SIZE);
   const [searchText, setSearchText] = useState("");
-  const deferredSearchText = useDeferredValue(searchText.trim());
+  const [submittedSearch, setSubmittedSearch] = useState("");
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [sortConfig, setSortConfig] = useState({
     column: null,
@@ -33,7 +34,7 @@ export default function ResourcesView({ className, endpoint }) {
     page,
     page_size: pageSize,
     filters,
-    q: deferredSearchText || undefined,
+    q: submittedSearch || undefined,
     sort_by: sortConfig.column ?? undefined,
     sort_order: sortConfig.column ? sortConfig.direction : undefined,
   });
@@ -41,6 +42,7 @@ export default function ResourcesView({ className, endpoint }) {
   const handleClear = () => {
     queryClient.resetQueries({ queryKey: resourceKeys.lists(endpoint) });
     setSearchText("");
+    setSubmittedSearch("");
     setFilters(EMPTY_FILTERS);
     setSortConfig({
       column: null,
@@ -62,8 +64,24 @@ export default function ResourcesView({ className, endpoint }) {
     setSearchParams({ page: DEFAULT_PAGE, page_size: pageSize });
   };
 
-  const handleSearchChange = (event) => {
-    setSearchText(event.target.value);
+  const handleSearchInputChange = (event) => {
+    const newValue = event.target.value;
+    setSearchText(newValue);
+    if (newValue === "" && submittedSearch !== "") {
+      setSubmittedSearch("");
+      setSearchParams({ page: DEFAULT_PAGE, page_size: pageSize });
+    }
+  };
+
+  const handleSearchSubmit = (event) => {
+    event.preventDefault();
+    setSubmittedSearch(searchText.trim());
+    setSearchParams({ page: DEFAULT_PAGE, page_size: pageSize });
+  };
+
+  const handleSearchClear = () => {
+    setSearchText("");
+    setSubmittedSearch("");
     setSearchParams({ page: DEFAULT_PAGE, page_size: pageSize });
   };
 
@@ -81,14 +99,34 @@ export default function ResourcesView({ className, endpoint }) {
         </span>
       </div>
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <Input
-          type="search"
-          value={searchText}
-          onChange={handleSearchChange}
-          placeholder="Search fields"
-          aria-label="Search resources"
-          className="w-full sm:max-w-md"
-        />
+        <form
+          onSubmit={handleSearchSubmit}
+          className="flex flex-col gap-3 sm:flex-row sm:items-center w-full sm:w-auto"
+        >
+          <div className="relative w-full sm:max-w-md">
+            <Input
+              type="search"
+              value={searchText}
+              onChange={handleSearchInputChange}
+              placeholder="Search fields"
+              aria-label="Search resources"
+              className="w-full pr-10"
+            />
+            {searchText && (
+              <button
+                type="button"
+                onClick={handleSearchClear}
+                aria-label="Clear search"
+                className="absolute right-3 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full text-gray-500 hover:bg-gray-200 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          <Button type="submit" variant="secondary">
+            Search
+          </Button>
+        </form>
         <ClearCacheButton
           onClear={handleClear}
           disabled={!data?.items?.length && !isError}

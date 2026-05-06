@@ -410,8 +410,18 @@ describe("ResourcesView", () => {
   });
 
   describe("search", () => {
-    it("passes q to useResources when search text changes", () => {
+    it("renders a Search submit button", () => {
       renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      expect(
+        screen.getByRole("button", { name: /^search$/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("does not call useResources with q while typing (no submit)", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      vi.mocked(useResources).mockClear();
 
       fireEvent.change(
         screen.getByRole("searchbox", { name: /search resources/i }),
@@ -420,13 +430,60 @@ describe("ResourcesView", () => {
         },
       );
 
+      const callsWithQ = vi
+        .mocked(useResources)
+        .mock.calls.filter(([, params]) => params?.q !== undefined);
+      expect(callsWithQ).toHaveLength(0);
+    });
+
+    it("passes q to useResources when the Search button is clicked", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      fireEvent.change(
+        screen.getByRole("searchbox", { name: /search resources/i }),
+        {
+          target: { value: "ghawar" },
+        },
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
+
       expect(useResources).toHaveBeenLastCalledWith(
         ENDPOINT,
         expect.objectContaining({ q: "ghawar" }),
       );
     });
 
-    it("resets pagination to page 1 when search text changes", () => {
+    it("passes q to useResources when Enter is pressed in the input", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      const input = screen.getByRole("searchbox", {
+        name: /search resources/i,
+      });
+      fireEvent.change(input, { target: { value: "ghawar" } });
+      fireEvent.submit(input.closest("form"));
+
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({ q: "ghawar" }),
+      );
+    });
+
+    it("trims whitespace before submitting", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      fireEvent.change(
+        screen.getByRole("searchbox", { name: /search resources/i }),
+        { target: { value: "  ghawar  " } },
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
+
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({ q: "ghawar" }),
+      );
+    });
+
+    it("resets pagination to page 1 when search is submitted", () => {
       vi.mocked(useResources).mockReturnValue({
         ...defaultHookReturn,
         data: { ...mockResourceData, total_pages: 3, total_count: 30 },
@@ -441,6 +498,7 @@ describe("ResourcesView", () => {
           target: { value: "ghawar" },
         },
       );
+      fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
 
       expect(useResources).toHaveBeenLastCalledWith(
         ENDPOINT,
@@ -448,6 +506,66 @@ describe("ResourcesView", () => {
           page: DEFAULT_PAGE,
           q: "ghawar",
         }),
+      );
+    });
+
+    it("does not show the clear icon when the input is empty", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      expect(
+        screen.queryByRole("button", { name: /clear search/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows the clear icon when the input has any text", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      fireEvent.change(
+        screen.getByRole("searchbox", { name: /search resources/i }),
+        { target: { value: "g" } },
+      );
+
+      expect(
+        screen.getByRole("button", { name: /clear search/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("clears the active search when the input is emptied via typing", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      const input = screen.getByRole("searchbox", {
+        name: /search resources/i,
+      });
+      fireEvent.change(input, { target: { value: "ghawar" } });
+      fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({ q: "ghawar" }),
+      );
+
+      fireEvent.change(input, { target: { value: "" } });
+
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({ q: undefined }),
+      );
+    });
+
+    it("clears the field and the active search when the clear icon is clicked", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      const input = screen.getByRole("searchbox", {
+        name: /search resources/i,
+      });
+      fireEvent.change(input, { target: { value: "ghawar" } });
+      fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
+
+      fireEvent.click(screen.getByRole("button", { name: /clear search/i }));
+
+      expect(input).toHaveValue("");
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({ q: undefined }),
       );
     });
   });
