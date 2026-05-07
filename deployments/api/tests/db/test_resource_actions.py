@@ -389,7 +389,59 @@ class TestResourceQueryAction:
         assert items[0].provenance["operators"] == "rmi"
 
     @pytest.mark.anyio
-    async def test_redacted_owner_operator_lists_fall_through_to_lower_priority_source(
+    async def test_licensed_sources_none_returns_all(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """``licensed_sources=None`` must be a no-op preserving every membership."""
+        resource_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "rmi", "name": "RMI Name", "country": "USA"},
+            {"source": "gem", "name": "GEM Name", "country": "CAN"},
+        )
+
+        params = _QueryParams(page=1, page_size=10)
+        items, total = await resource_actions.query(
+            seeded_integration_session, params, licensed_sources=None
+        )
+
+        assert total == 1
+        assert [item.id for item in items] == [resource_id]
+        assert items[0].data.name == "RMI Name"
+        assert items[0].provenance["name"] == "rmi"
+
+    @pytest.mark.anyio
+    async def test_licensed_sources_empty_returns_null_shells_for_all(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """An empty allowlist still returns rows, but with null-shell data."""
+        resource_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "rmi", "name": "RMI Name", "country": "USA"},
+            {"source": "gem", "name": "GEM Name", "country": "CAN"},
+        )
+
+        params = _QueryParams(page=1, page_size=10)
+        items, total = await resource_actions.query(
+            seeded_integration_session,
+            params,
+            licensed_sources=frozenset(),
+        )
+
+        assert total == 1
+        assert [item.id for item in items] == [resource_id]
+        assert items[0].data.name is None
+        assert items[0].data.country is None
+        assert items[0].provenance["name"] is None
+        assert items[0].provenance["country"] is None
+
+    @pytest.mark.anyio
+    async def test_unlicensed_owner_operator_lists_fall_through_to_lower_priority_source(
         self,
         seeded_integration_session: AsyncSession,
         test_user: User,
@@ -417,7 +469,7 @@ class TestResourceQueryAction:
         items, total = await resource_actions.query(
             seeded_integration_session,
             params,
-            redacted_sources=["rmi"],
+            licensed_sources=frozenset({"gem", "wm", "llm"}),
         )
 
         assert total == 1
@@ -434,7 +486,7 @@ class TestResourceQueryAction:
         assert items[0].provenance["operators"] == "gem"
 
     @pytest.mark.anyio
-    async def test_redacted_source_falls_through_to_lower_priority_source(
+    async def test_unlicensed_source_falls_through_to_lower_priority_source(
         self,
         seeded_integration_session: AsyncSession,
         test_user: User,
@@ -450,7 +502,7 @@ class TestResourceQueryAction:
         items, total = await resource_actions.query(
             seeded_integration_session,
             params,
-            redacted_sources=["wm"],
+            licensed_sources=frozenset({"rmi", "gem", "llm"}),
         )
 
         assert total == 1
@@ -459,7 +511,7 @@ class TestResourceQueryAction:
         assert items[0].provenance["name"] == "llm"
 
     @pytest.mark.anyio
-    async def test_only_redacted_selected_sources_still_return_resource(
+    async def test_only_unlicensed_selected_sources_still_return_resource(
         self,
         seeded_integration_session: AsyncSession,
         test_user: User,
@@ -474,7 +526,7 @@ class TestResourceQueryAction:
         items, total = await resource_actions.query(
             seeded_integration_session,
             params,
-            redacted_sources=["wm"],
+            licensed_sources=frozenset({"rmi", "gem", "llm"}),
         )
 
         assert total == 1
@@ -489,7 +541,7 @@ class TestResourceQueryAction:
         assert items[0].provenance["operators"] is None
 
     @pytest.mark.anyio
-    async def test_filters_apply_to_final_coalesced_values_after_redaction(
+    async def test_filters_apply_to_final_coalesced_values_after_licensing(
         self,
         seeded_integration_session: AsyncSession,
         test_user: User,
@@ -520,7 +572,7 @@ class TestResourceQueryAction:
         items, total = await resource_actions.query(
             seeded_integration_session,
             params,
-            redacted_sources=["rmi"],
+            licensed_sources=frozenset({"gem", "wm", "llm"}),
         )
 
         assert total == 1
@@ -529,7 +581,7 @@ class TestResourceQueryAction:
         assert items[0].provenance["state_province"] == "gem"
 
     @pytest.mark.anyio
-    async def test_count_is_after_redacted_coalesced_filter_before_pagination(
+    async def test_count_is_after_licensed_coalesced_filter_before_pagination(
         self,
         seeded_integration_session: AsyncSession,
         test_user: User,
@@ -555,7 +607,7 @@ class TestResourceQueryAction:
         items, total = await resource_actions.query(
             seeded_integration_session,
             params,
-            redacted_sources=["rmi"],
+            licensed_sources=frozenset({"gem", "wm", "llm"}),
         )
 
         assert total == 2

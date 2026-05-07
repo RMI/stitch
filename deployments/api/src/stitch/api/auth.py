@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, get_args
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -11,6 +11,7 @@ from starlette.status import HTTP_401_UNAUTHORIZED
 
 from stitch.auth import JWTValidator, OIDCSettings, TokenClaims
 from stitch.auth.errors import AuthError, JWKSFetchError
+from stitch.ogsi.model.types import OGSISrcKey
 
 from stitch.api.db.config import SessionFactoryDep
 from stitch.api.db.model.user import User as UserModel
@@ -34,6 +35,9 @@ _DEV_CLAIMS = TokenClaims(
     sub="dev|local-placeholder",
     email="dev@example.com",
     name="Dev User",
+    permissions=frozenset(
+        f"resource:read:licensed:{src}" for src in get_args(OGSISrcKey)
+    ),
     raw={},
 )
 
@@ -87,7 +91,7 @@ async def get_token_claims(
 
     validator = get_jwt_validator()
     try:
-        return await asyncio.to_thread(validator.validate, token)
+        claims = await asyncio.to_thread(validator.validate, token)
     except JWKSFetchError:
         logger.error(
             "JWKS endpoint unreachable or returned invalid data", exc_info=True
@@ -104,6 +108,12 @@ async def get_token_claims(
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    if not claims.permissions:
+        logger.warning(
+            "authenticated token has no permissions; user will see null-shell data"
+        )
+    return claims
 
 
 Claims = Annotated[TokenClaims, Depends(get_token_claims)]
