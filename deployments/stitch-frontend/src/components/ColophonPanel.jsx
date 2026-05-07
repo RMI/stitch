@@ -70,7 +70,7 @@ function formatBackendSection(config, state) {
     ? claims.permissions
     : [];
 
-  return {
+  const section = {
     Status: health.status ?? "unknown",
     Service: health.service ?? "unknown",
     Environment: runtime.environment ?? "unknown",
@@ -90,6 +90,19 @@ function formatBackendSection(config, state) {
       ? String(build.git_sha).slice(0, 7)
       : "unknown",
     "Build Time": build.build_time ?? "unknown",
+  };
+
+  if (state.data.authMeError) {
+    return {
+      ...section,
+      "Auth Claims Status": "Unavailable",
+      "Auth Claims Error": state.data.authMeError,
+    };
+  }
+
+  return {
+    ...section,
+    "Auth Claims Status": "Available",
     "Auth Subject": claims.sub ?? "unknown",
     "Auth User ID": authUser.id != null ? String(authUser.id) : "unknown",
     "Auth Email": claims.email ?? authUser.email ?? "unknown",

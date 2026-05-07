@@ -197,6 +197,8 @@ describe("ColophonPanel", () => {
     expect(screen.getByText("1440x900")).toBeInTheDocument();
     expect(screen.getByText("2x")).toBeInTheDocument();
     expect(screen.getByText("4g (10 Mbps)")).toBeInTheDocument();
+    expect(screen.getByText("Auth Claims Status")).toBeInTheDocument();
+    expect(screen.getByText("Available")).toBeInTheDocument();
     expect(screen.getByText("auth0|test-user-id")).toBeInTheDocument();
     expect(
       screen.getByText("resource:read:licensed:wm, resource:read:public"),
@@ -223,6 +225,71 @@ describe("ColophonPanel", () => {
         },
       );
     });
+  });
+
+  it("renders auth claims error instead of fake empty auth values", async () => {
+    fetchMock = vi.fn().mockImplementation((url) => {
+      if (url === "http://localhost:8000/api/v1/health/details") {
+        return Promise.resolve({
+          ok: true,
+          json: vi.fn().mockResolvedValue({
+            status: "ok",
+            service: "stitch-api",
+            runtime: {
+              environment: "dev",
+              started_at: "2026-04-06T10:00:00Z",
+              uptime_seconds: 123.456,
+            },
+            auth: {
+              disabled: false,
+              startup_validated: true,
+            },
+            frontend: {
+              origin: "http://localhost:3000",
+            },
+            database: {
+              dialect: "postgresql",
+              host: "localhost",
+              port: 5432,
+              database: "stitch",
+              reachable: true,
+            },
+            build: {
+              app_version: "0.1.0",
+              build_id: "api-local",
+              git_sha: "1234567890abcdef",
+              build_time: "2026-04-06T09:59:00Z",
+            },
+          }),
+        });
+      }
+
+      if (url === "http://localhost:8000/api/v1/auth/me") {
+        return Promise.resolve({
+          ok: false,
+          json: vi.fn().mockResolvedValue({
+            detail: "Invalid or expired token",
+          }),
+        });
+      }
+
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { default: ColophonPanel } = await import("./ColophonPanel");
+
+    renderWithQueryClient(<ColophonPanel diagnosticsOpen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Auth Claims Status")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Unavailable")).toBeInTheDocument();
+    expect(screen.getByText("Auth Claims Error")).toBeInTheDocument();
+    expect(screen.getByText("Invalid or expired token")).toBeInTheDocument();
+    expect(screen.queryByText("Auth Subject")).not.toBeInTheDocument();
+    expect(screen.queryByText("Auth Permissions")).not.toBeInTheDocument();
   });
 
   it("renders API docs link with correct URL", async () => {
