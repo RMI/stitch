@@ -1,7 +1,11 @@
 """Integration tests for auth module JIT user provisioning."""
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 from stitch.auth import TokenClaims
@@ -30,8 +34,7 @@ class TestGetCurrentUserJITProvisioning:
         """New user created in DB on first login."""
         claims = _make_claims(sub="auth0|new-user")
 
-        async with UnitOfWork(integration_session_factory) as uow:
-            user = await get_current_user(claims, uow)
+        user = await get_current_user(claims, integration_session_factory)
 
         assert user.sub == "auth0|new-user"
         assert user.email == "user@example.com"
@@ -64,8 +67,7 @@ class TestGetCurrentUserJITProvisioning:
             sub="auth0|existing", name="Updated", email="new@example.com"
         )
 
-        async with UnitOfWork(integration_session_factory) as uow:
-            user = await get_current_user(claims, uow)
+        user = await get_current_user(claims, integration_session_factory)
 
         assert user.sub == "auth0|existing"
         assert user.name == "Updated"
@@ -89,8 +91,7 @@ class TestGetCurrentUserJITProvisioning:
             sub="auth0|updatable", name="New Name", email="new@example.com"
         )
 
-        async with UnitOfWork(integration_session_factory) as uow:
-            await get_current_user(claims, uow)
+        await get_current_user(claims, integration_session_factory)
 
         async with integration_session_factory() as session:
             row = (
@@ -109,8 +110,7 @@ class TestGetCurrentUserJITProvisioning:
         """User can be JIT-provisioned when name and email claims are absent."""
         claims = _make_claims(sub="auth0|no-claims", email=None, name=None)
 
-        async with UnitOfWork(integration_session_factory) as uow:
-            user = await get_current_user(claims, uow)
+        user = await get_current_user(claims, integration_session_factory)
 
         assert user.sub == "auth0|no-claims"
         assert user.email is None
@@ -139,8 +139,7 @@ class TestGetCurrentUserJITProvisioning:
             sub="auth0|backfill", name="Filled In", email="filled@example.com"
         )
 
-        async with UnitOfWork(integration_session_factory) as uow:
-            user = await get_current_user(claims, uow)
+        user = await get_current_user(claims, integration_session_factory)
 
         assert user.name == "Filled In"
         assert user.email == "filled@example.com"
@@ -172,7 +171,90 @@ class TestGetCurrentUserJITProvisioning:
             sub="auth0|race-user", name="Racer", email="racer@example.com"
         )
 
-        async with UnitOfWork(integration_session_factory) as uow:
-            user = await get_current_user(claims, uow)
+        user = await get_current_user(claims, integration_session_factory)
 
         assert user.sub == "auth0|race-user"
+
+    @pytest.mark.anyio
+    async def test_provisioning_survives_caller_rollback(
+        self,
+        integration_session_factory,
+    ):
+        """JIT-provisioned user persists even if the caller's transaction rolls back."""
+        claims = _make_claims(sub="auth0|durable")
+
+        with pytest.raises(RuntimeError):
+            async with UnitOfWork(integration_session_factory):
+                await get_current_user(claims, integration_session_factory)
+                raise RuntimeError("simulated handler failure")
+
+        async with integration_session_factory() as session:
+            row = (
+                await session.execute(
+                    select(UserModel).where(UserModel.sub == "auth0|durable")
+                )
+            ).scalar_one()
+            assert row.sub == "auth0|durable"
+
+    @pytest.mark.anyio
+    async def test_backfill_survives_caller_rollback(
+        self,
+        integration_session_factory,
+    ):
+        """Claim back-fill persists even if the caller's transaction rolls back."""
+        async with integration_session_factory() as session:
+            session.add(
+                UserModel(sub="auth0|durable-backfill", name=None, email=None)
+            )
+            await session.commit()
+
+        claims = _make_claims(
+            sub="auth0|durable-backfill",
+            name="Filled",
+            email="filled@example.com",
+        )
+
+        with pytest.raises(RuntimeError):
+            async with UnitOfWork(integration_session_factory):
+                await get_current_user(claims, integration_session_factory)
+                raise RuntimeError("simulated handler failure")
+
+        async with integration_session_factory() as session:
+            row = (
+                await session.execute(
+                    select(UserModel).where(UserModel.sub == "auth0|durable-backfill")
+                )
+            ).scalar_one()
+            assert row.name == "Filled"
+            assert row.email == "filled@example.com"
+
+
+class TestGetCurrentUserIntegrityErrorHandling:
+    """Unit tests for narrowed IntegrityError recovery."""
+
+    @pytest.mark.anyio
+    async def test_unrelated_integrity_error_propagates(self):
+        """An IntegrityError without a concurrent row must propagate, not be masked."""
+        miss_result = MagicMock()
+        miss_result.scalar_one_or_none = MagicMock(return_value=None)
+
+        session = MagicMock(spec=AsyncSession)
+        session.execute = AsyncMock(return_value=miss_result)
+        session.add = MagicMock()
+        session.commit = AsyncMock(
+            side_effect=IntegrityError(
+                "INSERT INTO users", {}, Exception("simulated check constraint")
+            )
+        )
+        session.rollback = AsyncMock()
+        session.__aenter__ = AsyncMock(return_value=session)
+        session.__aexit__ = AsyncMock(return_value=None)
+
+        factory = MagicMock(return_value=session)
+
+        claims = _make_claims(sub="auth0|broken")
+
+        with pytest.raises(IntegrityError):
+            await get_current_user(claims, factory)
+
+        session.rollback.assert_awaited_once()
