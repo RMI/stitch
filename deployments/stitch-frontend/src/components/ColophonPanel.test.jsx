@@ -292,6 +292,73 @@ describe("ColophonPanel", () => {
     expect(screen.queryByText("Auth Permissions")).not.toBeInTheDocument();
   });
 
+  it("renders auth claims as not requested when logged out", async () => {
+    vi.mocked(useAuth0).mockReturnValue({
+      isAuthenticated: false,
+      isLoading: false,
+      error: null,
+      user: null,
+      getAccessTokenSilently,
+      loginWithRedirect: vi.fn(),
+      logout: vi.fn(),
+    });
+    fetchMock = vi.fn().mockImplementation((url) => {
+      if (url === "http://localhost:8000/api/v1/health/details") {
+        return Promise.resolve({
+          ok: true,
+          json: vi.fn().mockResolvedValue({
+            status: "ok",
+            service: "stitch-api",
+            runtime: {
+              environment: "dev",
+              started_at: "2026-04-06T10:00:00Z",
+              uptime_seconds: 123.456,
+            },
+            auth: {
+              disabled: false,
+              startup_validated: true,
+            },
+            frontend: {
+              origin: "http://localhost:3000",
+            },
+            database: {
+              dialect: "postgresql",
+              host: "localhost",
+              port: 5432,
+              database: "stitch",
+              reachable: true,
+            },
+            build: {
+              app_version: "0.1.0",
+              build_id: "api-local",
+              git_sha: "1234567890abcdef",
+              build_time: "2026-04-06T09:59:00Z",
+            },
+          }),
+        });
+      }
+
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { default: ColophonPanel } = await import("./ColophonPanel");
+
+    renderWithQueryClient(<ColophonPanel diagnosticsOpen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Auth Claims Status")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Not requested")).toBeInTheDocument();
+    expect(screen.queryByText("Auth Subject")).not.toBeInTheDocument();
+    expect(screen.queryByText("Auth Permissions")).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/auth/me",
+      expect.anything(),
+    );
+  });
+
   it("renders API docs link with correct URL", async () => {
     vi.mocked(useAuth0).mockReturnValue({
       isAuthenticated: false,

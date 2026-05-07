@@ -100,6 +100,13 @@ function formatBackendSection(config, state) {
     };
   }
 
+  if (!state.authClaimsRequested) {
+    return {
+      ...section,
+      "Auth Claims Status": "Not requested",
+    };
+  }
+
   return {
     ...section,
     "Auth Claims Status": "Available",
@@ -151,6 +158,13 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
     config.apiBaseUrl,
     diagnosticsOpen,
     authenticatedFetcher,
+  );
+  const backendDiagnosticsWithAuth = useMemo(
+    () => ({
+      ...backendDiagnostics,
+      authClaimsRequested: isAuthenticated,
+    }),
+    [backendDiagnostics, isAuthenticated],
   );
 
   const [accessToken, setAccessToken] = useState("");
@@ -212,7 +226,10 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
       "Build Time": config.build.buildTime,
       "Bearer Token": accessToken ? redactToken(accessToken) : tokenStatus,
     },
-    "Backend Diagnostics": formatBackendSection(config, backendDiagnostics),
+    "Backend Diagnostics": formatBackendSection(
+      config,
+      backendDiagnosticsWithAuth,
+    ),
     "Runtime Info": {
       "User Agent": systemInfo.userAgent,
       "Screen Resolution": systemInfo.screenResolution,
