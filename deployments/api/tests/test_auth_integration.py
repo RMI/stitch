@@ -203,9 +203,7 @@ class TestGetCurrentUserJITProvisioning:
     ):
         """Claim back-fill persists even if the caller's transaction rolls back."""
         async with integration_session_factory() as session:
-            session.add(
-                UserModel(sub="auth0|durable-backfill", name=None, email=None)
-            )
+            session.add(UserModel(sub="auth0|durable-backfill", name=None, email=None))
             await session.commit()
 
         claims = _make_claims(

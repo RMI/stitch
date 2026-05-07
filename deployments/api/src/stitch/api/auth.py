@@ -109,9 +109,7 @@ async def get_token_claims(
 Claims = Annotated[TokenClaims, Depends(get_token_claims)]
 
 
-async def get_current_user(
-    claims: Claims, session_factory: SessionFactoryDep
-) -> User:
+async def get_current_user(claims: Claims, session_factory: SessionFactoryDep) -> User:
     """Resolve TokenClaims to a User entity. JIT provision on first login.
 
     Runs in a dedicated session so user creation and claim back-fill
