@@ -148,6 +148,8 @@ class TestAuthMeEndpoint:
     """Route tests for /auth/me."""
 
     def test_returns_resolved_user_and_claims(self):
+        settings = _make_settings(auth_disabled=False)
+        oidc_settings = _make_oidc_settings()
         claims = TokenClaims(
             sub="auth0|claims-user",
             email="claims@example.com",
@@ -173,8 +175,12 @@ class TestAuthMeEndpoint:
         app.dependency_overrides[get_token_claims] = override_get_token_claims
         app.dependency_overrides[get_current_user] = override_get_current_user
 
-        with TestClient(app) as client:
-            response = client.get("/api/v1/auth/me")
+        with (
+            patch("stitch.api.auth.get_settings", return_value=settings),
+            patch("stitch.api.auth.get_oidc_settings", return_value=oidc_settings),
+        ):
+            with TestClient(app) as client:
+                response = client.get("/api/v1/auth/me")
 
         assert response.status_code == 200
         assert response.json() == {
