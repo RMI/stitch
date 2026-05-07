@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
+import { createAuthenticatedFetcher } from "../auth/api";
 import useBackendDiagnostics from "../hooks/useBackendDiagnostics";
 import { useConfig } from "../config/useConfig";
 
@@ -56,16 +57,22 @@ function formatBackendSection(config, state) {
     };
   }
 
-  const data = state.data;
-  const runtime = data.runtime ?? {};
-  const auth = data.auth ?? {};
-  const frontend = data.frontend ?? {};
-  const database = data.database ?? {};
-  const build = data.build ?? {};
+  const health = state.data.health ?? {};
+  const authMe = state.data.authMe ?? {};
+  const runtime = health.runtime ?? {};
+  const auth = health.auth ?? {};
+  const frontend = health.frontend ?? {};
+  const database = health.database ?? {};
+  const build = health.build ?? {};
+  const claims = authMe.claims ?? {};
+  const authUser = authMe.user ?? {};
+  const permissions = Array.isArray(claims.permissions)
+    ? claims.permissions
+    : [];
 
   return {
-    Status: data.status ?? "unknown",
-    Service: data.service ?? "unknown",
+    Status: health.status ?? "unknown",
+    Service: health.service ?? "unknown",
     Environment: runtime.environment ?? "unknown",
     "Started At": runtime.started_at ?? "unknown",
     "Uptime (s)": String(runtime.uptime_seconds ?? "unknown"),
@@ -83,6 +90,13 @@ function formatBackendSection(config, state) {
       ? String(build.git_sha).slice(0, 7)
       : "unknown",
     "Build Time": build.build_time ?? "unknown",
+    "Auth Me Endpoint": `${config.apiBaseUrl}/auth/me`,
+    "Auth Subject": claims.sub ?? "unknown",
+    "Auth User ID": authUser.id != null ? String(authUser.id) : "unknown",
+    "Auth Email": claims.email ?? authUser.email ?? "unknown",
+    "Auth Name": claims.name ?? authUser.name ?? "unknown",
+    "Auth Permissions": permissions.length > 0 ? permissions.join(", ") : "none",
+    "Auth Me Error": state.data.authMeError ?? "none",
   };
 }
 
@@ -114,11 +128,18 @@ function getApiDocsUrl(apiBaseUrl) {
 export default function ColophonPanel({ diagnosticsOpen = false }) {
   const config = useConfig();
   const systemInfo = useSystemInfo();
+  const { getAccessTokenSilently, isAuthenticated, isLoading } = useAuth0();
+  const authenticatedFetcher = useMemo(() => {
+    if (!isAuthenticated) {
+      return null;
+    }
+    return createAuthenticatedFetcher(config, getAccessTokenSilently);
+  }, [config, getAccessTokenSilently, isAuthenticated]);
   const backendDiagnostics = useBackendDiagnostics(
     config.apiBaseUrl,
     diagnosticsOpen,
+    authenticatedFetcher,
   );
-  const { getAccessTokenSilently, isAuthenticated, isLoading } = useAuth0();
 
   const [accessToken, setAccessToken] = useState("");
   const [tokenStatus, setTokenStatus] = useState("Loading...");

@@ -46,37 +46,73 @@ describe("ColophonPanel", () => {
       logout: vi.fn(),
     });
 
-    fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: vi.fn().mockResolvedValue({
-        status: "ok",
-        service: "stitch-api",
-        runtime: {
-          environment: "dev",
-          started_at: "2026-04-06T10:00:00Z",
-          uptime_seconds: 123.456,
-        },
-        auth: {
-          disabled: false,
-          startup_validated: true,
-        },
-        frontend: {
-          origin: "http://localhost:3000",
-        },
-        database: {
-          dialect: "postgresql",
-          host: "localhost",
-          port: 5432,
-          database: "stitch",
-          reachable: true,
-        },
-        build: {
-          app_version: "0.1.0",
-          build_id: "api-local",
-          git_sha: "1234567890abcdef",
-          build_time: "2026-04-06T09:59:00Z",
-        },
-      }),
+    fetchMock = vi.fn().mockImplementation((url) => {
+      if (url === "http://localhost:8000/api/v1/health/details") {
+        return Promise.resolve({
+          ok: true,
+          json: vi.fn().mockResolvedValue({
+            status: "ok",
+            service: "stitch-api",
+            runtime: {
+              environment: "dev",
+              started_at: "2026-04-06T10:00:00Z",
+              uptime_seconds: 123.456,
+            },
+            auth: {
+              disabled: false,
+              startup_validated: true,
+            },
+            frontend: {
+              origin: "http://localhost:3000",
+            },
+            database: {
+              dialect: "postgresql",
+              host: "localhost",
+              port: 5432,
+              database: "stitch",
+              reachable: true,
+            },
+            build: {
+              app_version: "0.1.0",
+              build_id: "api-local",
+              git_sha: "1234567890abcdef",
+              build_time: "2026-04-06T09:59:00Z",
+            },
+          }),
+        });
+      }
+
+      if (url === "http://localhost:8000/api/v1/auth/me") {
+        return Promise.resolve({
+          ok: true,
+          json: vi.fn().mockResolvedValue({
+            user: {
+              id: 7,
+              sub: "auth0|test-user-id",
+              role: null,
+              email: "test@example.com",
+              name: "Test User",
+            },
+            claims: {
+              sub: "auth0|test-user-id",
+              email: "test@example.com",
+              name: "Test User",
+              permissions: [
+                "resource:read:licensed:wm",
+                "resource:read:public",
+              ],
+              raw: {
+                permissions: [
+                  "resource:read:public",
+                  "resource:read:licensed:wm",
+                ],
+              },
+            },
+          }),
+        });
+      }
+
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -161,6 +197,10 @@ describe("ColophonPanel", () => {
     expect(screen.getByText("1440x900")).toBeInTheDocument();
     expect(screen.getByText("2x")).toBeInTheDocument();
     expect(screen.getByText("4g (10 Mbps)")).toBeInTheDocument();
+    expect(screen.getByText("auth0|test-user-id")).toBeInTheDocument();
+    expect(
+      screen.getByText("resource:read:licensed:wm, resource:read:public"),
+    ).toBeInTheDocument();
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -170,6 +210,16 @@ describe("ColophonPanel", () => {
           headers: {
             Accept: "application/json",
           },
+        },
+      );
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://localhost:8000/api/v1/auth/me",
+        {
+          method: "GET",
+          headers: expect.any(Headers),
         },
       );
     });
@@ -247,6 +297,10 @@ describe("ColophonPanel", () => {
     expect(copiedText).toContain("### Backend Diagnostics ###");
     expect(copiedText).toContain("Service: stitch-api");
     expect(copiedText).toContain("DB Reachable: true");
+    expect(copiedText).toContain("Auth Subject: auth0|test-user-id");
+    expect(copiedText).toContain(
+      "Auth Permissions: resource:read:licensed:wm, resource:read:public",
+    );
     expect(copiedText).toContain("### Runtime Info ###");
     expect(copiedText).toContain("User Agent: VitestBrowser/1.0");
   });
