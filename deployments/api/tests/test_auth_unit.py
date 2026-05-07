@@ -5,9 +5,11 @@ from unittest.mock import patch
 import pytest
 from starlette.testclient import TestClient
 
-from stitch.api.auth import validate_auth_config_at_startup
+from stitch.api.auth import get_current_user, get_token_claims, validate_auth_config_at_startup
+from stitch.api.entities import User
 from stitch.api.main import app
 from stitch.api.settings import Settings
+from stitch.auth import TokenClaims
 from stitch.auth.settings import OIDCSettings
 
 
@@ -136,3 +138,60 @@ class TestGetTokenClaims:
 
             assert response.status_code == 401
             assert response.json()["detail"] == "Invalid Authorization header format"
+
+
+class TestAuthMeEndpoint:
+    """Route tests for /auth/me."""
+
+    def test_returns_resolved_user_and_claims(self):
+        claims = TokenClaims(
+            sub="auth0|claims-user",
+            email="claims@example.com",
+            name="Claims User",
+            permissions=frozenset({"resource:read:licensed:wm", "resource:read:public"}),
+            raw={"permissions": ["resource:read:public", "resource:read:licensed:wm"]},
+        )
+        user = User(
+            id=42,
+            sub="auth0|claims-user",
+            email="claims@example.com",
+            name="Claims User",
+        )
+
+        def override_get_token_claims() -> TokenClaims:
+            return claims
+
+        def override_get_current_user() -> User:
+            return user
+
+        app.dependency_overrides[get_token_claims] = override_get_token_claims
+        app.dependency_overrides[get_current_user] = override_get_current_user
+
+        with TestClient(app) as client:
+            response = client.get("/api/v1/auth/me")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "user": {
+                "id": 42,
+                "sub": "auth0|claims-user",
+                "role": None,
+                "email": "claims@example.com",
+                "name": "Claims User",
+            },
+            "claims": {
+                "sub": "auth0|claims-user",
+                "email": "claims@example.com",
+                "name": "Claims User",
+                "permissions": [
+                    "resource:read:licensed:wm",
+                    "resource:read:public",
+                ],
+                "raw": {
+                    "permissions": [
+                        "resource:read:public",
+                        "resource:read:licensed:wm",
+                    ]
+                },
+            },
+        }
