@@ -2,7 +2,6 @@
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.exc import NoResultFound
 
 
 from stitch.auth import TokenClaims
@@ -14,8 +13,8 @@ from stitch.api.db.model.user import User as UserModel
 
 def _make_claims(
     sub: str = "auth0|user-1",
-    email: str = "user@example.com",
-    name: str = "Test User",
+    email: str | None = "user@example.com",
+    name: str | None = "Test User",
 ) -> TokenClaims:
     return TokenClaims(sub=sub, email=email, name=name, raw={})
 
@@ -103,18 +102,57 @@ class TestGetCurrentUserJITProvisioning:
             assert row.email == "new@example.com"
 
     @pytest.mark.anyio
-    async def test_error_when_missing_claim(
+    async def test_creates_user_with_null_claims(
         self,
         integration_session_factory,
     ):
-        """Name defaults to empty string when claims.name is None."""
-        claims = TokenClaims(
-            sub="auth0|no-name", email="valid@example.com", name=None, raw={}
+        """User can be JIT-provisioned when name and email claims are absent."""
+        claims = _make_claims(sub="auth0|no-claims", email=None, name=None)
+
+        async with UnitOfWork(integration_session_factory) as uow:
+            user = await get_current_user(claims, uow)
+
+        assert user.sub == "auth0|no-claims"
+        assert user.email is None
+        assert user.name is None
+
+        async with integration_session_factory() as session:
+            row = (
+                await session.execute(
+                    select(UserModel).where(UserModel.sub == "auth0|no-claims")
+                )
+            ).scalar_one()
+            assert row.email is None
+            assert row.name is None
+
+    @pytest.mark.anyio
+    async def test_backfills_missing_fields_on_subsequent_login(
+        self,
+        integration_session_factory,
+    ):
+        """Null name/email columns get populated when later claims provide them."""
+        async with integration_session_factory() as session:
+            session.add(UserModel(sub="auth0|backfill", name=None, email=None))
+            await session.commit()
+
+        claims = _make_claims(
+            sub="auth0|backfill", name="Filled In", email="filled@example.com"
         )
 
         async with UnitOfWork(integration_session_factory) as uow:
-            with pytest.raises(NoResultFound):
-                await get_current_user(claims, uow)
+            user = await get_current_user(claims, uow)
+
+        assert user.name == "Filled In"
+        assert user.email == "filled@example.com"
+
+        async with integration_session_factory() as session:
+            row = (
+                await session.execute(
+                    select(UserModel).where(UserModel.sub == "auth0|backfill")
+                )
+            ).scalar_one()
+            assert row.name == "Filled In"
+            assert row.email == "filled@example.com"
 
     @pytest.mark.anyio
     async def test_handles_concurrent_first_login(

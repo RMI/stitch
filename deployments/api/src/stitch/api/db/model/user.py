@@ -9,5 +9,5 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     sub: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    name: Mapped[str]
-    email: Mapped[str]
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)

@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field, computed_field
+from pydantic import BaseModel, Field, computed_field
 
 from stitch.ogsi.model import GEM_SRC, LLM_SRC, RMI_SRC, WM_SRC
 from stitch.ogsi.model.types import (
@@ -34,8 +34,8 @@ class User(BaseModel):
     id: int = Field(...)
     sub: str = Field(...)
     role: str | None = None
-    email: EmailStr
-    name: str
+    email: str | None = None
+    name: str | None = None
 
 
 class PaginationParams(BaseModel):
