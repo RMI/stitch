@@ -94,7 +94,8 @@ function formatBackendSection(config, state) {
     "Auth User ID": authUser.id != null ? String(authUser.id) : "unknown",
     "Auth Email": claims.email ?? authUser.email ?? "unknown",
     "Auth Name": claims.name ?? authUser.name ?? "unknown",
-    "Auth Permissions": permissions.length > 0 ? permissions.join(", ") : "none",
+    "Auth Permissions":
+      permissions.length > 0 ? permissions.join(", ") : "none",
   };
 }
 

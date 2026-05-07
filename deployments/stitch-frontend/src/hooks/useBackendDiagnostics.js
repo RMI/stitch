@@ -22,7 +22,11 @@ async function fetchJson(url, options) {
   return payload;
 }
 
-export default function useBackendDiagnostics(apiBaseUrl, enabled, authFetcher) {
+export default function useBackendDiagnostics(
+  apiBaseUrl,
+  enabled,
+  authFetcher,
+) {
   const [state, setState] = useState({
     loading: false,
     error: null,

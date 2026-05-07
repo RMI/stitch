@@ -5,7 +5,11 @@ from unittest.mock import patch
 import pytest
 from starlette.testclient import TestClient
 
-from stitch.api.auth import get_current_user, get_token_claims, validate_auth_config_at_startup
+from stitch.api.auth import (
+    get_current_user,
+    get_token_claims,
+    validate_auth_config_at_startup,
+)
 from stitch.api.entities import User
 from stitch.api.main import app
 from stitch.api.settings import Settings
@@ -148,7 +152,9 @@ class TestAuthMeEndpoint:
             sub="auth0|claims-user",
             email="claims@example.com",
             name="Claims User",
-            permissions=frozenset({"resource:read:licensed:wm", "resource:read:public"}),
+            permissions=frozenset(
+                {"resource:read:licensed:wm", "resource:read:public"}
+            ),
             raw={"permissions": ["resource:read:public", "resource:read:licensed:wm"]},
         )
         user = User(
