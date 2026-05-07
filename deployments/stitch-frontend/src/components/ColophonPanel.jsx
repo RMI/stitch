@@ -90,13 +90,11 @@ function formatBackendSection(config, state) {
       ? String(build.git_sha).slice(0, 7)
       : "unknown",
     "Build Time": build.build_time ?? "unknown",
-    "Auth Me Endpoint": `${config.apiBaseUrl}/auth/me`,
     "Auth Subject": claims.sub ?? "unknown",
     "Auth User ID": authUser.id != null ? String(authUser.id) : "unknown",
     "Auth Email": claims.email ?? authUser.email ?? "unknown",
     "Auth Name": claims.name ?? authUser.name ?? "unknown",
     "Auth Permissions": permissions.length > 0 ? permissions.join(", ") : "none",
-    "Auth Me Error": state.data.authMeError ?? "none",
   };
 }
 
