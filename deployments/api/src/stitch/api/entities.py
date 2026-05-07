@@ -47,7 +47,7 @@ class TokenClaimsView(BaseModel):
 
 
 class AuthMeView(BaseModel):
-    user: User
+    user: User | None = None
     claims: TokenClaimsView
 
 
