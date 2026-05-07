@@ -55,3 +55,43 @@ class TestTokenClaimsConstruction:
         """Auth0-style sub with pipe separator."""
         claims = TokenClaims(sub="auth0|abc123")
         assert claims.sub == "auth0|abc123"
+
+
+class TestTokenClaimsPermissions:
+    """TokenClaims.permissions field semantics."""
+
+    def test_permissions_defaults_to_empty_frozenset(self):
+        claims = TokenClaims(sub="auth0|abc")
+
+        assert claims.permissions == frozenset()
+        assert isinstance(claims.permissions, frozenset)
+
+    def test_permissions_accepts_list_and_coerces_to_frozenset(self):
+        claims = TokenClaims(
+            sub="auth0|abc",
+            permissions=["resource:read:public", "resource:read:licensed:wm"],
+        )
+
+        assert claims.permissions == frozenset(
+            {"resource:read:public", "resource:read:licensed:wm"}
+        )
+        assert isinstance(claims.permissions, frozenset)
+
+    def test_permissions_accepts_frozenset_directly(self):
+        source = frozenset({"a", "b"})
+        claims = TokenClaims(sub="auth0|abc", permissions=source)
+
+        assert claims.permissions == source
+        assert isinstance(claims.permissions, frozenset)
+
+    def test_permissions_deduplicates(self):
+        claims = TokenClaims(sub="auth0|abc", permissions=["a", "a", "b"])
+
+        assert claims.permissions == frozenset({"a", "b"})
+        assert len(claims.permissions) == 2
+
+    def test_permissions_is_immutable_after_construction(self):
+        claims = TokenClaims(sub="auth0|abc", permissions=["a"])
+
+        with pytest.raises(AttributeError):
+            claims.permissions.add("b")
