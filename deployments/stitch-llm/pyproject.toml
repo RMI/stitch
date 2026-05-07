@@ -1,0 +1,46 @@
+[project]
+name = "stitch-llm"
+version = "0.1.0"
+description = "LLM-assisted Stitch API companion service"
+readme = "README.md"
+authors = [{ name = "RMI", email = "stitch@rmi.org" }]
+requires-python = ">=3.12.12"
+dependencies = [
+  "fastapi[standard]>=0.124.0",
+  "httpx>=0.28.0",
+  "pydantic-settings>=2.12.0",
+  "stitch-auth",
+  "stitch-client",
+  "stitch-models",
+  "stitch-ogsi",
+]
+
+[project.scripts]
+stitch-llm = "stitch.llm.__main__:main"
+
+[build-system]
+requires = ["uv_build>=0.9.16,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "stitch.llm"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+  "pytest-anyio>=0.0.0",
+  "httpx>=0.28.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = ["-v", "--strict-markers", "--tb=short"]
+
+[tool.uv.sources]
+stitch-auth = { workspace = true }
+stitch-client = { workspace = true }
+stitch-models = { workspace = true }
+stitch-ogsi = { workspace = true }

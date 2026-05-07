@@ -494,3 +494,5 @@ def test_raise_for_status_raises_stitch_api_error(
     assert (
         str(exc_info.value) == f"{operation} failed with status {status_code}: {text}"
     )
+    assert exc_info.value.status_code == status_code
+    assert exc_info.value.response_text == text
