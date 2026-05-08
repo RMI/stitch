@@ -3,12 +3,15 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from stitch.ogsi.model import OGFieldResource
 
 from .errors import StitchAPIError
+
+if TYPE_CHECKING:
+    from .config import StitchClientConfig
 
 logger = logging.getLogger("stitch.client")
 
@@ -43,6 +46,33 @@ class AsyncStitchClient:
             base_url=base_url,
             timeout=timeout if timeout is not None else 30.0,
         )
+
+    @classmethod
+    def from_config(
+        cls,
+        config: "StitchClientConfig",
+        *,
+        timeout: float = 30.0,
+    ) -> "AsyncStitchClient":
+        from .auth import Auth0M2MAuth, fetch_auth_jwt
+
+        async def _fetch() -> str:
+            return await fetch_auth_jwt(config)
+
+        httpx_client = httpx.AsyncClient(
+            base_url=config.api_base_url,
+            timeout=timeout,
+            auth=Auth0M2MAuth(_fetch),
+        )
+        instance = cls(client=httpx_client)
+        instance._owns_client = True
+        return instance
+
+    @classmethod
+    def from_env(cls, *, timeout: float = 30.0) -> "AsyncStitchClient":
+        from .config import StitchClientConfig
+
+        return cls.from_config(StitchClientConfig.from_env(), timeout=timeout)
 
     async def __aenter__(self) -> "AsyncStitchClient":
         return self

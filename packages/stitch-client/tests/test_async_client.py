@@ -8,7 +8,13 @@ import pytest
 from pydantic import ValidationError
 from stitch.ogsi.model import OGFieldResource
 
-from stitch.client import AsyncStitchClient, StitchAPIError
+from stitch.client import (
+    AsyncStitchClient,
+    Auth0M2MAuth,
+    StitchAPIError,
+    StitchAuthError,
+    StitchClientConfig,
+)
 
 
 def make_client(
@@ -496,3 +502,67 @@ def test_raise_for_status_raises_stitch_api_error(
     )
     assert exc_info.value.status_code == status_code
     assert exc_info.value.response_text == text
+
+
+_M2M_ENV = {
+    "STITCH_AUTH_CLIENT_ID": "cid",
+    "STITCH_AUTH_CLIENT_SECRET": "csec",
+    "STITCH_AUTH_AUDIENCE": "https://api.test",
+    "STITCH_AUTH_ISSUER_URL": "https://issuer.test",
+    "STITCH_API_BASE_URL": "https://api.test/v1",
+}
+
+
+def _m2m_config() -> StitchClientConfig:
+    return StitchClientConfig(
+        client_id="cid",
+        client_secret="csec",
+        audience="https://api.test",
+        auth_issuer_url="https://issuer.test",
+        api_base_url="https://api.test/v1",
+    )
+
+
+@pytest.mark.anyio
+async def test_from_config_constructs_client_with_auth0_m2m_auth() -> None:
+    client = AsyncStitchClient.from_config(_m2m_config())
+    try:
+        assert isinstance(client._client.auth, Auth0M2MAuth)
+        assert str(client._client.base_url).rstrip("/") == "https://api.test/v1"
+        assert client._owns_client is True
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.anyio
+async def test_from_env_loads_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for k, v in _M2M_ENV.items():
+        monkeypatch.setenv(k, v)
+
+    client = AsyncStitchClient.from_env()
+    try:
+        assert isinstance(client._client.auth, Auth0M2MAuth)
+        assert str(client._client.base_url).rstrip("/") == "https://api.test/v1"
+    finally:
+        await client.aclose()
+
+
+def test_from_env_raises_when_env_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    for k, v in _M2M_ENV.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.delenv("STITCH_AUTH_CLIENT_SECRET")
+
+    with pytest.raises(StitchAuthError):
+        AsyncStitchClient.from_env()
+
+
+@pytest.mark.anyio
+async def test_from_config_aclose_closes_owned_client() -> None:
+    client = AsyncStitchClient.from_config(_m2m_config())
+    raw = client._client
+
+    await client.aclose()
+
+    assert raw.is_closed is True
