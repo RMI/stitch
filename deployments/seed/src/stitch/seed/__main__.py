@@ -26,6 +26,7 @@ async def run() -> None:
     async with AsyncStitchClient(
         base_url=cfg.api_base_url,
         timeout=cfg.http_timeout_seconds,
+        use_env_bearer_token=True,
     ) as client:
         await client.wait_for_health()
         await post_payloads(client, payloads)

@@ -13,10 +13,12 @@ class FakeAsyncStitchClient:
         base_url: str,
         *,
         timeout: float = 30.0,
+        use_env_bearer_token: bool = False,
         create_error: Exception | None = None,
     ) -> None:
         self.base_url = base_url
         self.timeout = timeout
+        self.use_env_bearer_token = use_env_bearer_token
         self.create_error = create_error
         self.wait_calls: list[tuple[int, float]] = []
         self.create_calls: list[dict] = []
@@ -60,8 +62,17 @@ async def test_run_waits_for_health_and_posts_all_payloads(
         {"id": 1, "source_data": []},
     ]
 
-    def fake_client_factory(base_url: str, *, timeout: float = 30.0):
-        client = FakeAsyncStitchClient(base_url, timeout=timeout)
+    def fake_client_factory(
+        base_url: str,
+        *,
+        timeout: float = 30.0,
+        use_env_bearer_token: bool = False,
+    ):
+        client = FakeAsyncStitchClient(
+            base_url,
+            timeout=timeout,
+            use_env_bearer_token=use_env_bearer_token,
+        )
         created_clients.append(client)
         return client
 
@@ -76,6 +87,7 @@ async def test_run_waits_for_health_and_posts_all_payloads(
     client = created_clients[0]
     assert client.base_url == "http://example.test/api/v1"
     assert client.timeout == 12.5
+    assert client.use_env_bearer_token is True
     assert client.wait_calls == [(30, 2.0)]
     assert client.create_calls == payloads
     assert client.closed is True
@@ -87,10 +99,16 @@ async def test_run_propagates_shared_client_failures(
 ) -> None:
     created_clients: list[FakeAsyncStitchClient] = []
 
-    def fake_client_factory(base_url: str, *, timeout: float = 30.0):
+    def fake_client_factory(
+        base_url: str,
+        *,
+        timeout: float = 30.0,
+        use_env_bearer_token: bool = False,
+    ):
         client = FakeAsyncStitchClient(
             base_url,
             timeout=timeout,
+            use_env_bearer_token=use_env_bearer_token,
             create_error=StitchAPIError("POST /oil-gas-fields/ failed with status 500"),
         )
         created_clients.append(client)
