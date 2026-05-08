@@ -11,6 +11,7 @@ from stitch.llm.auth import get_current_user
 from stitch.llm.azure_responses import AzureResponsesResult
 from stitch.llm.entities import User
 from stitch.llm.errors import LLMConfigurationError
+from stitch.llm import main as main_module
 from stitch.llm.main import app
 from stitch.llm.routers import oil_gas_fields as route_module
 from stitch.llm.settings import Settings
@@ -115,6 +116,9 @@ def test_client(monkeypatch: pytest.MonkeyPatch):
     )
     monkeypatch.setattr(auth_module, "get_settings", lambda: test_settings)
     monkeypatch.setattr(route_module, "get_settings", lambda: test_settings)
+    monkeypatch.setattr(
+        main_module, "validate_downstream_auth_config_at_startup", lambda: None
+    )
     app.dependency_overrides[get_current_user] = override_current_user
 
     with TestClient(app) as client:

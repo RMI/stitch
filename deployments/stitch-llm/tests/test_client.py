@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from stitch.client import AsyncStitchClient, STITCH_CLIENT_BEARER_TOKEN_ENV_VAR
-from stitch.llm.client import StitchApiClient
+from stitch.llm.client import StitchApiClient, validate_downstream_auth_config_at_startup
 from stitch.llm.settings import Settings
 
 
@@ -75,6 +75,6 @@ def test_stitch_api_client_requires_env_bearer_token(
     monkeypatch.delenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, raising=False)
 
     with pytest.raises(ValueError) as exc_info:
-        StitchApiClient(settings=Settings(auth_disabled=False))
+        validate_downstream_auth_config_at_startup()
 
     assert str(exc_info.value) == f"{STITCH_CLIENT_BEARER_TOKEN_ENV_VAR} must be set"

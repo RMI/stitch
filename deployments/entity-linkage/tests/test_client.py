@@ -11,7 +11,10 @@ from stitch.client import (
     STITCH_CLIENT_BEARER_TOKEN_ENV_VAR,
     StitchAPIError,
 )
-from stitch.entity_linkage.client import StitchApiClient
+from stitch.entity_linkage.client import (
+    StitchApiClient,
+    validate_downstream_auth_config_at_startup,
+)
 
 
 def make_client(
@@ -35,7 +38,7 @@ def test_stitch_api_client_requires_env_bearer_token(
     monkeypatch.delenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, raising=False)
 
     with pytest.raises(ValueError) as exc_info:
-        StitchApiClient()
+        validate_downstream_auth_config_at_startup()
 
     assert str(exc_info.value) == f"{STITCH_CLIENT_BEARER_TOKEN_ENV_VAR} must be set"
 

@@ -8,6 +8,11 @@ from stitch.llm.errors import ModelOutputError
 from stitch.llm.settings import Settings, get_settings
 
 
+def validate_downstream_auth_config_at_startup() -> None:
+    headers_provider = env_bearer_token_headers_provider()
+    headers_provider()
+
+
 class StitchApiClient:
     def __init__(
         self,
@@ -20,7 +25,6 @@ class StitchApiClient:
             return
 
         headers_provider = env_bearer_token_headers_provider()
-        headers_provider()
         self._client = AsyncStitchClient(
             base_url=str(self._settings.api_base_url),
             timeout=30.0,
@@ -44,3 +48,6 @@ class StitchApiClient:
             raise ModelOutputError(
                 "Stitch API returned invalid detail payload."
             ) from exc
+
+    async def get_auth_me(self) -> dict[str, object]:
+        return await self._client.get_auth_me()

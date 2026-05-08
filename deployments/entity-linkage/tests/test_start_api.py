@@ -13,6 +13,7 @@ from stitch.entity_linkage.entities import (
 )
 from stitch.entity_linkage.errors import StitchAPIError
 from stitch.entity_linkage.main import app
+from stitch.entity_linkage.routers import health as health_module
 from stitch.entity_linkage.routers import start as start_module
 from stitch.entity_linkage.auth import get_request_auth_context
 from stitch.entity_linkage import main as main_module
@@ -44,21 +45,28 @@ class FakeStitchApiClient(AbstractAsyncContextManager["FakeStitchApiClient"]):
         pages_fetched: int = 1,
         details_by_id: dict[int, FieldDetailCandidate] | None = None,
         merge_responses_by_ids: dict[tuple[int, ...], dict] | None = None,
+        auth_me_response: dict | None = None,
         collect_error: Exception | None = None,
         detail_error: Exception | None = None,
         merge_error: Exception | None = None,
+        auth_me_error: Exception | None = None,
     ) -> None:
         self.items = items or []
         self.pages_fetched = pages_fetched
         self.details_by_id = details_by_id or {}
         self.merge_responses_by_ids = merge_responses_by_ids or {}
+        self.auth_me_response = auth_me_response or {
+            "claims": {"sub": "auth0|itest-123"}
+        }
         self.collect_error = collect_error
         self.detail_error = detail_error
         self.merge_error = merge_error
+        self.auth_me_error = auth_me_error
 
         self.collect_calls: list[dict] = []
         self.detail_calls: list[int] = []
         self.merge_calls: list[list[int]] = []
+        self.auth_me_calls = 0
 
     async def __aenter__(self) -> "FakeStitchApiClient":
         return self
@@ -95,6 +103,12 @@ class FakeStitchApiClient(AbstractAsyncContextManager["FakeStitchApiClient"]):
         if self.merge_error is not None:
             raise self.merge_error
         return self.merge_responses_by_ids.get(tuple(resource_ids), {"ok": True})
+
+    async def get_auth_me(self) -> dict:
+        self.auth_me_calls += 1
+        if self.auth_me_error is not None:
+            raise self.auth_me_error
+        return self.auth_me_response
 
 
 @pytest.fixture
@@ -143,6 +157,9 @@ def test_client(
         return auth_context
 
     monkeypatch.setattr(main_module, "validate_auth_config_at_startup", lambda: None)
+    monkeypatch.setattr(
+        main_module, "validate_downstream_auth_config_at_startup", lambda: None
+    )
     app.dependency_overrides[get_request_auth_context] = override_auth_context
 
     with TestClient(app) as client:
@@ -320,3 +337,23 @@ def test_post_start_validates_request_body_constraints(
     assert ("body", "page") in fields
     assert ("body", "page_size") in fields
     assert ("body", "max_pages") in fields
+
+
+def test_health_details_reports_ready_when_downstream_auth_probe_succeeds(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_client = FakeStitchApiClient(
+        auth_me_response={"claims": {"sub": "auth0|health-check"}}
+    )
+    monkeypatch.setattr(health_module, "StitchApiClient", lambda: fake_client)
+
+    response = test_client.get("/api/v1/health/details")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    assert response.json()["ready"] is True
+    assert response.json()["downstream_api"]["ready"] is True
+    assert response.json()["downstream_api"]["token_accepted"] is True
+    assert response.json()["downstream_api"]["subject"] == "auth0|health-check"
+    assert fake_client.auth_me_calls == 1

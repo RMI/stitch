@@ -15,6 +15,11 @@ def _get_api_base_url() -> str:
     return str(get_settings().api_base_url)
 
 
+def validate_downstream_auth_config_at_startup() -> None:
+    headers_provider = env_bearer_token_headers_provider()
+    headers_provider()
+
+
 class StitchApiClient:
     def __init__(
         self,
@@ -25,7 +30,6 @@ class StitchApiClient:
             return
 
         headers_provider = env_bearer_token_headers_provider()
-        headers_provider()
         self._client = AsyncStitchClient(
             base_url=_get_api_base_url(),
             timeout=30.0,
@@ -95,3 +99,6 @@ class StitchApiClient:
         resource_ids: list[int],
     ) -> dict[str, Any]:
         return await self._client.create_merge_candidate(resource_ids)
+
+    async def get_auth_me(self) -> dict[str, Any]:
+        return await self._client.get_auth_me()
