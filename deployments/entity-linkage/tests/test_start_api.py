@@ -128,9 +128,7 @@ def api_client_factory(
             merge_error=merge_error,
         )
         created_clients.append(client)
-        monkeypatch.setattr(
-            start_module, "StitchApiClient", lambda: client
-        )
+        monkeypatch.setattr(start_module, "StitchApiClient", lambda: client)
         return client
 
     return install, created_clients

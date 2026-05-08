@@ -208,9 +208,7 @@ async def test_start_returns_summary_without_merges(
         },
     )
 
-    monkeypatch.setattr(
-        start_module, "StitchApiClient", lambda: fake_client
-    )
+    monkeypatch.setattr(start_module, "StitchApiClient", lambda: fake_client)
 
     response = await start(
         StartRequest(apply_merges=False, page=2, page_size=25, max_pages=4),
@@ -257,9 +255,7 @@ async def test_start_applies_merges_for_each_match_group(
         },
     )
 
-    monkeypatch.setattr(
-        start_module, "StitchApiClient", lambda: fake_client
-    )
+    monkeypatch.setattr(start_module, "StitchApiClient", lambda: fake_client)
 
     response = await start(
         StartRequest(apply_merges=True),
@@ -291,9 +287,7 @@ async def test_start_returns_no_matches_when_duplicate_names_do_not_confirm(
         },
     )
 
-    monkeypatch.setattr(
-        start_module, "StitchApiClient", lambda: fake_client
-    )
+    monkeypatch.setattr(start_module, "StitchApiClient", lambda: fake_client)
 
     response = await start(
         StartRequest(apply_merges=True),
@@ -318,9 +312,7 @@ async def test_start_translates_stitch_api_error_to_502(
         ),
     )
 
-    monkeypatch.setattr(
-        start_module, "StitchApiClient", lambda: fake_client
-    )
+    monkeypatch.setattr(start_module, "StitchApiClient", lambda: fake_client)
 
     with pytest.raises(HTTPException) as exc_info:
         await start(StartRequest(), auth_context=auth_context)

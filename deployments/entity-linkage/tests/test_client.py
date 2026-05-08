@@ -13,6 +13,7 @@ from stitch.client import (
 )
 from stitch.entity_linkage.client import StitchApiClient
 
+
 def make_client(
     handler,
     *,
@@ -239,6 +240,7 @@ async def test_get_oil_gas_field_detail_maps_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "token-123")
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"
         assert request.url.path == "/api/v1/oil-gas-fields/42/detail"
@@ -264,6 +266,7 @@ async def test_collect_oil_gas_fields_ignores_non_object_items(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "token-123")
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
