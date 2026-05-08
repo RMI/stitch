@@ -27,5 +27,5 @@ def licensed_sources(claims: TokenClaims) -> frozenset[OGSISrcKey]:
         if candidate in _VALID_SOURCES:
             out.add(cast(OGSISrcKey, candidate))
         else:
-            logger.debug("ignoring unknown source in permission: %r", perm)
+            logger.warning("ignoring unknown source in permission: %r", perm)
     return frozenset(out)
