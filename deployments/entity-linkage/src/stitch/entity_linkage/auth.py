@@ -30,6 +30,14 @@ _DEV_CLAIMS = TokenClaims(
     sub="dev|local-placeholder",
     email="dev@example.com",
     name="Dev User",
+    permissions=frozenset(
+        {
+            "resource:read:public",
+            "resource:read:licensed:gem",
+            "resource:read:licensed:rmi",
+            "resource:read:licensed:wm",
+        }
+    ),
     raw={},
 )
 

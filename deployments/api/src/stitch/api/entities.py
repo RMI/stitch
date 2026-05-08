@@ -1,7 +1,7 @@
 from math import ceil
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field, computed_field
 
@@ -36,6 +36,19 @@ class User(BaseModel):
     role: str | None = None
     email: EmailStr
     name: str
+
+
+class TokenClaimsView(BaseModel):
+    sub: str
+    email: str | None = None
+    name: str | None = None
+    permissions: list[str] = Field(default_factory=list)
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuthMeView(BaseModel):
+    user: User | None = None
+    claims: TokenClaimsView
 
 
 class PaginationParams(BaseModel):
