@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 from stitch.ogsi.model import OGFieldResource
 
+from .auth import env_bearer_token_headers_provider
 from .errors import StitchAPIError
 
 logger = logging.getLogger("stitch.client")
@@ -20,9 +21,19 @@ class AsyncStitchClient:
         *,
         timeout: float | None = None,
         headers_provider: Callable[[], Mapping[str, str]] | None = None,
+        use_env_bearer_token: bool = False,
         client: httpx.AsyncClient | None = None,
     ) -> None:
-        self._headers_provider = headers_provider
+        if headers_provider is not None and use_env_bearer_token:
+            raise ValueError(
+                "headers_provider and use_env_bearer_token are mutually exclusive"
+            )
+
+        if use_env_bearer_token:
+            self._headers_provider = env_bearer_token_headers_provider()
+            self._headers_provider()
+        else:
+            self._headers_provider = headers_provider
         self._owns_client = client is None
         if client is not None:
             if base_url is not None:
@@ -32,6 +43,10 @@ class AsyncStitchClient:
             if timeout is not None:
                 raise ValueError(
                     "timeout cannot be provided when client is already configured"
+                )
+            if use_env_bearer_token:
+                raise ValueError(
+                    "use_env_bearer_token cannot be provided when client is already configured"
                 )
             self._client = client
             return
