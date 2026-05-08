@@ -256,3 +256,58 @@ class TestGetCurrentUserIntegrityErrorHandling:
             await get_current_user(claims, factory)
 
         session.rollback.assert_awaited_once()
+
+
+class TestGetCurrentUserMachineToMachine:
+    """JIT provisioning works for Auth0 M2M tokens (sub=...@clients, no email/name)."""
+
+    @pytest.mark.anyio
+    async def test_creates_user_for_m2m_token(
+        self,
+        integration_session_factory,
+    ):
+        """M2M token with no email/name JIT-creates a users row keyed by sub."""
+        claims = TokenClaims(
+            sub="tujhthy5vlhVd43C27te5Vtdy6a5BMJ7@clients",
+            email=None,
+            name=None,
+            permissions=frozenset({"resource:read:public"}),
+            raw={},
+        )
+
+        user = await get_current_user(claims, integration_session_factory)
+
+        assert user.sub == "tujhthy5vlhVd43C27te5Vtdy6a5BMJ7@clients"
+        assert user.email is None
+        assert user.name is None
+        assert user.id is not None
+
+        async with integration_session_factory() as session:
+            row = (
+                await session.execute(
+                    select(UserModel).where(UserModel.sub == claims.sub)
+                )
+            ).scalar_one()
+            assert row.email is None
+            assert row.name is None
+
+    @pytest.mark.anyio
+    async def test_returns_existing_m2m_user(
+        self,
+        integration_session_factory,
+    ):
+        """Subsequent M2M requests find the existing row rather than re-inserting."""
+        async with integration_session_factory() as session:
+            session.add(UserModel(sub="abc123@clients", name=None, email=None))
+            await session.commit()
+
+        claims = TokenClaims(
+            sub="abc123@clients",
+            email=None,
+            name=None,
+            raw={},
+        )
+
+        user = await get_current_user(claims, integration_session_factory)
+
+        assert user.sub == "abc123@clients"

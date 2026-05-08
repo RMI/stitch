@@ -300,3 +300,67 @@ class TestJWTValidatorPermissions:
 
         with pytest.raises(TokenValidationError, match="permissions"):
             validator.validate(token)
+
+
+class TestJWTValidatorMachineToMachineTokens:
+    """Auth0 client-credentials tokens: sub ends in @clients, no email/name."""
+
+    def test_validates_m2m_token_with_clients_sub(
+        self, oidc_settings, mock_jwks_client, token_factory
+    ):
+        """M2M token validates and produces claims with the @clients sub preserved."""
+        token = token_factory(
+            sub="tujhthy5vlhVd43C27te5Vtdy6a5BMJ7@clients",
+            email=None,
+            name=None,
+            extra_claims={
+                "azp": "tujhthy5vlhVd43C27te5Vtdy6a5BMJ7",
+                "scope": "resource:read:public",
+                "permissions": ["resource:read:public"],
+            },
+        )
+        validator = JWTValidator(oidc_settings)
+
+        claims = validator.validate(token)
+
+        assert claims.sub == "tujhthy5vlhVd43C27te5Vtdy6a5BMJ7@clients"
+        assert claims.email is None
+        assert claims.name is None
+        assert claims.permissions == frozenset({"resource:read:public"})
+
+    def test_validates_m2m_token_without_permissions_claim(
+        self, oidc_settings, mock_jwks_client, token_factory
+    ):
+        """When RBAC is off, permissions array is absent — claims.permissions is empty.
+
+        The route layer is responsible for treating empty permissions as 403; the
+        validator must not reject the token just because the array is missing.
+        """
+        token = token_factory(
+            sub="abc123@clients",
+            email=None,
+            name=None,
+            extra_claims={"scope": "openid"},
+        )
+        validator = JWTValidator(oidc_settings)
+
+        claims = validator.validate(token)
+
+        assert claims.sub == "abc123@clients"
+        assert claims.permissions == frozenset()
+
+    def test_m2m_token_raw_payload_preserves_azp(
+        self, oidc_settings, mock_jwks_client, token_factory
+    ):
+        """`azp` (authorized party) round-trips into raw for downstream audit logging."""
+        token = token_factory(
+            sub="abc123@clients",
+            email=None,
+            name=None,
+            extra_claims={"azp": "abc123", "permissions": []},
+        )
+        validator = JWTValidator(oidc_settings)
+
+        claims = validator.validate(token)
+
+        assert claims.raw["azp"] == "abc123"
