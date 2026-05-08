@@ -12,6 +12,7 @@ from stitch.client import (
     AsyncStitchClient,
     STITCH_CLIENT_BEARER_TOKEN_ENV_VAR,
     StitchAPIError,
+    env_bearer_token_headers_provider,
 )
 
 
@@ -154,23 +155,6 @@ async def test_headers_provider_is_applied_to_each_request() -> None:
 
 
 @pytest.mark.anyio
-async def test_init_rejects_env_bearer_token_with_injected_client(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "env-token-123")
-    raw_client = httpx.AsyncClient(base_url="http://example.test/api/v1")
-
-    with pytest.raises(ValueError) as exc_info:
-        AsyncStitchClient(client=raw_client, use_env_bearer_token=True)
-
-    assert (
-        str(exc_info.value)
-        == "use_env_bearer_token cannot be provided when client is already configured"
-    )
-
-    await raw_client.aclose()
-
-
 @pytest.mark.anyio
 async def test_env_bearer_token_mode_sends_token_on_requests(
     monkeypatch: pytest.MonkeyPatch,
@@ -188,7 +172,7 @@ async def test_env_bearer_token_mode_sends_token_on_requests(
     )
     client = AsyncStitchClient(
         base_url="http://example.test/api/v1",
-        use_env_bearer_token=True,
+        headers_provider=env_bearer_token_headers_provider(),
     )
     client._client = raw_client
     client._owns_client = False
@@ -201,52 +185,28 @@ async def test_env_bearer_token_mode_sends_token_on_requests(
     await raw_client.aclose()
 
 
-def test_init_rejects_multiple_auth_mechanisms() -> None:
-    with pytest.raises(ValueError) as exc_info:
-        AsyncStitchClient(
-            base_url="http://example.test/api/v1",
-            headers_provider=lambda: {},
-            use_env_bearer_token=True,
-        )
-
-    assert (
-        str(exc_info.value)
-        == "headers_provider and use_env_bearer_token are mutually exclusive"
-    )
-
-
-def test_init_rejects_missing_env_bearer_token(
+def test_env_bearer_token_headers_provider_rejects_missing_token(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, raising=False)
+    provider = env_bearer_token_headers_provider()
 
     with pytest.raises(ValueError) as exc_info:
-        AsyncStitchClient(
-            base_url="http://example.test/api/v1",
-            use_env_bearer_token=True,
-        )
+        provider()
 
-    assert str(exc_info.value) == (
-        f"{STITCH_CLIENT_BEARER_TOKEN_ENV_VAR} must be set when "
-        "use_env_bearer_token=True"
-    )
+    assert str(exc_info.value) == f"{STITCH_CLIENT_BEARER_TOKEN_ENV_VAR} must be set"
 
 
-def test_init_rejects_blank_env_bearer_token(
+def test_env_bearer_token_headers_provider_rejects_blank_token(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "   ")
+    provider = env_bearer_token_headers_provider()
 
     with pytest.raises(ValueError) as exc_info:
-        AsyncStitchClient(
-            base_url="http://example.test/api/v1",
-            use_env_bearer_token=True,
-        )
+        provider()
 
-    assert str(exc_info.value) == (
-        f"{STITCH_CLIENT_BEARER_TOKEN_ENV_VAR} must be set when "
-        "use_env_bearer_token=True"
-    )
+    assert str(exc_info.value) == f"{STITCH_CLIENT_BEARER_TOKEN_ENV_VAR} must be set"
 
 
 @pytest.mark.anyio

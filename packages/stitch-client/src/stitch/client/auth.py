@@ -14,10 +14,7 @@ def env_bearer_token_headers_provider() -> Callable[[], dict[str, str]]:
     def provider() -> dict[str, str]:
         token = os.getenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "").strip()
         if not token:
-            raise ValueError(
-                f"{STITCH_CLIENT_BEARER_TOKEN_ENV_VAR} must be set when "
-                "use_env_bearer_token=True"
-            )
+            raise ValueError(f"{STITCH_CLIENT_BEARER_TOKEN_ENV_VAR} must be set")
         return {"Authorization": f"Bearer {token}"}
 
     return provider

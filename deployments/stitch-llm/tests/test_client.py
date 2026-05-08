@@ -77,7 +77,4 @@ def test_stitch_api_client_requires_env_bearer_token(
     with pytest.raises(ValueError) as exc_info:
         StitchApiClient(settings=Settings(auth_disabled=False))
 
-    assert str(exc_info.value) == (
-        f"{STITCH_CLIENT_BEARER_TOKEN_ENV_VAR} must be set when "
-        "use_env_bearer_token=True"
-    )
+    assert str(exc_info.value) == f"{STITCH_CLIENT_BEARER_TOKEN_ENV_VAR} must be set"

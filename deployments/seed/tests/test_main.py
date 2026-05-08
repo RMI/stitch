@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from stitch.client import StitchAPIError
+from stitch.client import STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, StitchAPIError
 from stitch.seed import __main__ as seed_main
 from stitch.seed.config import SeedConfig
 
@@ -13,12 +13,12 @@ class FakeAsyncStitchClient:
         base_url: str,
         *,
         timeout: float = 30.0,
-        use_env_bearer_token: bool = False,
+        headers_provider=None,
         create_error: Exception | None = None,
     ) -> None:
         self.base_url = base_url
         self.timeout = timeout
-        self.use_env_bearer_token = use_env_bearer_token
+        self.headers_provider = headers_provider
         self.create_error = create_error
         self.wait_calls: list[tuple[int, float]] = []
         self.create_calls: list[dict] = []
@@ -56,6 +56,7 @@ def make_config() -> SeedConfig:
 async def test_run_waits_for_health_and_posts_all_payloads(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "seed-token")
     created_clients: list[FakeAsyncStitchClient] = []
     payloads = [
         {"id": None, "source_data": []},
@@ -66,12 +67,12 @@ async def test_run_waits_for_health_and_posts_all_payloads(
         base_url: str,
         *,
         timeout: float = 30.0,
-        use_env_bearer_token: bool = False,
+        headers_provider=None,
     ):
         client = FakeAsyncStitchClient(
             base_url,
             timeout=timeout,
-            use_env_bearer_token=use_env_bearer_token,
+            headers_provider=headers_provider,
         )
         created_clients.append(client)
         return client
@@ -87,7 +88,7 @@ async def test_run_waits_for_health_and_posts_all_payloads(
     client = created_clients[0]
     assert client.base_url == "http://example.test/api/v1"
     assert client.timeout == 12.5
-    assert client.use_env_bearer_token is True
+    assert callable(client.headers_provider)
     assert client.wait_calls == [(30, 2.0)]
     assert client.create_calls == payloads
     assert client.closed is True
@@ -97,18 +98,19 @@ async def test_run_waits_for_health_and_posts_all_payloads(
 async def test_run_propagates_shared_client_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "seed-token")
     created_clients: list[FakeAsyncStitchClient] = []
 
     def fake_client_factory(
         base_url: str,
         *,
         timeout: float = 30.0,
-        use_env_bearer_token: bool = False,
+        headers_provider=None,
     ):
         client = FakeAsyncStitchClient(
             base_url,
             timeout=timeout,
-            use_env_bearer_token=use_env_bearer_token,
+            headers_provider=headers_provider,
             create_error=StitchAPIError("POST /oil-gas-fields/ failed with status 500"),
         )
         created_clients.append(client)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from stitch.client import AsyncStitchClient
+from stitch.client import AsyncStitchClient, env_bearer_token_headers_provider
 
 from stitch.entity_linkage.entities import FieldCandidate, FieldDetailCandidate
 from stitch.entity_linkage.settings import get_settings
@@ -20,10 +20,16 @@ class StitchApiClient:
         self,
         client: AsyncStitchClient | None = None,
     ):
-        self._client = client or AsyncStitchClient(
+        if client is not None:
+            self._client = client
+            return
+
+        headers_provider = env_bearer_token_headers_provider()
+        headers_provider()
+        self._client = AsyncStitchClient(
             base_url=_get_api_base_url(),
             timeout=30.0,
-            use_env_bearer_token=True,
+            headers_provider=headers_provider,
         )
 
     async def __aenter__(self) -> "StitchApiClient":

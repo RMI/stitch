@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from stitch.client import AsyncStitchClient
+from stitch.client import AsyncStitchClient, env_bearer_token_headers_provider
 from stitch.ogsi.model import OGFieldDetailView
 from pydantic import ValidationError
 
@@ -15,10 +15,16 @@ class StitchApiClient:
         settings: Settings | None = None,
     ) -> None:
         self._settings = settings or get_settings()
-        self._client = client or AsyncStitchClient(
+        if client is not None:
+            self._client = client
+            return
+
+        headers_provider = env_bearer_token_headers_provider()
+        headers_provider()
+        self._client = AsyncStitchClient(
             base_url=str(self._settings.api_base_url),
             timeout=30.0,
-            use_env_bearer_token=True,
+            headers_provider=headers_provider,
         )
 
     async def __aenter__(self) -> "StitchApiClient":
