@@ -45,7 +45,6 @@ def make_auth_context(
 class FakeStitchApiClient(AbstractAsyncContextManager["FakeStitchApiClient"]):
     def __init__(
         self,
-        auth_context: RequestAuthContext,
         *,
         items: list[FieldCandidate] | None = None,
         pages_fetched: int = 1,
@@ -55,7 +54,6 @@ class FakeStitchApiClient(AbstractAsyncContextManager["FakeStitchApiClient"]):
         detail_error: Exception | None = None,
         merge_error: Exception | None = None,
     ) -> None:
-        self.auth_context = auth_context
         self.items = items or []
         self.pages_fetched = pages_fetched
         self.details_by_id = details_by_id or {}
@@ -169,7 +167,6 @@ async def test_resolve_match_groups_groups_only_same_country_duplicates() -> Non
     }
 
     client = FakeStitchApiClient(
-        make_auth_context(),
         details_by_id={
             10: FieldDetailCandidate(id=10, name="Alpha", country=" us "),
             11: FieldDetailCandidate(id=11, name="Alpha", country="US"),
@@ -197,7 +194,6 @@ async def test_start_returns_summary_without_merges(
 ) -> None:
     auth_context = make_auth_context(name="Alex Reviewer")
     fake_client = FakeStitchApiClient(
-        auth_context,
         items=[
             FieldCandidate(id=1, name="Alpha", country="US"),
             FieldCandidate(id=2, name=" alpha ", country="CA"),
@@ -213,7 +209,7 @@ async def test_start_returns_summary_without_merges(
     )
 
     monkeypatch.setattr(
-        start_module, "StitchApiClient", lambda auth_context: fake_client
+        start_module, "StitchApiClient", lambda: fake_client
     )
 
     response = await start(
@@ -223,7 +219,7 @@ async def test_start_returns_summary_without_merges(
 
     assert response.initiated_by == "Alex Reviewer"
     assert response.apply_merges is False
-    assert response.relay_mode == "transparent"
+    assert response.downstream_auth_mode == "env_bearer_token"
     assert response.pages_fetched == 3
     assert response.total_records_fetched == 4
     assert response.duplicate_name_candidate_count == 3
@@ -243,7 +239,6 @@ async def test_start_applies_merges_for_each_match_group(
 ) -> None:
     auth_context = make_auth_context()
     fake_client = FakeStitchApiClient(
-        auth_context,
         items=[
             FieldCandidate(id=1, name="Alpha", country="ignored"),
             FieldCandidate(id=2, name="alpha", country="ignored"),
@@ -263,7 +258,7 @@ async def test_start_applies_merges_for_each_match_group(
     )
 
     monkeypatch.setattr(
-        start_module, "StitchApiClient", lambda auth_context: fake_client
+        start_module, "StitchApiClient", lambda: fake_client
     )
 
     response = await start(
@@ -285,7 +280,6 @@ async def test_start_returns_no_matches_when_duplicate_names_do_not_confirm(
 ) -> None:
     auth_context = make_auth_context()
     fake_client = FakeStitchApiClient(
-        auth_context,
         items=[
             FieldCandidate(id=1, name="Alpha", country="ignored"),
             FieldCandidate(id=2, name="alpha", country="ignored"),
@@ -298,7 +292,7 @@ async def test_start_returns_no_matches_when_duplicate_names_do_not_confirm(
     )
 
     monkeypatch.setattr(
-        start_module, "StitchApiClient", lambda auth_context: fake_client
+        start_module, "StitchApiClient", lambda: fake_client
     )
 
     response = await start(
@@ -319,14 +313,13 @@ async def test_start_translates_stitch_api_error_to_502(
 ) -> None:
     auth_context = make_auth_context()
     fake_client = FakeStitchApiClient(
-        auth_context,
         collect_error=StitchAPIError(
             "GET /oil-gas-fields/ failed with status 500: boom"
         ),
     )
 
     monkeypatch.setattr(
-        start_module, "StitchApiClient", lambda auth_context: fake_client
+        start_module, "StitchApiClient", lambda: fake_client
     )
 
     with pytest.raises(HTTPException) as exc_info:

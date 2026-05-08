@@ -4,11 +4,7 @@ from typing import Any
 
 from stitch.client import AsyncStitchClient
 
-from stitch.entity_linkage.entities import (
-    FieldCandidate,
-    FieldDetailCandidate,
-    RequestAuthContext,
-)
+from stitch.entity_linkage.entities import FieldCandidate, FieldDetailCandidate
 from stitch.entity_linkage.settings import get_settings
 
 
@@ -22,14 +18,12 @@ def _get_api_base_url() -> str:
 class StitchApiClient:
     def __init__(
         self,
-        auth_context: RequestAuthContext,
         client: AsyncStitchClient | None = None,
     ):
-        self._auth_context = auth_context
         self._client = client or AsyncStitchClient(
             base_url=_get_api_base_url(),
             timeout=30.0,
-            headers_provider=self._headers,
+            use_env_bearer_token=True,
         )
 
     async def __aenter__(self) -> "StitchApiClient":
@@ -40,17 +34,6 @@ class StitchApiClient:
 
     async def aclose(self) -> None:
         await self._client.aclose()
-
-    def _headers(self) -> dict[str, str]:
-        return self._headers_from_auth_context(self._auth_context)
-
-    @staticmethod
-    def _headers_from_auth_context(auth_context: RequestAuthContext) -> dict[str, str]:
-        headers: dict[str, str] = {}
-        if auth_context.bearer_token:
-            headers["Authorization"] = f"Bearer {auth_context.bearer_token}"
-
-        return headers
 
     async def list_oil_gas_fields_page(
         self,

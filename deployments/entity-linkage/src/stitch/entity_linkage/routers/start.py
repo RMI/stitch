@@ -35,7 +35,7 @@ class StartRequest(BaseModel):
 class StartResponse(BaseModel):
     initiated_by: str
     apply_merges: bool
-    relay_mode: str
+    downstream_auth_mode: str
     pages_fetched: int
     total_records_fetched: int
     duplicate_name_candidate_count: int
@@ -117,10 +117,10 @@ async def start(
     Not implemented:
     - add concurrency controls for detail fetches
     - add stronger second-phase inspection beyond country equality
-    - add machine/OBO auth for downstream API calls
+    - add alternate downstream auth modes beyond env-token auth
     """
     try:
-        async with StitchApiClient(auth_context=auth_context) as client:
+        async with StitchApiClient() as client:
             items, pages_fetched = await client.collect_oil_gas_fields(
                 start_page=request.page,
                 page_size=request.page_size,
@@ -153,7 +153,7 @@ async def start(
     return StartResponse(
         initiated_by=_extract_user_label(auth_context.user),
         apply_merges=request.apply_merges,
-        relay_mode="transparent",
+        downstream_auth_mode="env_bearer_token",
         pages_fetched=pages_fetched,
         total_records_fetched=len(items),
         duplicate_name_candidate_count=sum(

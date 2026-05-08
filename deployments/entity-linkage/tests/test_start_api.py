@@ -39,7 +39,6 @@ def make_auth_context(
 class FakeStitchApiClient(AbstractAsyncContextManager["FakeStitchApiClient"]):
     def __init__(
         self,
-        auth_context: RequestAuthContext,
         *,
         items: list[FieldCandidate] | None = None,
         pages_fetched: int = 1,
@@ -49,7 +48,6 @@ class FakeStitchApiClient(AbstractAsyncContextManager["FakeStitchApiClient"]):
         detail_error: Exception | None = None,
         merge_error: Exception | None = None,
     ) -> None:
-        self.auth_context = auth_context
         self.items = items or []
         self.pages_fetched = pages_fetched
         self.details_by_id = details_by_id or {}
@@ -121,7 +119,6 @@ def api_client_factory(
         merge_error: Exception | None = None,
     ) -> FakeStitchApiClient:
         client = FakeStitchApiClient(
-            auth_context=auth_context,
             items=items,
             pages_fetched=pages_fetched,
             details_by_id=details_by_id,
@@ -132,7 +129,7 @@ def api_client_factory(
         )
         created_clients.append(client)
         monkeypatch.setattr(
-            start_module, "StitchApiClient", lambda auth_context: client
+            start_module, "StitchApiClient", lambda: client
         )
         return client
 
@@ -188,7 +185,7 @@ def test_post_start_returns_serialized_response_model(
     assert response.json() == {
         "initiated_by": "Integration Tester",
         "apply_merges": False,
-        "relay_mode": "transparent",
+        "downstream_auth_mode": "env_bearer_token",
         "pages_fetched": 2,
         "total_records_fetched": 3,
         "duplicate_name_candidate_count": 2,
