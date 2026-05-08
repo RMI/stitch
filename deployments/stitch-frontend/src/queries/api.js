@@ -49,6 +49,35 @@ export async function getResourceDetail(
   return data;
 }
 
+export async function createLLMSuggestion(
+  config,
+  id,
+  field,
+  fetcher,
+  endpoint = "resources",
+) {
+  const url = new URL(`${config.stitchLlmBaseUrl}/${endpoint}/${id}`);
+  url.searchParams.set("field", field);
+  const response = await fetcher(url, {
+    method: "GET",
+  });
+
+  if (!response.ok) {
+    let detail = `HTTP error! status: ${response.status}`;
+    try {
+      const payload = await response.json();
+      if (payload?.detail) detail = payload.detail;
+    } catch {
+      // Ignore JSON parsing failures and fall back to status text.
+    }
+    const error = new Error(detail);
+    error.status = response.status;
+    throw error;
+  }
+
+  return await response.json();
+}
+
 export async function getMergeCandidates(
   config,
   fetcher,

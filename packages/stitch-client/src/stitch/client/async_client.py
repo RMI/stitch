@@ -235,5 +235,7 @@ class AsyncStitchClient:
         if response.is_success:
             return
         raise StitchAPIError(
-            f"{operation} failed with status {response.status_code}: {response.text}"
+            f"{operation} failed with status {response.status_code}: {response.text}",
+            status_code=response.status_code,
+            response_text=response.text,
         )

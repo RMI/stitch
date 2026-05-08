@@ -1,16 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { useAuth0 } from "@auth0/auth0-react";
 import { screen } from "@testing-library/react";
-import { renderWithQueryClient } from "../test/utils";
+import userEvent from "@testing-library/user-event";
+import { auth0TestDefaults, renderWithQueryClient } from "../test/utils";
 import ResourceDetailPage from "./ResourceDetailPage";
 import { useResourceDetail } from "../hooks/useResources";
+import * as apiModule from "../queries/api";
 
 vi.mock("../hooks/useResources");
+
+let mockedRouteId = "1";
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual("react-router-dom");
   return {
     ...actual,
-    useParams: () => ({ id: "1" }),
+    useParams: () => ({ id: mockedRouteId }),
     useNavigate: () => vi.fn(),
   };
 });
@@ -53,6 +58,10 @@ const defaultHookReturn = {
 };
 
 beforeEach(() => {
+  vi.clearAllMocks();
+  vi.unstubAllGlobals();
+  mockedRouteId = "1";
+  vi.mocked(useAuth0).mockReturnValue(auth0TestDefaults);
   vi.mocked(useResourceDetail).mockReturnValue({
     ...defaultHookReturn,
     refetch: vi.fn(),
@@ -61,14 +70,7 @@ beforeEach(() => {
 
 describe("ResourceDetailPage", () => {
   it("shows an invalid ID message for a non-numeric route param", () => {
-    vi.mock("react-router-dom", async () => {
-      const actual = await vi.importActual("react-router-dom");
-      return {
-        ...actual,
-        useParams: () => ({ id: "not-a-number" }),
-        useNavigate: () => vi.fn(),
-      };
-    });
+    mockedRouteId = "not-a-number";
 
     renderWithQueryClient(<ResourceDetailPage />);
     expect(screen.getByText(/invalid resource id/i)).toBeInTheDocument();
@@ -185,9 +187,9 @@ describe("ResourceDetailPage", () => {
     });
 
     renderWithQueryClient(<ResourceDetailPage />);
-    expect(screen.getByText("Field Status")).toBeInTheDocument();
+    expect(screen.getAllByText("Field Status").length).toBeGreaterThan(0);
     expect(screen.getByText("Producing")).toBeInTheDocument();
-    expect(screen.getByText("Discovery Year")).toBeInTheDocument();
+    expect(screen.getAllByText("Discovery Year").length).toBeGreaterThan(0);
     expect(screen.getByText("1938")).toBeInTheDocument();
   });
 
@@ -200,6 +202,92 @@ describe("ResourceDetailPage", () => {
     renderWithQueryClient(<ResourceDetailPage />);
     expect(
       screen.getByRole("heading", { name: /data source mix/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the AI Suggestion section", () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(
+      screen.getByRole("heading", { name: /ai suggestion/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /generate suggestion/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("generates and renders an AI suggestion preview", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    vi.spyOn(apiModule, "createLLMSuggestion").mockResolvedValue({
+      resource_id: 1,
+      field: "basin",
+      value: "Songliao",
+      citations: [
+        {
+          url: "https://example.com/daqing",
+          title: "Daqing citation",
+        },
+      ],
+      query_succeeded: true,
+      model: "test-model",
+      rationale: "Public sources place Daqing in the Songliao Basin.",
+      foundry_request: {},
+      foundry_response: {},
+    });
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(
+      screen.getByRole("button", { name: /generate suggestion/i }),
+    );
+
+    expect(await screen.findByText("Songliao")).toBeInTheDocument();
+    expect(
+      screen.getByText("Public sources place Daqing in the Songliao Basin."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Daqing citation" }),
+    ).toHaveAttribute("href", "https://example.com/daqing");
+  });
+
+  it("renders a no-answer suggestion state without treating it as an error", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    vi.spyOn(apiModule, "createLLMSuggestion").mockResolvedValue({
+      resource_id: 1,
+      field: "basin",
+      value: null,
+      citations: [],
+      query_succeeded: true,
+      model: "test-model",
+      rationale: "I could not find a grounded public source for this field.",
+      foundry_request: {},
+      foundry_response: {},
+    });
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(
+      screen.getByRole("button", { name: /generate suggestion/i }),
+    );
+
+    expect(
+      await screen.findByText(/no grounded suggestion was returned/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "I could not find a grounded public source for this field.",
+      ),
     ).toBeInTheDocument();
   });
 });

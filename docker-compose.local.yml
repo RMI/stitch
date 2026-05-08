@@ -56,3 +56,28 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     profiles: ["entity-linkage", "full", "friends"]
+
+  stitch-llm:
+    build:
+      context: .
+      dockerfile: deployments/stitch-llm/Dockerfile
+    env_file:
+      - .env
+    environment:
+      LOG_LEVEL: ${STITCH_LLM_LOG_LEVEL:-info}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=2).read()\" || exit 1"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+      start_interval: 1s
+    ports:
+      - "8002:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    profiles: ["stitch-llm", "full", "friends"]

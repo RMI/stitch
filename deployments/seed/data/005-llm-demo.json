@@ -1,0 +1,38 @@
+[
+  {
+    "id": 0,
+    "source_data": [
+      {
+        "source": "rmi",
+        "name": "Daqing Oil Field",
+        "country": "CHN",
+        "state_province": "Heilongjiang",
+        "location_type": "Onshore",
+        "production_conventionality": "Conventional",
+        "primary_hydrocarbon_group": "Light Oil",
+        "discovery_year": 1959,
+        "production_start_year": 1960,
+        "field_status": "Producing"
+      }
+    ],
+    "constituents": []
+  },
+  {
+    "id": 0,
+    "source_data": [
+      {
+        "source": "rmi",
+        "name": "Ghawar Field",
+        "country": "SAU",
+        "state_province": "Eastern Province",
+        "basin": "Arabian",
+        "production_conventionality": "Conventional",
+        "primary_hydrocarbon_group": "Light Oil",
+        "discovery_year": 1948,
+        "production_start_year": 1951,
+        "field_status": "Producing"
+      }
+    ],
+    "constituents": []
+  }
+]

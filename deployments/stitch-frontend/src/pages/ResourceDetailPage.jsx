@@ -1,14 +1,172 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useAuth0 } from "@auth0/auth0-react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useResourceDetail } from "../hooks/useResources";
+import { createAuthenticatedFetcher } from "../auth/api";
+import { useConfig } from "../config/useConfig";
+import { createLLMSuggestion } from "../queries/api";
 import SourceMixBar from "../components/SourceMixBar";
 import SectionHeader from "../components/SectionHeader";
 import { FieldCard, FieldGrid } from "../components/FieldCard";
 import {
+  AI_SUGGESTION_FIELDS,
   FIELD_META,
   IDENTITY_FIELDS,
   PRODUCTION_FIELDS,
 } from "../constants/fieldMeta";
+
+function formatSuggestionValue(value) {
+  if (value == null) return null;
+  return String(value);
+}
+
+function SuggestionResult({ result }) {
+  const fieldLabel = FIELD_META[result.field]?.label ?? result.field;
+  const value = formatSuggestionValue(result.value);
+  const hasCitations =
+    Array.isArray(result.citations) && result.citations.length > 0;
+  const isPlaceholder = result.model === "placeholder-llm";
+
+  if (value == null) {
+    return (
+      <div className="rounded-md border border-gray-dark/10 bg-white p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-gray-dark">{fieldLabel}</p>
+            <p className="mt-1 text-sm text-gray-dark/80">
+              No grounded suggestion was returned for this field.
+            </p>
+          </div>
+          <span className="rounded border border-gray-dark/15 bg-gray-light px-2 py-1 text-xs text-gray-dark/70">
+            {isPlaceholder ? "Offline mode" : "No answer"}
+          </span>
+        </div>
+        {result.rationale && (
+          <p className="mt-3 text-sm leading-6 text-gray-dark/80">
+            {result.rationale}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-md border border-gray-dark/10 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-gray-dark">{fieldLabel}</p>
+          <p className="mt-1 text-2xl font-semibold text-gray-dark">{value}</p>
+        </div>
+        <span className="rounded border border-gray-dark/15 bg-gray-light px-2 py-1 text-xs text-gray-dark/70">
+          {isPlaceholder ? "Offline mode" : "Suggested"}
+        </span>
+      </div>
+
+      {result.rationale && (
+        <p className="mt-3 text-sm leading-6 text-gray-dark/80">
+          {result.rationale}
+        </p>
+      )}
+
+      {hasCitations && (
+        <div className="mt-4 border-t border-gray-dark/10 pt-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-dark/60">
+            Sources
+          </p>
+          <ul className="mt-2 space-y-2 text-sm text-gray-dark">
+            {result.citations.map((citation) => (
+              <li key={`${citation.url}-${citation.title ?? ""}`}>
+                <a
+                  href={citation.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-700 underline"
+                >
+                  {citation.title ?? citation.url}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AISuggestionPanel({ endpoint, resourceId }) {
+  const config = useConfig();
+  const { getAccessTokenSilently } = useAuth0();
+  const fetcher = createAuthenticatedFetcher(config, getAccessTokenSilently);
+  const [selectedField, setSelectedField] = useState(AI_SUGGESTION_FIELDS[0]);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  async function handleGenerateSuggestion() {
+    setIsLoading(true);
+    setError("");
+    setResult(null);
+
+    try {
+      const suggestion = await createLLMSuggestion(
+        config,
+        resourceId,
+        selectedField,
+        fetcher,
+        endpoint,
+      );
+      setResult(suggestion);
+    } catch (err) {
+      setError(err.message || "Failed to generate suggestion.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  return (
+    <section>
+      <SectionHeader title="AI Suggestion" />
+      <div className="rounded-md border border-gray-dark/20 bg-gray-light p-4 space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <label className="flex-1 text-sm text-gray-dark">
+            <span className="mb-1 block font-medium">Field</span>
+            <select
+              value={selectedField}
+              onChange={(event) => {
+                setSelectedField(event.target.value);
+                setError("");
+                setResult(null);
+              }}
+              className="w-full rounded-md border border-gray-dark bg-white px-3 py-2"
+            >
+              {AI_SUGGESTION_FIELDS.map((fieldKey) => (
+                <option key={fieldKey} value={fieldKey}>
+                  {FIELD_META[fieldKey].label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={handleGenerateSuggestion}
+            disabled={isLoading}
+            className="rounded-md border border-gray-dark bg-white px-4 py-2 text-sm hover:cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isLoading ? "Generating…" : "Generate suggestion"}
+          </button>
+        </div>
+
+        {error && (
+          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        {result && <SuggestionResult result={result} />}
+      </div>
+    </section>
+  );
+}
 
 function OrgPanel({ items, nameLabel }) {
   if (items.length === 0) return <div className="flex-1" />;
@@ -126,6 +284,8 @@ export default function ResourceDetailPage() {
               ))}
             </FieldGrid>
           </section>
+
+          <AISuggestionPanel endpoint={endpoint} resourceId={numericId} />
 
           <section className="bg-gray-light p-4">
             <pre>{JSON.stringify(detailView, null, 2)}</pre>

@@ -10,6 +10,7 @@ members = [
   "deployments/api",
   "deployments/entity-linkage",
   "deployments/seed",
+  "deployments/stitch-llm",
   "packages/stitch-auth",
   "packages/stitch-client",
   "packages/stitch-models",
