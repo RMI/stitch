@@ -4,23 +4,8 @@ from stitch.client import AsyncStitchClient
 from stitch.ogsi.model import OGFieldDetailView
 from pydantic import ValidationError
 
-from stitch.llm.errors import LLMConfigurationError, ModelOutputError
+from stitch.llm.errors import ModelOutputError
 from stitch.llm.settings import Settings, get_settings
-
-DEV_PLACEHOLDER_TOKEN = "dev-placeholder-token"
-
-
-def downstream_auth_headers(settings: Settings | None = None) -> dict[str, str]:
-    settings = settings or get_settings()
-
-    if settings.auth_disabled:
-        token = DEV_PLACEHOLDER_TOKEN
-    elif settings.machine_token is not None:
-        token = settings.machine_token.get_secret_value()
-    else:
-        raise LLMConfigurationError("stitch-llm downstream auth is not configured.")
-
-    return {"Authorization": f"Bearer {token}"}
 
 
 class StitchApiClient:
@@ -33,7 +18,7 @@ class StitchApiClient:
         self._client = client or AsyncStitchClient(
             base_url=str(self._settings.api_base_url),
             timeout=30.0,
-            headers_provider=lambda: downstream_auth_headers(self._settings),
+            use_env_bearer_token=True,
         )
 
     async def __aenter__(self) -> "StitchApiClient":
