@@ -135,8 +135,7 @@ async def get_current_user(claims: Claims, session_factory: SessionFactoryDep) -
             ).scalar_one_or_none()
 
             if user_model is not None:
-                user_model.name = claims.name or user_model.name
-                user_model.email = claims.email or user_model.email
+                _apply_claim_backfill(user_model, claims)
             else:
                 user_model = UserModel(
                     sub=claims.sub,
@@ -155,8 +154,21 @@ async def get_current_user(claims: Claims, session_factory: SessionFactoryDep) -
             ).scalar_one_or_none()
             if user_model is None:
                 raise
+            if _apply_claim_backfill(user_model, claims):
+                await session.commit()
 
         return _to_entity(user_model)
+
+
+def _apply_claim_backfill(model: UserModel, claims: Claims) -> bool:
+    updated = False
+    if claims.name is not None and claims.name != model.name:
+        model.name = claims.name
+        updated = True
+    if claims.email is not None and claims.email != model.email:
+        model.email = claims.email
+        updated = True
+    return updated
 
 
 def _to_entity(model: UserModel) -> User:
