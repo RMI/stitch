@@ -1,13 +1,16 @@
 """Unit tests for auth module startup validation and token claims."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from starlette.testclient import TestClient
 
-from stitch.api.auth import validate_auth_config_at_startup
+from stitch.api.auth import get_token_claims, validate_auth_config_at_startup
+from stitch.api.db.config import get_uow
+from stitch.api.entities import User
 from stitch.api.main import app
 from stitch.api.settings import Settings
+from stitch.auth import TokenClaims
 from stitch.auth.settings import OIDCSettings
 
 
@@ -136,3 +139,121 @@ class TestGetTokenClaims:
 
             assert response.status_code == 401
             assert response.json()["detail"] == "Invalid Authorization header format"
+
+
+class TestAuthMeEndpoint:
+    """Route tests for /auth/me."""
+
+    def test_returns_existing_user_and_claims(self):
+        settings = _make_settings(auth_disabled=False)
+        oidc_settings = _make_oidc_settings()
+        claims = TokenClaims(
+            sub="auth0|claims-user",
+            email="claims@example.com",
+            name="Claims User",
+            permissions=frozenset(
+                {"resource:read:licensed:wm", "resource:read:public"}
+            ),
+            raw={"permissions": ["resource:read:public", "resource:read:licensed:wm"]},
+        )
+        user = User(
+            id=42,
+            sub="auth0|claims-user",
+            email="claims@example.com",
+            name="Claims User",
+        )
+
+        def override_get_token_claims() -> TokenClaims:
+            return claims
+
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = user
+        session = MagicMock()
+        session.execute = AsyncMock(return_value=result)
+        uow = MagicMock()
+        uow.session = session
+
+        async def override_get_uow():
+            yield uow
+
+        app.dependency_overrides[get_token_claims] = override_get_token_claims
+        app.dependency_overrides[get_uow] = override_get_uow
+
+        with (
+            patch("stitch.api.auth.get_settings", return_value=settings),
+            patch("stitch.api.auth.get_oidc_settings", return_value=oidc_settings),
+        ):
+            with TestClient(app) as client:
+                response = client.get("/api/v1/auth/me")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "user": {
+                "id": 42,
+                "sub": "auth0|claims-user",
+                "role": None,
+                "email": "claims@example.com",
+                "name": "Claims User",
+            },
+            "claims": {
+                "sub": "auth0|claims-user",
+                "email": "claims@example.com",
+                "name": "Claims User",
+                "permissions": [
+                    "resource:read:licensed:wm",
+                    "resource:read:public",
+                ],
+                "raw": {
+                    "permissions": [
+                        "resource:read:public",
+                        "resource:read:licensed:wm",
+                    ]
+                },
+            },
+        }
+
+    def test_returns_claims_when_user_not_in_table(self):
+        settings = _make_settings(auth_disabled=False)
+        oidc_settings = _make_oidc_settings()
+        claims = TokenClaims(
+            sub="auth0|claims-only",
+            email=None,
+            name=None,
+            permissions=frozenset({"resource:read:public"}),
+            raw={"permissions": ["resource:read:public"]},
+        )
+
+        def override_get_token_claims() -> TokenClaims:
+            return claims
+
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = None
+        session = MagicMock()
+        session.execute = AsyncMock(return_value=result)
+        uow = MagicMock()
+        uow.session = session
+
+        async def override_get_uow():
+            yield uow
+
+        app.dependency_overrides[get_token_claims] = override_get_token_claims
+        app.dependency_overrides[get_uow] = override_get_uow
+
+        with (
+            patch("stitch.api.auth.get_settings", return_value=settings),
+            patch("stitch.api.auth.get_oidc_settings", return_value=oidc_settings),
+        ):
+            with TestClient(app) as client:
+                response = client.get("/api/v1/auth/me")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "user": None,
+            "claims": {
+                "sub": "auth0|claims-only",
+                "email": None,
+                "name": None,
+                "permissions": ["resource:read:public"],
+                "raw": {"permissions": ["resource:read:public"]},
+            },
+        }

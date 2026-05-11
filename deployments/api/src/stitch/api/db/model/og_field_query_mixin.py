@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from typing import Any, ClassVar, Self
 
 from sqlalchemy import (
@@ -24,6 +24,7 @@ from stitch.api.entities import OGFieldQueryParams, OGSI_SOURCE_DEFAULT
 from stitch.ogsi.model import LocationType
 from stitch.ogsi.model.types import (
     FieldStatus,
+    OGSISrcKey,
     PrimaryHydrocarbonGroup,
     ProductionConventionality,
 )
@@ -103,9 +104,10 @@ class OGFieldQueryMixin:
         cls,
         session: AsyncSession,
         params: OGFieldQueryParams,
+        licensed_sources: Collection[OGSISrcKey] | None = None,
     ) -> Sequence[Self]:
         """Execute a filtered, sorted, paginated query and return (rows, total)."""
-        base = cls._base_query(params)
+        base = cls._base_query(params, licensed_sources=licensed_sources)
         stmt = cls._apply_pagination(base, params)
         rows = (await session.scalars(stmt)).all()
         return rows
@@ -115,12 +117,15 @@ class OGFieldQueryMixin:
         cls,
         session: AsyncSession,
         params: OGFieldQueryParams | None = None,
+        licensed_sources: Collection[OGSISrcKey] | None = None,
     ) -> int:
         """Return the total number of matching rows (unfiltered when params is None)."""
         if params is None:
             stmt = select(func.count()).select_from(cls)
         else:
-            stmt = select(func.count()).select_from(cls._base_query(params).subquery())
+            stmt = select(func.count()).select_from(
+                cls._base_query(params, licensed_sources=licensed_sources).subquery()
+            )
         return await session.scalar(stmt) or 0
 
     # ------------------------------------------------------------------
@@ -131,20 +136,32 @@ class OGFieldQueryMixin:
 
     @classmethod
     def _base_query[QM: OGFieldQueryMixin](
-        cls: type[QM], params: OGFieldQueryParams
+        cls: type[QM],
+        params: OGFieldQueryParams,
+        licensed_sources: Collection[OGSISrcKey] | None = None,
     ) -> Select[tuple[QM]]:
         """Filtered + sorted SELECT with no pagination.
 
         Override this in subclasses to modify the FROM clause (e.g. add joins).
         """
         stmt: Select[tuple[QM]] = select(cls).distinct()
-        for cond in cls._build_conditions(params):
+        for cond in cls._build_conditions(params, licensed_sources=licensed_sources):
             stmt = stmt.where(cond)
         return stmt.order_by(*cls._create_sort_clauses(params))
 
     @classmethod
-    def _build_conditions(cls, params: OGFieldQueryParams) -> list[ColumnElement[bool]]:
-        """Build WHERE conditions from filter params."""
+    def _build_conditions(
+        cls,
+        params: OGFieldQueryParams,
+        licensed_sources: Collection[OGSISrcKey] | None = None,
+    ) -> list[ColumnElement[bool]]:
+        """Build WHERE conditions from filter params.
+
+        ``params.source`` and ``licensed_sources`` are conceptually distinct:
+        the former is the user-requested existence filter; the latter is the
+        server-derived data-access filter. They are applied as separate
+        predicates so the intent stays explicit.
+        """
         conditions: list[ColumnElement[bool]] = []
 
         if params.q:
@@ -170,6 +187,8 @@ class OGFieldQueryMixin:
                 dict.fromkeys(getattr(params, "source", OGSI_SOURCE_DEFAULT))
             )
             conditions.append(source_col.in_(sources))
+            if licensed_sources is not None:
+                conditions.append(source_col.in_(list(dict.fromkeys(licensed_sources))))
 
         return conditions
 

@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from functools import partial
+from typing import get_args
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -9,16 +10,29 @@ from httpx import ASGITransport, AsyncClient
 from polyfactory.pytest_plugin import register_fixture
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from stitch.auth import TokenClaims
+from stitch.ogsi.model.types import OGSISrcKey
+
 from stitch.api.db.config import UnitOfWork, get_uow
 from stitch.api.db.model import (
     StitchBase,
     UserModel,
 )
-from stitch.api.auth import get_current_user
+from stitch.api.auth import get_current_user, get_token_claims
 from stitch.api.entities import User
 from stitch.api.main import app
 from .factories import OGFieldBaseFactory, ResourceFactory
 from .utils import make_create_resource, make_resource, make_source
+
+
+_ALL_LICENSED_CLAIMS = TokenClaims(
+    sub="test|user-1",
+    email="test@test.com",
+    name="Test User",
+    permissions=frozenset(
+        f"resource:read:licensed:{src}" for src in get_args(OGSISrcKey)
+    ),
+)
 
 
 @pytest.fixture
@@ -97,7 +111,11 @@ async def async_client(test_user: User) -> AsyncIterator[AsyncClient]:
     def override_get_current_user() -> User:
         return test_user
 
+    def override_get_token_claims() -> TokenClaims:
+        return _ALL_LICENSED_CLAIMS
+
     app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[get_token_claims] = override_get_token_claims
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -172,8 +190,12 @@ async def integration_client(
     def override_get_current_user() -> User:
         return test_user
 
+    def override_get_token_claims() -> TokenClaims:
+        return _ALL_LICENSED_CLAIMS
+
     app.dependency_overrides[get_uow] = override_get_uow
     app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[get_token_claims] = override_get_token_claims
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
