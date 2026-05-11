@@ -6,16 +6,16 @@ export default function AuthGate({ children }) {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-gray-500 text-lg">Loading...</p>
+      <div className="flex min-h-screen items-center justify-center bg-canvas">
+        <p className="text-lg text-ink-muted">Loading...</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-red-600 text-lg">
+      <div className="flex min-h-screen items-center justify-center bg-canvas">
+        <p className="text-lg text-danger">
           Authentication error: {error.message}
         </p>
       </div>
