@@ -9,7 +9,7 @@ function Input({
   ...props
 }) {
   const baseStyles =
-    "px-6 py-3 rounded-lg font-semibold transition-colors duration-200 focus:outline-none focus:ring-1 focus:ring-offset-2 focus:ring-blue-500 border-2 border-gray-300 hover:border-gray-400 focus:border-blue-500";
+    "min-h-9 rounded-md border border-line bg-panel px-3 py-2 text-sm text-ink transition-colors hover:border-line-strong focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20";
 
   const handleClick = (e) => {
     e.target.select();
