@@ -49,7 +49,7 @@ function getSlots(currentPage, totalPages) {
 }
 
 const pageButtonBase =
-  "w-9 h-9 flex items-center justify-center rounded text-sm font-medium transition-colors";
+  "flex h-9 w-9 items-center justify-center rounded-md border text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2";
 
 export default function Pagination({
   page,
@@ -64,8 +64,8 @@ export default function Pagination({
   const lastItem = Math.min(page * pageSize, totalCount);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-y-3 mt-4 text-sm text-gray-600">
-      <span>
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-y-3 text-sm text-ink-muted">
+      <span className="font-medium">
         Showing {firstItem}–{lastItem} of {totalCount}
       </span>
 
@@ -74,7 +74,7 @@ export default function Pagination({
           <button
             onClick={() => onPageChange(page - 1)}
             disabled={page === 1}
-            className={`${pageButtonBase} bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed`}
+            className={`${pageButtonBase} border-line bg-panel text-ink hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40`}
             aria-label="Previous page"
           >
             ‹
@@ -85,7 +85,7 @@ export default function Pagination({
               <span
                 key={`ellipsis-${i}`}
                 style={{ visibility: slot.visible ? "visible" : "hidden" }}
-                className="w-9 h-9 flex items-center justify-center text-gray-400 select-none"
+                className="flex h-9 w-9 items-center justify-center text-ink-muted select-none"
                 aria-hidden="true"
               >
                 …
@@ -99,8 +99,8 @@ export default function Pagination({
                 tabIndex={slot.visible ? 0 : -1} // focusable if visible
                 className={`${pageButtonBase} ${
                   slot.page === page
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                    ? "border-primary bg-primary text-white"
+                    : "border-line bg-panel text-ink hover:bg-surface"
                 }`}
               >
                 {slot.page}
@@ -111,7 +111,7 @@ export default function Pagination({
           <button
             onClick={() => onPageChange(page + 1)}
             disabled={page === totalPages}
-            className={`${pageButtonBase} bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed`}
+            className={`${pageButtonBase} border-line bg-panel text-ink hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40`}
             aria-label="Next page"
           >
             ›
@@ -120,14 +120,17 @@ export default function Pagination({
       )}
 
       <div className="flex items-center gap-2">
-        <label htmlFor="page-size-select" className="text-gray-600">
+        <label
+          htmlFor="page-size-select"
+          className="font-medium text-ink-muted"
+        >
           Per page:
         </label>
         <select
           id="page-size-select"
           value={pageSize}
           onChange={(e) => onPageSizeChange(Number(e.target.value))}
-          className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="rounded-md border border-line bg-panel px-2 py-1 text-sm text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
         >
           {PAGE_SIZE_OPTIONS.map((size) => (
             <option key={size} value={size}>

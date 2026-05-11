@@ -1,11 +1,13 @@
 function Card({ title, children, className = "" }) {
   return (
-    <div className={`bg-white rounded-lg shadow-lg p-6 ${className}`}>
+    <section
+      className={`rounded-md border border-line bg-panel p-4 ${className}`}
+    >
       {title && (
-        <h2 className="text-xl font-bold mb-4 text-gray-800">{title}</h2>
+        <h2 className="mb-3 text-base font-semibold text-ink">{title}</h2>
       )}
-      <div className="text-gray-700">{children}</div>
-    </div>
+      <div className="text-sm text-ink">{children}</div>
+    </section>
   );
 }
 

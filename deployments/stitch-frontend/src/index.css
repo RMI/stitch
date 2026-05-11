@@ -1,9 +1,113 @@
 @import "tailwindcss";
 
 @theme {
-  --color-gray-light: #f7f8f9;
-  --color-gray-medium: #e0e1e2;
-  --color-gray-dark: #111827;
-  --color-gray-button-outline: #dde3e5;
-  --font-family-inter: "Inter", sans-serif;
+  /* Brand palette */
+  --color-bluespruce: #003b63;
+  --color-energy: #45cfcc;
+  --color-basalt: #58595b;
+  --color-energy-100: #b6f2f1;
+  --color-energy-400: #7be8e6;
+  --color-energy-700: #2ab5b2;
+  --color-energy-800: #118280;
+  --color-success-400: #5ce5a1;
+  --color-success-600: #00cc66;
+  --color-success-800: #00994d;
+  --color-error-400: #f7988b;
+  --color-error-600: #df4e39;
+  --color-error-800: #ab3c2c;
+  --color-neutral-50: #f4f7f9;
+  --color-neutral-100: #ecf1f4;
+  --color-neutral-200: #e4e9ee;
+  --color-neutral-300: #d6dde2;
+  --color-neutral-400: #bdc9d3;
+  --color-neutral-500: #b3bcc5;
+  --color-neutral-600: #86929d;
+  --color-neutral-700: #646e77;
+  --color-neutral-800: #3b444d;
+  --color-neutral-900: #1d2328;
+  --color-slate: #92aec5;
+  --color-pine: #135908;
+  --color-donate: #00cc66;
+  --color-solar: #ffcb00;
+  --color-deficient: #e04d39;
+  --color-coal: #323232;
+  --color-calm: #e1e6f0;
+  --color-solar-100: #ffeda9;
+  --color-solar-200: #ffe480;
+  --color-solar-400: #ffdd00;
+  --color-solar-800: #c85c19;
+  --color-pinishgreen-100: #b2e6b2;
+  --color-pinishgreen-200: #99d699;
+  --color-pinishgreen-400: #408026;
+  --color-pinishgreen-800: #11431b;
+  --color-rmipurple-100: #c7c4e2;
+  --color-rmipurple-200: #a59fce;
+  --color-rmipurple-400: #7b76ad;
+  --color-rmipurple-800: #3e3969;
+  --color-rmiblue-100: #c9e3f0;
+  --color-rmiblue-200: #9bcce3;
+  --color-rmiblue-400: #529cba;
+  --color-rmiblue-800: #005d7f;
+  --color-rmired-100: #eec7b7;
+  --color-rmired-200: #df897b;
+  --color-rmired-400: #c4151c;
+  --color-rmired-800: #790000;
+  --color-rmigray-100: #e6e7e8;
+  --color-rmigray-200: #a7a9ac;
+  --color-rmigray-300: #808284;
+  --color-rmigray-400: #58585b;
+  --color-rmigray-500: #414142;
+  --color-rmigray-600: #333333;
+  --color-rmigray-700: #2a2a2b;
+  --color-rmigray-800: #231f20;
+
+  /* Application semantics */
+  --color-canvas: var(--color-neutral-50);
+  --color-panel: #fbfdfe;
+  --color-surface: var(--color-neutral-100);
+  --color-surface-tint: var(--color-calm);
+  --color-line: var(--color-neutral-300);
+  --color-line-strong: var(--color-neutral-600);
+  --color-ink: var(--color-neutral-900);
+  --color-ink-muted: var(--color-neutral-700);
+  --color-primary: var(--color-bluespruce);
+  --color-primary-hover: var(--color-rmiblue-800);
+  --color-primary-soft: var(--color-rmiblue-100);
+  --color-success: var(--color-success-600);
+  --color-success-strong: var(--color-success-800);
+  --color-success-soft: var(--color-pinishgreen-100);
+  --color-warning: var(--color-solar-800);
+  --color-warning-soft: var(--color-solar-100);
+  --color-danger: var(--color-error-600);
+  --color-danger-soft: #fbe4df;
+
+  /* Compatibility aliases used by existing components. */
+  --color-gray-light: var(--color-surface);
+  --color-gray-medium: var(--color-line);
+  --color-gray-dark: var(--color-ink);
+  --color-gray-button-outline: var(--color-line);
+
+  --font-sans: "Aptos", "Avenir Next", "Segoe UI", sans-serif;
+  --font-family-inter: var(--font-sans);
+}
+
+@layer base {
+  html {
+    background: var(--color-canvas);
+  }
+
+  body {
+    min-width: 320px;
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    letter-spacing: 0;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
 }
