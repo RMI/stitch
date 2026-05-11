@@ -37,7 +37,7 @@ function App() {
             >
               <span className="text-lg font-semibold">Stitch</span>
               <span className="hidden text-sm font-medium text-energy-100 sm:inline">
-                Data review
+                Oil and Gas
               </span>
             </Link>
 
