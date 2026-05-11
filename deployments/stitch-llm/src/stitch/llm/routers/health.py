@@ -102,7 +102,9 @@ async def check_health_details(request: Request):
         downstream.update(_downstream_error_fields(exc))
         if isinstance(exc, StitchAPIError):
             downstream["api_reachable"] = exc.status_code is not None
-            downstream["token_accepted"] = exc.status_code != 401
+            downstream["token_accepted"] = (
+                exc.status_code is not None and exc.status_code != 401
+            )
 
     if not ready:
         status = "degraded"

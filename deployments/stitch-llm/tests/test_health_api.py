@@ -112,3 +112,37 @@ def test_health_details_reports_not_ready_when_downstream_probe_fails(
     assert response.json()["downstream_api"]["has_error"] is True
     assert response.json()["downstream_api"]["error_code"] == "downstream_401"
     assert response.json()["downstream_api"]["http_status"] == 401
+
+
+def test_health_details_reports_token_not_accepted_when_downstream_is_unreachable(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        health_module,
+        "get_settings",
+        lambda: Settings(
+            auth_disabled=False,
+            azure_openai_base_url="https://example.openai.azure.com/openai/v1",
+            azure_openai_api_key="azure-key",
+            azure_openai_model="model",
+        ),
+    )
+    fake_client = FakeStitchApiClient(
+        auth_me_error=StitchAPIError(
+            "GET /auth/me failed: connection error",
+            status_code=None,
+            response_text=None,
+        )
+    )
+    monkeypatch.setattr(health_module, "StitchApiClient", lambda: fake_client)
+
+    response = test_client.get("/api/v1/health/details")
+
+    assert response.status_code == 503
+    assert response.json()["status"] == "degraded"
+    assert response.json()["ready"] is False
+    assert response.json()["downstream_api"]["api_reachable"] is False
+    assert response.json()["downstream_api"]["token_accepted"] is False
+    assert response.json()["downstream_api"]["has_error"] is True
+    assert response.json()["downstream_api"]["http_status"] is None
