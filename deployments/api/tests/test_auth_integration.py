@@ -126,6 +126,29 @@ class TestGetCurrentUserJITProvisioning:
             assert row.name is None
 
     @pytest.mark.anyio
+    async def test_creates_user_with_blank_claims_treated_as_missing(
+        self,
+        integration_session_factory,
+    ):
+        """Blank or whitespace-only claims are normalized to null."""
+        claims = _make_claims(sub="auth0|blank-claims", email="  ", name="")
+
+        user = await get_current_user(claims, integration_session_factory)
+
+        assert user.sub == "auth0|blank-claims"
+        assert user.email is None
+        assert user.name is None
+
+        async with integration_session_factory() as session:
+            row = (
+                await session.execute(
+                    select(UserModel).where(UserModel.sub == "auth0|blank-claims")
+                )
+            ).scalar_one()
+            assert row.email is None
+            assert row.name is None
+
+    @pytest.mark.anyio
     async def test_backfills_missing_fields_on_subsequent_login(
         self,
         integration_session_factory,
@@ -152,6 +175,42 @@ class TestGetCurrentUserJITProvisioning:
             ).scalar_one()
             assert row.name == "Filled In"
             assert row.email == "filled@example.com"
+
+    @pytest.mark.anyio
+    async def test_blank_claims_do_not_overwrite_existing_values(
+        self,
+        integration_session_factory,
+    ):
+        """Blank claim values should be ignored during back-fill."""
+        async with integration_session_factory() as session:
+            session.add(
+                UserModel(
+                    sub="auth0|ignore-blanks",
+                    name="Existing Name",
+                    email="existing@example.com",
+                )
+            )
+            await session.commit()
+
+        claims = _make_claims(
+            sub="auth0|ignore-blanks",
+            name="   ",
+            email="",
+        )
+
+        user = await get_current_user(claims, integration_session_factory)
+
+        assert user.name == "Existing Name"
+        assert user.email == "existing@example.com"
+
+        async with integration_session_factory() as session:
+            row = (
+                await session.execute(
+                    select(UserModel).where(UserModel.sub == "auth0|ignore-blanks")
+                )
+            ).scalar_one()
+            assert row.name == "Existing Name"
+            assert row.email == "existing@example.com"
 
     @pytest.mark.anyio
     async def test_handles_concurrent_first_login(

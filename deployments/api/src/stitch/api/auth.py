@@ -141,8 +141,8 @@ async def get_current_user(claims: Claims, session_factory: SessionFactoryDep) -
             else:
                 user_model = UserModel(
                     sub=claims.sub,
-                    name=claims.name,
-                    email=claims.email,
+                    name=_normalized_optional_claim_value(claims.name),
+                    email=_normalized_optional_claim_value(claims.email),
                 )
                 session.add(user_model)
 
@@ -164,13 +164,23 @@ async def get_current_user(claims: Claims, session_factory: SessionFactoryDep) -
 
 def _apply_claim_backfill(model: UserModel, claims: Claims) -> bool:
     updated = False
-    if claims.name is not None and claims.name != model.name:
-        model.name = claims.name
+    normalized_name = _normalized_optional_claim_value(claims.name)
+    normalized_email = _normalized_optional_claim_value(claims.email)
+
+    if normalized_name is not None and normalized_name != model.name:
+        model.name = normalized_name
         updated = True
-    if claims.email is not None and claims.email != model.email:
-        model.email = claims.email
+    if normalized_email is not None and normalized_email != model.email:
+        model.email = normalized_email
         updated = True
     return updated
+
+
+def _normalized_optional_claim_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
 
 
 def _to_entity(model: UserModel) -> User:
