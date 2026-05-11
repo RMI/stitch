@@ -4,7 +4,10 @@ import httpx
 import pytest
 
 from stitch.client import AsyncStitchClient, STITCH_CLIENT_BEARER_TOKEN_ENV_VAR
-from stitch.llm.client import StitchApiClient, validate_downstream_auth_config_at_startup
+from stitch.llm.client import (
+    StitchApiClient,
+    validate_downstream_auth_config_at_startup,
+)
 from stitch.llm.settings import Settings
 
 

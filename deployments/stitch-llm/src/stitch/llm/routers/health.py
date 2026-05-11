@@ -81,7 +81,8 @@ async def check_health_details(request: Request):
     }
     llm_backend = {
         "configured": settings.azure_openai_configured,
-        "placeholder_mode": settings.auth_disabled and not settings.azure_openai_configured,
+        "placeholder_mode": settings.auth_disabled
+        and not settings.azure_openai_configured,
     }
 
     status = "ok"
