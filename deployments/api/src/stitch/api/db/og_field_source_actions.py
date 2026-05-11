@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 
 from sqlalchemy import select
 
@@ -12,6 +12,7 @@ from stitch.api.db.errors import (
 from stitch.api.db.utils import partition_by_id_none
 from stitch.api.entities import OGFieldQueryParams, User
 from stitch.ogsi.model import OGFieldSource, OGFieldResource
+from stitch.ogsi.model.types import OGSISrcKey
 
 from .model import (
     OilGasFieldSourceModel,
@@ -123,9 +124,16 @@ async def attach_sources_to_resource(
     return await resource_model_to_entity(session, resource)
 
 
-async def get_source(session: AsyncSession, id: int) -> OGFieldSource:
+async def get_source(
+    session: AsyncSession,
+    id: int,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> OGFieldSource:
     model = await session.get(OilGasFieldSourceModel, id)
     if model is None:
+        raise SourceNotFoundError(f"No OG Field Source found for id `{id}`")
+    if licensed_sources is not None and model.source not in licensed_sources:
+        # Hide existence of unlicensed source rows.
         raise SourceNotFoundError(f"No OG Field Source found for id `{id}`")
     return model.as_entity()
 
@@ -141,7 +149,12 @@ async def get_sources(
 async def query(
     session: AsyncSession,
     params: OGFieldQueryParams,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> tuple[Sequence[OGFieldSource], int]:
-    models = await OilGasFieldSourceModel.query(session, params)
-    total = await OilGasFieldSourceModel.count(session, params)
+    models = await OilGasFieldSourceModel.query(
+        session, params, licensed_sources=licensed_sources
+    )
+    total = await OilGasFieldSourceModel.count(
+        session, params, licensed_sources=licensed_sources
+    )
     return tuple(m.as_entity() for m in models), total

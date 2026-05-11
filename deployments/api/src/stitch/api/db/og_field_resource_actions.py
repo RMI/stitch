@@ -62,16 +62,16 @@ def _priority_values() -> tuple[int, ...]:
 async def query(
     session: AsyncSession,
     params: OGFieldQueryParams,
-    redacted_sources: Collection[OGSISrcKey] = (),
+    licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> tuple[list[OGFieldListItemView], int]:
-    """Query redaction-aware coalesced resource list items with provenance."""
+    """Query coalesced resource list items, restricted to licensed sources."""
     if params.sort_by == "source":
         raise HTTPException(
             status_code=422,
             detail="sort_by=source is not supported for resource list queries.",
         )
 
-    coalesced = _build_redacted_resource_list_cte(params, redacted_sources)
+    coalesced = _build_licensed_resource_list_cte(params, licensed_sources)
     filtered = select(coalesced)
     for condition in _build_final_conditions(coalesced, params):
         filtered = filtered.where(condition)
@@ -89,9 +89,9 @@ async def query(
     return [_list_item_from_row(row) for row in rows], total
 
 
-def _build_redacted_resource_list_cte(
+def _build_licensed_resource_list_cte(
     params: OGFieldQueryParams,
-    redacted_sources: Collection[OGSISrcKey],
+    licensed_sources: Collection[OGSISrcKey] | None,
 ):
     s = OilGasFieldSourceModel
     m = MembershipModel
@@ -99,13 +99,14 @@ def _build_redacted_resource_list_cte(
     p = OGFieldSourcePriority
 
     selected_sources = list(dict.fromkeys(params.source))
-    redacted = list(dict.fromkeys(redacted_sources))
     source_join_conditions = [
         s.id == m.source_pk,
         s.source == m.source,
     ]
-    if redacted:
-        source_join_conditions.append(s.source.not_in(redacted))
+    if licensed_sources is not None:
+        source_join_conditions.append(
+            s.source.in_(list(dict.fromkeys(licensed_sources)))
+        )
 
     qualified = (
         select(
@@ -189,7 +190,7 @@ def _build_redacted_resource_list_cte(
             provenance_subquery.label(f"{field_name}{_PROVENANCE_SUFFIX}"),
         )
 
-    return coalesced.cte("redacted_resource_list")
+    return coalesced.cte("licensed_resource_list")
 
 
 def _json_value_is_present(col) -> ColumnElement[bool]:
@@ -254,7 +255,11 @@ def _list_item_from_row(row: RowMapping) -> OGFieldListItemView:
     return OGFieldListItemView(id=row["id"], data=data, provenance=provenance)
 
 
-async def get(session: AsyncSession, id: int) -> OGFieldResource:
+async def get(
+    session: AsyncSession,
+    id: int,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> OGFieldResource:
     stmt = (
         select(ResourceModel)
         .options(selectinload(ResourceModel.memberships))
@@ -266,7 +271,9 @@ async def get(session: AsyncSession, id: int) -> OGFieldResource:
             status_code=HTTP_404_NOT_FOUND, detail=f"No Resource with id `{id}` found."
         )
     await session.refresh(model, ["memberships"])
-    return await resource_model_to_entity(session, model)
+    return await resource_model_to_entity(
+        session, model, licensed_sources=licensed_sources
+    )
 
 
 async def create(
