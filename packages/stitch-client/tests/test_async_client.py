@@ -155,7 +155,6 @@ async def test_headers_provider_is_applied_to_each_request() -> None:
 
 
 @pytest.mark.anyio
-@pytest.mark.anyio
 async def test_env_bearer_token_mode_sends_token_on_requests(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
