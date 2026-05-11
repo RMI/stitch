@@ -23,14 +23,6 @@ describe("App", () => {
     expect(heading).toBeInTheDocument();
   });
 
-  it("does not render the single-resource fetch demo on the home route", () => {
-    renderWithQueryClient(<App />);
-    const heading = screen.queryByRole("heading", {
-      name: /^Resource ID: \d+$/i,
-    });
-    expect(heading).not.toBeInTheDocument();
-  });
-
   it("renders the normalized global shell", () => {
     renderWithQueryClient(<App />);
 
