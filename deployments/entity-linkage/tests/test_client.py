@@ -10,6 +10,7 @@ from stitch.client import (
     AsyncStitchClient,
     STITCH_CLIENT_BEARER_TOKEN_ENV_VAR,
     StitchAPIError,
+    env_bearer_token_headers_provider,
 )
 from stitch.entity_linkage.client import (
     StitchApiClient,
@@ -22,14 +23,14 @@ def make_client(
     *,
     base_url: str = "http://example.test/api/v1",
 ) -> StitchApiClient:
-    shared_client = StitchApiClient()
-    raw_client = httpx.AsyncClient(
-        transport=httpx.MockTransport(handler),
-        base_url=base_url,
+    shared_client = AsyncStitchClient(
+        client=httpx.AsyncClient(
+            transport=httpx.MockTransport(handler),
+            base_url=base_url,
+        ),
+        headers_provider=env_bearer_token_headers_provider(),
     )
-    shared_client._client._client = raw_client
-    shared_client._client._owns_client = False
-    return shared_client
+    return StitchApiClient(client=shared_client)
 
 
 def test_stitch_api_client_requires_env_bearer_token(

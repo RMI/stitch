@@ -165,22 +165,15 @@ async def test_env_bearer_token_mode_sends_token_on_requests(
         captured.append(request.headers.get("Authorization"))
         return httpx.Response(200, json={"items": [], "total_pages": 1})
 
-    raw_client = httpx.AsyncClient(
-        transport=httpx.MockTransport(handler),
-        base_url="http://example.test/api/v1",
-    )
-    client = AsyncStitchClient(
-        base_url="http://example.test/api/v1",
+    client, raw_client = make_client(
+        handler,
         headers_provider=env_bearer_token_headers_provider(),
     )
-    client._client = raw_client
-    client._owns_client = False
 
     await client.list_oil_gas_fields_page()
 
     assert captured == ["Bearer env-token-123"]
 
-    await client.aclose()
     await raw_client.aclose()
 
 
