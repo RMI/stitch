@@ -1,9 +1,9 @@
 from math import ceil
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, EmailStr, Field, computed_field
+from pydantic import BaseModel, Field, computed_field
 
 from stitch.ogsi.model import GEM_SRC, LLM_SRC, RMI_SRC, WM_SRC
 from stitch.ogsi.model.types import (
@@ -34,8 +34,21 @@ class User(BaseModel):
     id: int = Field(...)
     sub: str = Field(...)
     role: str | None = None
-    email: EmailStr
-    name: str
+    email: str | None = None
+    name: str | None = None
+
+
+class TokenClaimsView(BaseModel):
+    sub: str
+    email: str | None = None
+    name: str | None = None
+    permissions: list[str] = Field(default_factory=list)
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuthMeView(BaseModel):
+    user: User | None = None
+    claims: TokenClaimsView
 
 
 class PaginationParams(BaseModel):
