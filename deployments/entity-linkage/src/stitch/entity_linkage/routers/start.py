@@ -35,7 +35,6 @@ class StartRequest(BaseModel):
 class StartResponse(BaseModel):
     initiated_by: str
     apply_merges: bool
-    downstream_auth_mode: str
     pages_fetched: int
     total_records_fetched: int
     duplicate_name_candidate_count: int
@@ -153,7 +152,6 @@ async def start(
     return StartResponse(
         initiated_by=_extract_user_label(auth_context.user),
         apply_merges=request.apply_merges,
-        downstream_auth_mode="env_bearer_token",
         pages_fetched=pages_fetched,
         total_records_fetched=len(items),
         duplicate_name_candidate_count=sum(

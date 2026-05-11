@@ -217,7 +217,6 @@ async def test_start_returns_summary_without_merges(
 
     assert response.initiated_by == "Alex Reviewer"
     assert response.apply_merges is False
-    assert response.downstream_auth_mode == "env_bearer_token"
     assert response.pages_fetched == 3
     assert response.total_records_fetched == 4
     assert response.duplicate_name_candidate_count == 3

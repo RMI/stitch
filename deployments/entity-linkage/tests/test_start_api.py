@@ -200,7 +200,6 @@ def test_post_start_returns_serialized_response_model(
     assert response.json() == {
         "initiated_by": "Integration Tester",
         "apply_merges": False,
-        "downstream_auth_mode": "env_bearer_token",
         "pages_fetched": 2,
         "total_records_fetched": 3,
         "duplicate_name_candidate_count": 2,
