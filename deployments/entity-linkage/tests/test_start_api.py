@@ -355,5 +355,6 @@ def test_health_details_reports_ready_when_downstream_auth_probe_succeeds(
     assert response.json()["ready"] is True
     assert response.json()["downstream_api"]["ready"] is True
     assert response.json()["downstream_api"]["token_accepted"] is True
-    assert response.json()["downstream_api"]["subject"] == "auth0|health-check"
+    assert response.json()["downstream_api"]["has_error"] is False
+    assert response.json()["downstream_api"]["error_code"] is None
     assert fake_client.auth_me_calls == 1

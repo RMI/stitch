@@ -25,6 +25,32 @@ def _uptime_seconds(value: object) -> float | None:
     return None
 
 
+def _downstream_error_fields(
+    exc: StitchAPIError | ValueError,
+) -> dict[str, object]:
+    if isinstance(exc, ValueError):
+        return {
+            "has_error": True,
+            "error_code": "missing_token",
+        }
+
+    status_code = exc.status_code
+    if status_code == 401:
+        error_code = "downstream_401"
+    elif status_code is None:
+        error_code = "downstream_error"
+    elif status_code >= 500:
+        error_code = "downstream_5xx"
+    else:
+        error_code = "downstream_http_error"
+
+    return {
+        "has_error": True,
+        "error_code": error_code,
+        "http_status": status_code,
+    }
+
+
 @router.get("/health")
 async def check_health():
     return JSONResponse(
@@ -44,12 +70,14 @@ async def check_health_details(request: Request):
     )
 
     downstream: dict[str, object] = {
-        "target": f"{str(settings.api_base_url).rstrip('/')}/auth/me",
         "auth_mode": "env_bearer_token",
         "startup_validated": downstream_auth_config_validated,
         "api_reachable": False,
         "token_accepted": False,
         "ready": False,
+        "has_error": False,
+        "error_code": None,
+        "http_status": None,
     }
     status = "ok"
     ready = True
@@ -57,20 +85,18 @@ async def check_health_details(request: Request):
 
     try:
         async with StitchApiClient() as client:
-            auth_me = await client.get_auth_me()
+            await client.get_auth_me()
         downstream["api_reachable"] = True
         downstream["token_accepted"] = True
         downstream["ready"] = True
-        claims = auth_me.get("claims")
-        if isinstance(claims, dict):
-            downstream["subject"] = claims.get("sub")
     except (StitchAPIError, ValueError) as exc:
         status = "degraded"
         ready = False
         status_code = HTTP_503_SERVICE_UNAVAILABLE
-        downstream["error"] = str(exc)
+        downstream.update(_downstream_error_fields(exc))
         if isinstance(exc, StitchAPIError):
-            downstream["api_reachable"] = exc.status_code != 401
+            downstream["api_reachable"] = exc.status_code is not None
+            downstream["token_accepted"] = exc.status_code != 401
 
     payload = {
         "status": status,

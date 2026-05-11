@@ -72,6 +72,8 @@ def test_health_details_reports_ready_when_downstream_and_llm_are_configured(
     assert response.json()["status"] == "ok"
     assert response.json()["ready"] is True
     assert response.json()["downstream_api"]["token_accepted"] is True
+    assert response.json()["downstream_api"]["has_error"] is False
+    assert response.json()["downstream_api"]["error_code"] is None
     assert response.json()["llm_backend"]["configured"] is True
     assert response.json()["llm_backend"]["placeholder_mode"] is False
     assert fake_client.auth_me_calls == 1
@@ -107,3 +109,6 @@ def test_health_details_reports_not_ready_when_downstream_probe_fails(
     assert response.json()["ready"] is False
     assert response.json()["downstream_api"]["token_accepted"] is False
     assert response.json()["downstream_api"]["ready"] is False
+    assert response.json()["downstream_api"]["has_error"] is True
+    assert response.json()["downstream_api"]["error_code"] == "downstream_401"
+    assert response.json()["downstream_api"]["http_status"] == 401
