@@ -204,22 +204,17 @@ function OrganizationsSection({ data }) {
   );
 }
 
-function EvidenceDetails({ detailView }) {
-  const evidence = {
-    provenance: detailView.provenance,
-    source_data: detailView.source_data,
-  };
-
+function SourceDataSection({ sourceData }) {
   return (
     <section>
-      <SectionHeader title="Evidence details" />
+      <SectionHeader title="Source data" />
       <details className="rounded-md border border-line bg-panel px-4 py-3">
         <summary className="cursor-pointer text-sm font-semibold text-ink">
-          Source records and provenance
+          Source records
         </summary>
         <StructuredDataView
-          data={evidence}
-          label="Source records and provenance"
+          data={sourceData}
+          label="Source records"
           className="mt-4"
         />
       </details>
@@ -310,7 +305,7 @@ export default function ResourceDetailPage() {
 
           <AISuggestionPanel endpoint={endpoint} resourceId={numericId} />
 
-          <EvidenceDetails detailView={detailView} />
+          <SourceDataSection sourceData={detailView.source_data} />
         </div>
       )}
     </div>
