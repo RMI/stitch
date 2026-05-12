@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
-from stitch.ogsi.model import OGFieldSource
+from stitch.ogsi.model import OGFieldSource, OGFieldSourceCreate, OGFieldSourceDetail
 
 from stitch.api.auth import Claims, CurrentUser
 from stitch.api.db import og_field_source_actions
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/oil-gas-field-sources", tags=["oil_gas_field_sources
 
 @router.post("/", response_model=OGFieldSource)
 async def create_oil_gas_field_source(
-    source: OGFieldSource,
+    source: OGFieldSourceCreate,
     uow: UnitOfWorkDep,
     user: CurrentUser,
 ) -> OGFieldSource:
@@ -67,6 +67,20 @@ async def get_oil_gas_field(
 ):
     try:
         return await og_field_source_actions.get_source(
+            session=uow.session,
+            id=id,
+            licensed_sources=licensed_sources(claims),
+        )
+    except SourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/{id}/detail", response_model=OGFieldSourceDetail)
+async def get_oil_gas_field_source_detail(
+    id: int, uow: UnitOfWorkDep, user: CurrentUser, claims: Claims
+) -> OGFieldSourceDetail:
+    try:
+        return await og_field_source_actions.get_source_detail(
             session=uow.session,
             id=id,
             licensed_sources=licensed_sources(claims),

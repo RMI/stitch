@@ -12,7 +12,9 @@ from pydantic import TypeAdapter, ValidationError
 
 from stitch.ogsi.model import (
     GemSource,
+    GemSourceCreate,
     OGFieldResource,
+    OGFieldResourceCreate,
     OGFieldSource,
     WoodMacSource,
 )
@@ -48,6 +50,62 @@ class TestOGFieldSourceDiscriminator:
             _source_adapter.validate_json(
                 '{"source": "unknown", "name": "X", "country": "USA"}'
             )
+
+
+class TestOGFieldSourceCreate:
+    def test_source_record_is_required_on_create(self):
+        with pytest.raises(ValidationError):
+            GemSourceCreate.model_validate(
+                {"source": "gem", "name": "Test Field", "country": "USA"}
+            )
+
+    def test_source_record_payload_accepts_json_compatible_values(self):
+        source = GemSourceCreate.model_validate(
+            {
+                "source": "gem",
+                "name": "Test Field",
+                "country": "USA",
+                "source_record": {
+                    "kind": "seed_static",
+                    "record_id": None,
+                    "run_id": "run-1",
+                    "observed_at": "2026-01-01T00:00:00Z",
+                    "producer": "stitch-seed@0.1.0",
+                    "payload": {
+                        "a": ["b", 1, True, None],
+                        "nested": {"c": "d"},
+                    },
+                },
+            }
+        )
+
+        assert source.source_record.producer == "stitch-seed@0.1.0"
+        assert source.source_record.payload["nested"] == {"c": "d"}
+
+    def test_resource_create_requires_new_sources_with_source_record(self):
+        resource = OGFieldResourceCreate.model_validate(
+            {
+                "id": None,
+                "source_data": [
+                    {
+                        "source": "gem",
+                        "name": "Test Field",
+                        "country": "USA",
+                        "source_record": {
+                            "kind": "seed_static",
+                            "record_id": None,
+                            "run_id": "run-1",
+                            "observed_at": "2026-01-01T00:00:00Z",
+                            "producer": "stitch-seed@0.1.0",
+                            "payload": {"source": "gem", "name": "Test Field"},
+                        },
+                    },
+                ],
+            }
+        )
+
+        assert len(resource.source_data) == 1
+        assert resource.source_data[0].source == "gem"
 
 
 # ---------------------------------------------------------------------------

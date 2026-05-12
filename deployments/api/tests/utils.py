@@ -7,23 +7,40 @@ for use in tests and HTTP client requests.
 
 from __future__ import annotations
 
-from functools import partial
+from datetime import UTC, datetime
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
 from stitch.ogsi.model import (
     GemSource,
+    GemSourceCreate,
     LLMSource,
+    LLMSourceCreate,
     OGSISrcKey,
+    OGFieldResourceCreate,
     RMISource,
+    RMISourceCreate,
     WoodMacSource,
-    OGFieldSource,
+    WoodMacSourceCreate,
     OGFieldResource,
+    OGFieldSource,
+    OGFieldSourceCreate,
 )
 
 from .factories import OGFieldBaseFactory, ResourceFactory
 
 T = TypeVar("T", bound=BaseModel)
+
+
+def make_source_record(*, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {
+        "kind": "seed_static",
+        "record_id": None,
+        "run_id": "test-run-id",
+        "observed_at": datetime(2026, 1, 1, tzinfo=UTC).isoformat(),
+        "producer": "stitch-seed@test",
+        "payload": payload or {"fixture": True},
+    }
 
 
 def make_source(
@@ -57,6 +74,30 @@ def make_source(
             return GemSource(**kwargs)
 
 
+def make_create_source(
+    fact: OGFieldBaseFactory,
+    source: OGSISrcKey = "gem",
+    **kwargs: Any,
+) -> OGFieldSourceCreate:
+    base = fact.build()
+    payload: dict[str, Any] = {
+        **base.model_dump(),
+        "id": None,
+        **kwargs,
+    }
+    payload["source_record"] = make_source_record(payload=payload.copy())
+
+    match source:
+        case "llm":
+            return LLMSourceCreate(source="llm", **payload)
+        case "rmi":
+            return RMISourceCreate(source="rmi", **payload)
+        case "wm":
+            return WoodMacSourceCreate(source="wm", **payload)
+        case "gem":
+            return GemSourceCreate(source="gem", **payload)
+
+
 def make_resource(
     *,
     fact: ResourceFactory,
@@ -88,18 +129,15 @@ def make_create_resource(
     factory: ResourceFactory,
     base_factory: OGFieldBaseFactory,
     sources: list[tuple[OGSISrcKey, bool]] | None = None,
-) -> OGFieldResource:
+) -> OGFieldResourceCreate:
     """Create a minimal Resource payload for creation tests."""
-    _mk_src = partial(make_source, fact=base_factory)
     if sources is None:
         sources = [("gem", False)]
-    source_data = [_mk_src(managed=mgd, source=sk) for sk, mgd in sources]
+    source_data = [make_create_source(base_factory, source=sk) for sk, _ in sources]
     if name:
-        src = _mk_src(managed=False, source="rmi")
-        src.name = name
-        source_data.append(src)
+        source_data.append(make_create_source(base_factory, source="rmi", name=name))
 
-    model = factory.build(
+    return OGFieldResourceCreate(
         id=None,
         source_data=source_data,
         constituents=frozenset(),
@@ -107,7 +145,6 @@ def make_create_resource(
         view=None,
         provenance={},
     )
-    return model
 
 
 def make_empty_resource(

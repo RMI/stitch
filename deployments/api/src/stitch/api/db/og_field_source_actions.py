@@ -11,7 +11,12 @@ from stitch.api.db.errors import (
 )
 from stitch.api.db.utils import partition_by_id_none
 from stitch.api.entities import OGFieldQueryParams, User
-from stitch.ogsi.model import OGFieldSource, OGFieldResource
+from stitch.ogsi.model import (
+    OGFieldResource,
+    OGFieldSource,
+    OGFieldSourceCreate,
+    OGFieldSourceDetail,
+)
 from stitch.ogsi.model.types import OGSISrcKey
 
 from .model import (
@@ -25,7 +30,7 @@ from .utils import resource_model_to_entity
 async def create_source(
     session: AsyncSession,
     user: User,
-    source: OGFieldSource,
+    source: OGFieldSourceCreate,
 ) -> OGFieldSource:
     """Validate raw JSON into domain model, persist canonical + original."""
 
@@ -40,7 +45,7 @@ async def create_source(
 async def get_or_create_sources(
     session: AsyncSession,
     user: User,
-    data: Sequence[OGFieldSource],
+    data: Sequence[OGFieldSourceCreate | OGFieldSource],
 ) -> Sequence[OGFieldSource]:
 
     return [
@@ -52,7 +57,7 @@ async def get_or_create_sources(
 async def _get_or_create_source_models(
     session: AsyncSession,
     user: User,
-    data: Sequence[OGFieldSource],
+    data: Sequence[OGFieldSourceCreate | OGFieldSource],
 ) -> Sequence[OilGasFieldSourceModel]:
     new_, ex_ = partition_by_id_none(data)
     src_models: list[OilGasFieldSourceModel] = [
@@ -65,7 +70,7 @@ async def _get_or_create_source_models(
 
 
 async def _create_source_models(
-    session: AsyncSession, user: User, sources: Sequence[OGFieldSource]
+    session: AsyncSession, user: User, sources: Sequence[OGFieldSourceCreate]
 ) -> Sequence[OilGasFieldSourceModel]:
     if any((src.id is not None for src in sources)):
         existing = [src for src in sources if src.id is not None]
@@ -136,6 +141,19 @@ async def get_source(
         # Hide existence of unlicensed source rows.
         raise SourceNotFoundError(f"No OG Field Source found for id `{id}`")
     return model.as_entity()
+
+
+async def get_source_detail(
+    session: AsyncSession,
+    id: int,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> OGFieldSourceDetail:
+    model = await session.get(OilGasFieldSourceModel, id)
+    if model is None:
+        raise SourceNotFoundError(f"No OG Field Source found for id `{id}`")
+    if licensed_sources is not None and model.source not in licensed_sources:
+        raise SourceNotFoundError(f"No OG Field Source found for id `{id}`")
+    return model.as_detail_entity()
 
 
 async def get_sources(

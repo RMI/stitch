@@ -16,6 +16,7 @@ from stitch.api.entities import (
     User,
 )
 from tests.factories import ResourceCreateFactory
+from tests.utils import make_source_record
 
 
 _QueryParams = OGFieldQueryParams
@@ -34,6 +35,8 @@ async def _create_resource_with_sources(
     for row in source_rows:
         source = OilGasFieldSourceModel(
             **row,
+            source_record=make_source_record(payload=row),
+            source_record_hash="test-hash",
             created_by_id=user.id,
             last_updated_by_id=user.id,
         )

@@ -79,13 +79,13 @@ class TestCreateResourceUnit:
         mock_uow,
         test_user,
         og_res_fact: ResourceCreateFactory,
+        og_create_res_fact: ResourceCreateFactory,
         source_maker: SourceFactory,
     ):
         """POST /resources/ calls repo.create with user and data."""
         src = source_maker(id=1, source="wm")
         expected = og_res_fact(id=123, source_data=[src])
-        in_src = source_maker(source="wm", name="New Resource")
-        resource_in = og_res_fact(empty=True, source_data=[in_src])
+        resource_in = og_create_res_fact(sources=[("wm", False)])
 
         async def override_get_uow():
             yield mock_uow
@@ -111,14 +111,14 @@ class TestCreateResourceUnit:
         self,
         async_client,
         mock_uow,
-        source_maker: SourceFactory,
         og_res_fact: ResourceCreateFactory,
+        og_create_res_fact: ResourceCreateFactory,
+        source_maker: SourceFactory,
     ):
         """POST /resources/ returns the created resource entity."""
         src = source_maker(id=1, source="wm", name="Created Resource")
         expected = og_res_fact(id=456, source_data=[src])
-        src_in = source_maker(managed=False, source="wm", name="Created Resource")
-        resource_in = og_res_fact(empty=True, source_data=[src_in])
+        resource_in = og_create_res_fact(name="Created Resource", sources=[])
 
         async def override_get_uow():
             yield mock_uow
@@ -135,7 +135,6 @@ class TestCreateResourceUnit:
         assert response.status_code == 200
         data = response.json()
         assert data["id"] == 456
-        assert data.get("view", None) is None
         assert len((source_data := data.get("source_data", []))) == 1
         assert source_data[0]["name"] == "Created Resource"
 

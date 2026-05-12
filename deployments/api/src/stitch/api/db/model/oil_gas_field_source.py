@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Collection, Sequence
+import hashlib
+import json
 from typing import Any, ClassVar, override
 
 from pydantic import TypeAdapter
@@ -10,7 +12,14 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.orm import Mapped, mapped_column
-from stitch.ogsi.model import OGFieldSource, OilGasOperator, OilGasOwner
+from stitch.ogsi.model import (
+    OGFieldSource,
+    OGFieldSourceCreate,
+    OGFieldSourceDetail,
+    OilGasOperator,
+    OilGasOwner,
+    SourceRecord,
+)
 from stitch.ogsi.model.types import (
     FieldStatus,
     LocationType,
@@ -32,6 +41,9 @@ class OilGasFieldSourceModel(OGFieldQueryMixin, TimestampMixin, UserAuditMixin, 
     """A single OG field source record (canonicalized), feedable into a Resource."""
 
     type_adapter: ClassVar[TypeAdapter[OGFieldSource]] = TypeAdapter(OGFieldSource)
+    detail_type_adapter: ClassVar[TypeAdapter[OGFieldSourceDetail]] = TypeAdapter(
+        OGFieldSourceDetail
+    )
 
     __tablename__: str = "oil_gas_field_sources"
 
@@ -43,6 +55,8 @@ class OilGasFieldSourceModel(OGFieldQueryMixin, TimestampMixin, UserAuditMixin, 
     # JSON columns
     owners: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     operators: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    source_record: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    source_record_hash: Mapped[str] = mapped_column(nullable=False)
 
     @classmethod
     @override
@@ -69,6 +83,8 @@ class OilGasFieldSourceModel(OGFieldQueryMixin, TimestampMixin, UserAuditMixin, 
         cls,
         created_by: User,
         source: OGSISrcKey,
+        source_record: SourceRecord,
+        source_record_hash: str,
         name: str | None = None,
         country: str | None = None,
         basin: str | None = None,
@@ -111,12 +127,16 @@ class OilGasFieldSourceModel(OGFieldQueryMixin, TimestampMixin, UserAuditMixin, 
             last_updated_by_id=created_by.id,
             owners=[owner.model_dump() for owner in (owners or [])],
             operators=[op.model_dump() for op in (operators or [])],
+            source_record=source_record.model_dump(mode="json"),
+            source_record_hash=source_record_hash,
         )
 
     @classmethod
-    def create_from_entity(cls, ent: OGFieldSource, created_by: User):
+    def create_from_entity(cls, ent: OGFieldSourceCreate, created_by: User):
         cols = {col.key for col in inspect(cls).columns}
-        kwargs = {k: val for k, val in ent.model_dump().items() if k in cols}
+        payload = ent.model_dump(mode="json")
+        kwargs = {k: val for k, val in payload.items() if k in cols}
+        kwargs["source_record_hash"] = cls.hash_source_record_payload(ent.source_record)
         return cls(
             **kwargs, created_by_id=created_by.id, last_updated_by_id=created_by.id
         )
@@ -124,9 +144,22 @@ class OilGasFieldSourceModel(OGFieldQueryMixin, TimestampMixin, UserAuditMixin, 
     def as_entity(self) -> OGFieldSource:
         return self.__class__.type_adapter.validate_python(self)
 
+    def as_detail_entity(self) -> OGFieldSourceDetail:
+        return self.__class__.detail_type_adapter.validate_python(self)
+
     @classmethod
     def from_entity(cls, entity: OGFieldSource):
         mapper = inspect(cls)
         column_keys = {col.key for col in mapper.columns}
         filtered = {k: v for k, v in entity.model_dump().items() if k in column_keys}
         return cls(**filtered)
+
+    @staticmethod
+    def hash_source_record_payload(source_record: SourceRecord) -> str:
+        canonical = json.dumps(
+            source_record.payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from importlib.metadata import PackageNotFoundError, version
 import logging
 import random
-from typing import Any, Iterable, get_args, Iterator
+from typing import Any, Iterable, Iterator, get_args
+from uuid import uuid4
 
 from faker import Faker
 
@@ -17,6 +20,7 @@ from stitch.ogsi.model.types import (
 )
 
 logger = logging.getLogger("stitch.seed")
+_SEED_PACKAGE_NAME = "stitch-seed"
 
 
 def _seed(random_seed: int | None) -> int | None:
@@ -138,17 +142,92 @@ def build_og_field(
 def build_payload(
     *, fake: Faker, seed_source: str, rng: random.Random, null_prob: float
 ) -> dict[str, Any]:
-    """
-    POST body is Resource-Input (OpenAPI), which requires id.
-    """
     src = build_og_field(
         fake=fake, seed_source=seed_source, rng=rng, null_prob=null_prob
     )
 
     return {
-        "id": 0,
+        "id": None,
         "source_data": [src],
         "constituents": [],
+    }
+
+
+def _producer_identity() -> str:
+    try:
+        package_version = version(_SEED_PACKAGE_NAME)
+    except PackageNotFoundError:
+        logger.warning("Could not resolve installed version for %s", _SEED_PACKAGE_NAME)
+        package_version = "unknown"
+    return f"{_SEED_PACKAGE_NAME}@{package_version}"
+
+
+def _now_utc() -> datetime:
+    return datetime.now(UTC)
+
+
+def _wrap_static_source(
+    source_payload: dict[str, Any], *, producer: str, run_id: str
+) -> dict[str, Any]:
+    return {
+        **source_payload,
+        "source_record": {
+            "kind": "seed_static",
+            "record_id": None,
+            "run_id": run_id,
+            "observed_at": _now_utc(),
+            "producer": producer,
+            "payload": source_payload,
+        },
+    }
+
+
+def _wrap_faker_source(
+    source_payload: dict[str, Any],
+    *,
+    producer: str,
+    run_id: str,
+    record_index: int,
+    seed_source: str,
+    null_prob: float,
+    random_seed: int | None,
+) -> dict[str, Any]:
+    return {
+        **source_payload,
+        "source_record": {
+            "kind": "seed_faker",
+            "record_id": f"{run_id}:{record_index}",
+            "run_id": run_id,
+            "observed_at": _now_utc(),
+            "producer": producer,
+            "payload": {
+                "generated_source": source_payload,
+                "seed_config": {
+                    "seed_source": seed_source,
+                    "null_probability": null_prob,
+                },
+                "random_seed": random_seed,
+                "record_index": record_index,
+                "source_discriminator": source_payload["source"],
+            },
+        },
+    }
+
+
+def _wrap_static_payload(
+    payload: dict[str, Any], *, producer: str, run_id: str
+) -> dict[str, Any]:
+    source_data = payload.get("source_data", [])
+    if not isinstance(source_data, list):
+        return payload
+    return {
+        **payload,
+        "source_data": [
+            _wrap_static_source(source, producer=producer, run_id=run_id)
+            if isinstance(source, dict)
+            else source
+            for source in source_data
+        ],
     }
 
 
@@ -158,16 +237,38 @@ def _iter_faker_payload(
     seed_source: str,
     rng: random.Random,
     null_prob: float,
+    producer: str,
+    run_id: str,
+    random_seed: int | None,
 ) -> Iterator[dict[str, Any]]:
     logger.info("Seeding random payloads")
     for i in range(1, faker_count + 1):
         logger.debug("Random payload %s", i)
-        yield build_payload(
+        payload = build_payload(
             fake=fake, seed_source=seed_source, rng=rng, null_prob=null_prob
         )
+        source_data = payload.get("source_data", [])
+        if isinstance(source_data, list):
+            payload["source_data"] = [
+                _wrap_faker_source(
+                    source,
+                    producer=producer,
+                    run_id=run_id,
+                    record_index=i,
+                    seed_source=seed_source,
+                    null_prob=null_prob,
+                    random_seed=random_seed,
+                )
+                if isinstance(source, dict)
+                else source
+                for source in source_data
+            ]
+        yield payload
 
 
-def _iter_static_payloads(static_payload_dir: str) -> Iterator[dict[str, Any]]:
+def _iter_static_payloads(
+    static_payload_dir: str, *, producer: str, run_id: str
+) -> Iterator[dict[str, Any]]:
     """
     Load JSON payloads from a directory.
     Each file may be either:
@@ -203,13 +304,13 @@ def _iter_static_payloads(static_payload_dir: str) -> Iterator[dict[str, Any]]:
         if isinstance(raw, list):
             for item in raw:
                 if isinstance(item, dict):
-                    yield item
+                    yield _wrap_static_payload(item, producer=producer, run_id=run_id)
                 else:
                     logger.warning(
                         "Skipping non-object item in %s: %r", path, type(item).__name__
                     )
         elif isinstance(raw, dict):
-            yield raw
+            yield _wrap_static_payload(raw, producer=producer, run_id=run_id)
         else:
             logger.warning(
                 "Skipping %s: expected object or list, got %r", path, type(raw).__name__
@@ -226,11 +327,15 @@ def iter_payloads(
     seed = _seed(random_seed)
     rng = random.Random(seed)
     fake = Faker()
+    producer = _producer_identity()
+    run_id = str(uuid4())
     if seed is not None:
         Faker.seed(seed)
 
     if static_payload_dir is not None:
-        yield from _iter_static_payloads(static_payload_dir)
+        yield from _iter_static_payloads(
+            static_payload_dir, producer=producer, run_id=run_id
+        )
 
     if faker_count is not None and faker_count > 0:
         yield from _iter_faker_payload(
@@ -239,4 +344,7 @@ def iter_payloads(
             seed_source=seed_source,
             rng=rng,
             null_prob=null_prob,
+            producer=producer,
+            run_id=run_id,
+            random_seed=seed,
         )

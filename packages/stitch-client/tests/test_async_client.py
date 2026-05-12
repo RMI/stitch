@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 import pytest
 from pydantic import ValidationError
-from stitch.ogsi.model import OGFieldResource
+from stitch.ogsi.model import OGFieldResourceCreate
 
 from stitch.client import (
     AsyncStitchClient,
@@ -42,6 +42,18 @@ def make_valid_og_field_payload() -> dict[str, Any]:
                 "source": "gem",
                 "name": "Alpha Field",
                 "country": "USA",
+                "source_record": {
+                    "kind": "seed_static",
+                    "record_id": None,
+                    "run_id": "test-run-id",
+                    "observed_at": "2026-01-01T00:00:00Z",
+                    "producer": "stitch-seed@test",
+                    "payload": {
+                        "source": "gem",
+                        "name": "Alpha Field",
+                        "country": "USA",
+                    },
+                },
             }
         ],
         "constituents": [],
@@ -463,7 +475,7 @@ async def test_create_oil_gas_field_accepts_typed_model() -> None:
         return httpx.Response(200, json={"id": 7})
 
     client, raw_client = make_client(handler)
-    model_payload = OGFieldResource.model_validate(make_valid_og_field_payload())
+    model_payload = OGFieldResourceCreate.model_validate(make_valid_og_field_payload())
 
     await client.create_oil_gas_field(model_payload)
 

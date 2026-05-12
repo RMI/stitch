@@ -30,7 +30,11 @@ from stitch.api.db.og_field_source_actions import (
     attach_sources_to_resource,
     get_or_create_sources,
 )
-from stitch.ogsi.model import OGFieldListItemView, OGFieldResource
+from stitch.ogsi.model import (
+    OGFieldListItemView,
+    OGFieldResource,
+    OGFieldResourceCreate,
+)
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
 
@@ -277,7 +281,7 @@ async def get(
 
 
 async def create(
-    session: AsyncSession, user: CurrentUser, resource: OGFieldResource
+    session: AsyncSession, user: CurrentUser, resource: OGFieldResourceCreate
 ) -> OGFieldResource:
     """
     Here we create a resource either from new source data or existing source data. It's also possible
