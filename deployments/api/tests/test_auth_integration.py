@@ -1,11 +1,7 @@
 """Integration tests for auth module JIT user provisioning."""
 
-from unittest.mock import AsyncMock, MagicMock
-
 import pytest
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 from stitch.auth import TokenClaims
@@ -213,58 +209,6 @@ class TestGetCurrentUserJITProvisioning:
             assert row.email == "existing@example.com"
 
     @pytest.mark.anyio
-    async def test_handles_concurrent_first_login(
-        self,
-        integration_session_factory,
-    ):
-        """IntegrityError caught on concurrent insert, re-queries successfully."""
-        async with integration_session_factory() as session:
-            session.add(
-                UserModel(
-                    sub="auth0|race-user", name="Racer", email="racer@example.com"
-                )
-            )
-            await session.commit()
-
-        claims = _make_claims(
-            sub="auth0|race-user", name="Racer", email="racer@example.com"
-        )
-
-        user = await get_current_user(claims, integration_session_factory)
-
-        assert user.sub == "auth0|race-user"
-
-    @pytest.mark.anyio
-    async def test_concurrent_first_login_backfills_missing_fields(
-        self,
-        integration_session_factory,
-    ):
-        """Concurrent winner with null fields still gets current claims back-filled."""
-        async with integration_session_factory() as session:
-            session.add(UserModel(sub="auth0|race-backfill", name=None, email=None))
-            await session.commit()
-
-        claims = _make_claims(
-            sub="auth0|race-backfill",
-            name="Filled After Race",
-            email="race@example.com",
-        )
-
-        user = await get_current_user(claims, integration_session_factory)
-
-        assert user.name == "Filled After Race"
-        assert user.email == "race@example.com"
-
-        async with integration_session_factory() as session:
-            row = (
-                await session.execute(
-                    select(UserModel).where(UserModel.sub == "auth0|race-backfill")
-                )
-            ).scalar_one()
-            assert row.name == "Filled After Race"
-            assert row.email == "race@example.com"
-
-    @pytest.mark.anyio
     async def test_provisioning_survives_caller_rollback(
         self,
         integration_session_factory,
@@ -314,34 +258,3 @@ class TestGetCurrentUserJITProvisioning:
             ).scalar_one()
             assert row.name == "Filled"
             assert row.email == "filled@example.com"
-
-
-class TestGetCurrentUserIntegrityErrorHandling:
-    """Unit tests for narrowed IntegrityError recovery."""
-
-    @pytest.mark.anyio
-    async def test_unrelated_integrity_error_propagates(self):
-        """An IntegrityError without a concurrent row must propagate, not be masked."""
-        miss_result = MagicMock()
-        miss_result.scalar_one_or_none = MagicMock(return_value=None)
-
-        session = MagicMock(spec=AsyncSession)
-        session.execute = AsyncMock(return_value=miss_result)
-        session.add = MagicMock()
-        session.commit = AsyncMock(
-            side_effect=IntegrityError(
-                "INSERT INTO users", {}, Exception("simulated check constraint")
-            )
-        )
-        session.rollback = AsyncMock()
-        session.__aenter__ = AsyncMock(return_value=session)
-        session.__aexit__ = AsyncMock(return_value=None)
-
-        factory = MagicMock(return_value=session)
-
-        claims = _make_claims(sub="auth0|broken")
-
-        with pytest.raises(IntegrityError):
-            await get_current_user(claims, factory)
-
-        session.rollback.assert_awaited_once()

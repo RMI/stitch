@@ -123,10 +123,7 @@ async def get_current_user(claims: Claims, session_factory: SessionFactoryDep) -
     """Resolve TokenClaims to a User entity. JIT provision on first login.
 
     Runs in a dedicated session so user creation and claim back-fill
-    persist even if the request handler later errors. On IntegrityError,
-    re-queries by sub: a found row means a concurrent first-login won the
-    race; not finding the row means an unrelated constraint failed and the
-    original exception is re-raised so it isn't masked.
+    persist even if the request handler later errors.
     """
     async with session_factory() as session:
         try:
@@ -149,15 +146,10 @@ async def get_current_user(claims: Claims, session_factory: SessionFactoryDep) -
             await session.commit()
         except IntegrityError:
             await session.rollback()
-            user_model = (
-                await session.execute(
-                    select(UserModel).where(UserModel.sub == claims.sub)
-                )
-            ).scalar_one_or_none()
-            if user_model is None:
-                raise
-            if _apply_claim_backfill(user_model, claims):
-                await session.commit()
+            # Known risk: we do not try to recover from simultaneous first-login
+            # races. If two requests create the same sub concurrently, one may
+            # receive a transient 500 from the unique constraint violation.
+            raise
 
         return _to_entity(user_model)
 
