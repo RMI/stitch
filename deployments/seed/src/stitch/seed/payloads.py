@@ -162,8 +162,8 @@ def _producer_identity() -> str:
     return f"{_SEED_PACKAGE_NAME}@{package_version}"
 
 
-def _now_utc() -> datetime:
-    return datetime.now(UTC)
+def _now_utc_iso() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _wrap_static_source(
@@ -175,7 +175,7 @@ def _wrap_static_source(
             "kind": "seed_static",
             "record_id": None,
             "run_id": run_id,
-            "observed_at": _now_utc(),
+            "observed_at": _now_utc_iso(),
             "producer": producer,
             "payload": source_payload,
         },
@@ -198,7 +198,7 @@ def _wrap_faker_source(
             "kind": "seed_faker",
             "record_id": f"{run_id}:{record_index}",
             "run_id": run_id,
-            "observed_at": _now_utc(),
+            "observed_at": _now_utc_iso(),
             "producer": producer,
             "payload": {
                 "generated_source": source_payload,
