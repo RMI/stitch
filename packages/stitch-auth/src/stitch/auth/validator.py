@@ -1,16 +1,13 @@
 from datetime import timedelta
+from email.utils import parseaddr
 from typing import Any
 
 import jwt
 from jwt import PyJWKClient
-from pydantic import EmailStr, TypeAdapter, ValidationError
 
 from .claims import TokenClaims
 from .errors import JWKSFetchError, TokenExpiredError, TokenValidationError
 from .settings import OIDCSettings
-
-
-_EMAIL = TypeAdapter(EmailStr)
 
 
 def _extract_permissions(payload: dict[str, Any]) -> frozenset[str]:
@@ -36,10 +33,21 @@ def _validated_email(value: object) -> str | None:
     candidate = value.strip()
     if not candidate:
         return None
-    try:
-        return str(_EMAIL.validate_python(candidate))
-    except ValidationError:
+    parsed_name, parsed_addr = parseaddr(candidate)
+    if parsed_name or parsed_addr != candidate:
         return None
+    if candidate.count("@") != 1:
+        return None
+    local, domain = candidate.split("@", 1)
+    if not local or not domain:
+        return None
+    if "." not in domain:
+        return None
+    if domain.startswith(".") or domain.endswith("."):
+        return None
+    if ".." in candidate:
+        return None
+    return candidate
 
 
 class JWTValidator:
