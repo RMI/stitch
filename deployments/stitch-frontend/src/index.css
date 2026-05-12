@@ -110,4 +110,11 @@
   textarea {
     font: inherit;
   }
+
+  input[type="search"]::-webkit-search-cancel-button,
+  input[type="search"]::-webkit-search-decoration {
+    display: none;
+    -webkit-appearance: none;
+    appearance: none;
+  }
 }
