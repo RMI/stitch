@@ -4,7 +4,7 @@ import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { auth0TestDefaults, renderWithQueryClient } from "../test/utils";
 import ResourceDetailPage from "./ResourceDetailPage";
-import { useResourceDetail } from "../hooks/useResources";
+import { useResourceDetail, useSourceDetail } from "../hooks/useResources";
 import * as apiModule from "../queries/api";
 
 vi.mock("../hooks/useResources");
@@ -46,7 +46,21 @@ const mockDetailView = {
     fid_year: null,
   },
   provenance: {},
-  source_data: [],
+  source_data: [
+    {
+      id: 11,
+      source: "gem",
+      name: "Burgan Source",
+      country: "Kuwait",
+    },
+  ],
+};
+
+const defaultSourceDetailHookReturn = {
+  data: null,
+  isLoading: false,
+  isError: false,
+  error: null,
 };
 
 const defaultHookReturn = {
@@ -66,6 +80,7 @@ beforeEach(() => {
     ...defaultHookReturn,
     refetch: vi.fn(),
   });
+  vi.mocked(useSourceDetail).mockReturnValue(defaultSourceDetailHookReturn);
 });
 
 describe("ResourceDetailPage", () => {
@@ -219,6 +234,55 @@ describe("ResourceDetailPage", () => {
     expect(
       screen.getByRole("button", { name: /generate suggestion/i }),
     ).toBeInTheDocument();
+  });
+
+  it("shows source detail controls for each attached source", () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(
+      screen.getByRole("heading", { name: /source details/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /show details/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Burgan Source")).toBeInTheDocument();
+  });
+
+  it("renders raw source record details when a source detail panel is opened", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    vi.mocked(useSourceDetail).mockReturnValue({
+      ...defaultSourceDetailHookReturn,
+      data: {
+        id: 11,
+        source: "gem",
+        name: "Burgan Source",
+        country: "Kuwait",
+        source_record_hash: "abc123",
+        source_record: {
+          producer: "stitch-seed@0.1.0",
+          payload: { name: "Burgan Source" },
+        },
+      },
+    });
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(screen.getByRole("button", { name: /show details/i }));
+
+    expect(await screen.findByText("Source Hash")).toBeInTheDocument();
+    expect(screen.getByText("abc123")).toBeInTheDocument();
+    expect(screen.getByText("stitch-seed@0.1.0")).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/"name": "Burgan Source"/).length,
+    ).toBeGreaterThan(0);
   });
 
   it("generates and renders an AI suggestion preview", async () => {

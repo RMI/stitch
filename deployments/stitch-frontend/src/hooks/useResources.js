@@ -56,6 +56,18 @@ function useResourceDetailReal(endpoint = "resources", id, enabled = false) {
   });
 }
 
+function useSourceDetailReal(
+  endpoint = "oil-gas-field-sources",
+  id,
+  enabled = false,
+) {
+  const config = useConfig();
+  return useAuthenticatedQuery({
+    ...resourceQueries.detail(config, endpoint, id),
+    enabled,
+  });
+}
+
 function useMergeCandidatesReal(endpoint = "oil-gas-fields", enabled = false) {
   const config = useConfig();
   return useAuthenticatedQuery({
@@ -104,6 +116,18 @@ function useResourceDetailMock(endpoint = "resources", id, enabled = false) {
     queryKey: resourceKeys.detail(endpoint, id),
     queryFn: () =>
       Promise.resolve(mockResources.find((r) => r.id === id) ?? null),
+    enabled,
+  });
+}
+
+function useSourceDetailMock(
+  endpoint = "oil-gas-field-sources",
+  id,
+  enabled = false,
+) {
+  return useQuery({
+    queryKey: resourceKeys.detail(endpoint, id),
+    queryFn: () => Promise.resolve(null),
     enabled,
   });
 }
@@ -158,6 +182,9 @@ export const useResource = USE_MOCK_DATA ? useResourceMock : useResourceReal;
 export const useResourceDetail = USE_MOCK_DATA
   ? useResourceDetailMock
   : useResourceDetailReal;
+export const useSourceDetail = USE_MOCK_DATA
+  ? useSourceDetailMock
+  : useSourceDetailReal;
 export const useMergeCandidates = USE_MOCK_DATA
   ? useMergeCandidatesMock
   : useMergeCandidatesReal;
