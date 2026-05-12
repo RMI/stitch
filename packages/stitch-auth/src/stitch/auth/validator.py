@@ -3,10 +3,14 @@ from typing import Any
 
 import jwt
 from jwt import PyJWKClient
+from pydantic import EmailStr, TypeAdapter, ValidationError
 
 from .claims import TokenClaims
 from .errors import JWKSFetchError, TokenExpiredError, TokenValidationError
 from .settings import OIDCSettings
+
+
+_EMAIL = TypeAdapter(EmailStr)
 
 
 def _extract_permissions(payload: dict[str, Any]) -> frozenset[str]:
@@ -24,6 +28,18 @@ def _extract_permissions(payload: dict[str, Any]) -> frozenset[str]:
     if not all(isinstance(item, str) for item in value):
         raise TokenValidationError("permissions claim must be a list of strings")
     return frozenset(value)
+
+
+def _validated_email(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    candidate = value.strip()
+    if not candidate:
+        return None
+    try:
+        return str(_EMAIL.validate_python(candidate))
+    except ValidationError:
+        return None
 
 
 class JWTValidator:
@@ -66,7 +82,9 @@ class JWTValidator:
         except jwt.InvalidTokenError as e:
             raise TokenValidationError(str(e)) from e
 
-        email = payload.get("email") or payload.get("preferred_username")
+        email = _validated_email(payload.get("email"))
+        if email is None:
+            email = _validated_email(payload.get("preferred_username"))
         name = payload.get("name")
         permissions = _extract_permissions(payload)
 
