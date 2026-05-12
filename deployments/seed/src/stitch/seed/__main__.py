@@ -1,6 +1,6 @@
 import asyncio
 
-from stitch.client import AsyncStitchClient
+from stitch.client import AsyncStitchClient, env_bearer_token_headers_provider
 
 from .client import post_payloads
 from .config import configure_logging, load_config, logger
@@ -22,10 +22,13 @@ async def run() -> None:
         seed_source=cfg.seed_source,
         null_prob=cfg.null_probability,
     )
+    headers_provider = env_bearer_token_headers_provider()
+    headers_provider()
 
     async with AsyncStitchClient(
         base_url=cfg.api_base_url,
         timeout=cfg.http_timeout_seconds,
+        headers_provider=headers_provider,
     ) as client:
         await client.wait_for_health()
         await post_payloads(client, payloads)

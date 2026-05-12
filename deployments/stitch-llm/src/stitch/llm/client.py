@@ -1,26 +1,16 @@
 from __future__ import annotations
 
-from stitch.client import AsyncStitchClient
+from stitch.client import AsyncStitchClient, env_bearer_token_headers_provider
 from stitch.ogsi.model import OGFieldDetailView
 from pydantic import ValidationError
 
-from stitch.llm.errors import LLMConfigurationError, ModelOutputError
+from stitch.llm.errors import ModelOutputError
 from stitch.llm.settings import Settings, get_settings
 
-DEV_PLACEHOLDER_TOKEN = "dev-placeholder-token"
 
-
-def downstream_auth_headers(settings: Settings | None = None) -> dict[str, str]:
-    settings = settings or get_settings()
-
-    if settings.auth_disabled:
-        token = DEV_PLACEHOLDER_TOKEN
-    elif settings.machine_token is not None:
-        token = settings.machine_token.get_secret_value()
-    else:
-        raise LLMConfigurationError("stitch-llm downstream auth is not configured.")
-
-    return {"Authorization": f"Bearer {token}"}
+def validate_downstream_auth_config_at_startup() -> None:
+    headers_provider = env_bearer_token_headers_provider()
+    headers_provider()
 
 
 class StitchApiClient:
@@ -30,10 +20,15 @@ class StitchApiClient:
         settings: Settings | None = None,
     ) -> None:
         self._settings = settings or get_settings()
-        self._client = client or AsyncStitchClient(
+        if client is not None:
+            self._client = client
+            return
+
+        headers_provider = env_bearer_token_headers_provider()
+        self._client = AsyncStitchClient(
             base_url=str(self._settings.api_base_url),
             timeout=30.0,
-            headers_provider=lambda: downstream_auth_headers(self._settings),
+            headers_provider=headers_provider,
         )
 
     async def __aenter__(self) -> "StitchApiClient":
@@ -53,3 +48,6 @@ class StitchApiClient:
             raise ModelOutputError(
                 "Stitch API returned invalid detail payload."
             ) from exc
+
+    async def get_auth_me(self) -> dict[str, object]:
+        return await self._client.get_auth_me()
