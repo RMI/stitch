@@ -96,6 +96,8 @@ def make_create_source(
             return WoodMacSourceCreate(source="wm", **payload)
         case "gem":
             return GemSourceCreate(source="gem", **payload)
+        case _:
+            raise ValueError(f"Unsupported source key: {source!r}")
 
 
 def make_resource(
