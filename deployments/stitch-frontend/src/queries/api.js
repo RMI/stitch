@@ -78,6 +78,72 @@ export async function createLLMSuggestion(
   return await response.json();
 }
 
+function formatApiErrorDetail(detail, fallbackStatus) {
+  if (typeof detail === "string" && detail) return detail;
+  if (Array.isArray(detail) || (detail && typeof detail === "object")) {
+    return JSON.stringify(detail, null, 2);
+  }
+  return `HTTP error! status: ${fallbackStatus}`;
+}
+
+export async function createResource(
+  config,
+  payload,
+  fetcher,
+  endpoint = "oil-gas-fields",
+) {
+  const url = `${config.apiBaseUrl}/${endpoint}/`;
+  const response = await fetcher(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    let detail = `HTTP error! status: ${response.status}`;
+    try {
+      const body = await response.json();
+      detail = formatApiErrorDetail(body?.detail, response.status);
+    } catch {
+      // Ignore JSON parsing failures and fall back to status text.
+    }
+    const error = new Error(detail);
+    error.status = response.status;
+    throw error;
+  }
+
+  return await response.json();
+}
+
+export async function createMergeCandidate(
+  config,
+  resource_ids,
+  fetcher,
+  endpoint = "oil-gas-fields",
+) {
+  const url = `${config.apiBaseUrl}/${endpoint}/merge-candidates`;
+  const response = await fetcher(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ resource_ids }),
+  });
+
+  if (!response.ok) {
+    let detail = `HTTP error! status: ${response.status}`;
+    try {
+      const body = await response.json();
+      detail = formatApiErrorDetail(body?.detail, response.status);
+    } catch {
+      // Ignore JSON parsing failures and fall back to status text.
+    }
+    const error = new Error(detail);
+    error.status = response.status;
+    throw error;
+  }
+
+  return await response.json();
+}
+
 export async function getMergeCandidates(
   config,
   fetcher,

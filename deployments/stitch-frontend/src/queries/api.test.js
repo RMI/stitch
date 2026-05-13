@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createLLMSuggestion, getResources, getResource } from "./api";
+import {
+  createLLMSuggestion,
+  createMergeCandidate,
+  createResource,
+  getResources,
+  getResource,
+} from "./api";
 
 describe("API Functions", () => {
   let mockFetcher;
@@ -184,6 +190,7 @@ describe("API Functions", () => {
           citations: [],
           query_succeeded: true,
           model: "test-model",
+          observed_at: "2026-05-13T12:00:00Z",
           foundry_request: {},
           foundry_response: {},
         }),
@@ -202,6 +209,89 @@ describe("API Functions", () => {
         { method: "GET" },
       );
       expect(result.value).toBe("Songliao Basin");
+    });
+  });
+
+  describe("createResource", () => {
+    it("posts the resource payload to the Stitch API", async () => {
+      const payload = { source_data: [{ source: "llm" }] };
+      mockFetcher.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 123 }),
+      });
+
+      const result = await createResource(
+        config,
+        payload,
+        mockFetcher,
+        "oil-gas-fields",
+      );
+
+      expect(mockFetcher).toHaveBeenCalledWith(
+        "http://localhost:8000/api/v1/oil-gas-fields/",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
+      expect(result).toEqual({ id: 123 });
+    });
+
+    it("stringifies structured validation errors from the API", async () => {
+      mockFetcher.mockResolvedValueOnce({
+        ok: false,
+        status: 422,
+        json: async () => ({
+          detail: [
+            { loc: ["body", "source_data", 0, "llm", "name"], msg: "Field required" },
+          ],
+        }),
+      });
+
+      await expect(
+        createResource(config, { source_data: [] }, mockFetcher, "oil-gas-fields"),
+      ).rejects.toMatchObject({
+        message: JSON.stringify(
+          [
+            {
+              loc: ["body", "source_data", 0, "llm", "name"],
+              msg: "Field required",
+            },
+          ],
+          null,
+          2,
+        ),
+        status: 422,
+      });
+    });
+  });
+
+  describe("createMergeCandidate", () => {
+    it("posts the resource ids to create a merge candidate", async () => {
+      mockFetcher.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 88, resource_ids: [42, 123] }),
+      });
+
+      const result = await createMergeCandidate(
+        config,
+        [42, 123],
+        mockFetcher,
+        "oil-gas-fields",
+      );
+
+      expect(mockFetcher).toHaveBeenCalledWith(
+        "http://localhost:8000/api/v1/oil-gas-fields/merge-candidates",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ resource_ids: [42, 123] }),
+        },
+      );
+      expect(result).toEqual({ id: 88, resource_ids: [42, 123] });
     });
   });
 });
