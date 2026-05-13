@@ -15,9 +15,6 @@ dependencies = [
   "stitch-ogsi",
 ]
 
-[project.scripts]
-stitch-entity-linkage = "stitch.entity_linkage.__main__:main"
-
 [build-system]
 requires = ["uv_build>=0.9.16,<0.10.0"]
 build-backend = "uv_build"
