@@ -243,11 +243,15 @@ describe("API Functions", () => {
       mockFetcher.mockResolvedValueOnce({
         ok: false,
         status: 422,
-        json: async () => ({
-          detail: [
-            { loc: ["body", "source_data", 0, "llm", "name"], msg: "Field required" },
-          ],
-        }),
+        text: async () =>
+          JSON.stringify({
+            detail: [
+              {
+                loc: ["body", "source_data", 0, "llm", "name"],
+                msg: "Field required",
+              },
+            ],
+          }),
       });
 
       await expect(
@@ -292,6 +296,28 @@ describe("API Functions", () => {
         },
       );
       expect(result).toEqual({ id: 88, resource_ids: [42, 123] });
+    });
+
+    it("surfaces API error detail and status for failed merge creation", async () => {
+      mockFetcher.mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        text: async () =>
+          JSON.stringify({
+            detail: { message: "Merge candidate already exists" },
+          }),
+      });
+
+      await expect(
+        createMergeCandidate(config, [42, 123], mockFetcher, "oil-gas-fields"),
+      ).rejects.toMatchObject({
+        message: JSON.stringify(
+          { message: "Merge candidate already exists" },
+          null,
+          2,
+        ),
+        status: 409,
+      });
     });
   });
 });
