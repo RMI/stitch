@@ -9,7 +9,7 @@ import { resourceKeys } from "../queries/resources";
 import { useConfig } from "../config/useConfig";
 
 export default function ResourceView({
-  className,
+  className = "",
   endpoint,
   initialID = null,
   showControls = true,
@@ -38,20 +38,28 @@ export default function ResourceView({
       refetch();
     }
   };
+  const headingClass = showControls
+    ? "mb-3 text-2xl font-semibold text-ink"
+    : "mb-3 text-lg font-semibold text-ink";
+  const emptyMessage = showControls
+    ? "No resource loaded. Click the button above to fetch a resource."
+    : "Resource evidence has not loaded.";
 
   return (
-    <div className={`max-w-4xl mx-auto ${className}`}>
-      <h1 className="text-3xl font-bold mb-3 text-gray-800">
-        Resource ID: {id}
+    <div className={`mx-auto max-w-4xl ${className}`}>
+      <h1 className={headingClass}>
+        {showControls ? `Resource ID: ${id}` : `Resource #${id}`}
       </h1>
-      <div className=" text-gray-500 pb-4">
-        <span className="font-bold">
-          {config.apiBaseUrl}/{endpoint}
-        </span>
-      </div>
+      {showControls && (
+        <div className="pb-4 text-sm text-ink-muted">
+          <span className="font-semibold">
+            {config.apiBaseUrl}/{endpoint}
+          </span>
+        </div>
+      )}
 
       {showControls && (
-        <div className="mb-6 flex gap-3">
+        <div className="mb-6 flex flex-wrap gap-2">
           <Input
             type="number"
             value={inputId}
@@ -74,7 +82,7 @@ export default function ResourceView({
         isLoading={isLoading}
         isError={isError}
         error={error}
-        message={`No resource loaded. Click the button above to fetch a resource.`}
+        message={emptyMessage}
       />
     </div>
   );
