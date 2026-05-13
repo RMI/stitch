@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
@@ -52,7 +52,7 @@ async def suggest_oil_gas_field_value(
     id: int,
     field: Annotated[AllowedSuggestionField, Query()],
 ) -> FieldSuggestionResponse:
-    observed_at = datetime.now(timezone.utc)
+    observed_at = datetime.now(UTC)
     try:
         async with StitchApiClient() as stitch_client:
             detail_view = await stitch_client.get_oil_gas_field_detail(id)
