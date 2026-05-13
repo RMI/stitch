@@ -155,6 +155,7 @@ jobs:
       environment-variables: >-
         LOG_LEVEL=info
         AUTH_DISABLED=true
+        STITCH_CLIENT_BEARER_TOKEN=dev-placeholder-token
         ENTITY_LINKAGE_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
         ENTITY_LINKAGE_FRONTEND_ORIGIN_URL=${{
           github.event_name == 'pull_request' &&
@@ -184,6 +185,7 @@ jobs:
       environment-variables: >-
         STITCH_LLM_LOG_LEVEL=info
         AUTH_DISABLED=true
+        STITCH_CLIENT_BEARER_TOKEN=dev-placeholder-token
         STITCH_LLM_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
         STITCH_LLM_FRONTEND_ORIGIN_URL=${{
           github.event_name == 'pull_request' &&

@@ -39,6 +39,7 @@ jobs:
           SEED_SOURCE: "mixed"
           NULL_PROBABILITY: "0.3"
           STATIC_PAYLOAD_DIR: "/mnt/data"
+          STITCH_CLIENT_BEARER_TOKEN: "dev-placeholder-token"
         run: |
           set -euo pipefail
 
@@ -50,6 +51,7 @@ jobs:
             -e SEED_SOURCE \
             -e NULL_PROBABILITY \
             -e STATIC_PAYLOAD_DIR \
+            -e STITCH_CLIENT_BEARER_TOKEN \
             -v "$GITHUB_WORKSPACE/deployments/seed/data:/mnt/data:ro" \
             "${{ inputs.full-image-name }}"
 
@@ -69,15 +71,17 @@ jobs:
             --arg job "seed" \
             --arg api_url '`${{ inputs.api-url }}`' \
             --arg image '`${{ inputs.full-image-name }}`' \
+            --arg auth_mode '`dev placeholder bearer token`' \
             '{
               "section": $section,
               "kind": $kind,
               "name": $name,
-              "warnings": ["Seed ran without auth"],
+              "warnings": [],
               "data": {
                 "job": $job,
                 "api_url": $api_url,
-                "image": $image
+                "image": $image,
+                "auth_mode": $auth_mode
               }
             }' > "$json_file"
 
