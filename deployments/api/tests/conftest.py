@@ -226,12 +226,10 @@ def og_res_fact(
 
 @pytest.fixture(scope="function")
 def og_create_res_fact(
-    og_field_resource_factory: ResourceFactory,
     og_field_base_factory: OGFieldBaseFactory,
 ):
     fact = partial(
         make_create_resource,
-        factory=og_field_resource_factory,
         base_factory=og_field_base_factory,
     )
     return fact

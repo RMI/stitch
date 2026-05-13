@@ -126,7 +126,6 @@ def make_resource(
 def make_create_resource(
     *,
     name: str | None = None,
-    factory: ResourceFactory,
     base_factory: OGFieldBaseFactory,
     sources: list[tuple[OGSISrcKey, bool]] | None = None,
 ) -> OGFieldResourceCreate:
