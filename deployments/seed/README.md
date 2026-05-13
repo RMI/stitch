@@ -8,3 +8,5 @@ model validation and POSTing Oil and Gas fields to the application.
 
 It reads static seed JSON files from `data`, and also generates objects for
 posting with `Faker`
+
+Downstream API auth is provided through `STITCH_CLIENT_BEARER_TOKEN`.

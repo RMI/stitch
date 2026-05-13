@@ -1,7 +1,13 @@
 from functools import lru_cache
 from typing import ClassVar, Literal
 
-from pydantic import AliasChoices, AnyHttpUrl, Field, SecretStr, field_validator
+from pydantic import (
+    AliasChoices,
+    AnyHttpUrl,
+    Field,
+    SecretStr,
+    field_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,13 +26,9 @@ class Settings(BaseSettings):
         default="http://api:8000/api/v1",
         alias="STITCH_LLM_API_BASE_URL",
     )
-    auth_mode: Literal["machine"] = Field(
-        default="machine",
+    auth_mode: Literal["env_bearer_token"] = Field(
+        default="env_bearer_token",
         alias="STITCH_LLM_AUTH_MODE",
-    )
-    machine_token: SecretStr | None = Field(
-        default=None,
-        alias="STITCH_LLM_MACHINE_TOKEN",
     )
 
     azure_openai_base_url: AnyHttpUrl | None = Field(
@@ -55,7 +57,6 @@ class Settings(BaseSettings):
     )
 
     @field_validator(
-        "machine_token",
         "azure_openai_base_url",
         "azure_openai_api_key",
         "azure_openai_model",
@@ -76,10 +77,6 @@ class Settings(BaseSettings):
                 self.azure_openai_model,
             )
         )
-
-    @property
-    def downstream_auth_configured(self) -> bool:
-        return self.auth_disabled or self.machine_token is not None
 
 
 @lru_cache
