@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pytest
 
 from stitch.seed import payloads as payloads_module
 
@@ -73,3 +74,38 @@ def test_iter_payloads_wraps_faker_sources_with_repro_metadata(monkeypatch) -> N
     }
     assert record["payload"]["source_discriminator"] == source["source"]
     assert record["payload"]["generated_source"]["name"] == source["name"]
+
+
+def test_iter_payloads_rejects_static_sources_with_existing_source_record(
+    monkeypatch, tmp_path
+) -> None:
+    payload_file = tmp_path / "seed.json"
+    payload_file.write_text(
+        json.dumps(
+            {
+                "id": None,
+                "source_data": [
+                    {
+                        "source": "gem",
+                        "name": "Alpha",
+                        "country": "USA",
+                        "source_record": {"kind": "seed_static"},
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(payloads_module, "version", lambda _: "0.1.0")
+    monkeypatch.setattr(payloads_module, "uuid4", lambda: "run-123")
+
+    with pytest.raises(ValueError, match="must not include source_record"):
+        list(
+            payloads_module.iter_payloads(
+                static_payload_dir=str(tmp_path),
+                faker_count=0,
+                random_seed=7,
+                seed_source="gem",
+                null_prob=0.1,
+            )
+        )

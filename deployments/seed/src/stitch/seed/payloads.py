@@ -169,6 +169,11 @@ def _now_utc_iso() -> str:
 def _wrap_static_source(
     source_payload: dict[str, Any], *, producer: str, run_id: str
 ) -> dict[str, Any]:
+    if "source_record" in source_payload:
+        raise ValueError(
+            "Static seed source payloads must not include source_record; "
+            "seed wrapping is responsible for adding it."
+        )
     return {
         **source_payload,
         "source_record": {
