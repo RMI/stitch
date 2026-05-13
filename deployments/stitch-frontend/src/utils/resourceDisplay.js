@@ -1,16 +1,24 @@
 import { SOURCES } from "../constants/sourceMeta";
 
+const RESOURCE_LIST_DATA_EXCLUDED_FIELDS = new Set([
+  "id",
+  "source_data",
+  "repointed_to",
+  "constituents",
+  "provenance",
+]);
+
 export function getResourceField(resource, key) {
   return resource?.data?.[key] ?? resource?.[key] ?? null;
 }
 
-function isPrimitive(value) {
+export function isPrimitive(value) {
   return (
     value == null || ["string", "number", "boolean"].includes(typeof value)
   );
 }
 
-function deriveProvenance(resource) {
+export function deriveProvenance(resource) {
   if (resource?.provenance) return resource.provenance;
   if (!resource?.source_data) return {};
 
@@ -20,6 +28,7 @@ function deriveProvenance(resource) {
   for (const [field, value] of Object.entries(data)) {
     if (!isPrimitive(value) || field === "id") continue;
 
+    // SOURCES order intentionally decides the winner for duplicate field values.
     for (const source of SOURCES) {
       const records = resource.source_data[source] ?? [];
       if (records.some((record) => record?.[field] === value)) {
@@ -37,12 +46,11 @@ export function normalizeResourceListItem(resource) {
     return resource;
   }
 
-  const data = { ...resource };
-  delete data.id;
-  delete data.source_data;
-  delete data.repointed_to;
-  delete data.constituents;
-  delete data.provenance;
+  const data = Object.fromEntries(
+    Object.entries(resource).filter(
+      ([key]) => !RESOURCE_LIST_DATA_EXCLUDED_FIELDS.has(key),
+    ),
+  );
 
   return {
     ...resource,
