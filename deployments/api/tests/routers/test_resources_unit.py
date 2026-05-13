@@ -85,7 +85,7 @@ class TestCreateResourceUnit:
         """POST /resources/ calls repo.create with user and data."""
         src = source_maker(id=1, source="wm")
         expected = og_res_fact(id=123, source_data=[src])
-        resource_in = og_create_res_fact(sources=[("wm", False)])
+        resource_in = og_create_res_fact(sources=["wm"])
 
         async def override_get_uow():
             yield mock_uow

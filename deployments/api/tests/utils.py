@@ -127,12 +127,12 @@ def make_create_resource(
     *,
     name: str | None = None,
     base_factory: OGFieldBaseFactory,
-    sources: list[tuple[OGSISrcKey, bool]] | None = None,
+    sources: list[OGSISrcKey] | None = None,
 ) -> OGFieldResourceCreate:
     """Create a minimal Resource payload for creation tests."""
     if sources is None:
-        sources = [("gem", False)]
-    source_data = [make_create_source(base_factory, source=sk) for sk, _ in sources]
+        sources = ["gem"]
+    source_data = [make_create_source(base_factory, source=sk) for sk in sources]
     if name:
         source_data.append(make_create_source(base_factory, source="rmi", name=name))
 
