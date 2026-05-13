@@ -265,7 +265,7 @@ function AISuggestionPanel({ endpoint, resourceId }) {
           candidateId: mergeCandidate.id,
           suggestionKey,
         });
-      } catch (err) {
+      } catch {
         setPersistState({
           status: "partial",
           resourceId: createdResource.id,
