@@ -253,6 +253,26 @@ describe("ResourceDetailPage", () => {
     expect(screen.getByText("Burgan Source")).toBeInTheDocument();
   });
 
+  it("exposes disclosure accessibility attributes on the source detail toggle", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    const toggle = screen.getByRole("button", { name: /show details/i });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    const panelId = toggle.getAttribute("aria-controls");
+    expect(panelId).toBeTruthy();
+
+    await user.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(document.getElementById(panelId)).toBeTruthy();
+  });
+
   it("renders raw source record details when a source detail panel is opened", async () => {
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,

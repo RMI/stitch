@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useResourceDetail, useSourceDetail } from "../hooks/useResources";
@@ -206,6 +206,7 @@ function OrganizationsSection({ data }) {
 
 function SourceDetailCard({ source }) {
   const [isOpen, setIsOpen] = useState(false);
+  const panelId = useId();
   const hasId = Number.isFinite(source.id);
   const {
     data: sourceDetail,
@@ -232,6 +233,8 @@ function SourceDetailCard({ source }) {
         <button
           type="button"
           disabled={!hasId}
+          aria-expanded={isOpen}
+          aria-controls={panelId}
           onClick={() => setIsOpen((current) => !current)}
           className="rounded-md border border-gray-dark bg-gray-light px-3 py-2 text-sm text-gray-dark hover:cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -240,7 +243,10 @@ function SourceDetailCard({ source }) {
       </div>
 
       {isOpen && (
-        <div className="space-y-3 border-t border-gray-dark/10 pt-4">
+        <div
+          id={panelId}
+          className="space-y-3 border-t border-gray-dark/10 pt-4"
+        >
           {isLoading && (
             <p className="text-sm text-gray-dark/70">Loading source details…</p>
           )}
