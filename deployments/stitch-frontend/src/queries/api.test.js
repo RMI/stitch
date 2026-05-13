@@ -255,7 +255,12 @@ describe("API Functions", () => {
       });
 
       await expect(
-        createResource(config, { source_data: [] }, mockFetcher, "oil-gas-fields"),
+        createResource(
+          config,
+          { source_data: [] },
+          mockFetcher,
+          "oil-gas-fields",
+        ),
       ).rejects.toMatchObject({
         message: JSON.stringify(
           [

@@ -500,7 +500,9 @@ describe("ResourceDetailPage", () => {
       "oil-gas-fields",
     );
     expect(
-      await screen.findByText("Suggestion saved and queued for later merge review."),
+      await screen.findByText(
+        "Suggestion saved and queued for later merge review.",
+      ),
     ).toBeInTheDocument();
     expect(mockNavigate).not.toHaveBeenCalledWith(
       "/merge-candidate-review?candidate=88",
@@ -528,7 +530,10 @@ describe("ResourceDetailPage", () => {
       new Error(
         JSON.stringify(
           [
-            { loc: ["body", "source_data", 0, "llm", "name"], msg: "Field required" },
+            {
+              loc: ["body", "source_data", 0, "llm", "name"],
+              msg: "Field required",
+            },
             {
               loc: ["body", "source_data", 0, "llm", "country"],
               msg: "Field required",
@@ -550,7 +555,9 @@ describe("ResourceDetailPage", () => {
     );
 
     expect(await screen.findByText(/Field required/)).toBeInTheDocument();
-    expect(screen.queryByText("[object Object],[object Object]")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("[object Object],[object Object]"),
+    ).not.toBeInTheDocument();
   });
 
   it("shows partial-failure messaging when merge candidate creation fails after resource creation", async () => {
@@ -613,10 +620,7 @@ describe("ResourceDetailPage", () => {
     vi.spyOn(apiModule, "createResource").mockRejectedValue(
       new Error("create failed"),
     );
-    const createMergeCandidateSpy = vi.spyOn(
-      apiModule,
-      "createMergeCandidate",
-    );
+    const createMergeCandidateSpy = vi.spyOn(apiModule, "createMergeCandidate");
     const user = userEvent.setup();
 
     renderWithQueryClient(<ResourceDetailPage />);

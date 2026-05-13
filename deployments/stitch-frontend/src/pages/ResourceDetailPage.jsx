@@ -58,11 +58,7 @@ function getSuggestionSubmissionKey(result) {
   });
 }
 
-function buildSuggestionAuditPayload({
-  resourceId,
-  result,
-  persistIntentId,
-}) {
+function buildSuggestionAuditPayload({ resourceId, result, persistIntentId }) {
   return {
     resource_id: resourceId,
     field: result.field,
@@ -76,11 +72,7 @@ function buildSuggestionAuditPayload({
   };
 }
 
-function buildLLMResourcePayload({
-  resourceId,
-  result,
-  persistIntentId,
-}) {
+function buildLLMResourcePayload({ resourceId, result, persistIntentId }) {
   const auditPayload = buildSuggestionAuditPayload({
     resourceId,
     result,
@@ -339,11 +331,12 @@ function AISuggestionPanel({ endpoint, resourceId }) {
                   : "Add to resource"}
             </button>
 
-            {persistState?.status === "success" && isPersistedCurrentSuggestion && (
-              <p className="text-sm text-green-700">
-                Suggestion saved and queued for later merge review.
-              </p>
-            )}
+            {persistState?.status === "success" &&
+              isPersistedCurrentSuggestion && (
+                <p className="text-sm text-green-700">
+                  Suggestion saved and queued for later merge review.
+                </p>
+              )}
           </div>
         )}
       </div>
