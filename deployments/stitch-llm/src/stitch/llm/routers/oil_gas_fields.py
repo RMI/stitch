@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
@@ -51,6 +52,7 @@ async def suggest_oil_gas_field_value(
     id: int,
     field: Annotated[AllowedSuggestionField, Query()],
 ) -> FieldSuggestionResponse:
+    observed_at = datetime.now(timezone.utc)
     try:
         async with StitchApiClient() as stitch_client:
             detail_view = await stitch_client.get_oil_gas_field_detail(id)
@@ -105,6 +107,7 @@ async def suggest_oil_gas_field_value(
                 else "Foundry is not configured in auth-disabled mode; no safe "
                 "placeholder exists for this field type."
             ),
+            observed_at=observed_at,
             foundry_request={},
             foundry_response={},
         )
@@ -145,6 +148,7 @@ async def suggest_oil_gas_field_value(
         query_succeeded=True,
         model=llm_result.model,
         rationale=parsed.rationale,
+        observed_at=observed_at,
         foundry_request=llm_result.request_payload,
         foundry_response=llm_result.response_payload,
     )
