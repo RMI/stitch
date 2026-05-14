@@ -195,18 +195,8 @@ export async function reviewMergeCandidate(
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    let detail = text;
-
-    try {
-      detail = text ? JSON.parse(text) : null;
-    } catch {
-      // leave as text
-    }
-
-    const error = new Error(
-      typeof detail === "string" ? detail : JSON.stringify(detail, null, 2),
-    );
+    const detail = await getErrorDetail(response);
+    const error = new Error(detail);
     error.status = response.status;
     throw error;
   }

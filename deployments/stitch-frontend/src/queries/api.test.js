@@ -5,6 +5,7 @@ import {
   createResource,
   getResources,
   getResource,
+  reviewMergeCandidate,
 } from "./api";
 
 describe("API Functions", () => {
@@ -354,6 +355,85 @@ describe("API Functions", () => {
           2,
         ),
         status: 409,
+      });
+    });
+  });
+
+  describe("reviewMergeCandidate", () => {
+    it("posts the requested review action and notes", async () => {
+      mockFetcher.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 88, status: "approved" }),
+      });
+
+      const result = await reviewMergeCandidate(
+        config,
+        88,
+        "approve",
+        mockFetcher,
+        "oil-gas-fields",
+        "Looks good",
+      );
+
+      expect(mockFetcher).toHaveBeenCalledWith(
+        "http://localhost:8000/api/v1/oil-gas-fields/merge-candidates/88/approve",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ review_notes: "Looks good" }),
+        },
+      );
+      expect(result).toEqual({ id: 88, status: "approved" });
+    });
+
+    it("surfaces structured API error detail and status on failure", async () => {
+      mockFetcher.mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        text: async () =>
+          JSON.stringify({
+            detail: { message: "Merge candidate already reviewed" },
+          }),
+      });
+
+      await expect(
+        reviewMergeCandidate(
+          config,
+          88,
+          "approve",
+          mockFetcher,
+          "oil-gas-fields",
+        ),
+      ).rejects.toMatchObject({
+        message: JSON.stringify(
+          { message: "Merge candidate already reviewed" },
+          null,
+          2,
+        ),
+        status: 409,
+      });
+    });
+
+    it("falls back to status text when the error body is empty", async () => {
+      mockFetcher.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: "Internal Server Error",
+        text: async () => "",
+      });
+
+      await expect(
+        reviewMergeCandidate(
+          config,
+          88,
+          "approve",
+          mockFetcher,
+          "oil-gas-fields",
+        ),
+      ).rejects.toMatchObject({
+        message: "Internal Server Error",
+        status: 500,
       });
     });
   });
