@@ -204,7 +204,6 @@ describe("API Functions", () => {
       );
       expect(result.value).toBe("Songliao Basin");
     });
-
     it("surfaces structured JSON detail and status on failure", async () => {
       mockFetcher.mockResolvedValueOnce({
         ok: false,
