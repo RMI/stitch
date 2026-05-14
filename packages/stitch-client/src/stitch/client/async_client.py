@@ -186,6 +186,14 @@ class AsyncStitchClient:
         )
         return self._expect_dict(payload, f"GET /oil-gas-fields/{resource_id}/detail")
 
+    async def get_auth_me(self) -> dict[str, Any]:
+        payload = await self._request_json(
+            method="GET",
+            path="/auth/me",
+            operation="GET /auth/me",
+        )
+        return self._expect_dict(payload, "GET /auth/me")
+
     async def create_oil_gas_field(
         self,
         payload: OGFieldResource | Mapping[str, Any],

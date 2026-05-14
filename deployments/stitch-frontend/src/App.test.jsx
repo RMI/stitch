@@ -19,20 +19,39 @@ describe("App", () => {
 
   it("renders Resources heading", () => {
     renderWithQueryClient(<App />);
-    const heading = screen.getByText(/^Resources$/i);
+    const heading = screen.getByRole("heading", { name: "Resources" });
     expect(heading).toBeInTheDocument();
   });
 
-  it("renders Resource heading", () => {
+  it("does not render the single-resource fetch demo on the home route", () => {
     renderWithQueryClient(<App />);
-    const heading = screen.getByText(/^Resource ID: \d+$/i);
-    expect(heading).toBeInTheDocument();
+    const heading = screen.queryByRole("heading", {
+      name: /^Resource ID: \d+$/i,
+    });
+    expect(heading).not.toBeInTheDocument();
   });
 
-  it("renders both ResourcesView and ResourceView components", () => {
+  it("renders the normalized global shell", () => {
     renderWithQueryClient(<App />);
 
-    expect(screen.getByText(/^Resources$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^Resource ID: \d+$/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /stitch/i })).toHaveAttribute(
+      "href",
+      "/",
+    );
+    expect(
+      screen.getByRole("navigation", { name: "Primary" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Resources" })).toHaveAttribute(
+      "href",
+      "/",
+    );
+    expect(
+      screen.getByRole("link", { name: "Entity Linkage" }),
+    ).toHaveAttribute("href", "/entity-linkage");
+    expect(screen.getByRole("link", { name: "Merge Review" })).toHaveAttribute(
+      "href",
+      "/merge-candidate-review",
+    );
+    expect(screen.getByRole("button", { name: "Log out" })).toBeInTheDocument();
   });
 });

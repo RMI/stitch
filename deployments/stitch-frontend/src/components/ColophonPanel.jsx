@@ -292,17 +292,17 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
   }
 
   return (
-    <div className="border-b border-slate-200 bg-slate-50">
-      <div className="mx-auto max-w-4xl px-4 py-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-slate-900">Diagnostics</h2>
+    <div className="border-b border-line bg-surface">
+      <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6 lg:px-8">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-ink">Diagnostics</h2>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <button
               type="button"
               onClick={() => void handleCopyToken()}
               disabled={!accessToken}
-              className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:border-line-strong hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               title="Copy Bearer token for API tools"
             >
               {tokenCopied
@@ -317,14 +317,14 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
                 href={apiDocsUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-100"
+                className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:border-line-strong hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2"
                 title="Open FastAPI docs"
               >
                 API docs
               </a>
             ) : (
               <span
-                className="rounded border border-red-300 bg-red-50 px-3 py-1.5 text-sm text-red-700"
+                className="rounded-md border border-danger/25 bg-danger-soft px-3 py-1.5 text-sm font-medium text-danger"
                 title="API docs URL unavailable for current API base URL"
               >
                 API docs unavailable
@@ -334,7 +334,7 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
             <button
               type="button"
               onClick={() => void handleCopy()}
-              className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-100"
+              className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:border-line-strong hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2"
               title="Copy diagnostic information"
             >
               {copied ? "Copied!" : copyError ? "Copy failed" : "Copy"}
@@ -346,17 +346,18 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
           {Object.entries(sections).map(([section, values]) => (
             <div
               key={section}
-              className="rounded border border-slate-200 bg-white p-4"
+              className="rounded-md border border-line bg-panel p-4"
             >
-              <h3 className="mb-2 text-sm font-semibold text-slate-900">
-                {section}
-              </h3>
+              <h3 className="mb-2 text-sm font-semibold text-ink">{section}</h3>
 
               <dl className="space-y-2 text-sm">
                 {Object.entries(values).map(([key, value]) => (
-                  <div key={key} className="grid grid-cols-[140px_1fr] gap-3">
-                    <dt className="font-medium text-slate-700">{key}</dt>
-                    <dd className="break-all text-slate-900">{value}</dd>
+                  <div
+                    key={key}
+                    className="grid gap-1 sm:grid-cols-[140px_1fr] sm:gap-3"
+                  >
+                    <dt className="font-medium text-ink-muted">{key}</dt>
+                    <dd className="break-all text-ink">{value}</dd>
                   </div>
                 ))}
               </dl>

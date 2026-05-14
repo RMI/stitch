@@ -44,6 +44,34 @@ class TestJWTValidatorHappyPath:
 
         assert claims.email == "user@tenant.onmicrosoft.com"
 
+    def test_invalid_preferred_username_does_not_become_email(
+        self, oidc_settings, mock_jwks_client, token_factory
+    ):
+        """Non-email preferred_username is ignored for email fallback."""
+        token = token_factory(
+            email=None,
+            extra_claims={"preferred_username": "not-an-email"},
+        )
+        validator = JWTValidator(oidc_settings)
+
+        claims = validator.validate(token)
+
+        assert claims.email is None
+
+    def test_invalid_email_claim_falls_back_to_valid_preferred_username(
+        self, oidc_settings, mock_jwks_client, token_factory
+    ):
+        """Fallback still works when the email claim itself is malformed."""
+        token = token_factory(
+            email="bad-email",
+            extra_claims={"preferred_username": "user@tenant.onmicrosoft.com"},
+        )
+        validator = JWTValidator(oidc_settings)
+
+        claims = validator.validate(token)
+
+        assert claims.email == "user@tenant.onmicrosoft.com"
+
     def test_optional_claims_can_be_absent(
         self, oidc_settings, mock_jwks_client, token_factory
     ):

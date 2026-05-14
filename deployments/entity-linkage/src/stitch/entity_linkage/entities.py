@@ -30,10 +30,10 @@ class User(BaseModel):
 @dataclass(frozen=True, slots=True)
 class RequestAuthContext:
     """
-    Request-scoped auth context for transparent relay.
+    Request-scoped auth context for inbound request identity.
 
     not implemented:
-    - replace raw bearer-token relay with downstream machine/OBO auth
+    - re-enable downstream relay or OBO auth as an explicit client mode
     - keep user attribution/provenance as separate metadata
     """
 

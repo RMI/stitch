@@ -5,13 +5,13 @@ export default function LoginPage() {
   const { loginWithRedirect } = useAuth0();
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="text-center max-w-md px-6">
-        <h1 className="text-4xl font-bold text-gray-900 mb-2">Stitch</h1>
-        <p className="text-lg text-gray-500 mb-6">
+    <div className="flex min-h-screen items-center justify-center bg-canvas px-6">
+      <div className="w-full max-w-md rounded-md border border-line bg-panel p-6">
+        <h1 className="text-3xl font-semibold text-ink">Stitch</h1>
+        <p className="mt-2 text-base font-medium text-ink-muted">
           Oil &amp; Gas Asset Data Platform
         </p>
-        <p className="text-gray-600 mb-8">
+        <p className="mb-6 mt-4 text-sm leading-6 text-ink-muted">
           Integrate diverse datasets, apply AI-driven enrichment with human
           review, and deliver curated, trustworthy data.
         </p>

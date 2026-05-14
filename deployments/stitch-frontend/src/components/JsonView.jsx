@@ -1,6 +1,7 @@
 import Card from "./Card";
+import StructuredDataView from "./StructuredDataView";
 
-export default function Jsonview({
+export default function JsonView({
   data,
   isLoading,
   isError,
@@ -12,12 +13,12 @@ export default function Jsonview({
     return (
       <>
         {error?.status === 404 ? (
-          <Card title="" className="mb-6 border-2 border-gray-500">
-            <p className="text-gray-600">Not Found</p>
+          <Card title="" className="mb-6 border-line-strong bg-surface">
+            <p className="font-medium text-ink-muted">Not Found</p>
           </Card>
         ) : (
-          <Card title="Error" className="mb-6 border-2 border-red-500">
-            <p className="text-red-600">{errorMessage}</p>
+          <Card title="Error" className="mb-6 border-danger/25 bg-danger-soft">
+            <p className="text-danger">{errorMessage}</p>
           </Card>
         )}
       </>
@@ -27,15 +28,15 @@ export default function Jsonview({
   if (isLoading) {
     return (
       <Card>
-        <p className="text-gray-500 text-center">Loading...</p>
+        <p className="text-center text-ink-muted">Loading...</p>
       </Card>
     );
   }
 
   if (data) {
     return (
-      <Card title="Resources">
-        <pre>{JSON.stringify(data, null, 2)}</pre>
+      <Card title="Resource data">
+        <StructuredDataView data={data} label="Resource data" />
       </Card>
     );
   }
@@ -43,7 +44,7 @@ export default function Jsonview({
   if (!isLoading && !data) {
     return (
       <Card>
-        <p className="text-gray-500 text-center">{message}</p>
+        <p className="text-center text-ink-muted">{message}</p>
       </Card>
     );
   }

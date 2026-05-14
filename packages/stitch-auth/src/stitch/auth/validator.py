@@ -1,4 +1,5 @@
 from datetime import timedelta
+from email.utils import parseaddr
 from typing import Any
 
 import jwt
@@ -24,6 +25,29 @@ def _extract_permissions(payload: dict[str, Any]) -> frozenset[str]:
     if not all(isinstance(item, str) for item in value):
         raise TokenValidationError("permissions claim must be a list of strings")
     return frozenset(value)
+
+
+def _validated_email(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    candidate = value.strip()
+    if not candidate:
+        return None
+    parsed_name, parsed_addr = parseaddr(candidate)
+    if parsed_name or parsed_addr != candidate:
+        return None
+    if candidate.count("@") != 1:
+        return None
+    local, domain = candidate.split("@", 1)
+    if not local or not domain:
+        return None
+    if "." not in domain:
+        return None
+    if domain.startswith(".") or domain.endswith("."):
+        return None
+    if ".." in candidate:
+        return None
+    return candidate
 
 
 class JWTValidator:
@@ -66,7 +90,9 @@ class JWTValidator:
         except jwt.InvalidTokenError as e:
             raise TokenValidationError(str(e)) from e
 
-        email = payload.get("email") or payload.get("preferred_username")
+        email = _validated_email(payload.get("email"))
+        if email is None:
+            email = _validated_email(payload.get("preferred_username"))
         name = payload.get("name")
         permissions = _extract_permissions(payload)
 

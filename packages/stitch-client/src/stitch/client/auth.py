@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator, Awaitable, Callable
+import os
+
+
 from typing import Any
 
 import httpx
 
 from .config import StitchClientConfig
 from .errors import StitchAuthError
+
+STITCH_CLIENT_BEARER_TOKEN_ENV_VAR = "STITCH_CLIENT_BEARER_TOKEN"
 
 
 async def fetch_auth_jwt(
@@ -90,3 +95,17 @@ class Auth0M2MAuth(httpx.Auth):
 
     def sync_auth_flow(self, request: httpx.Request) -> Any:  # pragma: no cover
         raise RuntimeError("Auth0M2MAuth only supports async usage")
+
+
+def env_bearer_token_headers_provider() -> Callable[[], dict[str, str]]:
+    """
+    Build a headers provider backed by STITCH_CLIENT_BEARER_TOKEN.
+    """
+
+    def provider() -> dict[str, str]:
+        token = os.getenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "").strip()
+        if not token:
+            raise ValueError(f"{STITCH_CLIENT_BEARER_TOKEN_ENV_VAR} must be set")
+        return {"Authorization": f"Bearer {token}"}
+
+    return provider

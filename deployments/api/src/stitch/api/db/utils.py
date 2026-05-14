@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from functools import reduce
 from typing import Protocol
 
@@ -35,9 +35,15 @@ def partition_by_id_none[T: Identified](
 
 
 async def resource_model_to_entity(
-    session: AsyncSession, model: ResourceModel
+    session: AsyncSession,
+    model: ResourceModel,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> OGFieldResource:
     src_data = await model.get_source_data(session)
+    # Write paths must pass licensed_sources=None: the returned entity
+    # feeds back into resource construction and must not be redacted.
+    if licensed_sources is not None:
+        src_data = [s for s in src_data if s.source in licensed_sources]
     constituent_models = await ResourceModel.get_constituents_by_root_id(
         session, model.id
     )
