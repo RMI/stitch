@@ -4,7 +4,11 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useResourceDetail, useSourceDetail } from "../hooks/useResources";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { useConfig } from "../config/useConfig";
-import { createLLMSuggestion } from "../queries/api";
+import {
+  createLLMSuggestion,
+  createMergeCandidate,
+  createResource,
+} from "../queries/api";
 import SourceMixBar from "../components/SourceMixBar";
 import SectionHeader from "../components/SectionHeader";
 import { FieldCard, FieldGrid } from "../components/FieldCard";
@@ -17,6 +21,93 @@ import {
   IDENTITY_FIELDS,
   PRODUCTION_FIELDS,
 } from "../constants/fieldMeta";
+
+const LLM_AUDIT_PRODUCER = "stitch-frontend";
+const UNSAFE_OBJECT_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+function canonicalizeJson(value) {
+  if (Array.isArray(value)) {
+    return value.map(canonicalizeJson);
+  }
+  if (value && typeof value === "object") {
+    return Object.keys(value)
+      .sort()
+      .reduce((acc, key) => {
+        if (UNSAFE_OBJECT_KEYS.has(key)) return acc;
+        acc[key] = canonicalizeJson(value[key]);
+        return acc;
+      }, Object.create(null));
+  }
+  return value;
+}
+
+function stableJsonStringify(value) {
+  return JSON.stringify(canonicalizeJson(value));
+}
+
+function createPersistIntentId() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+  return `persist-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function getSuggestionSubmissionKey(result) {
+  return stableJsonStringify({
+    field: result.field,
+    value: result.value,
+    model: result.model,
+    observed_at: result.observed_at,
+    foundry_response: result.foundry_response,
+  });
+}
+
+function buildSuggestionAuditPayload({ resourceId, result, persistIntentId }) {
+  return {
+    resource_id: resourceId,
+    field: result.field,
+    suggested_value: result.value,
+    rationale: result.rationale,
+    citations: result.citations,
+    model: result.model,
+    foundry_request: result.foundry_request,
+    foundry_response: result.foundry_response,
+    persist_intent_id: persistIntentId,
+  };
+}
+
+function buildLLMResourcePayload({ resourceId, result, persistIntentId }) {
+  const auditPayload = buildSuggestionAuditPayload({
+    resourceId,
+    result,
+    persistIntentId,
+  });
+
+  return {
+    id: null,
+    repointed_to: null,
+    constituents: [],
+    provenance: {},
+    view: null,
+    source_data: [
+      {
+        id: null,
+        source: "llm",
+        name: null,
+        country: null,
+        [result.field]: result.value,
+        source_record: {
+          kind: "llm_audit",
+          record_id: persistIntentId,
+          run_id: null,
+          observed_at: result.observed_at,
+          producer: LLM_AUDIT_PRODUCER,
+          payload: auditPayload,
+        },
+      },
+    ],
+  };
+}
 
 function formatSuggestionValue(value) {
   if (value == null) return null;
@@ -104,11 +195,20 @@ function AISuggestionPanel({ endpoint, resourceId }) {
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isPersisting, setIsPersisting] = useState(false);
+  const [persistState, setPersistState] = useState(null);
+
+  const canPersist = result?.value != null;
+  const isPersistedCurrentSuggestion =
+    result &&
+    persistState?.status === "success" &&
+    persistState.suggestionKey === getSuggestionSubmissionKey(result);
 
   async function handleGenerateSuggestion() {
     setIsLoading(true);
     setError("");
     setResult(null);
+    setPersistState(null);
 
     try {
       const suggestion = await createLLMSuggestion(
@@ -123,6 +223,59 @@ function AISuggestionPanel({ endpoint, resourceId }) {
       setError(err.message || "Failed to generate suggestion.");
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function handlePersistSuggestion() {
+    if (!result || result.value == null) return;
+
+    setIsPersisting(true);
+    setError("");
+
+    const persistIntentId = createPersistIntentId();
+    const resourcePayload = buildLLMResourcePayload({
+      resourceId,
+      result,
+      persistIntentId,
+    });
+    const suggestionKey = getSuggestionSubmissionKey(result);
+
+    try {
+      const createdResource = await createResource(
+        config,
+        resourcePayload,
+        fetcher,
+        endpoint,
+      );
+
+      try {
+        const mergeCandidate = await createMergeCandidate(
+          config,
+          [resourceId, createdResource.id],
+          fetcher,
+          endpoint,
+        );
+        setPersistState({
+          status: "success",
+          resourceId: createdResource.id,
+          candidateId: mergeCandidate.id,
+          suggestionKey,
+        });
+      } catch {
+        setPersistState({
+          status: "partial",
+          resourceId: createdResource.id,
+          suggestionKey,
+        });
+        setError(
+          `Suggestion saved as resource ${createdResource.id}, but the merge draft was not created.`,
+        );
+      }
+    } catch (err) {
+      setPersistState(null);
+      setError(err.message || "Failed to persist suggestion.");
+    } finally {
+      setIsPersisting(false);
     }
   }
 
@@ -165,6 +318,29 @@ function AISuggestionPanel({ endpoint, resourceId }) {
         )}
 
         {result && <SuggestionResult result={result} />}
+
+        {canPersist && (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <Button
+              onClick={handlePersistSuggestion}
+              disabled={isPersisting || isPersistedCurrentSuggestion}
+              variant="secondary"
+            >
+              {isPersisting
+                ? "Adding…"
+                : isPersistedCurrentSuggestion
+                  ? "Added to resource"
+                  : "Add to resource"}
+            </Button>
+
+            {persistState?.status === "success" &&
+              isPersistedCurrentSuggestion && (
+                <p className="text-sm text-green-700">
+                  Suggestion saved and queued for later merge review.
+                </p>
+              )}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -301,6 +477,10 @@ function SourceDetailsSection({ sources }) {
           />
         ))}
       </div>
+    </section>
+  );
+}
+
 function SourceDataSection({ sourceData }) {
   return (
     <section>
