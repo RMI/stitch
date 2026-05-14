@@ -23,28 +23,6 @@ import {
 } from "../constants/fieldMeta";
 
 const LLM_AUDIT_PRODUCER = "stitch-frontend";
-const UNSAFE_OBJECT_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-
-function canonicalizeJson(value) {
-  if (Array.isArray(value)) {
-    return value.map(canonicalizeJson);
-  }
-  if (value && typeof value === "object") {
-    return Object.keys(value)
-      .sort()
-      .reduce((acc, key) => {
-        if (UNSAFE_OBJECT_KEYS.has(key)) return acc;
-        acc[key] = canonicalizeJson(value[key]);
-        return acc;
-      }, Object.create(null));
-  }
-  return value;
-}
-
-function stableJsonStringify(value) {
-  return JSON.stringify(canonicalizeJson(value));
-}
-
 function createPersistIntentId() {
   if (globalThis.crypto?.randomUUID) {
     return globalThis.crypto.randomUUID();
@@ -53,12 +31,12 @@ function createPersistIntentId() {
 }
 
 function getSuggestionSubmissionKey(result) {
-  return stableJsonStringify({
+  return JSON.stringify({
     field: result.field,
     value: result.value,
     model: result.model,
     observed_at: result.observed_at,
-    foundry_response: result.foundry_response,
+    response_id: result.foundry_response?.id ?? null,
   });
 }
 
