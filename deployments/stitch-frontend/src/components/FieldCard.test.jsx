@@ -1,7 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { FieldCard, FieldGrid } from "./FieldCard";
-import { SOURCE_COLORS, DEFAULT_FIELD_COLOR } from "../constants/sourceMeta";
+import {
+  SOURCE_COLORS,
+  SOURCE_LABELS,
+  UNKNOWN_SOURCE_LABEL,
+  DEFAULT_FIELD_COLOR,
+} from "../constants/sourceMeta";
 
 describe("FieldCard", () => {
   it("renders the label", () => {
@@ -43,6 +48,13 @@ describe("FieldCard", () => {
     expect(valueBox).toHaveStyle({ borderLeftColor: SOURCE_COLORS.gem });
   });
 
+  it("renders a visible source label for a known source", () => {
+    render(<FieldCard label="Country" value="Kuwait" source="gem" />);
+    expect(
+      screen.getByText(`Source: ${SOURCE_LABELS.gem}`),
+    ).toBeInTheDocument();
+  });
+
   it("falls back to the default border color for an unknown source", () => {
     const { container } = render(
       <FieldCard label="Country" value="Kuwait" source="unknown" />,
@@ -51,10 +63,22 @@ describe("FieldCard", () => {
     expect(valueBox).toHaveStyle({ borderLeftColor: DEFAULT_FIELD_COLOR });
   });
 
+  it("renders an unavailable source label for an unknown source", () => {
+    render(<FieldCard label="Country" value="Kuwait" source="unknown" />);
+    expect(
+      screen.getByText(`Source: ${UNKNOWN_SOURCE_LABEL}`),
+    ).toBeInTheDocument();
+  });
+
   it("uses the default border color when source is omitted", () => {
     const { container } = render(<FieldCard label="Country" value="Kuwait" />);
     const valueBox = container.querySelector("[style]");
     expect(valueBox).toHaveStyle({ borderLeftColor: DEFAULT_FIELD_COLOR });
+  });
+
+  it("does not render source copy when source is omitted", () => {
+    render(<FieldCard label="Country" value="Kuwait" />);
+    expect(screen.queryByText(/^Source:/)).not.toBeInTheDocument();
   });
 });
 

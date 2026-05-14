@@ -28,43 +28,49 @@ export default function FilterDropdown({ label, options, selected, onChange }) {
   return (
     <div ref={ref} className="relative">
       <button
+        type="button"
         onClick={() => setOpen((o) => !o)}
-        className={`flex items-center gap-1.5 rounded border px-3 py-1.5 text-sm transition-colors text-gray-dark ${
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            setOpen(false);
+          }
+        }}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`flex min-h-9 items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium text-ink transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 ${
           isActive
-            ? " bg-gray-light border-gray-button-outline"
-            : " bg-none border-transparent  hover:border-gray-button-outline hover:bg-gray-light"
+            ? "border-primary/30 bg-primary-soft text-primary"
+            : "border-line bg-panel hover:border-line-strong hover:bg-surface"
         }`}
       >
         {label}
         {isActive && (
-          <span className="rounded-full bg-gray-dark px-1.5 min-w-5 py-0.5 text-xs font-medium text-gray-light">
+          <span className="min-w-5 rounded-full bg-primary px-1.5 py-0.5 text-xs font-semibold text-white">
             {selectedCount}
           </span>
         )}
-        <span className={`text-xs scale-y-60 text-gray-dark`}>
+        <span className="text-xs text-current" aria-hidden="true">
           {open ? "▲" : "▼"}
         </span>
       </button>
 
       {open && (
-        <div className="absolute z-10 mt-1 min-w-48 rounded border border-gray-200 bg-white shadow-lg">
+        <div className="absolute z-10 mt-1 min-w-52 rounded-md border border-line bg-panel shadow-sm">
           {options.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-gray-400">No options</p>
+            <p className="px-3 py-2 text-sm text-ink-muted">No options</p>
           ) : (
-            <ul className="max-h-60 overflow-y-auto py-1">
+            <ul className="max-h-60 overflow-y-auto py-1" role="listbox">
               {options.map(({ value, count }) => (
                 <li key={value}>
-                  <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-gray-50">
+                  <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-surface">
                     <input
                       type="checkbox"
                       checked={selected.includes(value)}
                       onChange={() => toggleValue(value)}
-                      className="accent-blue-500"
+                      className="accent-primary"
                     />
-                    <span className="flex-1 text-sm text-gray-700">
-                      {value}
-                    </span>
-                    <span className="text-xs text-gray-400">{count}</span>
+                    <span className="flex-1 text-sm text-ink">{value}</span>
+                    <span className="text-xs text-ink-muted">{count}</span>
                   </label>
                 </li>
               ))}

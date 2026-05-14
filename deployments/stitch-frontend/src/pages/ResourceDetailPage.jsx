@@ -9,6 +9,8 @@ import SourceMixBar from "../components/SourceMixBar";
 import SectionHeader from "../components/SectionHeader";
 import { FieldCard, FieldGrid } from "../components/FieldCard";
 import { SOURCE_LABELS } from "../constants/sourceMeta";
+import StructuredDataView from "../components/StructuredDataView";
+import Button from "../components/Button";
 import {
   AI_SUGGESTION_FIELDS,
   FIELD_META,
@@ -30,20 +32,20 @@ function SuggestionResult({ result }) {
 
   if (value == null) {
     return (
-      <div className="rounded-md border border-gray-dark/10 bg-white p-4">
+      <div className="rounded-md border border-line bg-panel p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-medium text-gray-dark">{fieldLabel}</p>
-            <p className="mt-1 text-sm text-gray-dark/80">
+            <p className="text-sm font-semibold text-ink">{fieldLabel}</p>
+            <p className="mt-1 text-sm text-ink-muted">
               No grounded suggestion was returned for this field.
             </p>
           </div>
-          <span className="rounded border border-gray-dark/15 bg-gray-light px-2 py-1 text-xs text-gray-dark/70">
+          <span className="rounded-md border border-line bg-surface px-2 py-1 text-xs font-medium text-ink-muted">
             {isPlaceholder ? "Offline mode" : "No answer"}
           </span>
         </div>
         {result.rationale && (
-          <p className="mt-3 text-sm leading-6 text-gray-dark/80">
+          <p className="mt-3 text-sm leading-6 text-ink-muted">
             {result.rationale}
           </p>
         )}
@@ -52,36 +54,36 @@ function SuggestionResult({ result }) {
   }
 
   return (
-    <div className="rounded-md border border-gray-dark/10 bg-white p-4">
+    <div className="rounded-md border border-line bg-panel p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-gray-dark">{fieldLabel}</p>
-          <p className="mt-1 text-2xl font-semibold text-gray-dark">{value}</p>
+          <p className="text-sm font-semibold text-ink">{fieldLabel}</p>
+          <p className="mt-1 text-2xl font-semibold text-ink">{value}</p>
         </div>
-        <span className="rounded border border-gray-dark/15 bg-gray-light px-2 py-1 text-xs text-gray-dark/70">
+        <span className="rounded-md border border-primary/30 bg-primary-soft px-2 py-1 text-xs font-medium text-primary">
           {isPlaceholder ? "Offline mode" : "Suggested"}
         </span>
       </div>
 
       {result.rationale && (
-        <p className="mt-3 text-sm leading-6 text-gray-dark/80">
+        <p className="mt-3 text-sm leading-6 text-ink-muted">
           {result.rationale}
         </p>
       )}
 
       {hasCitations && (
-        <div className="mt-4 border-t border-gray-dark/10 pt-3">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-dark/60">
+        <div className="mt-4 border-t border-line pt-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
             Sources
           </p>
-          <ul className="mt-2 space-y-2 text-sm text-gray-dark">
+          <ul className="mt-2 space-y-2 text-sm text-ink">
             {result.citations.map((citation) => (
               <li key={`${citation.url}-${citation.title ?? ""}`}>
                 <a
                   href={citation.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-700 underline"
+                  className="text-primary underline"
                 >
                   {citation.title ?? citation.url}
                 </a>
@@ -127,9 +129,9 @@ function AISuggestionPanel({ endpoint, resourceId }) {
   return (
     <section>
       <SectionHeader title="AI Suggestion" />
-      <div className="rounded-md border border-gray-dark/20 bg-gray-light p-4 space-y-4">
+      <div className="space-y-4 rounded-md border border-line bg-surface p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <label className="flex-1 text-sm text-gray-dark">
+          <label className="flex-1 text-sm text-ink">
             <span className="mb-1 block font-medium">Field</span>
             <select
               value={selectedField}
@@ -138,7 +140,7 @@ function AISuggestionPanel({ endpoint, resourceId }) {
                 setError("");
                 setResult(null);
               }}
-              className="w-full rounded-md border border-gray-dark bg-white px-3 py-2"
+              className="w-full rounded-md border border-line bg-panel px-3 py-2 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
             >
               {AI_SUGGESTION_FIELDS.map((fieldKey) => (
                 <option key={fieldKey} value={fieldKey}>
@@ -147,18 +149,17 @@ function AISuggestionPanel({ endpoint, resourceId }) {
               ))}
             </select>
           </label>
-          <button
-            type="button"
+          <Button
             onClick={handleGenerateSuggestion}
             disabled={isLoading}
-            className="rounded-md border border-gray-dark bg-white px-4 py-2 text-sm hover:cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+            variant="secondary"
           >
             {isLoading ? "Generating…" : "Generate suggestion"}
-          </button>
+          </Button>
         </div>
 
         {error && (
-          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-md border border-danger/25 bg-danger-soft px-4 py-3 text-sm text-danger">
             {error}
           </div>
         )}
@@ -197,8 +198,8 @@ function OrganizationsSection({ data }) {
     <div className="flex flex-col md:flex-row">
       <OrgPanel items={owners} nameLabel={FIELD_META.owners.label} />
       {/* Horizontal divider on mobile, vertical on desktop */}
-      <hr className="md:hidden my-4 border-gray-dark" />
-      <div className="hidden md:block w-px bg-gray-dark mx-6 self-stretch" />
+      <hr className="my-4 border-line md:hidden" />
+      <div className="mx-6 hidden w-px self-stretch bg-line md:block" />
       <OrgPanel items={operators} nameLabel={FIELD_META.operators.label} />
     </div>
   );
@@ -300,6 +301,20 @@ function SourceDetailsSection({ sources }) {
           />
         ))}
       </div>
+function SourceDataSection({ sourceData }) {
+  return (
+    <section>
+      <SectionHeader title="Source data" />
+      <details className="rounded-md border border-line bg-panel px-4 py-3">
+        <summary className="cursor-pointer text-sm font-semibold text-ink">
+          Source records
+        </summary>
+        <StructuredDataView
+          data={sourceData}
+          label="Source records"
+          className="mt-4"
+        />
+      </details>
     </section>
   );
 }
@@ -322,30 +337,29 @@ export default function ResourceDetailPage() {
   }, [numericId, validId, refetch]);
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <button
-        onClick={() => navigate(-1)}
-        className="mb-6 text-sm text-gray-dark  transition-colors border px-2 py-1.5 rounded-md bg-white hover:bg-gray-light border-gray-dark hover:cursor-pointer"
-      >
+    <div className="mx-auto max-w-4xl">
+      <Button onClick={() => navigate(-1)} variant="ghost" className="mb-6">
         ← Back
-      </button>
+      </Button>
 
-      {!validId && <p className="text-red-500">Invalid resource ID.</p>}
-      {isLoading && <p className="text-gray-500">Loading…</p>}
-      {isError && <p className="text-red-500">Failed to load resource.</p>}
+      {!validId && <p className="text-danger">Invalid resource ID.</p>}
+      {isLoading && <p className="text-ink-muted">Loading…</p>}
+      {isError && <p className="text-danger">Failed to load resource.</p>}
 
       {detailView && (
-        <div className="space-y-12">
-          {/* Header */}
+        <div className="space-y-10">
           <div>
-            <h1 className="text-3xl font-bold text-gray-dark mb-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+              Curated resource
+            </p>
+            <h1 className="mt-1 text-3xl font-semibold text-ink">
               {detailView.data.name}
             </h1>
           </div>
 
           <section>
             <SectionHeader title="Data Source Mix" />
-            <div className="px-4">
+            <div className="rounded-md border border-line bg-panel p-4">
               <SourceMixBar provenance={detailView.provenance} showLabels />
             </div>
           </section>
@@ -390,9 +404,7 @@ export default function ResourceDetailPage() {
 
           <SourceDetailsSection sources={detailView.source_data} />
 
-          <section className="bg-gray-light p-4">
-            <pre>{JSON.stringify(detailView, null, 2)}</pre>
-          </section>
+          <SourceDataSection sourceData={detailView.source_data} />
         </div>
       )}
     </div>
