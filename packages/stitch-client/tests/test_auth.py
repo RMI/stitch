@@ -85,7 +85,7 @@ def test_config_is_frozen() -> None:
     )
 
     with pytest.raises(dataclasses.FrozenInstanceError):
-        config.client_id = "other"  # type: ignore[misc]
+        config.client_id = "other"
 
 
 def _config() -> StitchClientConfig:
