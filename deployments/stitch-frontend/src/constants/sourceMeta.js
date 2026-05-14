@@ -1,10 +1,10 @@
 export const SOURCES = ["gem", "wm", "rmi", "llm"];
 
 export const SOURCE_COLORS = {
-  gem: "#4AE3D9", // teal
-  wm: "#3B44EC", // purple
-  rmi: "#F4A70B", // orange
-  llm: "#57A0FF", // light blue
+  gem: "#45cfcc", // energy teal
+  wm: "#7b76ad", // RMI purple
+  rmi: "#ffcb00", // solar
+  llm: "#529cba", // RMI blue
 };
 
 export const SOURCE_LABELS = {
@@ -14,6 +14,7 @@ export const SOURCE_LABELS = {
   rmi: "User Generated",
 };
 
-/** Default border color when no source is specified (Tailwind blue-300). */
-// export const DEFAULT_FIELD_COLOR = "#93c5fd";
-export const DEFAULT_FIELD_COLOR = SOURCE_COLORS.gem;
+export const UNKNOWN_SOURCE_LABEL = "Source unavailable";
+
+/** Neutral border color when no source is specified or recognized. */
+export const DEFAULT_FIELD_COLOR = "#d6dde2";

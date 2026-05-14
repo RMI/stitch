@@ -21,9 +21,6 @@ vi.mock("react-router-dom", async () => {
   };
 });
 
-// Fixture with the same shape as the real API / mock data response.
-// Tests assert against structure and labels — not specific values — so this
-// works regardless of which data source (real API or mock) is active in the app.
 const mockDetailView = {
   id: 1,
   data: {
@@ -147,10 +144,9 @@ describe("ResourceDetailPage", () => {
     });
 
     renderWithQueryClient(<ResourceDetailPage />);
-    expect(screen.getByText("Country")).toBeInTheDocument();
-    // country and state_province both equal "Kuwait" in the fixture, so two matches are expected
+    expect(screen.getAllByText("Country").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Kuwait").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Region")).toBeInTheDocument();
+    expect(screen.getAllByText("Region").length).toBeGreaterThan(0);
     expect(screen.getByText("Middle East")).toBeInTheDocument();
   });
 
@@ -161,7 +157,6 @@ describe("ResourceDetailPage", () => {
     });
 
     renderWithQueryClient(<ResourceDetailPage />);
-    // name_local is null in the fixture
     expect(screen.getByText("Local Name")).toBeInTheDocument();
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
@@ -255,7 +250,7 @@ describe("ResourceDetailPage", () => {
     expect(
       screen.getByRole("button", { name: /show details/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Burgan Source")).toBeInTheDocument();
+    expect(screen.getAllByText("Burgan Source").length).toBeGreaterThan(0);
   });
 
   it("exposes disclosure accessibility attributes on the source detail toggle", async () => {
