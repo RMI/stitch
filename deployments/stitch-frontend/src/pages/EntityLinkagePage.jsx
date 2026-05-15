@@ -141,7 +141,8 @@ export default function EntityLinkagePage() {
       setResult(parsed);
     } catch (err) {
       setError({
-        message: err instanceof Error ? err.message : String(err),
+        status: null,
+        body: err instanceof Error ? err.message : String(err),
       });
     } finally {
       setLoading(false);

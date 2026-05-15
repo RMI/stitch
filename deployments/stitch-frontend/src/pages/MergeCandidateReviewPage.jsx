@@ -421,12 +421,7 @@ export default function MergeCandidateReviewPage() {
     isLoading: listLoading,
     isError: listError,
     error: listErrorObj,
-    refetch: refetchCandidates,
   } = useMergeCandidates(ENDPOINT, true);
-
-  useEffect(() => {
-    refetchCandidates();
-  }, [refetchCandidates]);
 
   useEffect(() => {
     if (!selectedId && candidates?.length) {
@@ -440,14 +435,7 @@ export default function MergeCandidateReviewPage() {
     isLoading: candidateLoading,
     isError: candidateError,
     error: candidateErrorObj,
-    refetch: refetchCandidate,
   } = useMergeCandidate(ENDPOINT, selectedId, Boolean(selectedId));
-
-  useEffect(() => {
-    if (selectedId) {
-      refetchCandidate();
-    }
-  }, [selectedId, refetchCandidate]);
 
   const shouldShowPreview = candidate?.status === "PENDING";
 
@@ -456,18 +444,11 @@ export default function MergeCandidateReviewPage() {
     isLoading: previewLoading,
     isError: previewError,
     error: previewErrorObj,
-    refetch: refetchPreview,
   } = useMergeCandidatePreview(
     ENDPOINT,
     selectedId,
     Boolean(selectedId) && shouldShowPreview,
   );
-
-  useEffect(() => {
-    if (selectedId && shouldShowPreview) {
-      refetchPreview();
-    }
-  }, [selectedId, shouldShowPreview, refetchPreview]);
 
   const pendingCount =
     candidates?.filter((c) => c.status === "PENDING").length ?? 0;
@@ -511,8 +492,13 @@ export default function MergeCandidateReviewPage() {
         }),
       ]);
 
-      refetchCandidates();
-      refetchCandidate();
+      const nextPending = candidates?.find(
+        (item) => item.id !== candidate.id && item.status === "PENDING",
+      );
+      if (nextPending) {
+        setSelectedId(nextPending.id);
+      }
+      setReviewNotes("");
       setShowSourceResources(false);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
