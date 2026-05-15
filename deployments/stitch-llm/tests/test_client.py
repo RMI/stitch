@@ -34,18 +34,7 @@ async def test_stitch_api_client_validates_detail_payload() -> None:
                 "id": 42,
                 "data": {"name": "Alpha", "country": "USA", "basin": None},
                 "provenance": {},
-                "source_data": [
-                    {
-                        "source": "gem",
-                        "name": "Alpha",
-                        "country": "USA",
-                        "source_record": {
-                            "observed_at": "2026-01-01T00:00:00Z",
-                            "producer": "test",
-                            "payload": {"kind": "fixture"},
-                        },
-                    }
-                ],
+                "source_data": [{"source": "gem", "name": "Alpha", "country": "USA"}],
             },
         )
 

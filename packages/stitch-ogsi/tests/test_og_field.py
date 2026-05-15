@@ -13,11 +13,13 @@ from pydantic import TypeAdapter, ValidationError
 
 from stitch.ogsi.model import (
     GemSource,
+    OGFieldDetailView,
     OGFieldResource,
     OGFieldSource,
     SourceRecord,
     WoodMacSource,
 )
+from stitch.ogsi.model.og_field import OilGasFieldBase
 
 
 # ---------------------------------------------------------------------------
@@ -98,3 +100,21 @@ class TestOGFieldResource:
                 source_data=og_payload,
                 constituents=[1],
             )
+
+
+class TestOGFieldDetailView:
+    def test_source_view_validation_accepts_omitted_source_record(self):
+        detail = OGFieldDetailView.model_validate(
+            {
+                "id": 1,
+                "data": OilGasFieldBase(name="Alpha", country="USA").model_dump(),
+                "provenance": {},
+                "source_data": [
+                    {"source": "gem", "name": "Alpha", "country": "USA"}
+                ],
+            }
+        )
+
+        assert len(detail.source_data) == 1
+        assert detail.source_data[0].source == "gem"
+        assert detail.source_data[0].source_record is None

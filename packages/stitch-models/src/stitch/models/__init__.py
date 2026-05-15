@@ -47,7 +47,7 @@ class Source[TId: IdType, TSrcKey: str](BaseModel):
 
 
 class SourceView[TId: IdType, TSrcKey: str](Source[TId, TSrcKey]):
-    source_record: SourceRecord = Field(exclude=True)
+    source_record: SourceRecord | None = Field(default=None, exclude=True)
 
 
 class SourcePayload(BaseModel):
