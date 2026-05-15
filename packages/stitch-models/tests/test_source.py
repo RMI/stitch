@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
 
+from stitch.models import SourceRecord
 from tests.conftest import (
     BarSource,
     BarSourceORM,
@@ -30,10 +32,20 @@ def assert_has_error(errors: list[dict], *, type: str, loc: tuple) -> None:
 
 class TestSourceSubclassing:
     def test_instantiation_preserves_types(self):
-        src = FooSource(id=1, value=3.14)
+        src = FooSource(
+            id=1,
+            value=3.14,
+            source_record=SourceRecord(
+                observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+                producer="test",
+                payload={"kind": "fixture"},
+            ),
+        )
         assert src.id == 1
         assert src.source == "foo"
         assert src.value == 3.14
+        assert src.source_record is not None
+        assert src.source_record.producer == "test"
         assert isinstance(src.id, int)
         assert isinstance(src.value, float)
 
@@ -66,6 +78,7 @@ class TestSourceSubclassing:
     def test_id_defaults_to_none(self):
         src = FooSource(value=1.0)
         assert src.id is None
+        assert src.source_record is None
 
     def test_from_attributes_config_inherited(self):
         assert FooSource.model_config.get("from_attributes") is True
@@ -91,6 +104,24 @@ class TestSourceSubclassing:
 
 
 class TestSourceValidation:
+    def test_source_record_accepts_nested_json_payload(self):
+        record = SourceRecord.model_validate(
+            {
+                "record_id": "rec-1",
+                "run_id": "run-1",
+                "observed_at": "2026-01-01T00:00:00Z",
+                "producer": "stitch-seed/0.1.0",
+                "payload": {
+                    "kind": "seed_faker",
+                    "source": {"name": "Alpha"},
+                    "random_seed": 7,
+                    "index": 1,
+                },
+            }
+        )
+        assert record.record_id == "rec-1"
+        assert record.payload["kind"] == "seed_faker"
+
     def test_rejects_wrong_literal_via_dict(self):
         with pytest.raises(ValidationError) as exc_info:
             FooSource.model_validate({"id": 1, "source": "wrong", "value": 3.14})

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
@@ -13,6 +14,7 @@ from stitch.models import (
     Resource_,
     Resource,
     Source,
+    SourceRecord,
     SourcePayload,
 )
 
@@ -117,7 +119,15 @@ class BarSourceORM:
 
 @pytest.fixture
 def foo_source():
-    return FooSource(id=1, value=3.14)
+    return FooSource(
+        id=1,
+        value=3.14,
+        source_record=SourceRecord(
+            observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+            producer="test",
+            payload={"source": "fixture"},
+        ),
+    )
 
 
 @pytest.fixture

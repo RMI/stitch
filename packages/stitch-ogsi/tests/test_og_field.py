@@ -6,6 +6,7 @@ on top of stitch-models generics.  They also serve as usage examples.
 
 from __future__ import annotations
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
@@ -14,6 +15,7 @@ from stitch.ogsi.model import (
     GemSource,
     OGFieldResource,
     OGFieldSource,
+    SourceRecord,
     WoodMacSource,
 )
 
@@ -48,6 +50,26 @@ class TestOGFieldSourceDiscriminator:
             _source_adapter.validate_json(
                 '{"source": "unknown", "name": "X", "country": "USA"}'
             )
+
+    def test_source_record_round_trips_on_source_variants(self):
+        obj = _source_adapter.validate_python(
+            {
+                "source": "gem",
+                "name": "Test Field",
+                "country": "USA",
+                "source_record": {
+                    "observed_at": "2026-01-01T00:00:00Z",
+                    "producer": "stitch-seed/0.1.0",
+                    "payload": {"kind": "seed_faker", "source": {"name": "Test Field"}},
+                },
+            }
+        )
+        assert isinstance(obj, GemSource)
+        assert obj.source_record == SourceRecord(
+            observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+            producer="stitch-seed/0.1.0",
+            payload={"kind": "seed_faker", "source": {"name": "Test Field"}},
+        )
 
 
 # ---------------------------------------------------------------------------

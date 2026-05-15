@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from stitch.models import (
     Resource,
     Source,
+    SourceRecord,
 )
 
 from .og_field import OilGasFieldBase, OilGasOwner, OilGasOperator
@@ -24,6 +25,7 @@ __all__ = [
     "RMISource",
     "WoodMacSource",
     "GemSource",
+    "SourceRecord",
     "LocationType",
     "OilGasOwner",
     "OilGasOperator",

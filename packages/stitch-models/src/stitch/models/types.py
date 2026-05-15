@@ -4,6 +4,7 @@ from pydantic import Field
 from uuid import UUID
 
 IdType = int | UUID
+type JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
 
 Year = Annotated[int, Field(ge=1800, le=2100)]
 FractionalPercentage = Annotated[float, Field(ge=0.0, le=100)]
