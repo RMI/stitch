@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -199,6 +200,8 @@ def test_get_suggestion_returns_validated_value(
     assert response.status_code == 200
     body = response.json()
     assert body["observed_at"].endswith("Z")
+    prompt_payload = json.loads(azure_client.calls[0]["input_messages"][1]["content"])
+    assert "source_record" not in prompt_payload["source_records"][0]
     assert body == {
         "resource_id": 42,
         "field": "basin",
