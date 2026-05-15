@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from typing import Any, ClassVar, override
 
 from pydantic import TypeAdapter
@@ -46,7 +46,11 @@ class OilGasFieldSourceModel(OGFieldQueryMixin, TimestampMixin, UserAuditMixin, 
 
     @classmethod
     @override
-    def _base_query(cls, params: OGFieldQueryParams):
+    def _base_query(
+        cls,
+        params: OGFieldQueryParams,
+        licensed_sources: Collection[OGSISrcKey] | None = None,
+    ):
         """Filter to sources with at least one active membership."""
 
         active_membership = (
@@ -56,9 +60,9 @@ class OilGasFieldSourceModel(OGFieldQueryMixin, TimestampMixin, UserAuditMixin, 
             .exists()
         )
         stmt = select(cls).where(active_membership)
-        for cond in cls._build_conditions(params):
+        for cond in cls._build_conditions(params, licensed_sources=licensed_sources):
             stmt = stmt.where(cond)
-        return cls._apply_sort(stmt, params)
+        return stmt.order_by(*cls._create_sort_clauses(params))
 
     @classmethod
     def create(

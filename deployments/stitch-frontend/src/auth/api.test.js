@@ -1,17 +1,26 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createAuthenticatedFetcher } from "./api";
 
 describe("createAuthenticatedFetcher", () => {
+  const config = {
+    auth0: {
+      audience: "https://stitch-api.local",
+    },
+  };
   let getAccessTokenSilently;
   let fetcher;
 
   beforeEach(() => {
     getAccessTokenSilently = vi.fn().mockResolvedValue("test-token");
-    fetcher = createAuthenticatedFetcher(getAccessTokenSilently);
+    fetcher = createAuthenticatedFetcher(config, getAccessTokenSilently);
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }))),
     );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("attaches Bearer token to request", async () => {
@@ -25,7 +34,7 @@ describe("createAuthenticatedFetcher", () => {
     await fetcher("http://api.test/data");
 
     expect(getAccessTokenSilently).toHaveBeenCalledWith({
-      authorizationParams: { audience: "https://test-api" },
+      authorizationParams: { audience: "https://stitch-api.local" },
     });
   });
 
@@ -50,7 +59,7 @@ describe("createAuthenticatedFetcher", () => {
 
   it("propagates token acquisition errors", async () => {
     getAccessTokenSilently.mockRejectedValue(new Error("token error"));
-    fetcher = createAuthenticatedFetcher(getAccessTokenSilently);
+    fetcher = createAuthenticatedFetcher(config, getAccessTokenSilently);
 
     await expect(fetcher("http://api.test/data")).rejects.toThrow(
       "token error",

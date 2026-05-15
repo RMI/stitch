@@ -22,11 +22,12 @@ from stitch.api.db.errors import (
     ResourceNotFoundError,
     ResourceIntegrityError,
 )
-from stitch.api.auth import CurrentUser
+from stitch.api.auth import Claims, CurrentUser
 from stitch.api.db.utils import (
     resource_to_view,
     resource_to_detail_view,
 )
+from stitch.api.permissions import licensed_sources
 
 from stitch.ogsi.model import (
     OGFieldDetailView,
@@ -50,10 +51,13 @@ async def get_all_resources(
     *,
     uow: UnitOfWorkDep,
     _user: CurrentUser,
+    claims: Claims,
     params: Annotated[OGFieldQueryParams, Query()],
 ) -> PaginatedResponse[OGFieldListItemView]:
     items, total_count = await resource_actions.query(
-        session=uow.session, params=params
+        session=uow.session,
+        params=params,
+        licensed_sources=licensed_sources(claims),
     )
     return PaginatedResponse(
         items=items,
@@ -68,11 +72,13 @@ async def get_filter_options(
     *,
     uow: UnitOfWorkDep,
     _user: CurrentUser,
+    claims: Claims,
     field: OGFieldFilterOptionField,
 ) -> OGFieldFilterOptionsResponse:
     return await resource_actions.get_filter_options(
         session=uow.session,
         field=field,
+        licensed_sources=licensed_sources(claims),
     )
 
 
@@ -219,17 +225,21 @@ async def deny_merge_candidate(
 
 @router.get("/{id}", response_model=OGFieldView)
 async def get_resource(
-    *, uow: UnitOfWorkDep, user: CurrentUser, id: int
+    *, uow: UnitOfWorkDep, user: CurrentUser, claims: Claims, id: int
 ) -> OGFieldView:
-    res: OGFieldResource = await resource_actions.get(session=uow.session, id=id)
+    res: OGFieldResource = await resource_actions.get(
+        session=uow.session, id=id, licensed_sources=licensed_sources(claims)
+    )
     return resource_to_view(resource=res)
 
 
 @router.get("/{id}/detail", response_model=OGFieldDetailView)
 async def get_resource_detail(
-    *, uow: UnitOfWorkDep, user: CurrentUser, id: int
+    *, uow: UnitOfWorkDep, user: CurrentUser, claims: Claims, id: int
 ) -> OGFieldDetailView:
-    res: OGFieldResource = await resource_actions.get(session=uow.session, id=id)
+    res: OGFieldResource = await resource_actions.get(
+        session=uow.session, id=id, licensed_sources=licensed_sources(claims)
+    )
     return resource_to_detail_view(resource=res)
 
 

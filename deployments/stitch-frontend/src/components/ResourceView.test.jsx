@@ -96,7 +96,7 @@ describe("ResourceView", () => {
     expect(mockRefetch).toHaveBeenCalled();
   });
 
-  it("displays JSON data when resource is loaded", () => {
+  it("displays structured data when resource is loaded", () => {
     const mockResource = {
       id: 1,
       name: "Test Resource",
@@ -110,10 +110,14 @@ describe("ResourceView", () => {
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    expect(screen.getByText(/"id": 1/)).toBeInTheDocument();
-    expect(screen.getByText(/"name": "Test Resource"/)).toBeInTheDocument();
-    expect(screen.getByText(/"type": "example"/)).toBeInTheDocument();
-    expect(screen.getByText(/"status": "active"/)).toBeInTheDocument();
+    expect(screen.getByText("ID")).toBeInTheDocument();
+    expect(screen.getByText("1")).toBeInTheDocument();
+    expect(screen.getByText("Name")).toBeInTheDocument();
+    expect(screen.getByText("Test Resource")).toBeInTheDocument();
+    expect(screen.getByText("Type")).toBeInTheDocument();
+    expect(screen.getByText("example")).toBeInTheDocument();
+    expect(screen.getByText("Status")).toBeInTheDocument();
+    expect(screen.getByText("active")).toBeInTheDocument();
   });
 
   it("displays error message when in error state", () => {

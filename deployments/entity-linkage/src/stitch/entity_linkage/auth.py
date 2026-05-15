@@ -30,6 +30,14 @@ _DEV_CLAIMS = TokenClaims(
     sub="dev|local-placeholder",
     email="dev@example.com",
     name="Dev User",
+    permissions=frozenset(
+        {
+            "resource:read:public",
+            "resource:read:licensed:gem",
+            "resource:read:licensed:rmi",
+            "resource:read:licensed:wm",
+        }
+    ),
     raw={},
 )
 
@@ -54,7 +62,7 @@ def _extract_bearer_token_from_request(request: Request) -> str | None:
     Return the raw bearer token from the Authorization header.
 
     This exists separately from JWT validation so that downstream callers can
-    relay the original token when operating in transparent-relay mode.
+    opt into explicit bearer-token relay in the future.
     """
     auth_header = request.headers.get("Authorization")
     if not auth_header:
@@ -161,8 +169,8 @@ async def get_request_auth_context(
     """
     Build the request-scoped auth context used by downstream API clients.
 
-    In the current transparent-relay model, this includes the caller's raw
-    bearer token so entity-linkage can call Stitch API on the caller's behalf.
+    The current deployment wiring uses env-based downstream auth, but we keep
+    the raw bearer token available for future explicit relay or OBO modes.
     """
     if get_settings().auth_disabled:
         bearer_token = _dev_bearer_token()

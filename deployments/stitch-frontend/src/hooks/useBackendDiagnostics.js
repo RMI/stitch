@@ -1,7 +1,32 @@
 import { useEffect, useState } from "react";
-import config from "../config/env";
 
-export default function useBackendDiagnostics(enabled) {
+async function parseJsonResponse(response) {
+  return response.json().catch(() => null);
+}
+
+async function fetchJson(url, options) {
+  const response = await fetch(url, options);
+  const payload = await parseJsonResponse(response);
+
+  if (!response.ok) {
+    const detail =
+      payload && typeof payload === "object" && "detail" in payload
+        ? payload.detail
+        : `HTTP ${response.status}`;
+
+    throw new Error(
+      typeof detail === "string" ? detail : JSON.stringify(detail),
+    );
+  }
+
+  return payload;
+}
+
+export default function useBackendDiagnostics(
+  apiBaseUrl,
+  enabled,
+  authFetcher,
+) {
   const [state, setState] = useState({
     loading: false,
     error: null,
@@ -23,31 +48,50 @@ export default function useBackendDiagnostics(enabled) {
       }));
 
       try {
-        const response = await fetch(`${config.apiBaseUrl}/health/details`, {
+        const health = await fetchJson(`${apiBaseUrl}/health/details`, {
           method: "GET",
           headers: {
             Accept: "application/json",
           },
         });
 
-        const payload = await response.json().catch(() => null);
+        let authMe = null;
+        let authMeError = null;
 
-        if (!response.ok) {
-          const detail =
-            payload && typeof payload === "object" && "detail" in payload
-              ? payload.detail
-              : `HTTP ${response.status}`;
+        if (authFetcher) {
+          try {
+            const response = await authFetcher(`${apiBaseUrl}/auth/me`, {
+              method: "GET",
+              headers: {
+                Accept: "application/json",
+              },
+            });
+            authMe = await parseJsonResponse(response);
 
-          throw new Error(
-            typeof detail === "string" ? detail : JSON.stringify(detail),
-          );
+            if (!response.ok) {
+              const detail =
+                authMe && typeof authMe === "object" && "detail" in authMe
+                  ? authMe.detail
+                  : `HTTP ${response.status}`;
+              throw new Error(
+                typeof detail === "string" ? detail : JSON.stringify(detail),
+              );
+            }
+          } catch (error) {
+            authMeError =
+              error instanceof Error ? error.message : "Unknown error";
+          }
         }
 
         if (!cancelled) {
           setState({
             loading: false,
             error: null,
-            data: payload,
+            data: {
+              health,
+              authMe,
+              authMeError,
+            },
           });
         }
       } catch (error) {
@@ -66,7 +110,7 @@ export default function useBackendDiagnostics(enabled) {
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, [apiBaseUrl, authFetcher, enabled]);
 
   return state;
 }

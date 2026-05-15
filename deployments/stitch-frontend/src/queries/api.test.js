@@ -1,11 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getResources, getResource } from "./api";
+import { createLLMSuggestion, getResources, getResource } from "./api";
 
 describe("API Functions", () => {
   let mockFetcher;
+  let config;
 
   beforeEach(() => {
     mockFetcher = vi.fn();
+    config = {
+      apiBaseUrl: "http://localhost:8000/api/v1",
+      stitchLlmBaseUrl: "http://localhost:8002/api/v1",
+    };
   });
 
   describe("getResources", () => {
@@ -21,7 +26,7 @@ describe("API Functions", () => {
         json: async () => mockResources,
       });
 
-      const result = await getResources(mockFetcher);
+      const result = await getResources(config, mockFetcher);
 
       expect(mockFetcher).toHaveBeenCalledWith(
         "http://localhost:8000/api/v1/resources/?page=1&page_size=50",
@@ -36,7 +41,7 @@ describe("API Functions", () => {
         json: async () => [],
       });
 
-      await getResources(mockFetcher, "resources", {
+      await getResources(config, mockFetcher, "resources", {
         filters: { basin: ["Arabian", "Permian"], region: ["Middle East"] },
       });
 
@@ -53,7 +58,7 @@ describe("API Functions", () => {
         json: async () => [],
       });
 
-      await getResources(mockFetcher, "resources", {
+      await getResources(config, mockFetcher, "resources", {
         sort_by: "basin",
         sort_order: "desc",
       });
@@ -64,6 +69,22 @@ describe("API Functions", () => {
       expect(url.searchParams.get("sort_order")).toBe("desc");
     });
 
+    it("appends q to the URL when provided", async () => {
+      mockFetcher.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [],
+      });
+
+      await getResources(config, mockFetcher, "resources", {
+        q: "ghawar",
+      });
+
+      const calledUrl = mockFetcher.mock.calls[0][0];
+      const url = new URL(calledUrl);
+      expect(url.searchParams.get("q")).toBe("ghawar");
+    });
+
     it("omits sort params when not provided", async () => {
       mockFetcher.mockResolvedValueOnce({
         ok: true,
@@ -71,7 +92,7 @@ describe("API Functions", () => {
         json: async () => [],
       });
 
-      await getResources(mockFetcher);
+      await getResources(config, mockFetcher);
 
       const calledUrl = mockFetcher.mock.calls[0][0];
       const url = new URL(calledUrl);
@@ -85,7 +106,7 @@ describe("API Functions", () => {
         status: 500,
       });
 
-      await expect(getResources(mockFetcher)).rejects.toThrow(
+      await expect(getResources(config, mockFetcher)).rejects.toThrow(
         "HTTP error! status: 500",
       );
     });
@@ -93,7 +114,9 @@ describe("API Functions", () => {
     it("throws error on network failure", async () => {
       mockFetcher.mockRejectedValueOnce(new Error("Network error"));
 
-      await expect(getResources(mockFetcher)).rejects.toThrow("Network error");
+      await expect(getResources(config, mockFetcher)).rejects.toThrow(
+        "Network error",
+      );
     });
   });
 
@@ -107,7 +130,7 @@ describe("API Functions", () => {
         json: async () => mockResource,
       });
 
-      const result = await getResource(42, mockFetcher);
+      const result = await getResource(config, 42, mockFetcher);
 
       expect(mockFetcher).toHaveBeenCalledWith(
         "http://localhost:8000/api/v1/resources/42",
@@ -122,7 +145,7 @@ describe("API Functions", () => {
       });
 
       try {
-        await getResource(999, mockFetcher);
+        await getResource(config, 999, mockFetcher);
         expect.fail("Should have thrown an error");
       } catch (error) {
         expect(error.message).toBe("HTTP error! status: 404");
@@ -136,10 +159,12 @@ describe("API Functions", () => {
         status: 404,
       });
 
-      await expect(getResource(123, mockFetcher)).rejects.toMatchObject({
-        message: "HTTP error! status: 404",
-        status: 404,
-      });
+      await expect(getResource(config, 123, mockFetcher)).rejects.toMatchObject(
+        {
+          message: "HTTP error! status: 404",
+          status: 404,
+        },
+      );
     });
 
     it("includes status code in error object for 500", async () => {
@@ -148,7 +173,7 @@ describe("API Functions", () => {
         status: 500,
       });
 
-      await expect(getResource(1, mockFetcher)).rejects.toMatchObject({
+      await expect(getResource(config, 1, mockFetcher)).rejects.toMatchObject({
         message: "HTTP error! status: 500",
         status: 500,
       });
@@ -157,9 +182,42 @@ describe("API Functions", () => {
     it("throws error on network failure", async () => {
       mockFetcher.mockRejectedValueOnce(new Error("Failed to fetch"));
 
-      await expect(getResource(1, mockFetcher)).rejects.toThrow(
+      await expect(getResource(config, 1, mockFetcher)).rejects.toThrow(
         "Failed to fetch",
       );
+    });
+  });
+
+  describe("createLLMSuggestion", () => {
+    it("calls the stitch-llm GET endpoint with the requested field", async () => {
+      mockFetcher.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          resource_id: 42,
+          field: "basin",
+          value: "Songliao Basin",
+          citations: [],
+          query_succeeded: true,
+          model: "test-model",
+          foundry_request: {},
+          foundry_response: {},
+        }),
+      });
+
+      const result = await createLLMSuggestion(
+        config,
+        42,
+        "basin",
+        mockFetcher,
+        "oil-gas-fields",
+      );
+
+      expect(mockFetcher).toHaveBeenCalledWith(
+        new URL("http://localhost:8002/api/v1/oil-gas-fields/42?field=basin"),
+        { method: "GET" },
+      );
+      expect(result.value).toBe("Songliao Basin");
     });
   });
 });

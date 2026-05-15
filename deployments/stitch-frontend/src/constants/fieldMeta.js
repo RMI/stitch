@@ -45,3 +45,15 @@ export const IDENTITY_FIELDS = Object.entries(FIELD_META)
 export const PRODUCTION_FIELDS = Object.entries(FIELD_META)
   .filter(([, v]) => v.section === "production")
   .map(([k]) => k);
+
+export const AI_SUGGESTION_FIELDS = [
+  "basin",
+  "state_province",
+  "discovery_year",
+  "fid_year",
+  "production_start_year",
+  "location_type",
+  "field_status",
+  "primary_hydrocarbon_group",
+  "production_conventionality",
+];

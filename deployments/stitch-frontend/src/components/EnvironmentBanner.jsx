@@ -1,6 +1,6 @@
 import { useState } from "react";
-import config from "../config/env";
 import ColophonPanel from "./ColophonPanel";
+import { useConfig } from "../config/useConfig";
 
 function normalizeEnvLabel(value) {
   return (value ?? "").trim();
@@ -30,6 +30,7 @@ function getBannerClasses(label) {
 }
 
 export default function EnvironmentBanner() {
+  const config = useConfig();
   const [isOpen, setIsOpen] = useState(false);
   const label = normalizeEnvLabel(config.appEnv);
 
@@ -40,13 +41,15 @@ export default function EnvironmentBanner() {
   return (
     <div className="sticky top-0 z-50 w-full">
       <div className={getBannerClasses(label)}>
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-1 text-sm font-medium">
-          <span>{label.toUpperCase()} Environment</span>
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-2 text-sm font-medium sm:px-6 lg:px-8">
+          <span className="min-w-0 truncate">
+            {label.toUpperCase()} Environment
+          </span>
 
           <button
             type="button"
             onClick={() => setIsOpen((value) => !value)}
-            className="rounded border border-white/30 px-2 py-0.5 text-sm hover:bg-white/10"
+            className="shrink-0 rounded-md border border-white/30 px-2.5 py-1 text-sm font-semibold transition-colors hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2"
             aria-expanded={isOpen}
             aria-controls="frontend-diagnostics-panel"
           >

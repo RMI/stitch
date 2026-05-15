@@ -2,7 +2,6 @@
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.exc import NoResultFound
 
 
 from stitch.auth import TokenClaims
@@ -14,8 +13,8 @@ from stitch.api.db.model.user import User as UserModel
 
 def _make_claims(
     sub: str = "auth0|user-1",
-    email: str = "user@example.com",
-    name: str = "Test User",
+    email: str | None = "user@example.com",
+    name: str | None = "Test User",
 ) -> TokenClaims:
     return TokenClaims(sub=sub, email=email, name=name, raw={})
 
@@ -31,8 +30,7 @@ class TestGetCurrentUserJITProvisioning:
         """New user created in DB on first login."""
         claims = _make_claims(sub="auth0|new-user")
 
-        async with UnitOfWork(integration_session_factory) as uow:
-            user = await get_current_user(claims, uow)
+        user = await get_current_user(claims, integration_session_factory)
 
         assert user.sub == "auth0|new-user"
         assert user.email == "user@example.com"
@@ -65,8 +63,7 @@ class TestGetCurrentUserJITProvisioning:
             sub="auth0|existing", name="Updated", email="new@example.com"
         )
 
-        async with UnitOfWork(integration_session_factory) as uow:
-            user = await get_current_user(claims, uow)
+        user = await get_current_user(claims, integration_session_factory)
 
         assert user.sub == "auth0|existing"
         assert user.name == "Updated"
@@ -90,8 +87,7 @@ class TestGetCurrentUserJITProvisioning:
             sub="auth0|updatable", name="New Name", email="new@example.com"
         )
 
-        async with UnitOfWork(integration_session_factory) as uow:
-            await get_current_user(claims, uow)
+        await get_current_user(claims, integration_session_factory)
 
         async with integration_session_factory() as session:
             row = (
@@ -103,38 +99,162 @@ class TestGetCurrentUserJITProvisioning:
             assert row.email == "new@example.com"
 
     @pytest.mark.anyio
-    async def test_error_when_missing_claim(
+    async def test_creates_user_with_null_claims(
         self,
         integration_session_factory,
     ):
-        """Name defaults to empty string when claims.name is None."""
-        claims = TokenClaims(
-            sub="auth0|no-name", email="valid@example.com", name=None, raw={}
-        )
+        """User can be JIT-provisioned when name and email claims are absent."""
+        claims = _make_claims(sub="auth0|no-claims", email=None, name=None)
 
-        async with UnitOfWork(integration_session_factory) as uow:
-            with pytest.raises(NoResultFound):
-                await get_current_user(claims, uow)
+        user = await get_current_user(claims, integration_session_factory)
+
+        assert user.sub == "auth0|no-claims"
+        assert user.email is None
+        assert user.name is None
+
+        async with integration_session_factory() as session:
+            row = (
+                await session.execute(
+                    select(UserModel).where(UserModel.sub == "auth0|no-claims")
+                )
+            ).scalar_one()
+            assert row.email is None
+            assert row.name is None
 
     @pytest.mark.anyio
-    async def test_handles_concurrent_first_login(
+    async def test_creates_user_with_blank_claims_treated_as_missing(
         self,
         integration_session_factory,
     ):
-        """IntegrityError caught on concurrent insert, re-queries successfully."""
+        """Blank or whitespace-only claims are normalized to null."""
+        claims = _make_claims(sub="auth0|blank-claims", email="  ", name="")
+
+        user = await get_current_user(claims, integration_session_factory)
+
+        assert user.sub == "auth0|blank-claims"
+        assert user.email is None
+        assert user.name is None
+
+        async with integration_session_factory() as session:
+            row = (
+                await session.execute(
+                    select(UserModel).where(UserModel.sub == "auth0|blank-claims")
+                )
+            ).scalar_one()
+            assert row.email is None
+            assert row.name is None
+
+    @pytest.mark.anyio
+    async def test_backfills_missing_fields_on_subsequent_login(
+        self,
+        integration_session_factory,
+    ):
+        """Null name/email columns get populated when later claims provide them."""
+        async with integration_session_factory() as session:
+            session.add(UserModel(sub="auth0|backfill", name=None, email=None))
+            await session.commit()
+
+        claims = _make_claims(
+            sub="auth0|backfill", name="Filled In", email="filled@example.com"
+        )
+
+        user = await get_current_user(claims, integration_session_factory)
+
+        assert user.name == "Filled In"
+        assert user.email == "filled@example.com"
+
+        async with integration_session_factory() as session:
+            row = (
+                await session.execute(
+                    select(UserModel).where(UserModel.sub == "auth0|backfill")
+                )
+            ).scalar_one()
+            assert row.name == "Filled In"
+            assert row.email == "filled@example.com"
+
+    @pytest.mark.anyio
+    async def test_blank_claims_do_not_overwrite_existing_values(
+        self,
+        integration_session_factory,
+    ):
+        """Blank claim values should be ignored during back-fill."""
         async with integration_session_factory() as session:
             session.add(
                 UserModel(
-                    sub="auth0|race-user", name="Racer", email="racer@example.com"
+                    sub="auth0|ignore-blanks",
+                    name="Existing Name",
+                    email="existing@example.com",
                 )
             )
             await session.commit()
 
         claims = _make_claims(
-            sub="auth0|race-user", name="Racer", email="racer@example.com"
+            sub="auth0|ignore-blanks",
+            name="   ",
+            email="",
         )
 
-        async with UnitOfWork(integration_session_factory) as uow:
-            user = await get_current_user(claims, uow)
+        user = await get_current_user(claims, integration_session_factory)
 
-        assert user.sub == "auth0|race-user"
+        assert user.name == "Existing Name"
+        assert user.email == "existing@example.com"
+
+        async with integration_session_factory() as session:
+            row = (
+                await session.execute(
+                    select(UserModel).where(UserModel.sub == "auth0|ignore-blanks")
+                )
+            ).scalar_one()
+            assert row.name == "Existing Name"
+            assert row.email == "existing@example.com"
+
+    @pytest.mark.anyio
+    async def test_provisioning_survives_caller_rollback(
+        self,
+        integration_session_factory,
+    ):
+        """JIT-provisioned user persists even if the caller's transaction rolls back."""
+        claims = _make_claims(sub="auth0|durable")
+
+        with pytest.raises(RuntimeError):
+            async with UnitOfWork(integration_session_factory):
+                await get_current_user(claims, integration_session_factory)
+                raise RuntimeError("simulated handler failure")
+
+        async with integration_session_factory() as session:
+            row = (
+                await session.execute(
+                    select(UserModel).where(UserModel.sub == "auth0|durable")
+                )
+            ).scalar_one()
+            assert row.sub == "auth0|durable"
+
+    @pytest.mark.anyio
+    async def test_backfill_survives_caller_rollback(
+        self,
+        integration_session_factory,
+    ):
+        """Claim back-fill persists even if the caller's transaction rolls back."""
+        async with integration_session_factory() as session:
+            session.add(UserModel(sub="auth0|durable-backfill", name=None, email=None))
+            await session.commit()
+
+        claims = _make_claims(
+            sub="auth0|durable-backfill",
+            name="Filled",
+            email="filled@example.com",
+        )
+
+        with pytest.raises(RuntimeError):
+            async with UnitOfWork(integration_session_factory):
+                await get_current_user(claims, integration_session_factory)
+                raise RuntimeError("simulated handler failure")
+
+        async with integration_session_factory() as session:
+            row = (
+                await session.execute(
+                    select(UserModel).where(UserModel.sub == "auth0|durable-backfill")
+                )
+            ).scalar_one()
+            assert row.name == "Filled"
+            assert row.email == "filled@example.com"

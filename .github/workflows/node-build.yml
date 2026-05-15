@@ -26,16 +26,6 @@ jobs:
           NODE_VERSION=$(node -p "process.version")
           VITE_VERSION=$(node -p "require('./deployments/stitch-frontend/package.json').devDependencies.vite")
 
-          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
-            APP_ENV="pr-${{ github.event.pull_request.number }}"
-          elif [ "${GITHUB_REF_NAME}" = "main" ]; then
-            APP_ENV="main"
-          else
-            APP_ENV="${GITHUB_REF_NAME}"
-          fi
-
-          echo "VITE_APP_VERSION=${APP_VERSION}" >> "$GITHUB_ENV"
-          echo "VITE_APP_VERSION=${APP_VERSION}"
           echo "VITE_BUILD_TIME=${BUILD_TIME}" >> "$GITHUB_ENV"
           echo "VITE_BUILD_TIME=${BUILD_TIME}" 
           echo "VITE_GIT_SHA=${GIT_SHA}" >> "$GITHUB_ENV"
@@ -46,8 +36,28 @@ jobs:
           echo "VITE_NODE_VERSION=${NODE_VERSION}"
           echo "VITE_VITE_VERSION=${VITE_VERSION}" >> "$GITHUB_ENV"
           echo "VITE_VITE_VERSION=${VITE_VERSION}"
-          echo "VITE_APP_ENV=${APP_ENV}" >> "$GITHUB_ENV"
-          echo "VITE_APP_ENV=${APP_ENV}"
 
       - name: Build
         run: make frontend-build
+
+      - name: Prepare Tarball
+        run: tar -czf dist.tgz -C deployments/stitch-frontend/dist .
+
+      - name: Check for dist.tgz
+        id: check_artifact
+        shell: bash
+        run: |
+          if [[ -f dist.tgz ]]; then
+            echo "has_artifact=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_artifact=false" >> "$GITHUB_OUTPUT"
+          fi
+
+        # Reuse the artifact for downstream deploy
+      - name: Upload dist.tgz as workflow artifact
+        if: ${{ steps.check_artifact.outputs.has_artifact == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist-tgz
+          path: dist.tgz
+          if-no-files-found: error

@@ -15,12 +15,14 @@ const mockItems = [
       state_province: "Kuwait",
       region: "Middle East",
       basin: "Arabian",
+      field_status: "Producing",
     },
     provenance: {
       name: "gem",
       state_province: "gem",
       region: "wm",
       basin: "wm",
+      field_status: "gem",
     },
   },
   {
@@ -30,11 +32,13 @@ const mockItems = [
       state_province: null,
       region: "Middle East",
       basin: "Arabian",
+      field_status: "Producing",
     },
     provenance: {
       name: "gem",
       region: "wm",
       basin: "wm",
+      field_status: "gem",
     },
   },
 ];
@@ -50,6 +54,7 @@ const mockResourceData = {
 const defaultHookReturn = {
   data: undefined,
   isLoading: false,
+  isFetching: false,
   isError: false,
   error: null,
   refetch: vi.fn(),
@@ -65,29 +70,34 @@ beforeEach(() => {
 describe("ResourcesView", () => {
   const ENDPOINT = "oil-gas-fields";
 
-  it("renders heading and endpoint information", () => {
+  it("renders heading and keeps endpoint information in diagnostics", () => {
     renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
 
     expect(screen.getByText("Resources")).toBeInTheDocument();
+    expect(screen.getByText("Diagnostics")).toBeInTheDocument();
     expect(screen.getByText(new RegExp(ENDPOINT))).toBeInTheDocument();
   });
 
-  it("renders Fetch and Clear Cache buttons", () => {
+  it("renders the refresh control", () => {
     renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
 
-    expect(screen.getByRole("button", { name: /fetch/i })).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /clear cache/i }),
+      screen.getByRole("button", { name: /refresh/i }),
     ).toBeInTheDocument();
   });
 
-  it("disables Clear Cache button when no data", () => {
+  it("renders search controls", () => {
     renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
 
-    expect(screen.getByRole("button", { name: /clear cache/i })).toBeDisabled();
+    expect(
+      screen.getByRole("searchbox", { name: /search resources/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^search$/i }),
+    ).toBeInTheDocument();
   });
 
-  it("shows loading state while fetching", () => {
+  it("shows loading state while refreshing", () => {
     vi.mocked(useResources).mockReturnValue({
       ...defaultHookReturn,
       isLoading: true,
@@ -95,9 +105,25 @@ describe("ResourcesView", () => {
 
     renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
 
-    const fetchButton = screen.getByRole("button", { name: /loading/i });
-    expect(fetchButton).toBeInTheDocument();
-    expect(fetchButton).toBeDisabled();
+    const refreshButton = screen.getByRole("button", { name: /refreshing/i });
+    expect(refreshButton).toBeInTheDocument();
+    expect(refreshButton).toBeDisabled();
+    expect(screen.getByText(/loading resources/i)).toBeInTheDocument();
+  });
+
+  it("calls refetch when Refresh is clicked", () => {
+    const refetch = vi.fn();
+    vi.mocked(useResources).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockResourceData,
+      refetch,
+    });
+
+    renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /refresh/i }));
+
+    expect(refetch).toHaveBeenCalled();
   });
 
   it("renders table rows when data is available", () => {
@@ -120,10 +146,17 @@ describe("ResourcesView", () => {
 
     renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
 
-    expect(screen.getByText("Name")).toBeInTheDocument();
-    // "Basin" appears in both the filter bar and the table header
-    expect(screen.getAllByText("Basin").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Data source mix")).toBeInTheDocument();
+    const table = screen.getByRole("table");
+    expect(
+      within(table).getByRole("button", { name: /^name/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(table).getByRole("button", { name: /^basin/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(table).getByRole("button", { name: /^field status/i }),
+    ).toBeInTheDocument();
+    expect(within(table).getByText("Data source mix")).toBeInTheDocument();
   });
 
   it("shows filter bar when data is available", () => {
@@ -141,39 +174,15 @@ describe("ResourcesView", () => {
     expect(
       within(filterBar).getByRole("button", { name: /basin/i }),
     ).toBeInTheDocument();
+    expect(
+      within(filterBar).getByRole("button", { name: /field status/i }),
+    ).toBeInTheDocument();
   });
 
   it("does not show filter bar when no data", () => {
     renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
 
     expect(screen.queryByTestId("filter-bar")).not.toBeInTheDocument();
-  });
-
-  it("enables Clear Cache button when data is loaded", () => {
-    vi.mocked(useResources).mockReturnValue({
-      ...defaultHookReturn,
-      data: mockResourceData,
-    });
-
-    renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
-
-    expect(
-      screen.getByRole("button", { name: /clear cache/i }),
-    ).not.toBeDisabled();
-  });
-
-  it("enables Clear Cache button when in error state", () => {
-    vi.mocked(useResources).mockReturnValue({
-      ...defaultHookReturn,
-      isError: true,
-      error: new Error("HTTP error! status: 500"),
-    });
-
-    renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
-
-    expect(
-      screen.getByRole("button", { name: /clear cache/i }),
-    ).not.toBeDisabled();
   });
 
   describe("pagination", () => {
@@ -245,7 +254,9 @@ describe("ResourcesView", () => {
         expect.objectContaining({
           page: DEFAULT_PAGE,
           page_size: DEFAULT_PAGE_SIZE,
+          enabled: true,
           filters: expect.any(Object),
+          q: undefined,
           sort_by: undefined,
           sort_order: undefined,
         }),
@@ -334,7 +345,7 @@ describe("ResourcesView", () => {
       );
     });
 
-    it("resets filters when Clear Cache is clicked", () => {
+    it("resets filters when Clear all is clicked", () => {
       vi.mocked(useResources).mockReturnValue({
         ...defaultHookReturn,
         data: mockResourceData,
@@ -348,7 +359,7 @@ describe("ResourcesView", () => {
         }),
       );
       fireEvent.click(screen.getByRole("checkbox", { name: /middle east/i }));
-      fireEvent.click(screen.getByRole("button", { name: /clear cache/i }));
+      fireEvent.click(screen.getByRole("button", { name: /clear all/i }));
 
       expect(useResources).toHaveBeenLastCalledWith(
         ENDPOINT,
@@ -357,8 +368,163 @@ describe("ResourcesView", () => {
             region: [],
             basin: [],
             state_province: [],
+            field_status: [],
           }),
         }),
+      );
+    });
+  });
+
+  describe("search", () => {
+    it("does not call useResources with q while typing before submit", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      vi.mocked(useResources).mockClear();
+
+      fireEvent.change(
+        screen.getByRole("searchbox", { name: /search resources/i }),
+        {
+          target: { value: "ghawar" },
+        },
+      );
+
+      const callsWithQ = vi
+        .mocked(useResources)
+        .mock.calls.filter(([, params]) => params?.q !== undefined);
+      expect(callsWithQ).toHaveLength(0);
+    });
+
+    it("passes q to useResources when Search is clicked", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      fireEvent.change(
+        screen.getByRole("searchbox", { name: /search resources/i }),
+        {
+          target: { value: "ghawar" },
+        },
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
+
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({ q: "ghawar" }),
+      );
+    });
+
+    it("passes q to useResources when Enter submits the search form", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      const input = screen.getByRole("searchbox", {
+        name: /search resources/i,
+      });
+      fireEvent.change(input, { target: { value: "ghawar" } });
+      fireEvent.submit(input.closest("form"));
+
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({ q: "ghawar" }),
+      );
+    });
+
+    it("trims whitespace before submitting", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      fireEvent.change(
+        screen.getByRole("searchbox", { name: /search resources/i }),
+        { target: { value: "  ghawar  " } },
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
+
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({ q: "ghawar" }),
+      );
+    });
+
+    it("resets pagination to page 1 when search is submitted", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: { ...mockResourceData, total_pages: 3, total_count: 30 },
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      fireEvent.click(screen.getByLabelText("Next page"));
+      fireEvent.change(
+        screen.getByRole("searchbox", { name: /search resources/i }),
+        {
+          target: { value: "ghawar" },
+        },
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
+
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({
+          page: DEFAULT_PAGE,
+          q: "ghawar",
+        }),
+      );
+    });
+
+    it("does not show the clear search button when the input is empty", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      expect(
+        screen.queryByRole("button", { name: /clear search/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows the clear search button when the input has text", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      fireEvent.change(
+        screen.getByRole("searchbox", { name: /search resources/i }),
+        { target: { value: "g" } },
+      );
+
+      expect(
+        screen.getByRole("button", { name: /clear search/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("clears the active search when the input is emptied", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      const input = screen.getByRole("searchbox", {
+        name: /search resources/i,
+      });
+      fireEvent.change(input, { target: { value: "ghawar" } });
+      fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
+
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({ q: "ghawar" }),
+      );
+
+      fireEvent.change(input, { target: { value: "" } });
+
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({ q: undefined }),
+      );
+    });
+
+    it("clears the input and active search when Clear search is clicked", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      const input = screen.getByRole("searchbox", {
+        name: /search resources/i,
+      });
+      fireEvent.change(input, { target: { value: "ghawar" } });
+      fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
+
+      fireEvent.click(screen.getByRole("button", { name: /clear search/i }));
+
+      expect(input).toHaveValue("");
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({ q: undefined }),
       );
     });
   });

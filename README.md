@@ -29,6 +29,8 @@ cp env.example .env
 ```
 
 Edit `.env` as needed (passwords, seed settings, etc.).
+Note that frontend configuration is handled through
+`./deployments/stitch-frontend/public/config.json`
 
 ### Running the Application
 

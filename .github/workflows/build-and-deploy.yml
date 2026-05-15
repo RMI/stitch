@@ -7,6 +7,11 @@ on:
   workflow_dispatch:
 
 jobs:
+  build-frontend:
+    name: "Build frontend"
+    uses: ./.github/workflows/node-build.yml
+    secrets: inherit
+
   build_api_docker_image:
     name: "Build and publish API"
     uses: ./.github/workflows/build-and-push-Docker-image.yml
@@ -35,6 +40,24 @@ jobs:
     with:
       dockerfile: deployments/entity-linkage/Dockerfile
       image-name: ${{ github.event.repository.name }}-entity-linkage
+      image-tag: ${{
+          github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
+          github.event_name == 'schedule' && 'nightly' ||
+          github.event_name == 'push' && github.ref_name ||
+          github.event_name == 'workflow_dispatch' && github.ref_name ||
+          github.sha
+        }}
+
+  build_stitch_llm_docker_image:
+    name: "Build and publish Stitch LLM"
+    uses: ./.github/workflows/build-and-push-Docker-image.yml
+    secrets: inherit
+    permissions:
+      packages: write
+      contents: read
+    with:
+      dockerfile: deployments/stitch-llm/Dockerfile
+      image-name: ${{ github.event.repository.name }}-stitch-llm
       image-tag: ${{
           github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
           github.event_name == 'schedule' && 'nightly' ||
@@ -132,6 +155,7 @@ jobs:
       environment-variables: >-
         LOG_LEVEL=info
         AUTH_DISABLED=true
+        STITCH_CLIENT_BEARER_TOKEN=dev-placeholder-token
         ENTITY_LINKAGE_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
         ENTITY_LINKAGE_FRONTEND_ORIGIN_URL=${{
           github.event_name == 'pull_request' &&
@@ -144,17 +168,66 @@ jobs:
         }}
       deployment-label: entity-linkage
 
+  deploy-stitch-llm:
+    name: "Deploy stitch-llm"
+    uses: ./.github/workflows/deploy-container.yml
+    secrets: inherit
+    needs: [build_stitch_llm_docker_image, deploy-api]
+    with:
+      full-image-name: ${{ needs.build_stitch_llm_docker_image.outputs.digest-image-name }}
+      containerAppName: ${{
+          github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
+          github.event_name == 'schedule' && 'nightly' ||
+          github.event_name == 'push' && github.ref_name ||
+          github.event_name == 'workflow_dispatch' && github.ref_name ||
+          github.sha
+        }}-stitch-llm
+      environment-variables: >-
+        STITCH_LLM_LOG_LEVEL=info
+        AUTH_DISABLED=true
+        STITCH_CLIENT_BEARER_TOKEN=dev-placeholder-token
+        STITCH_LLM_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
+        STITCH_LLM_FRONTEND_ORIGIN_URL=${{
+          github.event_name == 'pull_request' &&
+          format('https://witty-mushroom-017a3dc1e-{0}.westus2.1.azurestaticapps.net', github.event.pull_request.number) ||
+          github.event_name == 'push' && github.ref_name == 'main' &&
+          'https://witty-mushroom-017a3dc1e.1.azurestaticapps.net' ||
+          github.event_name == 'push' &&
+          format('https://witty-mushroom-017a3dc1e-{0}.westus2.1.azurestaticapps.net', github.ref_name) ||
+          'http://localhost:3000'
+        }}
+      deployment-label: stitch-llm
+
   run-seed:
     name: "Run seed"
+    if: ${{ needs.deploy-db.outputs.database-created == 'true' }}
     uses: ./.github/workflows/run-seed.yml
     secrets: inherit
-    needs: [build_seed_docker_image, deploy-api]
+    needs: [build_seed_docker_image, deploy-db, deploy-api]
     with:
       full-image-name: ${{ needs.build_seed_docker_image.outputs.digest-image-name }}
       api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
+
+  deploy-frontend:
+    name: "Deploy frontend"
+    uses: ./.github/workflows/azure-static-web-apps.yml
+    secrets: inherit
+    needs: [build-frontend, deploy-api, deploy-entity-linkage, deploy-stitch-llm]
+    with:
+      artifact-name: dist-tgz
+      app-env: ${{
+          github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) ||
+          github.ref_name
+        }}
+      api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
+      entity-linkage-url: ${{ format('{0}/api/v1', needs.deploy-entity-linkage.outputs.container-app-url) }}
+      stitch-llm-url: ${{ format('{0}/api/v1', needs.deploy-stitch-llm.outputs.container-app-url) }}
+      auth0-domain: rmi-spd.us.auth0.com
+      auth0-client-id: TS1V1soQbccAV1sitFFCfUaIlSwHD2S2
+      auth0-audience: https://stitch-api.local
 
   comment-summary:
     if: ${{ always() && github.event_name == 'pull_request' }}
     uses: ./.github/workflows/comment-pr-summary.yml
     secrets: inherit
-    needs: [build_api_docker_image, build_entity_linkage_docker_image, build_seed_docker_image, deploy-db, run-db-init, deploy-api, deploy-entity-linkage, run-seed]
+    needs: [build_api_docker_image, build_entity_linkage_docker_image, build_stitch_llm_docker_image, build_seed_docker_image, deploy-db, run-db-init, deploy-api, deploy-entity-linkage, deploy-stitch-llm, run-seed, deploy-frontend]

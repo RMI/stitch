@@ -9,5 +9,13 @@ export const LogoutButton = () => {
       openUrl: () => window.location.assign(window.location.origin),
     });
 
-  return isAuthenticated && <Button onClick={logout}>Log out</Button>;
+  if (!isAuthenticated) {
+    return null;
+  }
+
+  return (
+    <Button onClick={logout} variant="secondary">
+      Log out
+    </Button>
+  );
 };

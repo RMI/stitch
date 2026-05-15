@@ -1,0 +1,178 @@
+name: Azure Static Web Apps CI/CD
+
+on:
+  workflow_call:
+    inputs:
+      artifact-name:
+        description: "Uploaded frontend artifact name"
+        required: true
+        type: string
+      app-env:
+        description: "Runtime app environment label"
+        required: true
+        type: string
+      api-url:
+        description: "Base API URL to inject into runtime config"
+        required: true
+        type: string
+      entity-linkage-url:
+        description: "Base entity linkage URL to inject into runtime config"
+        required: true
+        type: string
+      stitch-llm-url:
+        description: "Base stitch-llm URL to inject into runtime config"
+        required: true
+        type: string
+      auth0-domain:
+        description: "Auth0 domain"
+        required: true
+        type: string
+      auth0-client-id:
+        description: "Auth0 client ID"
+        required: true
+        type: string
+      auth0-audience:
+        description: "Auth0 audience"
+        required: true
+        type: string
+
+jobs:
+  build_and_deploy_job:
+    runs-on: ubuntu-latest
+    name: Build and Deploy Job
+    permissions:
+      checks: write
+      contents: read
+      id-token: write
+      pull-requests: write
+    steps:
+
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+          lfs: false
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: .artifact-download
+
+      - name: Inspect downloaded artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Workspace: $(pwd)"
+          echo "Downloaded artifact directory:"
+          ls -la .artifact-download
+          echo
+          echo "Tarball contents:"
+          tar -tzf .artifact-download/dist.tgz | sed -n '1,120p'
+
+      - name: Extract frontend dist
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .swa-dist
+          mkdir -p .swa-dist
+          tar -xzf .artifact-download/dist.tgz -C .swa-dist
+
+          echo "Extracted files:"
+          find .swa-dist -maxdepth 3 -type f | sort | sed -n '1,200p'
+
+          test -f .swa-dist/index.html || {
+            echo "Expected .swa-dist/index.html but it was not found" >&2
+            exit 1
+          }
+
+      - name: Generate runtime config
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CONFIG_TIME="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          CONFIG_ID="cfg-${{ inputs.app-env }}-$(date -u +'%Y%m%dT%H%M%SZ')"
+
+          cat > .swa-dist/config.json <<EOF
+          {
+            "appEnv": "${{ inputs.app-env }}",
+            "apiUrl": "${{ inputs.api-url }}",
+            "entityLinkageUrl": "${{ inputs.entity-linkage-url }}",
+            "stitchLlmUrl": "${{ inputs.stitch-llm-url }}",
+            "auth0Domain": "${{ inputs.auth0-domain }}",
+            "auth0ClientId": "${{ inputs.auth0-client-id }}",
+            "auth0Audience": "${{ inputs.auth0-audience }}",
+            "configId": "${CONFIG_ID}",
+            "configTime": "${CONFIG_TIME}"
+          }
+          EOF
+
+          echo "Generated config.json:"
+          cat .swa-dist/config.json
+
+      - name: Add SWA cache-control config
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp deployments/stitch-frontend/public/staticwebapp.config.json .swa-dist/staticwebapp.config.json
+
+          echo "Final deploy directory:"
+          find .swa-dist -maxdepth 2 -type f | sort | sed -n '1,200p'
+
+          echo
+          echo "Sanity checks:"
+          test -f .swa-dist/index.html
+          test -f .swa-dist/config.json
+          test -f .swa-dist/staticwebapp.config.json
+
+      - name: Deploy
+        id: builddeploy
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN }}
+          action: "upload"
+          skip_app_build: true
+          app_location: ".swa-dist"
+          skip_api_build: true
+
+      - name: Write comment JSON
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/comment-json
+          json_file="/tmp/comment-json/comment-json-frontend.json"
+          swa_url="${{ steps.builddeploy.outputs.static_web_app_url }}"
+
+          if [ -z "$swa_url" ]; then
+            echo "Failed to resolve frontend preview URL from Azure/static-web-apps-deploy output" >&2
+            exit 1
+          fi
+
+          jq -n \
+            --arg section "deployments" \
+            --arg kind "static_site" \
+            --arg name "frontend" \
+            --arg service "frontend" \
+            --arg url "[${swa_url}](${swa_url})" \
+            '{
+              "section": $section,
+              "kind": $kind,
+              "name": $name,
+              "warnings": [],
+              "data": {
+                "service": $service,
+                "url": $url
+              }
+            }' > "$json_file"
+
+          jq empty "$json_file"
+          cat "$json_file"
+
+      - name: Upload comment JSON artifact
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: comment-json-frontend
+          path: /tmp/comment-json/*.json
+          if-no-files-found: error

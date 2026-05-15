@@ -10,13 +10,16 @@ members = [
   "deployments/api",
   "deployments/entity-linkage",
   "deployments/seed",
+  "deployments/stitch-llm",
   "packages/stitch-auth",
+  "packages/stitch-client",
   "packages/stitch-models",
   "packages/stitch-ogsi",
 ]
 
 [tool.uv.sources]
 stitch-auth = { workspace = true }
+stitch-client = { workspace = true }
 
 [dependency-groups]
 dev = ["pytest>=8.4.2", "ruff>=0.14.2"]

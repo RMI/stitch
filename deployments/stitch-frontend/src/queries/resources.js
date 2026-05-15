@@ -50,10 +50,12 @@ export const resourceKeys = {
 // Query definitions
 export const resourceQueries = {
   list: (
+    config,
     endpoint = "resources",
     page = DEFAULT_PAGE,
     page_size = DEFAULT_PAGE_SIZE,
     filters = {},
+    q,
     sort_by,
     sort_order,
   ) => ({
@@ -61,14 +63,16 @@ export const resourceQueries = {
       page,
       page_size,
       ...filters,
+      q,
       sort_by,
       sort_order,
     }),
     queryFn: (fetcher) =>
-      getResources(fetcher, endpoint, {
+      getResources(config, fetcher, endpoint, {
         page,
         page_size,
         filters,
+        q,
         sort_by,
         sort_order,
       }),
@@ -76,32 +80,33 @@ export const resourceQueries = {
     staleTime: DEFAULT_STALE_TIME,
   }),
 
-  detail: (endpoint = "resources", id) => ({
+  detail: (config, endpoint = "resources", id) => ({
     queryKey: resourceKeys.detail(endpoint, id),
-    queryFn: (fetcher) => getResourceDetail(id, fetcher, endpoint),
+    queryFn: (fetcher) => getResourceDetail(config, id, fetcher, endpoint),
     enabled: false,
   }),
 
-  view: (endpoint = "resources", id) => ({
+  view: (config, endpoint = "resources", id) => ({
     queryKey: resourceKeys.view(endpoint, id),
-    queryFn: (fetcher) => getResource(id, fetcher, endpoint),
+    queryFn: (fetcher) => getResource(config, id, fetcher, endpoint),
     enabled: false,
   }),
 
-  mergeCandidates: (endpoint = "oil-gas-fields") => ({
+  mergeCandidates: (config, endpoint = "oil-gas-fields") => ({
     queryKey: resourceKeys.mergeCandidates(endpoint),
-    queryFn: (fetcher) => getMergeCandidates(fetcher, endpoint),
+    queryFn: (fetcher) => getMergeCandidates(config, fetcher, endpoint),
     enabled: false,
   }),
 
-  mergeCandidate: (endpoint = "oil-gas-fields", id) => ({
+  mergeCandidate: (config, endpoint = "oil-gas-fields", id) => ({
     queryKey: resourceKeys.mergeCandidate(endpoint, id),
-    queryFn: (fetcher) => getMergeCandidate(id, fetcher, endpoint),
+    queryFn: (fetcher) => getMergeCandidate(config, id, fetcher, endpoint),
     enabled: false,
   }),
-  mergeCandidatePreview: (endpoint = "oil-gas-fields", id) => ({
+  mergeCandidatePreview: (config, endpoint = "oil-gas-fields", id) => ({
     queryKey: resourceKeys.preview(endpoint, id),
-    queryFn: (fetcher) => getMergeCandidatePreview(id, fetcher, endpoint),
+    queryFn: (fetcher) =>
+      getMergeCandidatePreview(config, id, fetcher, endpoint),
     enabled: false,
   }),
 };

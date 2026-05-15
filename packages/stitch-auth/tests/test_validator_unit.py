@@ -44,6 +44,34 @@ class TestJWTValidatorHappyPath:
 
         assert claims.email == "user@tenant.onmicrosoft.com"
 
+    def test_invalid_preferred_username_does_not_become_email(
+        self, oidc_settings, mock_jwks_client, token_factory
+    ):
+        """Non-email preferred_username is ignored for email fallback."""
+        token = token_factory(
+            email=None,
+            extra_claims={"preferred_username": "not-an-email"},
+        )
+        validator = JWTValidator(oidc_settings)
+
+        claims = validator.validate(token)
+
+        assert claims.email is None
+
+    def test_invalid_email_claim_falls_back_to_valid_preferred_username(
+        self, oidc_settings, mock_jwks_client, token_factory
+    ):
+        """Fallback still works when the email claim itself is malformed."""
+        token = token_factory(
+            email="bad-email",
+            extra_claims={"preferred_username": "user@tenant.onmicrosoft.com"},
+        )
+        validator = JWTValidator(oidc_settings)
+
+        claims = validator.validate(token)
+
+        assert claims.email == "user@tenant.onmicrosoft.com"
+
     def test_optional_claims_can_be_absent(
         self, oidc_settings, mock_jwks_client, token_factory
     ):
@@ -185,4 +213,118 @@ class TestJWTValidatorErrors:
         validator = JWTValidator(oidc_settings)
 
         with pytest.raises(TokenValidationError):
+            validator.validate(token)
+
+
+class TestJWTValidatorPermissions:
+    """Extraction of the Auth0 RBAC `permissions` claim (rfc9068_profile_authz)."""
+
+    def test_extracts_permissions_when_present(
+        self, oidc_settings, mock_jwks_client, token_factory
+    ):
+        token = token_factory(
+            extra_claims={
+                "permissions": [
+                    "resource:read:public",
+                    "resource:read:licensed:wm",
+                ],
+            },
+        )
+        validator = JWTValidator(oidc_settings)
+
+        claims = validator.validate(token)
+
+        assert claims.permissions == frozenset(
+            {"resource:read:public", "resource:read:licensed:wm"}
+        )
+        assert isinstance(claims.permissions, frozenset)
+
+    def test_permissions_empty_when_claim_absent(
+        self, oidc_settings, mock_jwks_client, token_factory
+    ):
+        token = token_factory()
+        validator = JWTValidator(oidc_settings)
+
+        claims = validator.validate(token)
+
+        assert claims.permissions == frozenset()
+
+    def test_permissions_empty_when_claim_is_null(
+        self, oidc_settings, mock_jwks_client, token_factory
+    ):
+        token = token_factory(extra_claims={"permissions": None})
+        validator = JWTValidator(oidc_settings)
+
+        claims = validator.validate(token)
+
+        assert claims.permissions == frozenset()
+
+    def test_permissions_empty_when_claim_is_empty_list(
+        self, oidc_settings, mock_jwks_client, token_factory
+    ):
+        token = token_factory(extra_claims={"permissions": []})
+        validator = JWTValidator(oidc_settings)
+
+        claims = validator.validate(token)
+
+        assert claims.permissions == frozenset()
+
+    def test_permissions_deduplicates_at_validator_level(
+        self, oidc_settings, mock_jwks_client, token_factory
+    ):
+        token = token_factory(extra_claims={"permissions": ["a", "a", "b"]})
+        validator = JWTValidator(oidc_settings)
+
+        claims = validator.validate(token)
+
+        assert claims.permissions == frozenset({"a", "b"})
+
+    def test_raw_payload_still_contains_permissions(
+        self, oidc_settings, mock_jwks_client, token_factory
+    ):
+        token = token_factory(extra_claims={"permissions": ["a"]})
+        validator = JWTValidator(oidc_settings)
+
+        claims = validator.validate(token)
+
+        assert claims.raw["permissions"] == ["a"]
+
+    def test_rejects_permissions_as_string(
+        self, oidc_settings, mock_jwks_client, token_factory
+    ):
+        token = token_factory(
+            extra_claims={
+                "permissions": "resource:read:public resource:read:licensed:wm",
+            },
+        )
+        validator = JWTValidator(oidc_settings)
+
+        with pytest.raises(TokenValidationError, match="permissions"):
+            validator.validate(token)
+
+    def test_rejects_permissions_with_non_string_entries(
+        self, oidc_settings, mock_jwks_client, token_factory
+    ):
+        token = token_factory(extra_claims={"permissions": [123, "valid"]})
+        validator = JWTValidator(oidc_settings)
+
+        with pytest.raises(TokenValidationError, match="permissions"):
+            validator.validate(token)
+
+    def test_rejects_permissions_with_dict_entries(
+        self, oidc_settings, mock_jwks_client, token_factory
+    ):
+        token = token_factory(extra_claims={"permissions": [{"x": 1}]})
+        validator = JWTValidator(oidc_settings)
+
+        with pytest.raises(TokenValidationError, match="permissions"):
+            validator.validate(token)
+
+    def test_rejects_permissions_as_dict(
+        self, oidc_settings, mock_jwks_client, token_factory
+    ):
+        token = token_factory(extra_claims={"permissions": {"a": True}})
+        validator = JWTValidator(oidc_settings)
+
+        with pytest.raises(TokenValidationError, match="permissions"):
             validator.validate(token)

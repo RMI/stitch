@@ -46,8 +46,8 @@ py-lint: uv-dev
 py-test: py-deployment-test pkg-test
 py-test-exact: py-deployment-test-exact pkg-test-exact
 
-py-deployment-test: api-test entity-linkage-test
-py-deployment-test-exact: api-test-exact entity-linkage-test-exact
+py-deployment-test: api-test entity-linkage-test seed-test stitch-llm-test
+py-deployment-test-exact: api-test-exact entity-linkage-test-exact seed-test-exact stitch-llm-test-exact
 
 py-format-check: uv-dev
 	$(RUFF) format --check
@@ -61,7 +61,7 @@ py-format: uv-dev
 py-clean-cache:
 	rm -rf .ruff_cache .pytest_cache
 
-py-build: api-build pkg-build
+py-build: api-build entity-linkage-build stitch-llm-build pkg-build
 
 uv-sync:
 	$(UV) sync
@@ -84,6 +84,13 @@ pkg-test-auth:
 pkg-test-exact-auth:
 	$(MAKE) uv-test-target-exact PKG=stitch-auth TEST_PATH=packages/stitch-auth
 
+pkg-build-client:
+	$(UV) build --package stitch-client
+pkg-test-client:
+	$(MAKE) uv-test-target PKG=stitch-client TEST_PATH=packages/stitch-client
+pkg-test-exact-client:
+	$(MAKE) uv-test-target-exact PKG=stitch-client TEST_PATH=packages/stitch-client
+
 pkg-build-models:
 	$(UV) build --package stitch-models
 pkg-test-models:
@@ -98,9 +105,9 @@ pkg-test-ogsi:
 pkg-test-exact-ogsi:
 	$(MAKE) uv-test-target-exact PKG=stitch-ogsi TEST_PATH=packages/stitch-ogsi
 
-pkg-build: pkg-build-auth pkg-build-models pkg-build-ogsi
-pkg-test: pkg-test-auth pkg-test-models pkg-test-ogsi
-pkg-test-exact: pkg-test-exact-auth pkg-test-exact-models pkg-test-exact-ogsi
+pkg-build: pkg-build-auth pkg-build-client pkg-build-models pkg-build-ogsi
+pkg-test: pkg-test-auth pkg-test-client pkg-test-models pkg-test-ogsi
+pkg-test-exact: pkg-test-exact-auth pkg-test-exact-client pkg-test-exact-models pkg-test-exact-ogsi
 
 # ---------------------------------------------------------------------
 # Deployments
@@ -127,6 +134,7 @@ api-dev: stack-api-dev
 
 stack-api-dev:
 	SEED_API_BASE_URL=http://host.docker.internal:8000/api/v1 \
+	ENTITY_LINKAGE_API_BASE_URL=http://host.docker.internal:8000/api/v1 \
 	VITE_GIT_SHA=$(GIT_SHA) \
 	VITE_BUILD_ID=$(BUILD_ID) \
 	VITE_BUILD_TIME=$(BUILD_TIME) \
@@ -145,6 +153,18 @@ entity-linkage-test:
 	$(MAKE) uv-test-target PKG=stitch-entity-linkage TEST_PATH=deployments/entity-linkage
 entity-linkage-test-exact:
 	$(MAKE) uv-test-target-exact PKG=stitch-entity-linkage TEST_PATH=deployments/entity-linkage
+
+stitch-llm-build:
+	$(UV) build --package stitch-llm
+stitch-llm-test:
+	$(MAKE) uv-test-target PKG=stitch-llm TEST_PATH=deployments/stitch-llm
+stitch-llm-test-exact:
+	$(MAKE) uv-test-target-exact PKG=stitch-llm TEST_PATH=deployments/stitch-llm
+
+seed-test:
+	$(MAKE) uv-test-target PKG=stitch-seed TEST_PATH=deployments/seed
+seed-test-exact:
+	$(MAKE) uv-test-target-exact PKG=stitch-seed TEST_PATH=deployments/seed
 
 # ---------------------------------------------------------------------
 # stitch-frontend
@@ -172,7 +192,6 @@ FRONTEND_BUILD_INPUTS := \
 frontend: frontend-build
 
 frontend-dev: $(FRONTEND_INSTALL_STAMP) stack-frontend-dev
-	VITE_API_URL=http://localhost:8000/api/v1 \
 	$(NPM) run dev
 
 stack-frontend-dev:
@@ -251,11 +270,14 @@ follow-stack-logs:
 	# Packages
 	pkg-test pkg-test-exact \
 	pkg-build-auth pkg-test-auth pkg-test-exact-auth \
+	pkg-build-client pkg-test-client pkg-test-exact-client \
 	pkg-build-models pkg-test-models pkg-test-exact-models \
 	pkg-build-ogsi pkg-test-ogsi pkg-test-exact-ogsi \
 	\
 	# API
 	api-build api-test api-test-exact api-dev stack-api-dev \
+	seed-test seed-test-exact \
+	stitch-llm-build stitch-llm-test stitch-llm-test-exact \
 	\
 	# Frontend
 	frontend frontend-install frontend-build frontend-test frontend-lint \
