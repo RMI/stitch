@@ -263,10 +263,6 @@ function SourceDetailCard({ source }) {
             <>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <FieldCard
-                  label="Source Hash"
-                  value={sourceDetail.source_record_hash}
-                />
-                <FieldCard
                   label="Producer"
                   value={sourceDetail.source_record?.producer}
                 />

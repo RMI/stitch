@@ -280,7 +280,6 @@ describe("ResourceDetailPage", () => {
         source: "gem",
         name: "Burgan Source",
         country: "Kuwait",
-        source_record_hash: "abc123",
         source_record: {
           producer: "stitch-seed@0.1.0",
           payload: { name: "Burgan Source" },
@@ -292,8 +291,6 @@ describe("ResourceDetailPage", () => {
     renderWithQueryClient(<ResourceDetailPage />);
     await user.click(screen.getByRole("button", { name: /show details/i }));
 
-    expect(await screen.findByText("Source Hash")).toBeInTheDocument();
-    expect(screen.getByText("abc123")).toBeInTheDocument();
     expect(screen.getByText("stitch-seed@0.1.0")).toBeInTheDocument();
     expect(
       screen.getAllByText(/"name": "Burgan Source"/).length,
