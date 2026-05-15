@@ -53,5 +53,6 @@ describe("App", () => {
       "/merge-candidate-review",
     );
     expect(screen.getByRole("button", { name: "Log out" })).toBeInTheDocument();
+    expect(screen.getByRole("main")).toBeInTheDocument();
   });
 });
