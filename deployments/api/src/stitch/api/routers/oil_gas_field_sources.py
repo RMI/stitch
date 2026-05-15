@@ -41,9 +41,7 @@ async def create_oil_gas_field_source(
     )
 
 
-@router.get(
-    "/",
-)
+@router.get("/")
 async def query_oil_gas_field_sources(
     uow: UnitOfWorkDep,
     user: CurrentUser,
@@ -63,7 +61,7 @@ async def query_oil_gas_field_sources(
     )
 
 
-@router.get("/{id}")
+@router.get("/{id}", response_model=OGFieldSourceView)
 async def get_oil_gas_field(
     id: int, uow: UnitOfWorkDep, user: CurrentUser, claims: Claims
 ) -> OGFieldSourceView:
