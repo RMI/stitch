@@ -243,42 +243,42 @@ function SourceDetailCard({ source }) {
         </button>
       </div>
 
-      {isOpen && (
-        <div
-          id={panelId}
-          className="space-y-3 border-t border-gray-dark/10 pt-4"
-        >
-          {isLoading && (
-            <p className="text-sm text-gray-dark/70">Loading source details…</p>
-          )}
+      <div
+        id={panelId}
+        hidden={!isOpen}
+        aria-hidden={!isOpen}
+        className="space-y-3 border-t border-gray-dark/10 pt-4"
+      >
+        {isLoading && (
+          <p className="text-sm text-gray-dark/70">Loading source details…</p>
+        )}
 
-          {isError && (
-            <p className="text-sm text-red-600">
-              Failed to load source details
-              {error?.message ? `: ${error.message}` : "."}
-            </p>
-          )}
+        {isError && (
+          <p className="text-sm text-red-600">
+            Failed to load source details
+            {error?.message ? `: ${error.message}` : "."}
+          </p>
+        )}
 
-          {sourceDetail && (
-            <>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <FieldCard
-                  label="Producer"
-                  value={sourceDetail.source_record?.producer}
-                />
-              </div>
-              <div className="space-y-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-dark/60">
-                  Source Record
-                </p>
-                <pre className="overflow-x-auto rounded-md bg-gray-light p-4 text-xs leading-6 text-gray-dark">
-                  {JSON.stringify(sourceDetail.source_record, null, 2)}
-                </pre>
-              </div>
-            </>
-          )}
-        </div>
-      )}
+        {sourceDetail && (
+          <>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <FieldCard
+                label="Producer"
+                value={sourceDetail.source_record?.producer}
+              />
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-gray-dark/60">
+                Source Record
+              </p>
+              <pre className="overflow-x-auto rounded-md bg-gray-light p-4 text-xs leading-6 text-gray-dark">
+                {JSON.stringify(sourceDetail.source_record, null, 2)}
+              </pre>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
