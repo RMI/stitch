@@ -120,9 +120,7 @@ def resource_to_detail_view(
     return OGFieldDetailView(
         **base.model_dump(),
         source_data=[
-            OG_FIELD_SOURCE_VIEW_ADAPTER.validate_python(
-                source.model_dump(exclude={"source_record"})
-            )
+            OG_FIELD_SOURCE_VIEW_ADAPTER.validate_python(source)
             for source in resource.source_data
         ],
     )
