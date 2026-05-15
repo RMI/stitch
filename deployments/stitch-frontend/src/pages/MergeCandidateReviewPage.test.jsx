@@ -1,0 +1,192 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { useAuth0 } from "@auth0/auth0-react";
+import { auth0TestDefaults, renderWithQueryClient } from "../test/utils";
+import MergeCandidateReviewPage from "./MergeCandidateReviewPage";
+import {
+  useMergeCandidates,
+  useMergeCandidate,
+  useMergeCandidatePreview,
+} from "../hooks/useResources";
+import { reviewMergeCandidate } from "../queries/api";
+
+vi.mock("../hooks/useResources", () => ({
+  useMergeCandidates: vi.fn(),
+  useMergeCandidate: vi.fn(),
+  useMergeCandidatePreview: vi.fn(),
+}));
+
+vi.mock("../queries/api", () => ({
+  reviewMergeCandidate: vi.fn(),
+}));
+
+vi.mock("../components/ResourceView", () => ({
+  default: ({ initialID }) => <div>Resource evidence {initialID}</div>,
+}));
+
+const candidates = [
+  {
+    id: 11,
+    status: "PENDING",
+    resource_ids: [101, 102],
+    merged_resource_id: null,
+  },
+  {
+    id: 12,
+    status: "APPROVED",
+    resource_ids: [201, 202],
+    merged_resource_id: 301,
+  },
+];
+
+const pendingCandidate = candidates[0];
+const nextPendingCandidate = {
+  id: 13,
+  status: "PENDING",
+  resource_ids: [301, 302],
+  merged_resource_id: null,
+};
+const preview = {
+  resource_ids: [101, 102],
+  data: {
+    name: "Merged Burgan Field",
+    basin: "Arabian",
+  },
+};
+
+const defaultHookReturn = {
+  data: null,
+  isLoading: false,
+  isError: false,
+  error: null,
+  refetch: vi.fn(),
+};
+
+beforeEach(() => {
+  vi.mocked(useAuth0).mockReturnValue(auth0TestDefaults);
+  vi.mocked(useMergeCandidates).mockReturnValue({
+    ...defaultHookReturn,
+    data: candidates,
+    refetch: vi.fn(),
+  });
+  vi.mocked(useMergeCandidate).mockReturnValue({
+    ...defaultHookReturn,
+    data: pendingCandidate,
+    refetch: vi.fn(),
+  });
+  vi.mocked(useMergeCandidatePreview).mockReturnValue({
+    ...defaultHookReturn,
+    data: preview,
+    refetch: vi.fn(),
+  });
+  vi.mocked(reviewMergeCandidate).mockResolvedValue({});
+});
+
+describe("MergeCandidateReviewPage", () => {
+  it("centers the page on a queue and one decision panel", () => {
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      screen.getByRole("heading", { name: "Merge Review" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Queue" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Candidate #11" }),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.queryByRole("heading", { name: "Summary" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Review one candidate at a time."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Pending")).toBeInTheDocument();
+    expect(screen.getByText("Reviewed")).toBeInTheDocument();
+    expect(screen.getByText("Total")).toBeInTheDocument();
+  });
+
+  it("places the decision controls after preview evidence", () => {
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    const previewHeading = screen.getByText("Merged preview");
+    const decisionNotes = screen.getByLabelText("Decision notes");
+    const sourceResources = screen.getByText("Source resources (2)");
+
+    expect(decisionNotes).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Approve merge" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Deny merge" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Merged preview")).toBeInTheDocument();
+    expect(screen.getByLabelText("Merged preview data")).toHaveTextContent(
+      "Merged Burgan Field",
+    );
+    expect(previewHeading.compareDocumentPosition(decisionNotes)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(decisionNotes.compareDocumentPosition(sourceResources)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("keeps source resource evidence hidden until requested", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(screen.queryByText("Resource evidence 101")).not.toBeInTheDocument();
+
+    await user.click(screen.getByText("Source resources (2)"));
+
+    expect(screen.getByText("Resource evidence 101")).toBeInTheDocument();
+    expect(screen.getByText("Resource evidence 102")).toBeInTheDocument();
+  });
+
+  it("submits the selected review decision with notes", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    await user.type(screen.getByLabelText("Decision notes"), "Looks safe");
+    await user.click(screen.getByRole("button", { name: "Approve merge" }));
+
+    await waitFor(() => {
+      expect(reviewMergeCandidate).toHaveBeenCalledWith(
+        expect.any(Object),
+        11,
+        "approve",
+        expect.any(Function),
+        "oil-gas-fields",
+        "Looks safe",
+      );
+    });
+  });
+
+  it("advances to the next pending candidate and clears notes after review", async () => {
+    const user = userEvent.setup();
+    vi.mocked(useMergeCandidates).mockReturnValue({
+      ...defaultHookReturn,
+      data: [pendingCandidate, nextPendingCandidate, candidates[1]],
+    });
+    vi.mocked(useMergeCandidate).mockImplementation((_endpoint, id) => ({
+      ...defaultHookReturn,
+      data:
+        id === nextPendingCandidate.id
+          ? nextPendingCandidate
+          : pendingCandidate,
+    }));
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    await user.type(screen.getByLabelText("Decision notes"), "Done reviewing");
+    await user.click(screen.getByRole("button", { name: "Approve merge" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: "Candidate #13" }),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText("Decision notes")).toHaveValue("");
+  });
+});

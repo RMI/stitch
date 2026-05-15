@@ -2,7 +2,7 @@ export async function getResources(
   config,
   fetcher,
   endpoint = "resources",
-  { page = 1, page_size = 50, filters = {}, sort_by, sort_order } = {},
+  { page = 1, page_size = 50, filters = {}, q, sort_by, sort_order } = {},
 ) {
   const params = new URLSearchParams({ page, page_size });
   for (const [key, values] of Object.entries(filters)) {
@@ -10,6 +10,7 @@ export async function getResources(
       params.append(key, v);
     }
   }
+  if (q) params.set("q", q);
   if (sort_by) params.set("sort_by", sort_by);
   if (sort_order) params.set("sort_order", sort_order);
   const url = `${config.apiBaseUrl}/${endpoint}/?${params}`;
