@@ -12,6 +12,7 @@ from .types import IdType, JsonValue
 __all__ = [
     "Resource",
     "Source",
+    "SourceView",
     "SourceRecord",
     "SourcePayload",
     "SourceRefTuple",
@@ -43,6 +44,10 @@ class Source[TId: IdType, TSrcKey: str](BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(
         from_attributes=True, extra="ignore"
     )
+
+
+class SourceView[TId: IdType, TSrcKey: str](Source[TId, TSrcKey]):
+    source_record: SourceRecord | None = Field(default=None, exclude=True)
 
 
 class SourcePayload(BaseModel):

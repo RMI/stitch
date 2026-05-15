@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, TypeAdapter, field_validator
 from stitch.models import (
     Resource,
     Source,
+    SourceView,
     SourceRecord,
 )
 
@@ -49,8 +50,7 @@ class GemSource(Source[int, GEMSrcKey], OilGasFieldBase):
     source: GEMSrcKey = GEM_SRC
 
 
-class GemSourceView(OilGasFieldBase):
-    id: int | None = None
+class GemSourceView(SourceView[int, GEMSrcKey], OilGasFieldBase):
     source: GEMSrcKey = GEM_SRC
 
 
@@ -58,8 +58,7 @@ class WoodMacSource(Source[int, WMSrcKey], OilGasFieldBase):
     source: WMSrcKey = WM_SRC
 
 
-class WoodMacSourceView(OilGasFieldBase):
-    id: int | None = None
+class WoodMacSourceView(SourceView[int, WMSrcKey], OilGasFieldBase):
     source: WMSrcKey = WM_SRC
 
 
@@ -67,8 +66,7 @@ class RMISource(Source[int, RMISrcKey], OilGasFieldBase):
     source: RMISrcKey = RMI_SRC
 
 
-class RMISourceView(OilGasFieldBase):
-    id: int | None = None
+class RMISourceView(SourceView[int, RMISrcKey], OilGasFieldBase):
     source: RMISrcKey = RMI_SRC
 
 
@@ -76,8 +74,7 @@ class LLMSource(Source[int, LLMSrcKey], OilGasFieldBase):
     source: LLMSrcKey = LLM_SRC
 
 
-class LLMSourceView(OilGasFieldBase):
-    id: int | None = None
+class LLMSourceView(SourceView[int, LLMSrcKey], OilGasFieldBase):
     source: LLMSrcKey = LLM_SRC
 
 
