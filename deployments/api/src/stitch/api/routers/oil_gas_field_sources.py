@@ -80,7 +80,7 @@ async def get_oil_gas_field(
 @router.get("/{id}/detail")
 async def get_oil_gas_field_detail(
     id: int, uow: UnitOfWorkDep, user: CurrentUser, claims: Claims
-):
+) -> OGFieldSource:
     try:
         return await og_field_source_actions.get_source_detail(
             session=uow.session,
