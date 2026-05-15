@@ -32,7 +32,7 @@ class TestOGFieldSourceDiscriminator:
 
     def test_gem_source_from_json(self):
         obj = _source_adapter.validate_json(
-            '{"source": "gem", "name": "Test Field", "country": "USA"}'
+            '{"source": "gem", "name": "Test Field", "country": "USA", "source_record": {"observed_at": "2026-01-01T00:00:00Z", "producer": "test", "payload": {"kind": "fixture"}}}'
         )
         assert isinstance(obj, GemSource)
         assert obj.source == "gem"
@@ -40,7 +40,7 @@ class TestOGFieldSourceDiscriminator:
 
     def test_wm_source_from_json(self):
         obj = _source_adapter.validate_json(
-            '{"source": "wm", "name": "Test Field", "country": "NOR"}'
+            '{"source": "wm", "name": "Test Field", "country": "NOR", "source_record": {"observed_at": "2026-01-01T00:00:00Z", "producer": "test", "payload": {"kind": "fixture"}}}'
         )
         assert isinstance(obj, WoodMacSource)
         assert obj.source == "wm"

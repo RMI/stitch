@@ -111,14 +111,7 @@ class OGFieldDetailView(OGFieldListItemView):
             return value
         normalized = []
         for item in value:
-            if isinstance(item, BaseModel):
-                normalized.append(
-                    OG_FIELD_SOURCE_VIEW_ADAPTER.validate_python(
-                        item.model_dump(exclude={"source_record"})
-                    )
-                )
-            else:
-                normalized.append(OG_FIELD_SOURCE_VIEW_ADAPTER.validate_python(item))
+            normalized.append(OG_FIELD_SOURCE_VIEW_ADAPTER.validate_python(item))
         return normalized
 
 

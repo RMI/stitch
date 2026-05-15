@@ -38,7 +38,7 @@ class Source[TId: IdType, TSrcKey: str](BaseModel):
 
     id: TId | None = None
     source: TSrcKey
-    source_record: SourceRecord | None = None
+    source_record: SourceRecord
 
     # we set `from_attributes=True` to accommodate ORM or other object mappings
     model_config: ClassVar[ConfigDict] = ConfigDict(
@@ -47,7 +47,7 @@ class Source[TId: IdType, TSrcKey: str](BaseModel):
 
 
 class SourceView[TId: IdType, TSrcKey: str](Source[TId, TSrcKey]):
-    source_record: SourceRecord | None = Field(default=None, exclude=True)
+    source_record: SourceRecord = Field(exclude=True)
 
 
 class SourcePayload(BaseModel):

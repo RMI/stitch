@@ -43,7 +43,7 @@ class OilGasFieldSourceModel(OGFieldQueryMixin, TimestampMixin, UserAuditMixin, 
     # JSON columns
     owners: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     operators: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
-    source_record: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    source_record: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
 
     @classmethod
     @override

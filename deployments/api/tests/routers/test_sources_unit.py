@@ -61,3 +61,25 @@ class TestSourceDetailUnit:
         data = response.json()
         assert data["source"] == "gem"
         assert data["source_record"]["producer"] == "test-producer"
+
+
+class TestCreateSourceUnit:
+    @pytest.mark.anyio
+    async def test_create_rejects_missing_source_record(self, async_client, mock_uow):
+        async def override_get_uow():
+            yield mock_uow
+
+        app.dependency_overrides[get_uow] = override_get_uow
+
+        response = await async_client.post(
+            "/oil-gas-field-sources/",
+            json={
+                "source": "gem",
+                "name": "Alpha",
+                "country": "USA",
+            },
+        )
+
+        assert response.status_code == 422
+        errors = response.json()["detail"]
+        assert any(error["loc"][-1] == "source_record" for error in errors)

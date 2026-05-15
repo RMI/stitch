@@ -35,10 +35,19 @@ def test_openapi_exposes_client_library_contract():
     assert "/api/v1/oil-gas-fields/{id}/detail" in paths
     detail_operation = paths["/api/v1/oil-gas-fields/{id}/detail"]["get"]
     assert "/api/v1/oil-gas-field-sources/{id}/detail" in paths
+    assert "/api/v1/oil-gas-field-sources/" in paths
 
     assert "/api/v1/oil-gas-fields/merge-candidates" in paths
     merge_operation = paths["/api/v1/oil-gas-fields/merge-candidates"]["post"]
     assert merge_operation["requestBody"]["content"]["application/json"]["schema"]
+    source_create_operation = paths["/api/v1/oil-gas-field-sources/"]["post"]
+    source_create_schema = source_create_operation["requestBody"]["content"][
+        "application/json"
+    ]["schema"]
+    source_create_component = _resolve_component_schema(
+        schema, source_create_schema["oneOf"][0]
+    )
+    assert "source_record" in source_create_component["required"]
 
     list_schema = list_operation["responses"]["200"]["content"]["application/json"][
         "schema"

@@ -7,6 +7,8 @@ from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
+from stitch.models import SourceRecord
+from datetime import UTC, datetime
 
 from .conftest import (
     BarSource,
@@ -54,7 +56,14 @@ class TestSourcePayloadSubclassing:
 
     def test_uuid_keyed_payload(self):
         uid = UUID("550e8400-e29b-41d4-a716-446655440000")
-        src = UuidSource(id=uid)
+        src = UuidSource(
+            id=uid,
+            source_record=SourceRecord(
+                observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+                producer="test",
+                payload={"kind": "fixture"},
+            ),
+        )
         payload = UuidPayload(uuids={uid: src})
         assert payload.uuids[uid].id == uid
 
@@ -111,7 +120,15 @@ class TestResourceSubclassingDiscriminatedUnion:
         assert res.res_b == 4.5
 
     def test_invalid_source_data_raises(self, foo_source: FooSource):
-        bad_bar = BarSource(id=uuid4(), label="bbar").model_dump()
+        bad_bar = BarSource(
+            id=uuid4(),
+            label="bbar",
+            source_record=SourceRecord(
+                observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+                producer="test",
+                payload={"kind": "fixture"},
+            ),
+        ).model_dump()
         bad_bar["label"] = 4
 
         with pytest.raises(ValidationError) as exc_info:
@@ -138,7 +155,15 @@ class TestResourceValidation:
         assert "source_data" in missing_locs
 
     def test_rejects_wrong_source_in_payload(self):
-        bar = BarSource(id=uuid4(), label="test")
+        bar = BarSource(
+            id=uuid4(),
+            label="test",
+            source_record=SourceRecord(
+                observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+                producer="test",
+                payload={"kind": "fixture"},
+            ),
+        )
         with pytest.raises(ValidationError) as exc_info:
             FooPayload(foos={1: bar})
         errors = exc_info.value.errors()
