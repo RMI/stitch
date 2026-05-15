@@ -69,7 +69,9 @@ class TestSourceDetailAction:
         source = GemSource(
             name="Alpha",
             country="USA",
-            source_record=make_source_record({"kind": "seed_static", "source": {"name": "Alpha"}}),
+            source_record=make_source_record(
+                {"kind": "seed_static", "source": {"name": "Alpha"}}
+            ),
         )
 
         created = await source_actions.create_source(

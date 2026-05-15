@@ -1,6 +1,6 @@
 from typing import Any, Annotated, Final
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter, field_validator
 from stitch.models import (
     Resource,
     Source,
@@ -91,6 +91,8 @@ OGFieldSourceView = Annotated[
     Field(discriminator="source"),
 ]
 
+OG_FIELD_SOURCE_VIEW_ADAPTER = TypeAdapter(OGFieldSourceView)
+
 
 class OGFieldView(OilGasFieldBase):
     id: int
@@ -104,6 +106,23 @@ class OGFieldListItemView(BaseModel):
 
 class OGFieldDetailView(OGFieldListItemView):
     source_data: list[OGFieldSourceView] = Field(default_factory=list)
+
+    @field_validator("source_data", mode="before")
+    @classmethod
+    def _normalize_source_data(cls, value):
+        if not isinstance(value, list):
+            return value
+        normalized = []
+        for item in value:
+            if isinstance(item, BaseModel):
+                normalized.append(
+                    OG_FIELD_SOURCE_VIEW_ADAPTER.validate_python(
+                        item.model_dump(exclude={"source_record"})
+                    )
+                )
+            else:
+                normalized.append(OG_FIELD_SOURCE_VIEW_ADAPTER.validate_python(item))
+        return normalized
 
 
 class OGFieldResource(Resource[int, OGFieldSource]):

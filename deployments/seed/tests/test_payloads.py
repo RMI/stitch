@@ -95,9 +95,7 @@ def test_iter_payloads_rejects_preexisting_source_record_in_static_payloads(
         encoding="utf-8",
     )
 
-    with pytest.raises(
-        ValueError, match="must not already include source_record"
-    ):
+    with pytest.raises(ValueError, match="must not already include source_record"):
         list(
             iter_payloads(
                 static_payload_dir=str(tmp_path),

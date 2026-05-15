@@ -224,7 +224,9 @@ def _attach_source_record(
         if not isinstance(source, dict):
             continue
         if "source_record" in source:
-            raise ValueError("Seed payload sources must not already include source_record")
+            raise ValueError(
+                "Seed payload sources must not already include source_record"
+            )
         original_source = dict(source)
         source["source_record"] = {
             "record_id": f"{record_prefix}:{source_index}",
