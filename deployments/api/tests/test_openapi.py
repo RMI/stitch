@@ -34,6 +34,7 @@ def test_openapi_exposes_client_library_contract():
 
     assert "/api/v1/oil-gas-fields/{id}/detail" in paths
     detail_operation = paths["/api/v1/oil-gas-fields/{id}/detail"]["get"]
+    assert "/api/v1/oil-gas-field-sources/{id}/detail" in paths
 
     assert "/api/v1/oil-gas-fields/merge-candidates" in paths
     merge_operation = paths["/api/v1/oil-gas-fields/merge-candidates"]["post"]

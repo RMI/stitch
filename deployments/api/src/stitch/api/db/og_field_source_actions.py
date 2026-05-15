@@ -138,6 +138,14 @@ async def get_source(
     return model.as_entity()
 
 
+async def get_source_detail(
+    session: AsyncSession,
+    id: int,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> OGFieldSource:
+    return await get_source(session=session, id=id, licensed_sources=licensed_sources)
+
+
 async def get_sources(
     session: AsyncSession, ids: Sequence[int]
 ) -> Sequence[OGFieldSource]:

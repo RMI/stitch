@@ -19,12 +19,18 @@ from .types import (
 
 __all__ = [
     "OGFieldSource",
+    "OGFieldSourceView",
     "OGFieldResource",
+    "OGFieldResourceView",
     "OGFieldView",
     "LLMSource",
+    "LLMSourceView",
     "RMISource",
+    "RMISourceView",
     "WoodMacSource",
+    "WoodMacSourceView",
     "GemSource",
+    "GemSourceView",
     "SourceRecord",
     "LocationType",
     "OilGasOwner",
@@ -43,7 +49,17 @@ class GemSource(Source[int, GEMSrcKey], OilGasFieldBase):
     source: GEMSrcKey = GEM_SRC
 
 
+class GemSourceView(OilGasFieldBase):
+    id: int | None = None
+    source: GEMSrcKey = GEM_SRC
+
+
 class WoodMacSource(Source[int, WMSrcKey], OilGasFieldBase):
+    source: WMSrcKey = WM_SRC
+
+
+class WoodMacSourceView(OilGasFieldBase):
+    id: int | None = None
     source: WMSrcKey = WM_SRC
 
 
@@ -51,12 +67,27 @@ class RMISource(Source[int, RMISrcKey], OilGasFieldBase):
     source: RMISrcKey = RMI_SRC
 
 
+class RMISourceView(OilGasFieldBase):
+    id: int | None = None
+    source: RMISrcKey = RMI_SRC
+
+
 class LLMSource(Source[int, LLMSrcKey], OilGasFieldBase):
+    source: LLMSrcKey = LLM_SRC
+
+
+class LLMSourceView(OilGasFieldBase):
+    id: int | None = None
     source: LLMSrcKey = LLM_SRC
 
 
 OGFieldSource = Annotated[
     GemSource | WoodMacSource | RMISource | LLMSource,
+    Field(discriminator="source"),
+]
+
+OGFieldSourceView = Annotated[
+    GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView,
     Field(discriminator="source"),
 ]
 
@@ -72,10 +103,17 @@ class OGFieldListItemView(BaseModel):
 
 
 class OGFieldDetailView(OGFieldListItemView):
-    source_data: list[OGFieldSource] = Field(default_factory=list)
+    source_data: list[OGFieldSourceView] = Field(default_factory=list)
 
 
 class OGFieldResource(Resource[int, OGFieldSource]):
+    provenance: dict[str, tuple[Any, OGSISrcKey, int] | None] = Field(
+        default_factory=dict
+    )
+    view: OilGasFieldBase | None = None
+
+
+class OGFieldResourceView(Resource[int, OGFieldSourceView]):
     provenance: dict[str, tuple[Any, OGSISrcKey, int] | None] = Field(
         default_factory=dict
     )

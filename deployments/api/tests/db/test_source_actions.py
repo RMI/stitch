@@ -2,6 +2,7 @@
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
+from stitch.ogsi.model import GemSource
 
 from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db import og_field_source_actions as source_actions
@@ -10,6 +11,7 @@ from stitch.api.entities import (
     User,
 )
 from tests.factories import ResourceCreateFactory
+from tests.utils import make_source_record
 
 
 _QueryParams = OGFieldQueryParams
@@ -55,3 +57,32 @@ class TestSourceQueryAction:
         )
         assert total == 0
         assert len(items) == 0
+
+
+class TestSourceDetailAction:
+    @pytest.mark.anyio
+    async def test_get_source_detail_preserves_source_record(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        source = GemSource(
+            name="Alpha",
+            country="USA",
+            source_record=make_source_record({"kind": "seed_static", "source": {"name": "Alpha"}}),
+        )
+
+        created = await source_actions.create_source(
+            session=seeded_integration_session,
+            user=test_user,
+            source=source,
+        )
+
+        detail = await source_actions.get_source_detail(
+            session=seeded_integration_session,
+            id=created.id,
+        )
+
+        assert detail.id is not None
+        assert detail.source_record is not None
+        assert detail.source_record.producer == "test-producer"

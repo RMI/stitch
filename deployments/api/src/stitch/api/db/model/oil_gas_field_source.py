@@ -43,6 +43,7 @@ class OilGasFieldSourceModel(OGFieldQueryMixin, TimestampMixin, UserAuditMixin, 
     # JSON columns
     owners: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     operators: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    source_record: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     @classmethod
     @override
@@ -116,7 +117,7 @@ class OilGasFieldSourceModel(OGFieldQueryMixin, TimestampMixin, UserAuditMixin, 
     @classmethod
     def create_from_entity(cls, ent: OGFieldSource, created_by: User):
         cols = {col.key for col in inspect(cls).columns}
-        kwargs = {k: val for k, val in ent.model_dump().items() if k in cols}
+        kwargs = {k: val for k, val in ent.model_dump(mode="json").items() if k in cols}
         return cls(
             **kwargs, created_by_id=created_by.id, last_updated_by_id=created_by.id
         )
