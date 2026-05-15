@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from importlib.metadata import PackageNotFoundError, version
 import logging
 import random
 from typing import Any, Iterable, get_args, Iterator
+from uuid import uuid4
 
 from faker import Faker
 
@@ -17,6 +20,15 @@ from stitch.ogsi.model.types import (
 )
 
 logger = logging.getLogger("stitch.seed")
+
+PRODUCER_NAME = "stitch-seed"
+
+
+def _producer() -> str:
+    try:
+        return f"{PRODUCER_NAME}/{version(PRODUCER_NAME)}"
+    except PackageNotFoundError:
+        return f"{PRODUCER_NAME}/unknown"
 
 
 def _seed(random_seed: int | None) -> int | None:
@@ -136,7 +148,14 @@ def build_og_field(
 
 
 def build_payload(
-    *, fake: Faker, seed_source: str, rng: random.Random, null_prob: float
+    *,
+    fake: Faker,
+    seed_source: str,
+    rng: random.Random,
+    null_prob: float,
+    random_seed: int | None,
+    run_id: str,
+    index: int,
 ) -> dict[str, Any]:
     """
     POST body is Resource-Input (OpenAPI), which requires id.
@@ -144,6 +163,21 @@ def build_payload(
     src = build_og_field(
         fake=fake, seed_source=seed_source, rng=rng, null_prob=null_prob
     )
+    original_source = dict(src)
+    src["source_record"] = {
+        "record_id": f"faker:{index}:1",
+        "run_id": run_id,
+        "observed_at": datetime.now(UTC).isoformat(),
+        "producer": _producer(),
+        "payload": {
+            "kind": "seed_faker",
+            "source": original_source,
+            "random_seed": random_seed,
+            "index": index,
+            "seed_source": seed_source,
+            "null_probability": _null_probability(null_prob),
+        },
+    }
 
     return {
         "id": 0,
@@ -158,16 +192,53 @@ def _iter_faker_payload(
     seed_source: str,
     rng: random.Random,
     null_prob: float,
+    random_seed: int | None,
+    run_id: str,
 ) -> Iterator[dict[str, Any]]:
     logger.info("Seeding random payloads")
     for i in range(1, faker_count + 1):
         logger.debug("Random payload %s", i)
         yield build_payload(
-            fake=fake, seed_source=seed_source, rng=rng, null_prob=null_prob
+            fake=fake,
+            seed_source=seed_source,
+            rng=rng,
+            null_prob=null_prob,
+            random_seed=random_seed,
+            run_id=run_id,
+            index=i,
         )
 
 
-def _iter_static_payloads(static_payload_dir: str) -> Iterator[dict[str, Any]]:
+def _attach_source_record(
+    *,
+    payload: dict[str, Any],
+    run_id: str,
+    record_prefix: str,
+    source_payload_factory,
+) -> dict[str, Any]:
+    source_data = payload.get("source_data")
+    if not isinstance(source_data, list):
+        return payload
+
+    for source_index, source in enumerate(source_data, start=1):
+        if not isinstance(source, dict):
+            continue
+        if "source_record" in source:
+            raise ValueError("Seed payload sources must not already include source_record")
+        original_source = dict(source)
+        source["source_record"] = {
+            "record_id": f"{record_prefix}:{source_index}",
+            "run_id": run_id,
+            "observed_at": datetime.now(UTC).isoformat(),
+            "producer": _producer(),
+            "payload": source_payload_factory(original_source, source_index),
+        }
+    return payload
+
+
+def _iter_static_payloads(
+    static_payload_dir: str, run_id: str
+) -> Iterator[dict[str, Any]]:
     """
     Load JSON payloads from a directory.
     Each file may be either:
@@ -201,15 +272,37 @@ def _iter_static_payloads(static_payload_dir: str) -> Iterator[dict[str, Any]]:
             continue
 
         if isinstance(raw, list):
-            for item in raw:
+            for item_index, item in enumerate(raw, start=1):
                 if isinstance(item, dict):
-                    yield item
+                    yield _attach_source_record(
+                        payload=item,
+                        run_id=run_id,
+                        record_prefix=f"static:{path.name}:{item_index}",
+                        source_payload_factory=lambda original_source, source_index, *, _path=path, _item_index=item_index: {
+                            "kind": "seed_static",
+                            "source": original_source,
+                            "path": str(_path),
+                            "item_index": _item_index,
+                            "source_index": source_index,
+                        },
+                    )
                 else:
                     logger.warning(
                         "Skipping non-object item in %s: %r", path, type(item).__name__
                     )
         elif isinstance(raw, dict):
-            yield raw
+            yield _attach_source_record(
+                payload=raw,
+                run_id=run_id,
+                record_prefix=f"static:{path.name}:1",
+                source_payload_factory=lambda original_source, source_index, *, _path=path: {
+                    "kind": "seed_static",
+                    "source": original_source,
+                    "path": str(_path),
+                    "item_index": 1,
+                    "source_index": source_index,
+                },
+            )
         else:
             logger.warning(
                 "Skipping %s: expected object or list, got %r", path, type(raw).__name__
@@ -226,11 +319,12 @@ def iter_payloads(
     seed = _seed(random_seed)
     rng = random.Random(seed)
     fake = Faker()
+    run_id = str(uuid4())
     if seed is not None:
         Faker.seed(seed)
 
     if static_payload_dir is not None:
-        yield from _iter_static_payloads(static_payload_dir)
+        yield from _iter_static_payloads(static_payload_dir, run_id)
 
     if faker_count is not None and faker_count > 0:
         yield from _iter_faker_payload(
@@ -239,4 +333,6 @@ def iter_payloads(
             seed_source=seed_source,
             rng=rng,
             null_prob=null_prob,
+            random_seed=seed,
+            run_id=run_id,
         )
