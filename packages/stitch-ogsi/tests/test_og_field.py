@@ -109,9 +109,7 @@ class TestOGFieldDetailView:
                 "id": 1,
                 "data": OilGasFieldBase(name="Alpha", country="USA").model_dump(),
                 "provenance": {},
-                "source_data": [
-                    {"source": "gem", "name": "Alpha", "country": "USA"}
-                ],
+                "source_data": [{"source": "gem", "name": "Alpha", "country": "USA"}],
             }
         )
 
