@@ -26,6 +26,7 @@ function useResourcesReal(
     page_size = DEFAULT_PAGE_SIZE,
     enabled = true,
     filters = {},
+    q,
     sort_by,
     sort_order,
   } = {},
@@ -38,6 +39,7 @@ function useResourcesReal(
       page,
       page_size,
       filters,
+      q,
       sort_by,
       sort_order,
     ),
@@ -124,14 +126,36 @@ function compareMockResources(a, b, field, sortOrder = "asc") {
   return String(aValue).localeCompare(String(bValue)) * direction;
 }
 
+const MOCK_SEARCH_FIELDS = [
+  "name",
+  "name_local",
+  "basin",
+  "state_province",
+  "region",
+];
+
+function applyMockSearch(resources, q) {
+  const term = q?.trim().toLowerCase();
+  if (!term) return resources;
+
+  return resources.filter((resource) =>
+    MOCK_SEARCH_FIELDS.some((field) => {
+      const value = getResourceField(resource, field);
+      return value != null && String(value).toLowerCase().includes(term);
+    }),
+  );
+}
+
 function getMockResourcePage({
   page = DEFAULT_PAGE,
   page_size = DEFAULT_PAGE_SIZE,
   filters = {},
+  q,
   sort_by,
   sort_order,
 }) {
-  const filtered = applyMockFilters(MOCK_RESOURCE_ITEMS, filters);
+  const searched = applyMockSearch(MOCK_RESOURCE_ITEMS, q);
+  const filtered = applyMockFilters(searched, filters);
   const sorted = sort_by
     ? [...filtered].sort((a, b) =>
         compareMockResources(a, b, sort_by, sort_order),
@@ -156,6 +180,7 @@ function useResourcesMock(
     page_size = DEFAULT_PAGE_SIZE,
     enabled = true,
     filters = {},
+    q,
     sort_by,
     sort_order,
   } = {},
@@ -165,12 +190,20 @@ function useResourcesMock(
       page,
       page_size,
       ...filters,
+      q,
       sort_by,
       sort_order,
     }),
     queryFn: () =>
       Promise.resolve(
-        getMockResourcePage({ page, page_size, filters, sort_by, sort_order }),
+        getMockResourcePage({
+          page,
+          page_size,
+          filters,
+          q,
+          sort_by,
+          sort_order,
+        }),
       ),
     enabled,
   });

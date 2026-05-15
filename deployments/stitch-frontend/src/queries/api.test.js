@@ -69,6 +69,22 @@ describe("API Functions", () => {
       expect(url.searchParams.get("sort_order")).toBe("desc");
     });
 
+    it("appends q to the URL when provided", async () => {
+      mockFetcher.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [],
+      });
+
+      await getResources(config, mockFetcher, "resources", {
+        q: "ghawar",
+      });
+
+      const calledUrl = mockFetcher.mock.calls[0][0];
+      const url = new URL(calledUrl);
+      expect(url.searchParams.get("q")).toBe("ghawar");
+    });
+
     it("omits sort params when not provided", async () => {
       mockFetcher.mockResolvedValueOnce({
         ok: true,
