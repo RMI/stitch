@@ -42,6 +42,11 @@ def make_valid_og_field_payload() -> dict[str, Any]:
                 "source": "gem",
                 "name": "Alpha Field",
                 "country": "USA",
+                "source_record": {
+                    "observed_at": "2026-01-01T00:00:00Z",
+                    "producer": "test",
+                    "payload": {"kind": "fixture"},
+                },
             }
         ],
         "constituents": [],

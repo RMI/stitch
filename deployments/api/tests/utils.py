@@ -19,11 +19,25 @@ from stitch.ogsi.model import (
     WoodMacSource,
     OGFieldSource,
     OGFieldResource,
+    SourceRecord,
 )
+from datetime import UTC, datetime
 
 from .factories import OGFieldBaseFactory, ResourceFactory
 
 T = TypeVar("T", bound=BaseModel)
+
+
+def make_source_record(
+    payload: dict[str, Any] | None = None,
+    *,
+    producer: str = "test-producer",
+) -> SourceRecord:
+    return SourceRecord(
+        observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+        producer=producer,
+        payload=payload or {"kind": "fixture"},
+    )
 
 
 def make_source(
@@ -43,6 +57,7 @@ def make_source(
         **base.model_dump(),
         "id": id_,
         "name": src_name,
+        "source_record": make_source_record({"source": source, "name": src_name}),
         **kwargs,
     }
 

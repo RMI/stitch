@@ -8,8 +8,9 @@ from stitch.llm.suggestions import (
     parse_field_suggestion_response,
     sanitize_and_validate_suggested_value,
 )
-from stitch.ogsi.model import GemSource, OGFieldDetailView
+from stitch.ogsi.model import GemSource, OGFieldDetailView, SourceRecord
 from stitch.ogsi.model.og_field import OilGasFieldBase
+from datetime import UTC, datetime
 
 
 def make_detail_view(**data) -> OGFieldDetailView:
@@ -18,7 +19,17 @@ def make_detail_view(**data) -> OGFieldDetailView:
         data=OilGasFieldBase(name="Alpha", country="USA", **data),
         provenance={},
         source_data=[
-            GemSource(source="gem", name="Alpha", country="USA", **data),
+            GemSource(
+                source="gem",
+                name="Alpha",
+                country="USA",
+                source_record=SourceRecord(
+                    observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+                    producer="test",
+                    payload={"kind": "fixture"},
+                ),
+                **data,
+            ),
         ],
     )
 

@@ -138,6 +138,7 @@ class TestCreateResourceUnit:
         assert data.get("view", None) is None
         assert len((source_data := data.get("source_data", []))) == 1
         assert source_data[0]["name"] == "Created Resource"
+        assert "source_record" not in source_data[0]
 
     @pytest.mark.anyio
     async def test_validates_request_body(self, async_client, mock_uow):

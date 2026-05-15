@@ -31,6 +31,7 @@ from stitch.ogsi.model import (
     OGFieldDetailView,
     OGFieldListItemView,
     OGFieldResource,
+    OGFieldResourceView,
     OGFieldView,
 )
 
@@ -226,10 +227,10 @@ async def get_resource_detail(
     return resource_to_detail_view(resource=res)
 
 
-@router.post("/", response_model=OGFieldResource)
+@router.post("/", response_model=OGFieldResourceView)
 async def create_resource(
     *, uow: UnitOfWorkDep, user: CurrentUser, resource_in: OGFieldResource
-) -> OGFieldResource:
+) -> OGFieldResourceView:
     return await resource_actions.create(
         session=uow.session, user=user, resource=resource_in
     )

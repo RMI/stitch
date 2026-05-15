@@ -2,11 +2,13 @@ from collections.abc import Collection, Sequence
 from functools import reduce
 from typing import Protocol
 
+from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 from stitch.ogsi.model import (
     OGFieldDetailView,
     OGFieldListItemView,
     OGFieldResource,
+    OGFieldSourceView,
     OGFieldView,
     OGSISrcKey,
 )
@@ -14,6 +16,9 @@ from stitch.api.coalesce import coalesce_og_field_resource
 from stitch.api.db.errors import ResourceIntegrityError
 
 from .model import ResourceModel
+
+
+OG_FIELD_SOURCE_VIEW_ADAPTER = TypeAdapter(OGFieldSourceView)
 
 
 class Identified(Protocol):
@@ -114,5 +119,8 @@ def resource_to_detail_view(
     base = resource_to_list_item_view(resource, force_coalesce=force_coalesce)
     return OGFieldDetailView(
         **base.model_dump(),
-        source_data=list(resource.source_data),
+        source_data=[
+            OG_FIELD_SOURCE_VIEW_ADAPTER.validate_python(source)
+            for source in resource.source_data
+        ],
     )

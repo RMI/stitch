@@ -19,6 +19,7 @@ from stitch.api.db.model import (
 )
 from stitch.api.entities import User
 from stitch.api.main import app
+from tests.utils import make_source_record
 
 
 def _gem_only_claims() -> TokenClaims:
@@ -74,6 +75,7 @@ async def _seed_resource_with_sources(
         for row in source_rows:
             source = OilGasFieldSourceModel(
                 **row,
+                source_record=make_source_record(payload=row).model_dump(mode="json"),
                 created_by_id=user.id,
                 last_updated_by_id=user.id,
             )
@@ -212,6 +214,7 @@ class TestOilGasFieldsLicensedSources:
         sources_in_detail = {sd["source"] for sd in data["source_data"]}
         assert sources_in_detail == {"gem"}
         assert data["data"]["name"] == "GEM Name"
+        assert "source_record" not in data["source_data"][0]
 
 
 class TestOilGasFieldSourcesLicensedSources:
@@ -235,6 +238,7 @@ class TestOilGasFieldSourcesLicensedSources:
         data = response.json()
         sources_returned = {item["source"] for item in data["items"]}
         assert sources_returned == {"gem"}
+        assert "source_record" not in data["items"][0]
 
     @pytest.mark.anyio
     async def test_get_unlicensed_source_returns_404(
@@ -274,3 +278,47 @@ class TestOilGasFieldSourcesLicensedSources:
         data = response.json()
         assert data["source"] == "gem"
         assert data["name"] == "GEM Name"
+        assert "source_record" not in data
+
+    @pytest.mark.anyio
+    async def test_get_licensed_source_detail_returns_source_record(
+        self,
+        gem_only_client: AsyncClient,
+        integration_session_factory: async_sessionmaker[AsyncSession],
+        test_user: User,
+    ):
+        await _seed_resource_with_sources(
+            integration_session_factory,
+            test_user,
+            {"source": "gem", "name": "GEM Name", "country": "CAN"},
+        )
+        gem_source_id = await _source_id_for(integration_session_factory, "gem")
+
+        response = await gem_only_client.get(
+            f"/oil-gas-field-sources/{gem_source_id}/detail"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["source"] == "gem"
+        assert data["source_record"]["producer"] == "test-producer"
+
+    @pytest.mark.anyio
+    async def test_get_unlicensed_source_detail_returns_404(
+        self,
+        gem_only_client: AsyncClient,
+        integration_session_factory: async_sessionmaker[AsyncSession],
+        test_user: User,
+    ):
+        await _seed_resource_with_sources(
+            integration_session_factory,
+            test_user,
+            {"source": "rmi", "name": "RMI Name", "country": "USA"},
+        )
+        rmi_source_id = await _source_id_for(integration_session_factory, "rmi")
+
+        response = await gem_only_client.get(
+            f"/oil-gas-field-sources/{rmi_source_id}/detail"
+        )
+
+        assert response.status_code == 404
