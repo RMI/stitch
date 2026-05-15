@@ -184,6 +184,7 @@ describe("API Functions", () => {
           citations: [],
           query_succeeded: true,
           model: "test-model",
+          observed_at: "2026-05-13T12:00:00Z",
           foundry_request: {},
           foundry_response: {},
         }),
@@ -202,6 +203,39 @@ describe("API Functions", () => {
         { method: "GET" },
       );
       expect(result.value).toBe("Songliao Basin");
+    });
+
+    it("surfaces structured JSON detail and status on failure", async () => {
+      mockFetcher.mockResolvedValueOnce({
+        ok: false,
+        status: 502,
+        text: async () =>
+          JSON.stringify({
+            detail: "LLM upstream returned an invalid response",
+          }),
+      });
+
+      await expect(
+        createLLMSuggestion(config, 42, "basin", mockFetcher, "oil-gas-fields"),
+      ).rejects.toMatchObject({
+        message: "LLM upstream returned an invalid response",
+        status: 502,
+      });
+    });
+
+    it("falls back to plain-text error bodies and preserves status", async () => {
+      mockFetcher.mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        text: async () => "Service temporarily unavailable",
+      });
+
+      await expect(
+        createLLMSuggestion(config, 42, "basin", mockFetcher, "oil-gas-fields"),
+      ).rejects.toMatchObject({
+        message: "Service temporarily unavailable",
+        status: 503,
+      });
     });
   });
 });

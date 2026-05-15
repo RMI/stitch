@@ -4,7 +4,7 @@ import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { auth0TestDefaults, renderWithQueryClient } from "../test/utils";
 import ResourceDetailPage from "./ResourceDetailPage";
-import { useResourceDetail } from "../hooks/useResources";
+import { useResourceDetail, useSourceDetail } from "../hooks/useResources";
 import * as apiModule from "../queries/api";
 
 vi.mock("../hooks/useResources");
@@ -20,9 +20,6 @@ vi.mock("react-router-dom", async () => {
   };
 });
 
-// Fixture with the same shape as the real API / mock data response.
-// Tests assert against structure and labels — not specific values — so this
-// works regardless of which data source (real API or mock) is active in the app.
 const mockDetailView = {
   id: 1,
   data: {
@@ -46,7 +43,21 @@ const mockDetailView = {
     fid_year: null,
   },
   provenance: {},
-  source_data: [],
+  source_data: [
+    {
+      id: 11,
+      source: "gem",
+      name: "Burgan Source",
+      country: "Kuwait",
+    },
+  ],
+};
+
+const defaultSourceDetailHookReturn = {
+  data: null,
+  isLoading: false,
+  isError: false,
+  error: null,
 };
 
 const defaultHookReturn = {
@@ -66,6 +77,7 @@ beforeEach(() => {
     ...defaultHookReturn,
     refetch: vi.fn(),
   });
+  vi.mocked(useSourceDetail).mockReturnValue(defaultSourceDetailHookReturn);
 });
 
 describe("ResourceDetailPage", () => {
@@ -127,10 +139,9 @@ describe("ResourceDetailPage", () => {
     });
 
     renderWithQueryClient(<ResourceDetailPage />);
-    expect(screen.getByText("Country")).toBeInTheDocument();
-    // country and state_province both equal "Kuwait" in the fixture, so two matches are expected
+    expect(screen.getAllByText("Country").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Kuwait").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Region")).toBeInTheDocument();
+    expect(screen.getAllByText("Region").length).toBeGreaterThan(0);
     expect(screen.getByText("Middle East")).toBeInTheDocument();
   });
 
@@ -141,7 +152,6 @@ describe("ResourceDetailPage", () => {
     });
 
     renderWithQueryClient(<ResourceDetailPage />);
-    // name_local is null in the fixture
     expect(screen.getByText("Local Name")).toBeInTheDocument();
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
@@ -221,6 +231,75 @@ describe("ResourceDetailPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows source detail controls for each attached source", () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(
+      screen.getByRole("heading", { name: /source details/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /show details/i }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Burgan Source").length).toBeGreaterThan(0);
+  });
+
+  it("exposes disclosure accessibility attributes on the source detail toggle", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    const toggle = screen.getByRole("button", { name: /show details/i });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    const panelId = toggle.getAttribute("aria-controls");
+    expect(panelId).toBeTruthy();
+
+    await user.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(document.getElementById(panelId)).toBeTruthy();
+  });
+
+  it("renders raw source record details when a source detail panel is opened", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    vi.mocked(useSourceDetail).mockReturnValue({
+      ...defaultSourceDetailHookReturn,
+      data: {
+        id: 11,
+        source: "gem",
+        name: "Burgan Source",
+        country: "Kuwait",
+        source_record_hash: "abc123",
+        source_record: {
+          producer: "stitch-seed@0.1.0",
+          payload: { name: "Burgan Source" },
+        },
+      },
+    });
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(screen.getByRole("button", { name: /show details/i }));
+
+    expect(await screen.findByText("Source Hash")).toBeInTheDocument();
+    expect(screen.getByText("abc123")).toBeInTheDocument();
+    expect(screen.getByText("stitch-seed@0.1.0")).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/"name": "Burgan Source"/).length,
+    ).toBeGreaterThan(0);
+  });
+
   it("generates and renders an AI suggestion preview", async () => {
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,
@@ -239,6 +318,7 @@ describe("ResourceDetailPage", () => {
       query_succeeded: true,
       model: "test-model",
       rationale: "Public sources place Daqing in the Songliao Basin.",
+      observed_at: "2026-05-13T12:00:00Z",
       foundry_request: {},
       foundry_response: {},
     });
@@ -271,6 +351,7 @@ describe("ResourceDetailPage", () => {
       query_succeeded: true,
       model: "test-model",
       rationale: "I could not find a grounded public source for this field.",
+      observed_at: "2026-05-13T12:00:00Z",
       foundry_request: {},
       foundry_response: {},
     });
