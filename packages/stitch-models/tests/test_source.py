@@ -189,7 +189,9 @@ class TestSourceValidation:
     def test_source_requires_source_record(self):
         with pytest.raises(ValidationError) as exc_info:
             FooSource.model_validate({"id": 1, "source": "foo", "value": 3.14})
-        assert_has_error(exc_info.value.errors(), type="missing", loc=("source_record",))
+        assert_has_error(
+            exc_info.value.errors(), type="missing", loc=("source_record",)
+        )
 
     def test_rejects_wrong_literal_via_dict(self):
         with pytest.raises(ValidationError) as exc_info:
