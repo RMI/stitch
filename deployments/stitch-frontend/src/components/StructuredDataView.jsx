@@ -1,12 +1,7 @@
 import { FIELD_META } from "../constants/fieldMeta";
+import { isPrimitive } from "../utils/resourceDisplay";
 
 const MAX_TABLE_COLUMNS = 8;
-
-function isPrimitive(value) {
-  return (
-    value == null || ["string", "number", "boolean"].includes(typeof value)
-  );
-}
 
 function formatLabel(key) {
   if (FIELD_META[key]?.label) return FIELD_META[key].label;
@@ -61,6 +56,26 @@ function ValueText({ value }) {
   );
 }
 
+function getSnapshotKey(item, index) {
+  if (
+    item &&
+    typeof item === "object" &&
+    !Array.isArray(item) &&
+    item.id != null
+  ) {
+    return item.id;
+  }
+
+  // Nested arrays render as read-only snapshots, so position is the fallback.
+  return `snapshot-${index}`;
+}
+
+function getHeadingTag(headingLevel, depth) {
+  const baseLevel = Number.isInteger(headingLevel) ? headingLevel : 3;
+  const level = Math.min(Math.max(baseLevel, 1) + depth, 6);
+  return `h${level}`;
+}
+
 function ObjectFields({ entries }) {
   if (!entries.length) return null;
 
@@ -87,78 +102,82 @@ function getPrimitiveColumns(rows) {
     for (const [key, value] of Object.entries(row)) {
       if (!isPrimitive(value) || columns.includes(key)) continue;
       columns.push(key);
-      if (columns.length >= MAX_TABLE_COLUMNS) return columns;
     }
   }
 
   return columns;
 }
 
-function DataTable({ rows }) {
-  const columns = getPrimitiveColumns(rows);
+function DataTable({ rows, columns, depth, headingLevel }) {
+  const tableColumns = columns ?? getPrimitiveColumns(rows);
 
-  if (!columns.length) {
+  if (!tableColumns.length) {
     return (
       <div className="space-y-3">
         {rows.map((row, index) => (
-          <StructuredDataInner key={index} data={row} depth={1} />
+          <StructuredDataInner
+            key={getSnapshotKey(row, index)}
+            data={row}
+            depth={depth + 1}
+            headingLevel={headingLevel}
+          />
         ))}
       </div>
     );
   }
+
+  const columnSet = new Set(tableColumns);
+  const detailColumns = rows.map((row) =>
+    Object.entries(row).filter(
+      ([key, value]) => !columnSet.has(key) && !isPrimitive(value),
+    ),
+  );
+  const hasDetails = detailColumns.some((details) => details.length > 0);
 
   return (
     <div className="overflow-x-auto rounded-md border border-line bg-panel">
       <table className="min-w-full text-left text-sm">
         <thead className="border-b border-line bg-surface text-xs font-semibold text-ink-muted">
           <tr>
-            {columns.map((column) => (
+            {tableColumns.map((column) => (
               <th key={column} className="px-3 py-2">
                 {formatLabel(column)}
               </th>
             ))}
-            {rows.some((row) =>
-              Object.entries(row).some(
-                ([key, value]) => !columns.includes(key) && !isPrimitive(value),
-              ),
-            ) ? (
-              <th className="px-3 py-2">Details</th>
-            ) : null}
+            {hasDetails ? <th className="px-3 py-2">Details</th> : null}
           </tr>
         </thead>
         <tbody className="divide-y divide-line">
-          {rows.map((row, rowIndex) => (
-            <tr key={rowIndex}>
-              {columns.map((column) => (
-                <td key={column} className="max-w-64 px-3 py-2 align-top">
-                  <ValueText value={row[column]} />
-                </td>
-              ))}
-              {Object.entries(row).some(
-                ([key, value]) => !columns.includes(key) && !isPrimitive(value),
-              ) ? (
-                <td className="px-3 py-2 align-top text-ink-muted">
-                  {Object.entries(row)
-                    .filter(
-                      ([key, value]) =>
-                        !columns.includes(key) && !isPrimitive(value),
-                    )
-                    .map(
-                      ([key, value]) =>
-                        `${formatLabel(key)}: ${summarizeValue(value)}`,
-                    )
-                    .join("; ")}
-                </td>
-              ) : null}
-            </tr>
-          ))}
+          {rows.map((row, rowIndex) => {
+            const details = detailColumns[rowIndex];
+
+            return (
+              <tr key={getSnapshotKey(row, rowIndex)}>
+                {tableColumns.map((column) => (
+                  <td key={column} className="max-w-64 px-3 py-2 align-top">
+                    <ValueText value={row[column]} />
+                  </td>
+                ))}
+                {hasDetails ? (
+                  <td className="px-3 py-2 align-top text-ink-muted">
+                    {details
+                      .map(
+                        ([key, value]) =>
+                          `${formatLabel(key)}: ${summarizeValue(value)}`,
+                      )
+                      .join("; ")}
+                  </td>
+                ) : null}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
 }
 
-function StructuredDataInner({ data, depth = 0 }) {
+function StructuredDataInner({ data, depth = 0, headingLevel = 3 }) {
   if (isPrimitive(data)) {
     return <ValueText value={data} />;
   }
@@ -173,27 +192,40 @@ function StructuredDataInner({ data, depth = 0 }) {
     );
 
     if (objectRows) {
-      const primitiveColumnCount = getPrimitiveColumns(data).length;
+      const primitiveColumns = getPrimitiveColumns(data);
 
       if (
-        primitiveColumnCount > 0 &&
-        primitiveColumnCount <= MAX_TABLE_COLUMNS
+        primitiveColumns.length > 0 &&
+        primitiveColumns.length <= MAX_TABLE_COLUMNS
       ) {
-        return <DataTable rows={data} />;
+        return (
+          <DataTable
+            rows={data}
+            columns={primitiveColumns}
+            depth={depth}
+            headingLevel={headingLevel}
+          />
+        );
       }
     }
+
+    const HeadingTag = getHeadingTag(headingLevel, depth);
 
     return (
       <div className="space-y-3">
         {data.map((item, index) => (
           <section
-            key={index}
+            key={getSnapshotKey(item, index)}
             className="min-w-0 border-t border-line pt-3 first:border-t-0 first:pt-0"
           >
-            <h4 className="mb-2 text-sm font-semibold text-ink">
+            <HeadingTag className="mb-2 text-sm font-semibold text-ink">
               Record {index + 1}
-            </h4>
-            <StructuredDataInner data={item} depth={depth + 1} />
+            </HeadingTag>
+            <StructuredDataInner
+              data={item}
+              depth={depth + 1}
+              headingLevel={headingLevel}
+            />
           </section>
         ))}
       </div>
@@ -203,6 +235,7 @@ function StructuredDataInner({ data, depth = 0 }) {
   const entries = Object.entries(data);
   const primitiveEntries = entries.filter(([, value]) => isPrimitive(value));
   const nestedEntries = entries.filter(([, value]) => !isPrimitive(value));
+  const HeadingTag = getHeadingTag(headingLevel, depth);
 
   return (
     <div className="min-w-0 space-y-4">
@@ -210,10 +243,14 @@ function StructuredDataInner({ data, depth = 0 }) {
 
       {nestedEntries.map(([key, value]) => (
         <section key={key} className="min-w-0 border-t border-line pt-4">
-          <h4 className="mb-3 text-sm font-semibold text-ink">
+          <HeadingTag className="mb-3 text-sm font-semibold text-ink">
             {formatLabel(key)}
-          </h4>
-          <StructuredDataInner data={value} depth={depth + 1} />
+          </HeadingTag>
+          <StructuredDataInner
+            data={value}
+            depth={depth + 1}
+            headingLevel={headingLevel}
+          />
         </section>
       ))}
     </div>
@@ -224,6 +261,7 @@ export default function StructuredDataView({
   data,
   label,
   emptyMessage = "No data available.",
+  headingLevel = 3,
   className = "",
 }) {
   if (data === null || data === undefined) {
@@ -234,7 +272,7 @@ export default function StructuredDataView({
 
   return (
     <div aria-label={label} className={`min-w-0 text-ink ${className}`}>
-      <StructuredDataInner data={data} />
+      <StructuredDataInner data={data} headingLevel={headingLevel} />
     </div>
   );
 }

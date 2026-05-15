@@ -1,6 +1,5 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
 import { useResources } from "../hooks/useResources";
 import ResourcesTable from "./ResourcesTable";
 import FilterBar from "./FilterBar";
@@ -8,11 +7,7 @@ import Pagination from "./Pagination";
 import Button from "./Button";
 import Input from "./Input";
 import { EMPTY_FILTERS } from "../config/filters";
-import {
-  resourceKeys,
-  DEFAULT_PAGE_SIZE,
-  DEFAULT_PAGE,
-} from "../queries/resources";
+import { DEFAULT_PAGE_SIZE, DEFAULT_PAGE } from "../queries/resources";
 import { useConfig } from "../config/useConfig";
 
 const COLUMN_LABELS = {
@@ -33,7 +28,6 @@ function getSortLabel(sortConfig) {
 
 export default function ResourcesView({ className = "", endpoint }) {
   const config = useConfig();
-  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const page = Number(searchParams.get("page") ?? DEFAULT_PAGE);
   const pageSize = Number(searchParams.get("page_size") ?? DEFAULT_PAGE_SIZE);
@@ -58,7 +52,7 @@ export default function ResourcesView({ className = "", endpoint }) {
     },
   );
 
-  const resources = useMemo(() => data?.items ?? [], [data]);
+  const resources = data?.items ?? [];
   const totalCount = data?.total_count ?? 0;
   const totalPages = data?.total_pages ?? 0;
   const isRefreshing = isLoading || isFetching;
@@ -68,7 +62,6 @@ export default function ResourcesView({ className = "", endpoint }) {
   );
 
   const handleRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: resourceKeys.lists(endpoint) });
     refetch();
   };
 

@@ -8,7 +8,12 @@ import pytest
 from pydantic import ValidationError
 from stitch.ogsi.model import OGFieldResource
 
-from stitch.client import AsyncStitchClient, StitchAPIError
+from stitch.client import (
+    AsyncStitchClient,
+    STITCH_CLIENT_BEARER_TOKEN_ENV_VAR,
+    StitchAPIError,
+    env_bearer_token_headers_provider,
+)
 
 
 def make_client(
@@ -147,6 +152,53 @@ async def test_headers_provider_is_applied_to_each_request() -> None:
     assert captured == ["1", "2"]
 
     await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_env_bearer_token_mode_sends_token_on_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "env-token-123")
+    captured: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.headers.get("Authorization"))
+        return httpx.Response(200, json={"items": [], "total_pages": 1})
+
+    client, raw_client = make_client(
+        handler,
+        headers_provider=env_bearer_token_headers_provider(),
+    )
+
+    await client.list_oil_gas_fields_page()
+
+    assert captured == ["Bearer env-token-123"]
+
+    await raw_client.aclose()
+
+
+def test_env_bearer_token_headers_provider_rejects_missing_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, raising=False)
+    provider = env_bearer_token_headers_provider()
+
+    with pytest.raises(ValueError) as exc_info:
+        provider()
+
+    assert str(exc_info.value) == f"{STITCH_CLIENT_BEARER_TOKEN_ENV_VAR} must be set"
+
+
+def test_env_bearer_token_headers_provider_rejects_blank_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "   ")
+    provider = env_bearer_token_headers_provider()
+
+    with pytest.raises(ValueError) as exc_info:
+        provider()
+
+    assert str(exc_info.value) == f"{STITCH_CLIENT_BEARER_TOKEN_ENV_VAR} must be set"
 
 
 @pytest.mark.anyio

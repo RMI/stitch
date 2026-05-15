@@ -99,12 +99,23 @@ function applyMockFilters(resources, filters = {}) {
   );
 }
 
+function compareResourceIds(aId, bId) {
+  if (aId == null && bId == null) return 0;
+  if (aId == null) return 1;
+  if (bId == null) return -1;
+
+  return String(aId).localeCompare(String(bId), undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
 function compareMockResources(a, b, field, sortOrder = "asc") {
   const aValue = getResourceField(a, field);
   const bValue = getResourceField(b, field);
   const direction = sortOrder === "desc" ? -1 : 1;
 
-  if (aValue == null && bValue == null) return a.id - b.id;
+  if (aValue == null && bValue == null) return compareResourceIds(a.id, b.id);
   if (aValue == null) return 1;
   if (bValue == null) return -1;
 

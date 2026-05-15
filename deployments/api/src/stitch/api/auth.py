@@ -123,10 +123,7 @@ async def get_current_user(claims: Claims, session_factory: SessionFactoryDep) -
     """Resolve TokenClaims to a User entity. JIT provision on first login.
 
     Runs in a dedicated session so user creation and claim back-fill
-    persist even if the request handler later errors. On IntegrityError,
-    re-queries by sub: a found row means a concurrent first-login won the
-    race; not finding the row means an unrelated constraint failed and the
-    original exception is re-raised so it isn't masked.
+    persist even if the request handler later errors.
     """
     async with session_factory() as session:
         try:
@@ -137,28 +134,45 @@ async def get_current_user(claims: Claims, session_factory: SessionFactoryDep) -
             ).scalar_one_or_none()
 
             if user_model is not None:
-                user_model.name = claims.name or user_model.name
-                user_model.email = claims.email or user_model.email
+                _apply_claim_backfill(user_model, claims)
             else:
                 user_model = UserModel(
                     sub=claims.sub,
-                    name=claims.name,
-                    email=claims.email,
+                    name=_normalized_optional_claim_value(claims.name),
+                    email=_normalized_optional_claim_value(claims.email),
                 )
                 session.add(user_model)
 
             await session.commit()
         except IntegrityError:
             await session.rollback()
-            user_model = (
-                await session.execute(
-                    select(UserModel).where(UserModel.sub == claims.sub)
-                )
-            ).scalar_one_or_none()
-            if user_model is None:
-                raise
+            # Known risk: we do not try to recover from simultaneous first-login
+            # races. If two requests create the same sub concurrently, one may
+            # receive a transient 500 from the unique constraint violation.
+            raise
 
         return _to_entity(user_model)
+
+
+def _apply_claim_backfill(model: UserModel, claims: Claims) -> bool:
+    updated = False
+    normalized_name = _normalized_optional_claim_value(claims.name)
+    normalized_email = _normalized_optional_claim_value(claims.email)
+
+    if normalized_name is not None and normalized_name != model.name:
+        model.name = normalized_name
+        updated = True
+    if normalized_email is not None and normalized_email != model.email:
+        model.email = normalized_email
+        updated = True
+    return updated
+
+
+def _normalized_optional_claim_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
 
 
 def _to_entity(model: UserModel) -> User:

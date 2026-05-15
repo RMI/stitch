@@ -283,10 +283,7 @@ function SourceResources({ resourceIds, isOpen, onToggle }) {
 
 function CandidateDecisionPanel({
   selectedId,
-  candidate,
-  candidateLoading,
-  candidateError,
-  candidateErrorObj,
+  candidateQuery,
   reviewNotes,
   onReviewNotesChange,
   onReview,
@@ -294,13 +291,23 @@ function CandidateDecisionPanel({
   actionLoading,
   activeReviewAction,
   shouldShowPreview,
-  preview,
-  previewLoading,
-  previewError,
-  previewErrorObj,
+  previewQuery,
   showSourceResources,
   onToggleSourceResources,
 }) {
+  const {
+    data: candidate,
+    isLoading: candidateLoading,
+    isError: candidateError,
+    error: candidateErrorObj,
+  } = candidateQuery;
+  const {
+    data: preview,
+    isLoading: previewLoading,
+    isError: previewError,
+    error: previewErrorObj,
+  } = previewQuery;
+
   if (!selectedId) {
     return (
       <section className="rounded-md border border-line bg-panel p-5">
@@ -421,12 +428,7 @@ export default function MergeCandidateReviewPage() {
     isLoading: listLoading,
     isError: listError,
     error: listErrorObj,
-    refetch: refetchCandidates,
   } = useMergeCandidates(ENDPOINT, true);
-
-  useEffect(() => {
-    refetchCandidates();
-  }, [refetchCandidates]);
 
   useEffect(() => {
     if (!selectedId && candidates?.length) {
@@ -435,39 +437,20 @@ export default function MergeCandidateReviewPage() {
     }
   }, [candidates, selectedId]);
 
-  const {
-    data: candidate,
-    isLoading: candidateLoading,
-    isError: candidateError,
-    error: candidateErrorObj,
-    refetch: refetchCandidate,
-  } = useMergeCandidate(ENDPOINT, selectedId, Boolean(selectedId));
-
-  useEffect(() => {
-    if (selectedId) {
-      refetchCandidate();
-    }
-  }, [selectedId, refetchCandidate]);
+  const candidateQuery = useMergeCandidate(
+    ENDPOINT,
+    selectedId,
+    Boolean(selectedId),
+  );
+  const candidate = candidateQuery.data;
 
   const shouldShowPreview = candidate?.status === "PENDING";
 
-  const {
-    data: preview,
-    isLoading: previewLoading,
-    isError: previewError,
-    error: previewErrorObj,
-    refetch: refetchPreview,
-  } = useMergeCandidatePreview(
+  const previewQuery = useMergeCandidatePreview(
     ENDPOINT,
     selectedId,
     Boolean(selectedId) && shouldShowPreview,
   );
-
-  useEffect(() => {
-    if (selectedId && shouldShowPreview) {
-      refetchPreview();
-    }
-  }, [selectedId, shouldShowPreview, refetchPreview]);
 
   const pendingCount =
     candidates?.filter((c) => c.status === "PENDING").length ?? 0;
@@ -511,8 +494,13 @@ export default function MergeCandidateReviewPage() {
         }),
       ]);
 
-      refetchCandidates();
-      refetchCandidate();
+      const nextPending = candidates?.find(
+        (item) => item.id !== candidate.id && item.status === "PENDING",
+      );
+      if (nextPending) {
+        setSelectedId(nextPending.id);
+      }
+      setReviewNotes("");
       setShowSourceResources(false);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -568,10 +556,7 @@ export default function MergeCandidateReviewPage() {
 
         <CandidateDecisionPanel
           selectedId={selectedId}
-          candidate={candidate}
-          candidateLoading={candidateLoading}
-          candidateError={candidateError}
-          candidateErrorObj={candidateErrorObj}
+          candidateQuery={candidateQuery}
           reviewNotes={reviewNotes}
           onReviewNotesChange={setReviewNotes}
           onReview={handleReview}
@@ -579,10 +564,7 @@ export default function MergeCandidateReviewPage() {
           actionLoading={actionLoading}
           activeReviewAction={activeReviewAction}
           shouldShowPreview={shouldShowPreview}
-          preview={preview}
-          previewLoading={previewLoading}
-          previewError={previewError}
-          previewErrorObj={previewErrorObj}
+          previewQuery={previewQuery}
           showSourceResources={showSourceResources}
           onToggleSourceResources={setShowSourceResources}
         />

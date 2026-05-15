@@ -41,6 +41,12 @@ const candidates = [
 ];
 
 const pendingCandidate = candidates[0];
+const nextPendingCandidate = {
+  id: 13,
+  status: "PENDING",
+  resource_ids: [301, 302],
+  merged_resource_id: null,
+};
 const preview = {
   resource_ids: [101, 102],
   data: {
@@ -155,5 +161,32 @@ describe("MergeCandidateReviewPage", () => {
         "Looks safe",
       );
     });
+  });
+
+  it("advances to the next pending candidate and clears notes after review", async () => {
+    const user = userEvent.setup();
+    vi.mocked(useMergeCandidates).mockReturnValue({
+      ...defaultHookReturn,
+      data: [pendingCandidate, nextPendingCandidate, candidates[1]],
+    });
+    vi.mocked(useMergeCandidate).mockImplementation((_endpoint, id) => ({
+      ...defaultHookReturn,
+      data:
+        id === nextPendingCandidate.id
+          ? nextPendingCandidate
+          : pendingCandidate,
+    }));
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    await user.type(screen.getByLabelText("Decision notes"), "Done reviewing");
+    await user.click(screen.getByRole("button", { name: "Approve merge" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: "Candidate #13" }),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText("Decision notes")).toHaveValue("");
   });
 });

@@ -18,6 +18,7 @@ services:
     environment:
       # Inside compose network, talk to the api service by name.
       API_BASE_URL: ${SEED_API_BASE_URL:-http://api:8000/api/v1}
+      STITCH_CLIENT_BEARER_TOKEN: ${STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN:?STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN must be set}
       FAKER_POST_COUNT: ${SEED_FAKER_POST_COUNT:-5}
       LOG_LEVEL: ${SEED_LOG_LEVEL:-INFO}
       RANDOM_SEED: 8675309
@@ -40,6 +41,7 @@ services:
     environment:
       LOG_LEVEL: ${ENTITY_LINKAGE_LOG_LEVEL:-info}
       ENTITY_LINKAGE_API_BASE_URL: ${ENTITY_LINKAGE_API_BASE_URL:-http://api:8000/api/v1}
+      STITCH_CLIENT_BEARER_TOKEN: ${STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN:?STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN must be set}
     healthcheck:
       test:
         [
@@ -65,6 +67,7 @@ services:
       - .env
     environment:
       LOG_LEVEL: ${STITCH_LLM_LOG_LEVEL:-info}
+      STITCH_CLIENT_BEARER_TOKEN: ${STITCH_CLIENT_LLM_BEARER_TOKEN:?STITCH_CLIENT_LLM_BEARER_TOKEN must be set}
     healthcheck:
       test:
         [

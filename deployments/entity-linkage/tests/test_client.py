@@ -6,68 +6,50 @@ from typing import Any
 import httpx
 import pytest
 
-from stitch.client import AsyncStitchClient, StitchAPIError
-from stitch.entity_linkage.client import StitchApiClient
-from stitch.entity_linkage.entities import RequestAuthContext, User
-
-
-def make_auth_context(
-    *,
-    bearer_token: str | None = "token-123",
-) -> RequestAuthContext:
-    return RequestAuthContext(
-        user=User(
-            id=1,
-            sub="auth0|user-123",
-            email="test@example.com",
-            name="Test User",
-        ),
-        bearer_token=bearer_token,
-    )
+from stitch.client import (
+    AsyncStitchClient,
+    STITCH_CLIENT_BEARER_TOKEN_ENV_VAR,
+    StitchAPIError,
+    env_bearer_token_headers_provider,
+)
+from stitch.entity_linkage.client import (
+    StitchApiClient,
+    validate_downstream_auth_config_at_startup,
+)
 
 
 def make_client(
     handler,
     *,
-    bearer_token: str | None = "token-123",
     base_url: str = "http://example.test/api/v1",
 ) -> StitchApiClient:
-    auth_context = make_auth_context(bearer_token=bearer_token)
     shared_client = AsyncStitchClient(
-        headers_provider=lambda: StitchApiClient._headers_from_auth_context(
-            auth_context
-        ),
         client=httpx.AsyncClient(
             transport=httpx.MockTransport(handler),
             base_url=base_url,
         ),
+        headers_provider=env_bearer_token_headers_provider(),
     )
-    return StitchApiClient(auth_context=auth_context, client=shared_client)
+    return StitchApiClient(client=shared_client)
+
+
+def test_stitch_api_client_requires_env_bearer_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, raising=False)
+
+    with pytest.raises(ValueError) as exc_info:
+        validate_downstream_auth_config_at_startup()
+
+    assert str(exc_info.value) == f"{STITCH_CLIENT_BEARER_TOKEN_ENV_VAR} must be set"
 
 
 @pytest.mark.anyio
-async def test_headers_include_bearer_token_when_present() -> None:
-    client = make_client(lambda request: httpx.Response(200, json={"items": []}))
+async def test_list_oil_gas_fields_page_sends_expected_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "token-123")
 
-    assert client._headers() == {"Authorization": "Bearer token-123"}
-
-    await client.aclose()
-
-
-@pytest.mark.anyio
-async def test_headers_are_empty_without_bearer_token() -> None:
-    client = make_client(
-        lambda request: httpx.Response(200, json={"items": []}),
-        bearer_token=None,
-    )
-
-    assert client._headers() == {}
-
-    await client.aclose()
-
-
-@pytest.mark.anyio
-async def test_list_oil_gas_fields_page_sends_expected_request() -> None:
     captured: dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -99,7 +81,11 @@ async def test_list_oil_gas_fields_page_sends_expected_request() -> None:
 
 
 @pytest.mark.anyio
-async def test_collect_oil_gas_fields_follows_total_pages() -> None:
+async def test_collect_oil_gas_fields_follows_total_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "token-123")
+
     def handler(request: httpx.Request) -> httpx.Response:
         page = int(request.url.params["page"])
         payloads = {
@@ -133,7 +119,10 @@ async def test_collect_oil_gas_fields_follows_total_pages() -> None:
 
 
 @pytest.mark.anyio
-async def test_collect_oil_gas_fields_stops_when_page_is_short() -> None:
+async def test_collect_oil_gas_fields_stops_when_page_is_short(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "token-123")
     calls: list[int] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -168,7 +157,10 @@ async def test_collect_oil_gas_fields_stops_when_page_is_short() -> None:
 
 
 @pytest.mark.anyio
-async def test_collect_oil_gas_fields_respects_max_pages() -> None:
+async def test_collect_oil_gas_fields_respects_max_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "token-123")
     calls: list[int] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -207,7 +199,10 @@ async def test_collect_oil_gas_fields_respects_max_pages() -> None:
 
 
 @pytest.mark.anyio
-async def test_collect_oil_gas_fields_treats_non_list_items_as_empty() -> None:
+async def test_collect_oil_gas_fields_treats_non_list_items_as_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "token-123")
     calls: list[int] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -245,7 +240,11 @@ async def test_to_candidates_handles_missing_data_block() -> None:
 
 
 @pytest.mark.anyio
-async def test_get_oil_gas_field_detail_maps_payload() -> None:
+async def test_get_oil_gas_field_detail_maps_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "token-123")
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"
         assert request.url.path == "/api/v1/oil-gas-fields/42/detail"
@@ -267,7 +266,11 @@ async def test_get_oil_gas_field_detail_maps_payload() -> None:
 
 
 @pytest.mark.anyio
-async def test_collect_oil_gas_fields_ignores_non_object_items() -> None:
+async def test_collect_oil_gas_fields_ignores_non_object_items(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "token-123")
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
@@ -291,7 +294,10 @@ async def test_collect_oil_gas_fields_ignores_non_object_items() -> None:
 
 
 @pytest.mark.anyio
-async def test_post_merge_sends_current_branch_payload_shape() -> None:
+async def test_post_merge_sends_current_branch_payload_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "token-123")
     captured: dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
