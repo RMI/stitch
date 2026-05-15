@@ -4,14 +4,7 @@ version = "0.1.0"
 description = "One-shot seeding client for Stitch API"
 readme = "README.md"
 requires-python = ">=3.12.12"
-dependencies = [
-  "faker>=24.0.0",
-  "stitch-client",
-  "stitch-ogsi",
-]
-
-[project.scripts]
-stitch-seed = "stitch.seed.__main__:main"
+dependencies = ["faker>=24.0.0", "stitch-client", "stitch-ogsi"]
 
 [build-system]
 requires = ["uv_build>=0.9.16,<0.10.0"]
@@ -28,10 +21,7 @@ python_functions = ["test_*"]
 addopts = ["-v", "--strict-markers", "--tb=short"]
 
 [dependency-groups]
-dev = [
-  "pytest>=8.0",
-  "pytest-anyio>=0.0.0",
-]
+dev = ["pytest>=8.0", "pytest-anyio>=0.0.0"]
 
 [tool.uv.sources]
 stitch-client = { workspace = true }

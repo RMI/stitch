@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
@@ -13,6 +14,7 @@ from stitch.models import (
     Resource_,
     Resource,
     Source,
+    SourceRecord,
     SourcePayload,
 )
 
@@ -97,17 +99,23 @@ class ResourceWithSrcUnion(Resource[int, TestSrcUnion]):
 
 
 class FooSourceORM:
-    def __init__(self, id: int, source: str, value: float):
+    def __init__(
+        self, id: int, source: str, value: float, source_record: dict | None = None
+    ):
         self.id = id
         self.source = source
         self.value = value
+        self.source_record = source_record
 
 
 class BarSourceORM:
-    def __init__(self, id: UUID, source: str, label: str):
+    def __init__(
+        self, id: UUID, source: str, label: str, source_record: dict | None = None
+    ):
         self.id = id
         self.source = source
         self.label = label
+        self.source_record = source_record
 
 
 # ---------------------------------------------------------------------------
@@ -117,12 +125,28 @@ class BarSourceORM:
 
 @pytest.fixture
 def foo_source():
-    return FooSource(id=1, value=3.14)
+    return FooSource(
+        id=1,
+        value=3.14,
+        source_record=SourceRecord(
+            observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+            producer="test",
+            payload={"source": "fixture"},
+        ),
+    )
 
 
 @pytest.fixture
 def bar_source():
-    return BarSource(id=uuid4(), label="test")
+    return BarSource(
+        id=uuid4(),
+        label="test",
+        source_record=SourceRecord(
+            observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+            producer="test",
+            payload={"source": "fixture"},
+        ),
+    )
 
 
 @pytest.fixture

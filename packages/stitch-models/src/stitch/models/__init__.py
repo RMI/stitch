@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import datetime
 from typing import (
     ClassVar,
     NamedTuple,
@@ -6,14 +7,24 @@ from typing import (
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .types import IdType
+from .types import IdType, JsonValue
 
 __all__ = [
     "Resource",
     "Source",
+    "SourceView",
+    "SourceRecord",
     "SourcePayload",
     "SourceRefTuple",
 ]
+
+
+class SourceRecord(BaseModel):
+    record_id: str | None = None
+    run_id: str | None = None
+    observed_at: datetime
+    producer: str
+    payload: JsonValue
 
 
 class Source[TId: IdType, TSrcKey: str](BaseModel):
@@ -27,11 +38,16 @@ class Source[TId: IdType, TSrcKey: str](BaseModel):
 
     id: TId | None = None
     source: TSrcKey
+    source_record: SourceRecord
 
     # we set `from_attributes=True` to accommodate ORM or other object mappings
     model_config: ClassVar[ConfigDict] = ConfigDict(
         from_attributes=True, extra="ignore"
     )
+
+
+class SourceView[TId: IdType, TSrcKey: str](Source[TId, TSrcKey]):
+    source_record: SourceRecord | None = Field(default=None, exclude=True)
 
 
 class SourcePayload(BaseModel):

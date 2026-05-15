@@ -7,6 +7,7 @@ documentation for how the models are intended to be used.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 import pytest
 
@@ -16,6 +17,7 @@ from stitch.ogsi.model import (
     WoodMacSource,
     OilGasOwner,
     OilGasOperator,
+    SourceRecord,
 )
 
 
@@ -26,6 +28,11 @@ def gem_source() -> GemSource:
         id=42,
         name="Permian Basin Field A",
         country="USA",
+        source_record=SourceRecord(
+            observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+            producer="test",
+            payload={"kind": "fixture"},
+        ),
         latitude=31.95,
         longitude=-102.07,
         location_type="Onshore",
@@ -46,6 +53,11 @@ def wm_source() -> WoodMacSource:
         id=99,
         name="North Sea Field B",
         country="GBR",
+        source_record=SourceRecord(
+            observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+            producer="test",
+            payload={"kind": "fixture"},
+        ),
         location_type="Offshore",
         field_status="Producing",
     )

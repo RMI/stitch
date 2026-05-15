@@ -2,7 +2,7 @@ export async function getResources(
   config,
   fetcher,
   endpoint = "resources",
-  { page = 1, page_size = 50, filters = {}, sort_by, sort_order } = {},
+  { page = 1, page_size = 50, filters = {}, q, sort_by, sort_order } = {},
 ) {
   const params = new URLSearchParams({ page, page_size });
   for (const [key, values] of Object.entries(filters)) {
@@ -10,6 +10,7 @@ export async function getResources(
       params.append(key, v);
     }
   }
+  if (q) params.set("q", q);
   if (sort_by) params.set("sort_by", sort_by);
   if (sort_order) params.set("sort_order", sort_order);
   const url = `${config.apiBaseUrl}/${endpoint}/?${params}`;
@@ -63,19 +64,39 @@ export async function createLLMSuggestion(
   });
 
   if (!response.ok) {
-    let detail = `HTTP error! status: ${response.status}`;
-    try {
-      const payload = await response.json();
-      if (payload?.detail) detail = payload.detail;
-    } catch {
-      // Ignore JSON parsing failures and fall back to status text.
-    }
+    const detail = await getErrorDetail(response);
     const error = new Error(detail);
     error.status = response.status;
     throw error;
   }
 
   return await response.json();
+}
+
+function formatApiErrorDetail(detail, fallbackStatus) {
+  if (typeof detail === "string" && detail) return detail;
+  if (Array.isArray(detail) || (detail && typeof detail === "object")) {
+    return JSON.stringify(detail, null, 2);
+  }
+  return `HTTP error! status: ${fallbackStatus}`;
+}
+
+async function getErrorDetail(response) {
+  const fallback = formatApiErrorDetail(null, response.status);
+
+  try {
+    const text = await response.text();
+    if (!text) return response.statusText || fallback;
+
+    try {
+      const body = JSON.parse(text);
+      return formatApiErrorDetail(body?.detail, response.status);
+    } catch {
+      return text;
+    }
+  } catch {
+    return response.statusText || fallback;
+  }
 }
 
 export async function getMergeCandidates(

@@ -26,6 +26,7 @@ function useResourcesReal(
     page_size = DEFAULT_PAGE_SIZE,
     enabled = true,
     filters = {},
+    q,
     sort_by,
     sort_order,
   } = {},
@@ -38,6 +39,7 @@ function useResourcesReal(
       page,
       page_size,
       filters,
+      q,
       sort_by,
       sort_order,
     ),
@@ -54,6 +56,18 @@ function useResourceReal(endpoint = "resources", id, enabled = false) {
 }
 
 function useResourceDetailReal(endpoint = "resources", id, enabled = false) {
+  const config = useConfig();
+  return useAuthenticatedQuery({
+    ...resourceQueries.detail(config, endpoint, id),
+    enabled,
+  });
+}
+
+function useSourceDetailReal(
+  endpoint = "oil-gas-field-sources",
+  id,
+  enabled = false,
+) {
   const config = useConfig();
   return useAuthenticatedQuery({
     ...resourceQueries.detail(config, endpoint, id),
@@ -124,14 +138,36 @@ function compareMockResources(a, b, field, sortOrder = "asc") {
   return String(aValue).localeCompare(String(bValue)) * direction;
 }
 
+const MOCK_SEARCH_FIELDS = [
+  "name",
+  "name_local",
+  "basin",
+  "state_province",
+  "region",
+];
+
+function applyMockSearch(resources, q) {
+  const term = q?.trim().toLowerCase();
+  if (!term) return resources;
+
+  return resources.filter((resource) =>
+    MOCK_SEARCH_FIELDS.some((field) => {
+      const value = getResourceField(resource, field);
+      return value != null && String(value).toLowerCase().includes(term);
+    }),
+  );
+}
+
 function getMockResourcePage({
   page = DEFAULT_PAGE,
   page_size = DEFAULT_PAGE_SIZE,
   filters = {},
+  q,
   sort_by,
   sort_order,
 }) {
-  const filtered = applyMockFilters(MOCK_RESOURCE_ITEMS, filters);
+  const searched = applyMockSearch(MOCK_RESOURCE_ITEMS, q);
+  const filtered = applyMockFilters(searched, filters);
   const sorted = sort_by
     ? [...filtered].sort((a, b) =>
         compareMockResources(a, b, sort_by, sort_order),
@@ -156,6 +192,7 @@ function useResourcesMock(
     page_size = DEFAULT_PAGE_SIZE,
     enabled = true,
     filters = {},
+    q,
     sort_by,
     sort_order,
   } = {},
@@ -165,12 +202,20 @@ function useResourcesMock(
       page,
       page_size,
       ...filters,
+      q,
       sort_by,
       sort_order,
     }),
     queryFn: () =>
       Promise.resolve(
-        getMockResourcePage({ page, page_size, filters, sort_by, sort_order }),
+        getMockResourcePage({
+          page,
+          page_size,
+          filters,
+          q,
+          sort_by,
+          sort_order,
+        }),
       ),
     enabled,
   });
@@ -190,6 +235,18 @@ function useResourceDetailMock(endpoint = "resources", id, enabled = false) {
     queryKey: resourceKeys.detail(endpoint, id),
     queryFn: () =>
       Promise.resolve(mockResources.find((r) => r.id === id) ?? null),
+    enabled,
+  });
+}
+
+function useSourceDetailMock(
+  endpoint = "oil-gas-field-sources",
+  id,
+  enabled = false,
+) {
+  return useQuery({
+    queryKey: resourceKeys.detail(endpoint, id),
+    queryFn: () => Promise.resolve(null),
     enabled,
   });
 }
@@ -244,6 +301,9 @@ export const useResource = USE_MOCK_DATA ? useResourceMock : useResourceReal;
 export const useResourceDetail = USE_MOCK_DATA
   ? useResourceDetailMock
   : useResourceDetailReal;
+export const useSourceDetail = USE_MOCK_DATA
+  ? useSourceDetailMock
+  : useSourceDetailReal;
 export const useMergeCandidates = USE_MOCK_DATA
   ? useMergeCandidatesMock
   : useMergeCandidatesReal;

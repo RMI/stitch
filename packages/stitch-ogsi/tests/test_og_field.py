@@ -6,16 +6,20 @@ on top of stitch-models generics.  They also serve as usage examples.
 
 from __future__ import annotations
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from stitch.ogsi.model import (
     GemSource,
+    OGFieldDetailView,
     OGFieldResource,
     OGFieldSource,
+    SourceRecord,
     WoodMacSource,
 )
+from stitch.ogsi.model.og_field import OilGasFieldBase
 
 
 # ---------------------------------------------------------------------------
@@ -30,7 +34,7 @@ class TestOGFieldSourceDiscriminator:
 
     def test_gem_source_from_json(self):
         obj = _source_adapter.validate_json(
-            '{"source": "gem", "name": "Test Field", "country": "USA"}'
+            '{"source": "gem", "name": "Test Field", "country": "USA", "source_record": {"observed_at": "2026-01-01T00:00:00Z", "producer": "test", "payload": {"kind": "fixture"}}}'
         )
         assert isinstance(obj, GemSource)
         assert obj.source == "gem"
@@ -38,7 +42,7 @@ class TestOGFieldSourceDiscriminator:
 
     def test_wm_source_from_json(self):
         obj = _source_adapter.validate_json(
-            '{"source": "wm", "name": "Test Field", "country": "NOR"}'
+            '{"source": "wm", "name": "Test Field", "country": "NOR", "source_record": {"observed_at": "2026-01-01T00:00:00Z", "producer": "test", "payload": {"kind": "fixture"}}}'
         )
         assert isinstance(obj, WoodMacSource)
         assert obj.source == "wm"
@@ -48,6 +52,26 @@ class TestOGFieldSourceDiscriminator:
             _source_adapter.validate_json(
                 '{"source": "unknown", "name": "X", "country": "USA"}'
             )
+
+    def test_source_record_round_trips_on_source_variants(self):
+        obj = _source_adapter.validate_python(
+            {
+                "source": "gem",
+                "name": "Test Field",
+                "country": "USA",
+                "source_record": {
+                    "observed_at": "2026-01-01T00:00:00Z",
+                    "producer": "stitch-seed/0.1.0",
+                    "payload": {"kind": "seed_faker", "source": {"name": "Test Field"}},
+                },
+            }
+        )
+        assert isinstance(obj, GemSource)
+        assert obj.source_record == SourceRecord(
+            observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+            producer="stitch-seed/0.1.0",
+            payload={"kind": "seed_faker", "source": {"name": "Test Field"}},
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -76,3 +100,19 @@ class TestOGFieldResource:
                 source_data=og_payload,
                 constituents=[1],
             )
+
+
+class TestOGFieldDetailView:
+    def test_source_view_validation_accepts_omitted_source_record(self):
+        detail = OGFieldDetailView.model_validate(
+            {
+                "id": 1,
+                "data": OilGasFieldBase(name="Alpha", country="USA").model_dump(),
+                "provenance": {},
+                "source_data": [{"source": "gem", "name": "Alpha", "country": "USA"}],
+            }
+        )
+
+        assert len(detail.source_data) == 1
+        assert detail.source_data[0].source == "gem"
+        assert detail.source_data[0].source_record is None
