@@ -4,6 +4,95 @@ import { useConfig } from "../config/useConfig";
 import StructuredDataView from "../components/StructuredDataView";
 import Button from "../components/Button";
 
+function formatCount(count, singular, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function getMatchGroups(result) {
+  return Array.isArray(result?.match_groups) ? result.match_groups : [];
+}
+
+function getResultDetails(result) {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return result;
+  }
+
+  const { match_groups: _matchGroups, ...details } = result;
+  return details;
+}
+
+function MatchGroupsSummary({ groups }) {
+  if (!groups.length) {
+    return <p className="text-sm text-ink-muted">No match groups found.</p>;
+  }
+
+  return (
+    <ol className="space-y-3">
+      {groups.map((group, index) => {
+        const resourceIds = Array.isArray(group) ? group : [];
+
+        return (
+          <li
+            key={`${index}-${resourceIds.join("-")}`}
+            className="rounded-md border border-line bg-panel p-3"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-2">
+              <h4 className="text-sm font-semibold text-ink">
+                Match group {index + 1}
+              </h4>
+              <span className="rounded-full bg-surface px-2.5 py-1 text-xs font-semibold text-ink-muted">
+                {formatCount(resourceIds.length, "resource")}
+              </span>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              {resourceIds.map((id) => (
+                <span
+                  key={id}
+                  className="rounded-md border border-line bg-surface px-2.5 py-1 text-sm font-medium text-ink"
+                >
+                  Resource {id}
+                </span>
+              ))}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function RunResult({ result }) {
+  const matchGroups = getMatchGroups(result);
+  const details = getResultDetails(result);
+
+  if (!result) {
+    return <p className="text-sm text-ink-muted">No run has completed yet.</p>;
+  }
+
+  return (
+    <div className="space-y-5">
+      <section>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-base font-semibold text-ink">Match groups</h3>
+          <span className="text-sm font-medium text-ink-muted">
+            {formatCount(matchGroups.length, "group")}
+          </span>
+        </div>
+
+        <div className="mt-3">
+          <MatchGroupsSummary groups={matchGroups} />
+        </div>
+      </section>
+
+      <section className="border-t border-line pt-4">
+        <h3 className="mb-3 text-base font-semibold text-ink">Run details</h3>
+        <StructuredDataView data={details} label="Entity linkage run details" />
+      </section>
+    </div>
+  );
+}
+
 export default function EntityLinkagePage() {
   const config = useConfig();
   const { getAccessTokenSilently } = useAuth0();
@@ -101,11 +190,7 @@ export default function EntityLinkagePage() {
       <section>
         <h2 className="mb-2 text-lg font-semibold text-ink">Run result</h2>
         <div className="rounded-md border border-line bg-panel p-4">
-          <StructuredDataView
-            data={result}
-            label="Entity linkage result"
-            emptyMessage="No run has completed yet."
-          />
+          <RunResult result={result} />
         </div>
       </section>
     </div>
