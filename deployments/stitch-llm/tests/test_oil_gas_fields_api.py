@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -197,7 +198,11 @@ def test_get_suggestion_returns_validated_value(
     response = test_client.get("/api/v1/oil-gas-fields/42?field=basin")
 
     assert response.status_code == 200
-    assert response.json() == {
+    body = response.json()
+    assert body["observed_at"].endswith("Z")
+    prompt_payload = json.loads(azure_client.calls[0]["input_messages"][1]["content"])
+    assert "source_record" not in prompt_payload["source_records"][0]
+    assert body == {
         "resource_id": 42,
         "field": "basin",
         "value": "Permian Basin",
@@ -207,6 +212,7 @@ def test_get_suggestion_returns_validated_value(
         "query_succeeded": True,
         "model": "test-model",
         "rationale": "Public sources identify the basin.",
+        "observed_at": body["observed_at"],
         "foundry_request": {
             "model": "test-model",
             "input": azure_client.calls[0]["input_messages"],
@@ -318,6 +324,7 @@ def test_get_suggestion_returns_placeholder_when_auth_disabled_and_azure_missing
     assert response.json()["value"] == ":warning: placeholder LLM value"
     assert response.json()["citations"] == []
     assert response.json()["model"] == "placeholder-llm"
+    assert response.json()["observed_at"].endswith("Z")
     assert azure_client.calls == []
 
 
@@ -336,6 +343,7 @@ def test_get_suggestion_returns_null_for_non_string_placeholder_fallback(
     assert response.json()["value"] is None
     assert response.json()["citations"] == []
     assert response.json()["model"] == "placeholder-llm"
+    assert response.json()["observed_at"].endswith("Z")
     assert azure_client.calls == []
 
 

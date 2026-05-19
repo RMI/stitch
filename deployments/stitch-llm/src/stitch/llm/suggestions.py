@@ -5,7 +5,7 @@ from typing import Any, Literal, get_args
 from pydantic import ValidationError
 
 from stitch.llm.errors import FieldAlreadyPopulatedError, ModelOutputError
-from stitch.ogsi.model import OGFieldDetailView
+from stitch.ogsi.model import OGFieldDetailView, OG_FIELD_SOURCE_VIEW_ADAPTER
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import (
     FieldStatus,
@@ -86,9 +86,7 @@ def build_field_suggestion_input(
             "Do not return a value for any field except the requested field.",
         ],
         "coalesced_resource": detail_view.data.model_dump(mode="json"),
-        "source_records": [
-            source.model_dump(mode="json") for source in detail_view.source_data
-        ],
+        "source_records": _build_prompt_source_records(detail_view),
     }
 
     return [
@@ -107,6 +105,15 @@ def build_field_suggestion_input(
             "role": "user",
             "content": _serialize_prompt_payload(payload),
         },
+    ]
+
+
+def _build_prompt_source_records(
+    detail_view: OGFieldDetailView,
+) -> list[dict[str, Any]]:
+    return [
+        OG_FIELD_SOURCE_VIEW_ADAPTER.validate_python(source).model_dump(mode="json")
+        for source in detail_view.source_data
     ]
 
 
