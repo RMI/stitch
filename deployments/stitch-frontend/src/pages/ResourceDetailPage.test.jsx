@@ -236,7 +236,7 @@ describe("ResourceDetailPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows source detail controls for each attached source", () => {
+  it("renders a Sources section with a row per attached source", () => {
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,
       data: mockDetailView,
@@ -245,15 +245,15 @@ describe("ResourceDetailPage", () => {
     renderWithQueryClient(<ResourceDetailPage />);
 
     expect(
-      screen.getByRole("heading", { name: /source details/i }),
+      screen.getByRole("heading", { name: /^sources$/i, level: 2 }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /show details/i }),
+      screen.getByRole("button", { name: /^view$/i }),
     ).toBeInTheDocument();
     expect(screen.getAllByText("Burgan Source").length).toBeGreaterThan(0);
   });
 
-  it("exposes disclosure accessibility attributes on the source detail toggle", async () => {
+  it("exposes disclosure accessibility attributes on the source row toggle", async () => {
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,
       data: mockDetailView,
@@ -262,18 +262,20 @@ describe("ResourceDetailPage", () => {
 
     renderWithQueryClient(<ResourceDetailPage />);
 
-    const toggle = screen.getByRole("button", { name: /show details/i });
+    const toggle = screen.getByRole("button", { name: /^view$/i });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     const panelId = toggle.getAttribute("aria-controls");
     expect(panelId).toBeTruthy();
 
     await user.click(toggle);
 
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.getByRole("button", { name: /^hide$/i }),
+    ).toHaveAttribute("aria-expanded", "true");
     expect(document.getElementById(panelId)).toBeTruthy();
   });
 
-  it("renders raw source record details when a source detail panel is opened", async () => {
+  it("shows formatted producer and observed-at in the compact row once the source detail loads", () => {
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,
       data: mockDetailView,
@@ -284,9 +286,41 @@ describe("ResourceDetailPage", () => {
         id: 11,
         source: "gem",
         name: "Burgan Source",
-        country: "Kuwait",
         source_record: {
           producer: "stitch-seed@0.1.0",
+          observed_at: "2026-05-13T12:00:00Z",
+          record_id: "abc",
+          run_id: "run-1",
+          payload: { name: "Burgan Source" },
+        },
+      },
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(
+      screen.getByText(/imported by stitch-seed@0\.1\.0/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/may 13, 2026/i)).toBeInTheDocument();
+    expect(screen.queryByText(/"name": "Burgan Source"/)).toBeNull();
+  });
+
+  it("reveals the raw payload only after the Technical import record disclosure is opened", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    vi.mocked(useSourceDetail).mockReturnValue({
+      ...defaultSourceDetailHookReturn,
+      data: {
+        id: 11,
+        source: "gem",
+        name: "Burgan Source",
+        source_record: {
+          producer: "stitch-seed@0.1.0",
+          observed_at: "2026-05-13T12:00:00Z",
+          record_id: "abc",
+          run_id: "run-1",
           payload: { name: "Burgan Source" },
         },
       },
@@ -294,12 +328,19 @@ describe("ResourceDetailPage", () => {
     const user = userEvent.setup();
 
     renderWithQueryClient(<ResourceDetailPage />);
-    await user.click(screen.getByRole("button", { name: /show details/i }));
+    await user.click(screen.getByRole("button", { name: /^view$/i }));
 
-    expect(screen.getByText("stitch-seed@0.1.0")).toBeInTheDocument();
-    expect(
-      screen.getAllByText(/"name": "Burgan Source"/).length,
-    ).toBeGreaterThan(0);
+    const techToggle = screen.getByRole("button", {
+      name: /technical import record/i,
+    });
+    expect(techToggle).toBeInTheDocument();
+    expect(screen.queryByText(/"name": "Burgan Source"/)).toBeNull();
+
+    await user.click(techToggle);
+
+    expect(screen.getByText(/"name": "Burgan Source"/)).toBeInTheDocument();
+    expect(screen.getByText("abc")).toBeInTheDocument();
+    expect(screen.getByText("run-1")).toBeInTheDocument();
   });
 
   it("generates and renders an AI suggestion preview", async () => {
