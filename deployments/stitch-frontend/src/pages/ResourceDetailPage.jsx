@@ -390,10 +390,7 @@ function TechnicalImportRecord({ sourceRecord }) {
         </span>
       </button>
       {isOpen && (
-        <div
-          id={panelId}
-          className="space-y-3 border-t border-line px-4 py-3"
-        >
+        <div id={panelId} className="space-y-3 border-t border-line px-4 py-3">
           <FieldGrid>
             <FieldCard label="Record ID" value={sourceRecord.record_id} />
             <FieldCard label="Run ID" value={sourceRecord.run_id} />
@@ -436,9 +433,7 @@ function SourceRow({ source }) {
       </span>
     );
   } else if (isLoading) {
-    metaLine = (
-      <span className="text-ink-muted">Loading source details…</span>
-    );
+    metaLine = <span className="text-ink-muted">Loading source details…</span>;
   } else if (isError) {
     metaLine = (
       <span className="text-danger">Unable to load source details</span>
@@ -471,10 +466,7 @@ function SourceRow({ source }) {
       </div>
 
       {isOpen && (
-        <div
-          id={panelId}
-          className="mt-4 space-y-4 border-t border-line pt-4"
-        >
+        <div id={panelId} className="mt-4 space-y-4 border-t border-line pt-4">
           {isLoading && (
             <p className="text-sm text-ink-muted">Loading source details…</p>
           )}

@@ -247,9 +247,7 @@ describe("ResourceDetailPage", () => {
     expect(
       screen.getByRole("heading", { name: /^sources$/i, level: 2 }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /^view$/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^view$/i })).toBeInTheDocument();
     expect(screen.getAllByText("Burgan Source").length).toBeGreaterThan(0);
   });
 
@@ -269,9 +267,10 @@ describe("ResourceDetailPage", () => {
 
     await user.click(toggle);
 
-    expect(
-      screen.getByRole("button", { name: /^hide$/i }),
-    ).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: /^hide$/i })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
     expect(document.getElementById(panelId)).toBeTruthy();
   });
 
