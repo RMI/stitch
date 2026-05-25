@@ -70,7 +70,9 @@ export default function FilterDropdown({ label, options, selected, onChange }) {
                       className="accent-primary"
                     />
                     <span className="flex-1 text-sm text-ink">{value}</span>
-                    <span className="text-xs text-ink-muted">{count}</span>
+                    {count != null && (
+                      <span className="text-xs text-ink-muted">{count}</span>
+                    )}
                   </label>
                 </li>
               ))}
