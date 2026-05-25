@@ -29,7 +29,7 @@ If you want to alter an existing ruleset:
 
 - In Repo Settings, on the sidebar, go to "Rules" -> "Rulesets".
 - Find the ruleset you want to update.
-- Click on the ruleset name (not three-dots) to see rulest definition in the WebUI.
+- Click on the ruleset name (not three-dots) to see ruleset definition in the WebUI.
   - Rename the ruleset (suggestion `rule-name` -> `rule-name-old`)
   - Set "Enforcement Status" to "Disabled"
   - Scroll to bottom of page and **"Save Changes"**
