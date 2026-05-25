@@ -33,7 +33,7 @@ If you want to alter an existing ruleset:
   - Rename the ruleset (suggestion `rule-name` -> `rule-name-old`)
   - Set "Enforcement Status" to "Disabled"
   - Scroll to bottom of page and **"Save Changes"**
-- Return to "Rulesets" main page, and import the updated definiton (see above, "Import").
+- Return to "Rulesets" main page, and import the updated definition (see above, "Import").
 - Repeat if changing multiple rulesets
 - _(Testing):_
   - Trigger an empty commit: `git commit -m "Trigger CI" --allow-empty` and push to trigger checking action
