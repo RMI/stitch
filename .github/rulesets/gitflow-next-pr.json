@@ -29,6 +29,5 @@
         "allowed_merge_methods": ["merge"]
       }
     }
-  ],
-  "bypass_actors": []
+  ]
 }

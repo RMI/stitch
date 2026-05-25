@@ -90,6 +90,5 @@
         "review_draft_pull_requests": false
       }
     }
-  ],
-  "bypass_actors": []
+  ]
 }
