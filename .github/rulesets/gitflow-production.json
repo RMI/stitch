@@ -1,9 +1,8 @@
 {
-  "id": 6129955,
   "name": "gitflow-production",
   "target": "branch",
   "source_type": "Repository",
-  "source": "RMI/pbtar",
+  "source": "RMI/stitch",
   "enforcement": "active",
   "conditions": {
     "ref_name": {
@@ -39,56 +38,46 @@
         "strict_required_status_checks_policy": false,
         "do_not_enforce_on_create": false,
         "required_status_checks": [
+
           {
-            "context": "Build and Release / Build and Release",
+            "context": "Linting / Linting (frontend)",
             "integration_id": 15368
           },
           {
-            "context": "Deploy to SWA / Build and Deploy Job",
+            "context": "Linting / linting (ruff)",
             "integration_id": 15368
           },
           {
-            "context": "Formatting / Run Prettier Check",
+            "context": "Tests / Run Unit Tests (frontend)",
             "integration_id": 15368
           },
           {
-            "context": "JSON Schema / Check Schema Docs",
+            "context": "Tests / tests (pytest)",
             "integration_id": 15368
           },
           {
-            "context": "JSON Schema / Run JSON validator",
+            "context": "Format / formatting (ruff)",
             "integration_id": 15368
           },
           {
-            "context": "JSON Schema / Check generated types",
+            "context": "Formatting / Format Check (frontend)",
             "integration_id": 15368
           },
           {
-            "context": "Linting / Run ESLint",
+            "context": "Build / Build",
             "integration_id": 15368
           },
           {
-            "context": "Unit Tests / Run unit tests",
+            "context": "Build / Build Frontend",
             "integration_id": 15368
           },
           {
-            "context": "Check generated timeseries index / Check generated timeseries index",
+            "context": "docker compose build / docker compose build",
             "integration_id": 15368
           }
         ]
       }
     }
   ],
-  "bypass_actors": [
-    {
-      "actor_id": 2,
-      "actor_type": "RepositoryRole",
-      "bypass_mode": "pull_request"
-    },
-    {
-      "actor_id": 5,
-      "actor_type": "RepositoryRole",
-      "bypass_mode": "pull_request"
-    }
-  ]
+  "bypass_actors": []
 }

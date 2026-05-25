@@ -25,7 +25,7 @@ To import a new ruleset (from a file) into the repo's settings:
 
 # Update
 
-If you want to alter an existing ruleset (such as adding required checks, see [PR#189](https://github.com/RMI/pbtar/pull/189)):
+If you want to alter an existing ruleset:
 
 - In Repo Settings, on the sidebar, go to "Rules" -> "Rulesets".
 - Find the ruleset you want to update.

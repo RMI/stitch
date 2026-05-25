@@ -2,7 +2,7 @@
   "name": "gitflow-next-pr",
   "target": "branch",
   "source_type": "Repository",
-  "source": "RMI/pbtar",
+  "source": "RMI/stitch",
   "enforcement": "active",
   "conditions": {
     "ref_name": {
@@ -29,5 +29,6 @@
         "allowed_merge_methods": ["merge"]
       }
     }
-  ]
+  ],
+  "bypass_actors": []
 }
