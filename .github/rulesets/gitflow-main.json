@@ -22,9 +22,6 @@
       "type": "non_fast_forward"
     },
     {
-      "type": "creation"
-    },
-    {
       "type": "pull_request",
       "parameters": {
         "required_approving_review_count": 1,
@@ -82,6 +79,9 @@
           }
         ]
       }
+    },
+    {
+      "type": "creation"
     },
     {
       "type": "copilot_code_review",
