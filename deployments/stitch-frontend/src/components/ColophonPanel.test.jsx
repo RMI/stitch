@@ -438,4 +438,24 @@ describe("ColophonPanel", () => {
     expect(copiedText).toContain("### Runtime Info ###");
     expect(copiedText).toContain("User Agent: VitestBrowser/1.0");
   });
+
+  it("copies the raw access token without a Bearer prefix", async () => {
+    const { default: ColophonPanel } = await import("./ColophonPanel");
+
+    renderWithQueryClient(<ColophonPanel diagnosticsOpen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("stitch-api")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy token" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Token copied!" }),
+      ).toBeInTheDocument();
+    });
+
+    expect(clipboardSpy).toHaveBeenCalledWith("test-access-token");
+  });
 });
