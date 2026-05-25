@@ -158,7 +158,12 @@ describe("API Functions", () => {
       });
 
       await expect(
-        getResourceFilterOptions(config, mockFetcher, "oil-gas-fields", "basin"),
+        getResourceFilterOptions(
+          config,
+          mockFetcher,
+          "oil-gas-fields",
+          "basin",
+        ),
       ).rejects.toThrow("HTTP error! status: 500");
     });
   });

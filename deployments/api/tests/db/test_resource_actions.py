@@ -639,7 +639,10 @@ class TestResourceFilterOptionsAction:
         value_col = resource_actions.cast(col, resource_actions.String).label("value")
         stmt = (
             resource_actions.select(value_col)
-            .where(col.is_not(None), resource_actions.cast(col, resource_actions.String) != "")
+            .where(
+                col.is_not(None),
+                resource_actions.cast(col, resource_actions.String) != "",
+            )
             .distinct()
             .order_by(value_col)
         )
@@ -651,7 +654,10 @@ class TestResourceFilterOptionsAction:
             )
         )
 
-        assert "SELECT DISTINCT CAST(licensed_resource_list.basin AS VARCHAR) AS value" in sql
+        assert (
+            "SELECT DISTINCT CAST(licensed_resource_list.basin AS VARCHAR) AS value"
+            in sql
+        )
         assert "ORDER BY value" in sql
 
     @pytest.mark.anyio

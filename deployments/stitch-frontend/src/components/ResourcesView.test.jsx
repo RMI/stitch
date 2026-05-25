@@ -2,10 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, within, fireEvent } from "@testing-library/react";
 import { renderWithQueryClient } from "../test/utils";
 import ResourcesView from "./ResourcesView";
-import {
-  useResourceFilterOptions,
-  useResources,
-} from "../hooks/useResources";
+import { useResourceFilterOptions, useResources } from "../hooks/useResources";
 import { DEFAULT_PAGE_SIZE, DEFAULT_PAGE } from "../queries/resources";
 
 vi.mock("../hooks/useResources");
@@ -68,20 +65,22 @@ beforeEach(() => {
     ...defaultHookReturn,
     refetch: vi.fn(),
   });
-  vi.mocked(useResourceFilterOptions).mockImplementation((_endpoint, field) => ({
-    ...defaultHookReturn,
-    data: {
-      field,
-      values:
-        field === "region"
-          ? ["Middle East"]
-          : field === "basin"
-            ? ["Arabian", "Permian"]
-            : field === "state_province"
-              ? ["Kuwait"]
-              : ["Producing"],
-    },
-  }));
+  vi.mocked(useResourceFilterOptions).mockImplementation(
+    (_endpoint, field) => ({
+      ...defaultHookReturn,
+      data: {
+        field,
+        values:
+          field === "region"
+            ? ["Middle East"]
+            : field === "basin"
+              ? ["Arabian", "Permian"]
+              : field === "state_province"
+                ? ["Kuwait"]
+                : ["Producing"],
+      },
+    }),
+  );
 });
 
 describe("ResourcesView", () => {
@@ -357,18 +356,12 @@ describe("ResourcesView", () => {
 
       renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
 
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(
-        ENDPOINT,
-        "region",
-      );
+      expect(useResourceFilterOptions).toHaveBeenCalledWith(ENDPOINT, "region");
       expect(useResourceFilterOptions).toHaveBeenCalledWith(
         ENDPOINT,
         "state_province",
       );
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(
-        ENDPOINT,
-        "basin",
-      );
+      expect(useResourceFilterOptions).toHaveBeenCalledWith(ENDPOINT, "basin");
       expect(useResourceFilterOptions).toHaveBeenCalledWith(
         ENDPOINT,
         "field_status",
