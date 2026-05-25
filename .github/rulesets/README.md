@@ -8,7 +8,7 @@ Each is created by exporting an existing ruleset in effect in this repo.
 
 GitHub's rulesets API only returns `bypass_actors` when the caller has write
 access to the ruleset. The default Actions token used in
-[`admin-check_rulesets.yml`](</Users/aaxthelm/Documents/SPD/stitch/.github/workflows/admin-check_rulesets.yml>)
+[`admin-check_rulesets.yml`](../workflows/admin-check_rulesets.yml)
 does not reliably expose that field, so the rulesets check intentionally ignores
 `bypass_actors` in both the local files and the remote API response.
 
