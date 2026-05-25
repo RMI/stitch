@@ -1,5 +1,5 @@
 from collections.abc import Collection, Sequence
-from typing import Any
+from typing import Any, get_args
 
 from fastapi import HTTPException
 from sqlalchemy import (
@@ -57,9 +57,7 @@ _LIST_SCALAR_FIELDS = tuple(
 )
 _LIST_DATA_FIELDS = (*_LIST_SCALAR_FIELDS, *_LIST_JSON_FIELDS)
 _PROVENANCE_SUFFIX = "__provenance_source"
-_FILTER_OPTION_FIELDS: frozenset[str] = frozenset(
-    FilterOptionField.__args__  # type: ignore[attr-defined]
-)
+_FILTER_OPTION_FIELDS: frozenset[str] = frozenset(get_args(FilterOptionField))
 
 
 def _priority_values() -> tuple[int, ...]:
