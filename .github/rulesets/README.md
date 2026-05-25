@@ -4,6 +4,17 @@ These JSON files represent [GitHub Rulesets](https://docs.github.com/en/reposito
 
 Each is created by exporting an existing ruleset in effect in this repo.
 
+## Important limitation
+
+GitHub's rulesets API only returns `bypass_actors` when the caller has write
+access to the ruleset. The default Actions token used in
+[`admin-check_rulesets.yml`](</Users/aaxthelm/Documents/SPD/stitch/.github/workflows/admin-check_rulesets.yml>)
+does not reliably expose that field, so the rulesets check intentionally ignores
+`bypass_actors` in both the local files and the remote API response.
+
+That means bypass lists are currently treated as UI-managed policy rather than
+fully verified by CI.
+
 # Export
 
 To create a ruleset file from an existing ruleset (usually created through the web UI):

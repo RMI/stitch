@@ -42,7 +42,8 @@ jobs:
               ._links,
               .node_id,
               .created_at,
-              .updated_at
+              .updated_at,
+              .bypass_actors
             )' \
             > "/tmp/remote_rulesets/${ID}.json"
             RULESET_NAME="$(jq -rc '.name' /tmp/remote_rulesets/${ID}.json)"
@@ -65,7 +66,8 @@ jobs:
             echo "$FILE: $ID, $RULESET_NAME"
             SANITIZED_RULESET_NAME="$(echo "$RULESET_NAME" | tr -c 'a-zA-Z0-9.-_' '_')"
             jq 'del(
-              .id
+              .id,
+              .bypass_actors
             )' $FILE \
             > "/tmp/local_rulesets/${SANITIZED_RULESET_NAME}.json"
           done
