@@ -41,6 +41,6 @@ If you want to alter an existing ruleset:
   - You should see in the `diff`:
     - You will also see the `*_old` actions as having no comparisons.
   - If there are no differences in the ruleset you updated, then it has imported as expected, and you can delete the `*_old` ruleset in the Repo settings.
-    - "Rulesets" -> "`*_old`" -> "..." \_. "Delete ruleset".
+    - "Rulesets" -> "`*_old`" -> "..." -> "Delete ruleset".
   - Trigger a new empty commit and push.
   - There should be no diffs, and actions run cleanly with new rulesets in effect.
