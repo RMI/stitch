@@ -214,3 +214,51 @@ class TestGetAllResourcesUnit:
         params = call_kwargs["params"]
         assert params.offset == 10
         assert params.limit == 10
+
+
+class TestGetResourceFilterOptionsUnit:
+    """Unit tests for GET /oil-gas-fields/filter-options endpoint."""
+
+    @pytest.mark.anyio
+    async def test_returns_filter_options(self, async_client, mock_uow):
+        async def override_get_uow():
+            yield mock_uow
+
+        app.dependency_overrides[get_uow] = override_get_uow
+
+        with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
+            mock_repo.filter_options = AsyncMock(return_value=["CAN", "USA"])
+
+            response = await async_client.get(
+                "/oil-gas-fields/filter-options?field=country"
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {"field": "country", "values": ["CAN", "USA"]}
+
+    @pytest.mark.anyio
+    async def test_passes_licensed_sources_and_source_filters(
+        self,
+        async_client,
+        mock_uow,
+    ):
+        async def override_get_uow():
+            yield mock_uow
+
+        app.dependency_overrides[get_uow] = override_get_uow
+
+        with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
+            mock_repo.filter_options = AsyncMock(return_value=["CAN", "USA"])
+
+            response = await async_client.get(
+                "/oil-gas-fields/filter-options?field=country&source=gem&source=wm"
+            )
+
+        assert response.status_code == 200
+        mock_repo.filter_options.assert_awaited_once()
+        call_kwargs = mock_repo.filter_options.call_args.kwargs
+        assert call_kwargs["licensed_sources"] == frozenset(
+            {"rmi", "gem", "wm", "llm"}
+        )
+        assert call_kwargs["params"].field == "country"
+        assert call_kwargs["params"].source == ["gem", "wm"]
