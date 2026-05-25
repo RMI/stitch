@@ -10,6 +10,7 @@ from stitch.api.entities import (
     OGFieldSortParams,
     User,
 )
+from tests.utils import make_source_record
 
 
 @pytest.fixture
@@ -20,85 +21,84 @@ async def seeded_sources(
     """Seed 8 diverse source rows for query testing."""
     session = seeded_integration_session
     uid = test_user.id
+
+    def with_record(source: str, **kwargs):
+        payload = {
+            "source": source,
+            "name": kwargs.get("name"),
+            "country": kwargs.get("country"),
+        }
+        return OilGasFieldSourceModel(
+            source=source,
+            source_record=make_source_record(payload=payload).model_dump(mode="json"),
+            created_by_id=uid,
+            last_updated_by_id=uid,
+            **kwargs,
+        )
+
     sources = [
-        OilGasFieldSourceModel(
-            source="gem",
+        with_record(
+            "gem",
             name="Permian Basin",
             country="USA",
             field_status="Producing",
             basin="Permian",
             region="Texas",
             discovery_year=1920,
-            created_by_id=uid,
-            last_updated_by_id=uid,
         ),
-        OilGasFieldSourceModel(
-            source="wm",
+        with_record(
+            "wm",
             name="Ghawar",
             country="SAU",
             field_status="Producing",
             location_type="Onshore",
             discovery_year=1948,
-            created_by_id=uid,
-            last_updated_by_id=uid,
         ),
-        OilGasFieldSourceModel(
-            source="gem",
+        with_record(
+            "gem",
             name="Vaca Muerta",
             country="ARG",
             field_status="Producing",
             basin="Neuquen",
             production_conventionality="Unconventional",
-            created_by_id=uid,
-            last_updated_by_id=uid,
         ),
-        OilGasFieldSourceModel(
-            source="rmi",
+        with_record(
+            "rmi",
             name="Prudhoe Bay",
             country="USA",
             field_status="Non-Producing",
             region="Alaska",
             discovery_year=1968,
-            created_by_id=uid,
-            last_updated_by_id=uid,
         ),
-        OilGasFieldSourceModel(
-            source="wm",
+        with_record(
+            "wm",
             name="Kashagan",
             country="KAZ",
             field_status="Producing",
             location_type="Offshore",
             discovery_year=2000,
-            created_by_id=uid,
-            last_updated_by_id=uid,
         ),
-        OilGasFieldSourceModel(
-            source="gem",
+        with_record(
+            "gem",
             name="permskiy basseyn",
             country="RUS",
             name_local="\u043f\u0435\u0440\u043c\u0441\u043a\u0438\u0439 \u0431\u0430\u0441\u0441\u0435\u0439\u043d",
             field_status="Abandoned",
-            created_by_id=uid,
-            last_updated_by_id=uid,
         ),
-        OilGasFieldSourceModel(
-            source="llm",
+        with_record(
+            "llm",
             name="Daqing",
             country="CHN",
             field_status="Producing",
             discovery_year=1959,
-            created_by_id=uid,
-            last_updated_by_id=uid,
         ),
-        OilGasFieldSourceModel(
-            source="gem",
+        with_record(
+            "gem",
             name="Permian Delaware",
             country="USA",
             field_status="Producing",
             basin="Permian",
             state_province="New Mexico",
-            created_by_id=uid,
-            last_updated_by_id=uid,
         ),
     ]
     session.add_all(sources)

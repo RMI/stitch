@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from stitch.llm.errors import FieldAlreadyPopulatedError, ModelOutputError
 from stitch.llm.suggestions import (
+    build_field_suggestion_input,
     ensure_field_is_missing,
     parse_field_suggestion_response,
     sanitize_and_validate_suggested_value,
 )
-from stitch.ogsi.model import GemSource, OGFieldDetailView
+from stitch.ogsi.model import GemSource, OGFieldDetailView, SourceRecord
 from stitch.ogsi.model.og_field import OilGasFieldBase
+from datetime import UTC, datetime
 
 
 def make_detail_view(**data) -> OGFieldDetailView:
@@ -18,7 +22,17 @@ def make_detail_view(**data) -> OGFieldDetailView:
         data=OilGasFieldBase(name="Alpha", country="USA", **data),
         provenance={},
         source_data=[
-            GemSource(source="gem", name="Alpha", country="USA", **data),
+            GemSource(
+                source="gem",
+                name="Alpha",
+                country="USA",
+                source_record=SourceRecord(
+                    observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+                    producer="test",
+                    payload={"kind": "fixture"},
+                ),
+                **data,
+            ),
         ],
     )
 
@@ -55,6 +69,19 @@ def test_parse_field_suggestion_response_rejects_extra_non_empty_lines() -> None
         parse_field_suggestion_response(
             "VALUE: Permian Basin\nRATIONALE: Supported by sources.\nEXTRA: nope"
         )
+
+
+def test_build_field_suggestion_input_excludes_source_record_from_prompt() -> None:
+    detail_view = make_detail_view(basin=None)
+
+    input_messages = build_field_suggestion_input(
+        resource_id=42,
+        field="basin",
+        detail_view=detail_view,
+    )
+
+    payload = json.loads(input_messages[1]["content"])
+    assert "source_record" not in payload["source_records"][0]
 
 
 def test_sanitize_and_validate_suggested_value_trims_strings() -> None:

@@ -64,13 +64,79 @@ export async function createLLMSuggestion(
   });
 
   if (!response.ok) {
-    let detail = `HTTP error! status: ${response.status}`;
+    const detail = await getErrorDetail(response);
+    const error = new Error(detail);
+    error.status = response.status;
+    throw error;
+  }
+
+  return await response.json();
+}
+
+function formatApiErrorDetail(detail, fallbackStatus) {
+  if (typeof detail === "string" && detail) return detail;
+  if (Array.isArray(detail) || (detail && typeof detail === "object")) {
+    return JSON.stringify(detail, null, 2);
+  }
+  return `HTTP error! status: ${fallbackStatus}`;
+}
+
+async function getErrorDetail(response) {
+  const fallback = formatApiErrorDetail(null, response.status);
+
+  try {
+    const text = await response.text();
+    if (!text) return response.statusText || fallback;
+
     try {
-      const payload = await response.json();
-      if (payload?.detail) detail = payload.detail;
+      const body = JSON.parse(text);
+      return formatApiErrorDetail(body?.detail, response.status);
     } catch {
-      // Ignore JSON parsing failures and fall back to status text.
+      return text;
     }
+  } catch {
+    return response.statusText || fallback;
+  }
+}
+
+export async function createResource(
+  config,
+  payload,
+  fetcher,
+  endpoint = "oil-gas-fields",
+) {
+  const url = `${config.apiBaseUrl}/${endpoint}/`;
+  const response = await fetcher(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const detail = await getErrorDetail(response);
+    const error = new Error(detail);
+    error.status = response.status;
+    throw error;
+  }
+
+  return await response.json();
+}
+
+export async function createMergeCandidate(
+  config,
+  resource_ids,
+  fetcher,
+  endpoint = "oil-gas-fields",
+) {
+  const url = `${config.apiBaseUrl}/${endpoint}/merge-candidates`;
+  const response = await fetcher(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ resource_ids }),
+  });
+
+  if (!response.ok) {
+    const detail = await getErrorDetail(response);
     const error = new Error(detail);
     error.status = response.status;
     throw error;
@@ -130,18 +196,8 @@ export async function reviewMergeCandidate(
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    let detail = text;
-
-    try {
-      detail = text ? JSON.parse(text) : null;
-    } catch {
-      // leave as text
-    }
-
-    const error = new Error(
-      typeof detail === "string" ? detail : JSON.stringify(detail, null, 2),
-    );
+    const detail = await getErrorDetail(response);
+    const error = new Error(detail);
     error.status = response.status;
     throw error;
   }
