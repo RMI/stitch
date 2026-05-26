@@ -8,12 +8,12 @@ on:
 
 jobs:
   build-frontend:
-    name: "Build frontend"
+    name: Build frontend
     uses: ./.github/workflows/node-build.yml
     secrets: inherit
 
-  build_api_docker_image:
-    name: "Build and publish API"
+  build-api-docker-image:
+    name: Build and publish API
     uses: ./.github/workflows/build-and-push-Docker-image.yml
     secrets: inherit
     permissions:
@@ -30,8 +30,8 @@ jobs:
           github.sha
         }}
 
-  build_entity_linkage_docker_image:
-    name: "Build and publish Entity Linkage"
+  build-entity-linkage-docker-image:
+    name: Build and publish Entity Linkage
     uses: ./.github/workflows/build-and-push-Docker-image.yml
     secrets: inherit
     permissions:
@@ -48,8 +48,8 @@ jobs:
           github.sha
         }}
 
-  build_stitch_llm_docker_image:
-    name: "Build and publish Stitch LLM"
+  build-stitch-llm-docker-image:
+    name: Build and publish Stitch LLM
     uses: ./.github/workflows/build-and-push-Docker-image.yml
     secrets: inherit
     permissions:
@@ -66,8 +66,8 @@ jobs:
           github.sha
         }}
 
-  build_seed_docker_image:
-    name: "Build and publish Seed"
+  build-seed-docker-image:
+    name: Build and publish Seed
     uses: ./.github/workflows/build-and-push-Docker-image.yml
     secrets: inherit
     permissions:
@@ -85,28 +85,28 @@ jobs:
         }}
 
   deploy-db:
-    name: "Create DB"
+    name: Create DB
     uses: ./.github/workflows/deploy-db.yml
     secrets: inherit
 
   run-db-init:
-    name: "Run DB init"
+    name: Run DB init
     uses: ./.github/workflows/run-db-init.yml
     secrets: inherit
-    needs: [build_api_docker_image, deploy-db]
+    needs: [build-api-docker-image, deploy-db]
     with:
-      full-image-name: ${{ needs.build_api_docker_image.outputs.digest-image-name }}
+      full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
       postgres-host: ${{ needs.deploy-db.outputs.postgres-host }}
       postgres-port: ${{ needs.deploy-db.outputs.postgres-port }}
       postgres-db: ${{ needs.deploy-db.outputs.postgres-db }}
 
   deploy-api:
-    name: "Deploy API"
+    name: Deploy API
     uses: ./.github/workflows/deploy-container.yml
     secrets: inherit
-    needs: [build_api_docker_image, deploy-db, run-db-init]
+    needs: [build-api-docker-image, deploy-db, run-db-init]
     with:
-      full-image-name: ${{ needs.build_api_docker_image.outputs.digest-image-name }}
+      full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
       containerAppName: ${{
           github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
           github.event_name == 'schedule' && 'nightly' ||
@@ -139,12 +139,12 @@ jobs:
       deployment-label: api
 
   deploy-entity-linkage:
-    name: "Deploy entity linkage"
+    name: Deploy entity linkage
     uses: ./.github/workflows/deploy-container.yml
     secrets: inherit
-    needs: [build_entity_linkage_docker_image, deploy-api]
+    needs: [build-entity-linkage-docker-image, deploy-api]
     with:
-      full-image-name: ${{ needs.build_entity_linkage_docker_image.outputs.digest-image-name }}
+      full-image-name: ${{ needs.build-entity-linkage-docker-image.outputs.digest-image-name }}
       containerAppName: ${{
           github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
           github.event_name == 'schedule' && 'nightly' ||
@@ -169,12 +169,12 @@ jobs:
       deployment-label: entity-linkage
 
   deploy-stitch-llm:
-    name: "Deploy stitch-llm"
+    name: Deploy stitch-llm
     uses: ./.github/workflows/deploy-container.yml
     secrets: inherit
-    needs: [build_stitch_llm_docker_image, deploy-api]
+    needs: [build-stitch-llm-docker-image, deploy-api]
     with:
-      full-image-name: ${{ needs.build_stitch_llm_docker_image.outputs.digest-image-name }}
+      full-image-name: ${{ needs.build-stitch-llm-docker-image.outputs.digest-image-name }}
       containerAppName: ${{
           github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
           github.event_name == 'schedule' && 'nightly' ||
@@ -199,17 +199,17 @@ jobs:
       deployment-label: stitch-llm
 
   run-seed:
-    name: "Run seed"
+    name: Run seed
     if: ${{ needs.deploy-db.outputs.database-created == 'true' }}
     uses: ./.github/workflows/run-seed.yml
     secrets: inherit
-    needs: [build_seed_docker_image, deploy-db, deploy-api]
+    needs: [build-seed-docker-image, deploy-db, deploy-api]
     with:
-      full-image-name: ${{ needs.build_seed_docker_image.outputs.digest-image-name }}
+      full-image-name: ${{ needs.build-seed-docker-image.outputs.digest-image-name }}
       api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
 
   deploy-frontend:
-    name: "Deploy frontend"
+    name: Deploy frontend
     uses: ./.github/workflows/azure-static-web-apps.yml
     secrets: inherit
     needs: [build-frontend, deploy-api, deploy-entity-linkage, deploy-stitch-llm]
@@ -230,4 +230,4 @@ jobs:
     if: ${{ always() && github.event_name == 'pull_request' }}
     uses: ./.github/workflows/comment-pr-summary.yml
     secrets: inherit
-    needs: [build_api_docker_image, build_entity_linkage_docker_image, build_stitch_llm_docker_image, build_seed_docker_image, deploy-db, run-db-init, deploy-api, deploy-entity-linkage, deploy-stitch-llm, run-seed, deploy-frontend]
+    needs: [build-api-docker-image, build-entity-linkage-docker-image, build-stitch-llm-docker-image, build-seed-docker-image, deploy-db, run-db-init, deploy-api, deploy-entity-linkage, deploy-stitch-llm, run-seed, deploy-frontend]

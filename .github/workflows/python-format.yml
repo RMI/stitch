@@ -3,7 +3,7 @@ on:
 
 jobs:
   format-check:
-    name: "formatting (ruff)"
+    name: formatting (ruff)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

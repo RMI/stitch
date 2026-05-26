@@ -3,7 +3,7 @@ on:
 
 jobs:
   build:
-    name: "docker compose build"
+    name: docker compose build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

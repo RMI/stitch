@@ -3,7 +3,7 @@ on:
 
 jobs:
   format-frontend:
-    name: "Format Check (frontend)"
+    name: Format Check (frontend)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

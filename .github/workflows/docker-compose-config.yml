@@ -3,7 +3,7 @@ on:
 
 jobs:
   config:
-    name: "docker compose config"
+    name: docker compose config
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

@@ -3,7 +3,7 @@ on:
 
 jobs:
   test:
-    name: "tests (pytest)"
+    name: tests (pytest)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

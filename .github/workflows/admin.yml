@@ -17,10 +17,10 @@ concurrency:
 
 jobs:
   check-rulesets:
-    name: "Check Rulesets"
+    name: Check Rulesets
     uses: ./.github/workflows/admin-check_rulesets.yml
 
   pattern-scan:
-    name: "Check for forbidden patterns"
+    name: Check for forbidden patterns
     uses: ./.github/workflows/admin-forbidden-patterns.yml
 

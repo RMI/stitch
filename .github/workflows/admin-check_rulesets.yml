@@ -7,7 +7,7 @@ concurrency: rulesets-checks
 
 jobs:
   rulesets:
-    name: "Check GH rulesets"
+    name: Check GH rulesets
     runs-on: ubuntu-latest
 
     steps:

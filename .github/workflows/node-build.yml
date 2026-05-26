@@ -3,7 +3,7 @@ on:
 
 jobs:
   build-frontend:
-    name: "Build Frontend"
+    name: Build Frontend
     runs-on: ubuntu-latest
 
     steps:

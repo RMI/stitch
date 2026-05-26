@@ -3,7 +3,7 @@ on:
 
 jobs:
   lint-frontend:
-    name: "Linting (frontend)"
+    name: Linting (frontend)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

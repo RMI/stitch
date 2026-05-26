@@ -3,7 +3,7 @@ on:
 
 jobs:
   lint:
-    name: "linting (ruff)"
+    name: linting (ruff)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

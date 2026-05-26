@@ -14,9 +14,9 @@ concurrency:
 
 jobs:
   compose-config:
-    name: "docker compose config"
+    name: docker compose config
     uses: ./.github/workflows/docker-compose-config.yml
 
   compose-build:
-    name: "docker compose build"
+    name: docker compose build
     uses: ./.github/workflows/docker-compose-build.yml

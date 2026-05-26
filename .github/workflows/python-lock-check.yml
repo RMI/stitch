@@ -3,7 +3,7 @@ on:
 
 jobs:
   build:
-    name: "Check Lockfile"
+    name: Check Lockfile
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

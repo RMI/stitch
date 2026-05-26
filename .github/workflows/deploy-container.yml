@@ -51,8 +51,8 @@ jobs:
       packages: read
     timeout-minutes: 25
     outputs:
-      container-app-url: ${{ steps.export-app-url.outputs.container_app_url }}
-      container-app-fqdn: ${{ steps.export-app-url.outputs.container_app_fqdn }}
+      container-app-url: ${{ steps.export-app-url.outputs.container-app-url }}
+      container-app-fqdn: ${{ steps.export-app-url.outputs.container-app-fqdn }}
 
     steps:
       - name: Azure login
@@ -110,8 +110,8 @@ jobs:
           fi
 
           echo "Resolved FQDN: $fqdn"
-          echo "container_app_fqdn=$fqdn" >> "$GITHUB_OUTPUT"
-          echo "container_app_url=https://$fqdn" >> "$GITHUB_OUTPUT"
+          echo "container-app-fqdn=$fqdn" >> "$GITHUB_OUTPUT"
+          echo "container-app-url=https://$fqdn" >> "$GITHUB_OUTPUT"
 
       - name: Write comment JSON
         if: ${{ github.event_name == 'pull_request' }}
@@ -126,8 +126,8 @@ jobs:
             --arg kind "container_app" \
             --arg name "${{ inputs.deployment-label }}" \
             --arg service "${{ inputs.deployment-label }}" \
-            --arg url "[open](${{ steps.export-app-url.outputs.container_app_url }})" \
-            --arg fqdn '`${{ steps.export-app-url.outputs.container_app_fqdn }}`' \
+            --arg url "[open](${{ steps.export-app-url.outputs.container-app-url }})" \
+            --arg fqdn '`${{ steps.export-app-url.outputs.container-app-fqdn }}`' \
             '{
               "section": $section,
               "kind": $kind,

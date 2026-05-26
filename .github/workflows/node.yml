@@ -14,17 +14,17 @@ concurrency:
 
 jobs:
   test:
-    name: "Tests"
+    name: Tests
     uses: ./.github/workflows/node-test.yml
 
   lint:
-    name: "Linting"
+    name: Linting
     uses: ./.github/workflows/node-lint.yml
 
   format:
-    name: "Formatting"
+    name: Formatting
     uses: ./.github/workflows/node-format.yml
 
   build:
-    name: "Build"
+    name: Build
     uses: ./.github/workflows/node-build.yml

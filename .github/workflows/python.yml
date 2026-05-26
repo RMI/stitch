@@ -14,21 +14,21 @@ concurrency:
 
 jobs:
   test:
-    name: "Tests"
+    name: Tests
     uses: ./.github/workflows/python-test.yml
 
   lint:
-    name: "Linting"
+    name: Linting
     uses: ./.github/workflows/python-lint.yml
 
   lock-check:
-    name: "Check Lockfile"
+    name: Check Lockfile
     uses: ./.github/workflows/python-lock-check.yml
 
   format:
-    name: "Format"
+    name: Format
     uses: ./.github/workflows/python-format.yml
 
   build:
-    name: "Build"
+    name: Build
     uses: ./.github/workflows/python-build.yml

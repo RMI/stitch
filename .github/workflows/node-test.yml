@@ -3,7 +3,7 @@ on:
 
 jobs:
   test-frontend:
-    name: "Run Unit Tests (frontend)"
+    name: Run Unit Tests (frontend)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
