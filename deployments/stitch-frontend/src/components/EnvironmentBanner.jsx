@@ -20,6 +20,8 @@ function getBannerClasses(label) {
     return "bg-yellow-500 text-white";
   } else if (normalized.startsWith("hotfix")) {
     return "bg-orange-500 text-white";
+  } else if (normalized === "dress-rehearsal") {
+    return "bg-slate-700 text-white";
   } else if (normalized.startsWith("develop")) {
     return "bg-red-500 text-white";
   } else if (normalized.startsWith("pr-")) {

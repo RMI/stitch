@@ -65,6 +65,20 @@ describe("EnvironmentBanner", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it("renders for dress-rehearsal", async () => {
+    setConfigForTests({
+      ...createMockConfig(),
+      appEnv: "dress-rehearsal",
+    });
+    const { default: EnvironmentBanner } = await import("./EnvironmentBanner");
+
+    renderWithQueryClient(<EnvironmentBanner />);
+
+    expect(
+      screen.getByText("DRESS-REHEARSAL Environment"),
+    ).toBeInTheDocument();
+  });
+
   it("toggles the diagnostics panel open and closed", async () => {
     const user = userEvent.setup();
     const { default: EnvironmentBanner } = await import("./EnvironmentBanner");
