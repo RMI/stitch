@@ -2,6 +2,10 @@
 on:
   workflow_call:
     inputs:
+      deployment-lane:
+        description: "Deployment lane and GitHub Environment name"
+        required: true
+        type: string
       full-image-name:
         description: "Full pushed image name including host/registry, name, and digest"
         required: true
@@ -26,12 +30,21 @@ name: Run DB Init
 jobs:
   run-db-init:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.deployment-lane }}
     permissions:
       contents: read
       packages: read
     timeout-minutes: 25
 
     steps:
+      - name: Validate lane secrets
+        shell: bash
+        env:
+          STITCH_MIGRATOR_PASSWORD: ${{ secrets.STITCH_MIGRATOR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${STITCH_MIGRATOR_PASSWORD:?Missing required secret STITCH_MIGRATOR_PASSWORD}"
+
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
@@ -45,11 +58,10 @@ jobs:
           POSTGRES_PORT: ${{ inputs.postgres-port }}
           POSTGRES_DB: ${{ inputs.postgres-db }}
           POSTGRES_USER: stitch_migrator
-          POSTGRES_PASSWORD: ${{ secrets.STITCH_MIGRATOR_PASSWORD_DEV }}
+          POSTGRES_PASSWORD: ${{ secrets.STITCH_MIGRATOR_PASSWORD }}
           PGSSLMODE: ${{ inputs.postgres-sslmode }}
         run: |
           set -euo pipefail
-
           docker run --rm \
             -e LOG_LEVEL \
             -e POSTGRES_HOST \
@@ -60,7 +72,6 @@ jobs:
             -e PGSSLMODE \
             "${{ inputs.full-image-name }}" \
             python -m stitch.api.db.init_job
-
 
       - name: Write comment JSON
         if: ${{ github.event_name == 'pull_request' }}

@@ -3,11 +3,15 @@ name: Azure Static Web Apps CI/CD
 on:
   workflow_call:
     inputs:
+      deployment-lane:
+        description: "Deployment lane and GitHub Environment name"
+        required: true
+        type: string
       artifact-name:
         description: "Uploaded frontend artifact name"
         required: true
         type: string
-      app-env:
+      deployment-name:
         description: "Runtime app environment label"
         required: true
         type: string
@@ -35,10 +39,16 @@ on:
         description: "Auth0 audience"
         required: true
         type: string
+      production-branch:
+        description: "The branch Azure Static Web Apps treats as production"
+        required: false
+        default: production
+        type: string
 
 jobs:
   build_and_deploy_job:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.deployment-lane }}
     name: Build and Deploy Job
     permissions:
       checks: write
@@ -46,6 +56,13 @@ jobs:
       id-token: write
       pull-requests: write
     steps:
+      - name: Validate lane secrets
+        shell: bash
+        env:
+          AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN }}
+        run: |
+          set -euo pipefail
+          : "${AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN:?Missing required secret AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN}"
 
       - uses: actions/checkout@v5
         with:
@@ -89,13 +106,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           CONFIG_TIME="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          CONFIG_ID="cfg-${{ inputs.app-env }}-$(date -u +'%Y%m%dT%H%M%SZ')"
+          CONFIG_ID="cfg-${{ inputs.deployment-name }}-$(date -u +'%Y%m%dT%H%M%SZ')"
 
           cat > .swa-dist/config.json <<EOF
           {
-            "appEnv": "${{ inputs.app-env }}",
+            "appEnv": "${{ inputs.deployment-name }}",
             "apiUrl": "${{ inputs.api-url }}",
             "entityLinkageUrl": "${{ inputs.entity-linkage-url }}",
             "stitchLlmUrl": "${{ inputs.stitch-llm-url }}",
@@ -134,6 +150,7 @@ jobs:
           skip_app_build: true
           app_location: ".swa-dist"
           skip_api_build: true
+          production_branch: ${{ inputs.production-branch }}
 
       - name: Write comment JSON
         if: ${{ github.event_name == 'pull_request' }}

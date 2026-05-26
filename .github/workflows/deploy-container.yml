@@ -1,20 +1,19 @@
 on:
   workflow_call:
     inputs:
+      deployment-lane:
+        description: "Deployment lane and GitHub Environment name"
+        required: true
+        type: string
       full-image-name:
         description: "Full pushed image name including host/registry, name, and tag"
         required: true
         type: string
-      containerAppName:
+      container-app-name:
         description: "The name of the Azure Container App."
         required: true
         type: string
-      containerAppEnvironment:
-        description: "The name of the Azure Container App environment to deploy to."
-        required: false
-        default: "stitch-dev"
-        type: string
-      targetPort:
+      target-port:
         description: "Port the application listens on"
         required: false
         default: 8000
@@ -45,6 +44,7 @@ on:
 jobs:
   deploy-container-app:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.deployment-lane }}
     permissions:
       id-token: write
       contents: read
@@ -53,8 +53,21 @@ jobs:
     outputs:
       container-app-url: ${{ steps.export-app-url.outputs.container_app_url }}
       container-app-fqdn: ${{ steps.export-app-url.outputs.container_app_fqdn }}
-
+    env:
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_CONTAINER_APP_ENVIRONMENT: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
+      STITCH_APP_PASSWORD: ${{ secrets.STITCH_APP_PASSWORD }}
     steps:
+      - name: Validate lane config
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
+          : "${AZURE_CONTAINER_APP_ENVIRONMENT:?Missing required variable AZURE_CONTAINER_APP_ENVIRONMENT}"
+          if [ "${{ inputs.inject_stitch_app_password }}" = "true" ]; then
+            : "${STITCH_APP_PASSWORD:?Missing required secret STITCH_APP_PASSWORD}"
+          fi
+
       - name: Azure login
         uses: azure/login@v3
         with:
@@ -72,7 +85,7 @@ jobs:
           envvars='${{ inputs.environment-variables }}'
           echo "$envvars"
           if [ "${{ inputs.inject-stitch-app-password }}" = "true" ]; then
-            envvars="$envvars POSTGRES_PASSWORD=${{ secrets.STITCH_APP_PASSWORD_DEV }}"
+            envvars="$envvars POSTGRES_PASSWORD=${STITCH_APP_PASSWORD}"
             echo "Also adding POSTGRES_PASSWORD"
           fi
           echo "environment_variables<<EOF" >> "$GITHUB_OUTPUT"
@@ -83,10 +96,10 @@ jobs:
         uses: azure/container-apps-deploy-action@v1
         with:
           imageToDeploy: ${{ inputs.full-image-name }}
-          resourceGroup: STITCH-DEV-RG
-          containerAppName: ${{ inputs.containerAppName }}
-          containerAppEnvironment: ${{ inputs.containerAppEnvironment }}
-          targetPort: ${{ inputs.targetPort }}
+          resourceGroup: ${{ env.AZURE_RESOURCE_GROUP }}
+          containerAppName: ${{ inputs.container-app-name }}
+          containerAppEnvironment: ${{ env.AZURE_CONTAINER_APP_ENVIRONMENT }}
+          targetPort: ${{ inputs.target-port }}
           environmentVariables: ${{ steps.envvars.outputs.environment_variables }}
           ingress: "external"
 
@@ -95,11 +108,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           fqdn="$(
             az containerapp show \
-              --name "${{ inputs.containerAppName }}" \
-              --resource-group "STITCH-DEV-RG" \
+              --name "${{ inputs.container-app-name }}" \
+              --resource-group "${AZURE_RESOURCE_GROUP}" \
               --query "properties.configuration.ingress.fqdn" \
               --output tsv
           )"
