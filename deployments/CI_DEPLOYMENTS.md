@@ -2,6 +2,19 @@
 
 The CD pipeline is managed by the GitHub workflow `build-and-deploy.yml`.
 
+It now uses two explicit workflow concepts:
+
+* `deployment_lane`: deploy class / GitHub Environment name
+* `deployment_name`: concrete runtime target name used for DB and app naming
+
+Branch behavior is:
+
+* push to `main` -> `deployment_lane=development`, `deployment_name=main`
+* PR to `main` -> `deployment_lane=development`, `deployment_name=pr-<number>`
+* push to `production` -> `deployment_lane=dress-rehearsal`, `deployment_name=production`
+* PR from `next` to `production` -> `deployment_lane=staging`, `deployment_name=next`
+* PR from `hotfix/*` to `production` -> `deployment_lane=staging`, branch-derived `deployment_name`
+
 It builds Docker images for:
 
 * `api` (also used for DB migration)
@@ -16,9 +29,13 @@ It then handles deployments for:
 * the entity-linkage Container App in the same environment
 * the stitch-llm Container App in the same environment
 
-For PR preview environments, all preview databases are on the same shared
-Postgres host, and the container apps are all in the same dev ACA
-environment.
+Reusable workflows now select lane-specific configuration from GitHub
+Environments and are expected to fail loudly when required values are absent.
+
+Backend infrastructure (static resources like PostgreSQL server or Continer App
+environment) are shared within a deploy lane (all `development` lane
+deployments, `pr-*`, `main` deploy to the same PostgreSQL instance, with
+separate logical DBs)
 
 It also handles running `db-init` (`api` container with different script) and
 `seed`, both directly from GH Actions (rather than starting on Azure).
@@ -41,6 +58,7 @@ are:
 
 * `repo:RMI/stitch:pull_request`
 * `repo:RMI/stitch:ref:refs/heads/main`
+* `repo:RMI/stitch:ref:refs/heads/production`
 
 All federated credential fields must match exactly:
 
@@ -59,19 +77,35 @@ Managed identity roles:
 
 ## Setup Notes
 
-In repo settings, under `Secrets and variables` > `Actions`, add:
+In repo settings, under `Secrets and variables` > `Actions`, add Azure identity
+secrets, then define lane-scoped variables and secrets in GitHub Environments
+named:
 
-### Secrets
+* `development`
+* `staging`
+* `dress-rehearsal`
+
+### Repo-level secrets
 
 * `AZURE_CLIENT_ID`: Client ID for `GHActions-stitch-cicd`
 * `AZURE_SUBSCRIPTION_ID`: Subscription for the target Azure resources
 * `AZURE_TENANT_ID`: Tenant for `GHActions-stitch-cicd`
-* `PGPASSWORD_DEV`: superuser (`postgres`) password for DB
-* `STITCH_APP_PASSWORD_DEV`: password that API user will connect to DB
-* `STITCH_MIGRATOR_PASSWORD_DEV`: password that migrator user will connect to DB
-  for DDL operations
-* `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`: Token for Azure SWA
 
-### Variables
+### Environment variables
 
-* `PGHOST_DEV`: Host for postgres server
+* `AZURE_RESOURCE_GROUP`
+* `AZURE_CONTAINER_APP_ENVIRONMENT`
+* `POSTGRES_HOST`
+* `POSTGRES_PORT`
+* `POSTGRES_ADMIN_USER`
+* `POSTGRES_SSLMODE`
+* `POSTGRES_DEFAULT_DB`
+* `FRONTEND_PRODUCTION_URL`
+* `FRONTEND_PREVIEW_URL_TEMPLATE`
+
+### Environment secrets
+
+* `PGPASSWORD`
+* `STITCH_APP_PASSWORD`
+* `STITCH_MIGRATOR_PASSWORD`
+* `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
