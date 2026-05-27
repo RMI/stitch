@@ -24,14 +24,10 @@ on:
         default: "container-app"
         type: string
       environment-variables:
-        description: "Whitespace-delimited non-secret KEY=value pairs"
+        description: "Whitespace-delimited KEY=value pairs"
         required: false
         default: ""
         type: string
-      inject-stitch-app-password:
-        required: false
-        default: false
-        type: boolean
 
     outputs:
       container-app-url:
@@ -59,14 +55,10 @@ jobs:
         env:
           AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
           AZURE_CONTAINER_APP_ENVIRONMENT: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
-          STITCH_APP_PASSWORD: ${{ secrets.STITCH_APP_PASSWORD }}
         run: |
           set -euo pipefail
           : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
           : "${AZURE_CONTAINER_APP_ENVIRONMENT:?Missing required variable AZURE_CONTAINER_APP_ENVIRONMENT}"
-          if [ "${{ inputs.inject-stitch-app-password }}" = "true" ]; then
-            : "${STITCH_APP_PASSWORD:?Missing required secret STITCH_APP_PASSWORD}"
-          fi
 
       - name: Azure login
         uses: azure/login@v3
@@ -80,16 +72,9 @@ jobs:
       - name: Assemble environment variables
         id: envvars
         shell: bash
-        env:
-          STITCH_APP_PASSWORD: ${{ secrets.STITCH_APP_PASSWORD }}
         run: |
           set -euo pipefail
           envvars='${{ inputs.environment-variables }}'
-          echo "$envvars"
-          if [ "${{ inputs.inject-stitch-app-password }}" = "true" ]; then
-            envvars="$envvars POSTGRES_PASSWORD=${STITCH_APP_PASSWORD}"
-            echo "Also adding POSTGRES_PASSWORD"
-          fi
           echo "environment_variables<<EOF" >> "$GITHUB_OUTPUT"
           echo "$envvars" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
