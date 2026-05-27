@@ -11,7 +11,7 @@ jobs:
     uses: ./.github/workflows/resolve-deployment-context.yml
     secrets: inherit
 
-  lane-config:
+  lane-config-validate:
     name: Resolve lane config
     needs: [resolve-context]
     runs-on: ubuntu-latest
@@ -21,6 +21,7 @@ jobs:
     env:
       FRONTEND_PRODUCTION_URL: ${{ vars.FRONTEND_PRODUCTION_URL }}
       FRONTEND_PREVIEW_URL_TEMPLATE: ${{ vars.FRONTEND_PREVIEW_URL_TEMPLATE }}
+      STITCH_APP_PASSWORD: ${{ secrets.STITCH_APP_PASSWORD }}
     steps:
       - name: Validate frontend lane variables
         shell: bash
@@ -28,6 +29,7 @@ jobs:
           set -euo pipefail
           : "${FRONTEND_PRODUCTION_URL:?Missing required variable FRONTEND_PRODUCTION_URL}"
           : "${FRONTEND_PREVIEW_URL_TEMPLATE:?Missing required variable FRONTEND_PREVIEW_URL_TEMPLATE}"
+          : "${STITCH_APP_PASSWORD:?Missing required secret STITCH_APP_PASSWORD}"
 
       - name: Compute frontend origin
         id: compute
