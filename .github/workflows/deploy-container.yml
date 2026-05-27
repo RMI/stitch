@@ -75,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           envvars='${{ inputs.environment-variables }}'
-          echo "environment_variables<<EOF" >> "$GITHUB_OUTPUT"
+          echo "environment-variables<<EOF" >> "$GITHUB_OUTPUT"
           echo "$envvars" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
@@ -87,7 +87,7 @@ jobs:
           containerAppName: ${{ inputs.container-app-name }}
           containerAppEnvironment: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
           targetPort: ${{ inputs.target-port }}
-          environmentVariables: ${{ steps.envvars.outputs.environment_variables }}
+          environmentVariables: ${{ steps.envvars.outputs.environment-variables }}
           ingress: "external"
 
       - name: Export application URL

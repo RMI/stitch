@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ needs.resolve-context.outputs.deployment-lane }}
     outputs:
-      frontend_origin_url: ${{ steps.compute.outputs.frontend_origin_url }}
+      frontend-origin-url: ${{ steps.compute.outputs.frontend-origin-url }}
     env:
       FRONTEND_PRODUCTION_URL: ${{ vars.FRONTEND_PRODUCTION_URL }}
       FRONTEND_PREVIEW_URL_TEMPLATE: ${{ vars.FRONTEND_PREVIEW_URL_TEMPLATE }}
@@ -44,7 +44,7 @@ jobs:
             frontend_origin_url="${FRONTEND_PREVIEW_URL_TEMPLATE//\{name\}/${TARGET_NAME}}"
           fi
 
-          echo "frontend_origin_url=$frontend_origin_url" >> "$GITHUB_OUTPUT"
+          echo "frontend-origin-url=$frontend_origin_url" >> "$GITHUB_OUTPUT"
 
   build-frontend:
     name: "Build frontend"
@@ -52,7 +52,7 @@ jobs:
     uses: ./.github/workflows/node-build.yml
     secrets: inherit
 
-  build_api_docker_image:
+  build-api-docker-image:
     name: "Build and publish API"
     needs: [resolve-context]
     uses: ./.github/workflows/build-and-push-Docker-image.yml
@@ -65,7 +65,7 @@ jobs:
       image-name: ${{ github.event.repository.name }}-api
       image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
 
-  build_entity_linkage_docker_image:
+  build-entity-linkage-docker-image:
     name: "Build and publish Entity Linkage"
     needs: [resolve-context]
     uses: ./.github/workflows/build-and-push-Docker-image.yml
@@ -78,7 +78,7 @@ jobs:
       image-name: ${{ github.event.repository.name }}-entity-linkage
       image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
 
-  build_stitch_llm_docker_image:
+  build-stitch-llm-docker-image:
     name: "Build and publish Stitch LLM"
     needs: [resolve-context]
     uses: ./.github/workflows/build-and-push-Docker-image.yml
@@ -91,7 +91,7 @@ jobs:
       image-name: ${{ github.event.repository.name }}-stitch-llm
       image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
 
-  build_seed_docker_image:
+  build-seed-docker-image:
     name: "Build and publish Seed"
     needs: [resolve-context]
     uses: ./.github/workflows/build-and-push-Docker-image.yml
@@ -115,12 +115,12 @@ jobs:
 
   run-db-init:
     name: "Run DB init"
-    needs: [resolve-context, build_api_docker_image, deploy-db]
+    needs: [resolve-context, build-api-docker-image, deploy-db]
     uses: ./.github/workflows/run-db-init.yml
     secrets: inherit
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      full-image-name: ${{ needs.build_api_docker_image.outputs.digest-image-name }}
+      full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
       postgres-host: ${{ needs.deploy-db.outputs.postgres-host }}
       postgres-port: ${{ needs.deploy-db.outputs.postgres-port }}
       postgres-db: ${{ needs.deploy-db.outputs.postgres-db }}
@@ -128,16 +128,16 @@ jobs:
 
   deploy-api:
     name: "Deploy API"
-    needs: [resolve-context, lane-config, build_api_docker_image, deploy-db, run-db-init]
+    needs: [resolve-context, lane-config, build-api-docker-image, deploy-db, run-db-init]
     uses: ./.github/workflows/deploy-container.yml
     secrets: inherit
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      full-image-name: ${{ needs.build_api_docker_image.outputs.digest-image-name }}
+      full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
       container-app-name: ${{ format('{0}-api', needs.resolve-context.outputs.deployment-name) }}
       environment-variables: >-
         LOG_LEVEL=debug
-        FRONTEND_ORIGIN_URL=${{ needs.lane-config.outputs.frontend_origin_url }}
+        FRONTEND_ORIGIN_URL=${{ needs.lane-config.outputs.frontend-origin-url }}
         AUTH_DISABLED=true
         DEPLOYMENT_LANE=${{ needs.resolve-context.outputs.deployment-lane }}
         DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
@@ -152,12 +152,12 @@ jobs:
 
   deploy-entity-linkage:
     name: "Deploy entity linkage"
-    needs: [resolve-context, lane-config, build_entity_linkage_docker_image, deploy-api]
+    needs: [resolve-context, lane-config, build-entity-linkage-docker-image, deploy-api]
     uses: ./.github/workflows/deploy-container.yml
     secrets: inherit
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      full-image-name: ${{ needs.build_entity_linkage_docker_image.outputs.digest-image-name }}
+      full-image-name: ${{ needs.build-entity-linkage-docker-image.outputs.digest-image-name }}
       container-app-name: ${{ format('{0}-entity-linkage', needs.resolve-context.outputs.deployment-name) }}
       environment-variables: >-
         LOG_LEVEL=info
@@ -166,17 +166,17 @@ jobs:
         DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
         STITCH_CLIENT_BEARER_TOKEN=dev-placeholder-token
         ENTITY_LINKAGE_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
-        ENTITY_LINKAGE_FRONTEND_ORIGIN_URL=${{ needs.lane-config.outputs.frontend_origin_url }}
+        ENTITY_LINKAGE_FRONTEND_ORIGIN_URL=${{ needs.lane-config.outputs.frontend-origin-url }}
       deployment-label: entity-linkage
 
   deploy-stitch-llm:
     name: "Deploy stitch-llm"
-    needs: [resolve-context, lane-config, build_stitch_llm_docker_image, deploy-api]
+    needs: [resolve-context, lane-config, build-stitch-llm-docker-image, deploy-api]
     uses: ./.github/workflows/deploy-container.yml
     secrets: inherit
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      full-image-name: ${{ needs.build_stitch_llm_docker_image.outputs.digest-image-name }}
+      full-image-name: ${{ needs.build-stitch-llm-docker-image.outputs.digest-image-name }}
       container-app-name: ${{ format('{0}-stitch-llm', needs.resolve-context.outputs.deployment-name) }}
       environment-variables: >-
         STITCH_LLM_LOG_LEVEL=info
@@ -185,17 +185,17 @@ jobs:
         DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
         STITCH_CLIENT_BEARER_TOKEN=dev-placeholder-token
         STITCH_LLM_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
-        STITCH_LLM_FRONTEND_ORIGIN_URL=${{ needs.lane-config.outputs.frontend_origin_url }}
+        STITCH_LLM_FRONTEND_ORIGIN_URL=${{ needs.lane-config.outputs.frontend-origin-url }}
       deployment-label: stitch-llm
 
   run-seed:
     name: "Run seed"
     if: ${{ needs.deploy-db.outputs.database-created == 'true' }}
-    needs: [resolve-context, build_seed_docker_image, deploy-db, deploy-api]
+    needs: [resolve-context, build-seed-docker-image, deploy-db, deploy-api]
     uses: ./.github/workflows/run-seed.yml
     secrets: inherit
     with:
-      full-image-name: ${{ needs.build_seed_docker_image.outputs.digest-image-name }}
+      full-image-name: ${{ needs.build-seed-docker-image.outputs.digest-image-name }}
       api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
 
   deploy-frontend:
