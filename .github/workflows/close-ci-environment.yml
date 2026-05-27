@@ -10,9 +10,9 @@ jobs:
   resolve-context:
     runs-on: ubuntu-latest
     outputs:
-      should_cleanup: ${{ steps.resolve.outputs.should_cleanup }}
-      deployment_lane: ${{ steps.resolve.outputs.deployment_lane }}
-      deployment_name: ${{ steps.resolve.outputs.deployment_name }}
+      should-cleanup: ${{ steps.resolve.outputs.should-cleanup }}
+      deployment-lane: ${{ steps.resolve.outputs.deployment-lane }}
+      deployment-name: ${{ steps.resolve.outputs.deployment-name }}
     steps:
       - name: Resolve cleanup target
         id: resolve
@@ -50,16 +50,16 @@ jobs:
           fi
 
           {
-            echo "should_cleanup=$should_cleanup"
-            echo "deployment_lane=$deployment_lane"
-            echo "deployment_name=$deployment_name"
+            echo "should-cleanup=$should_cleanup"
+            echo "deployment-lane=$deployment_lane"
+            echo "deployment-name=$deployment_name"
           } >> "$GITHUB_OUTPUT"
 
   drop-db:
-    if: ${{ needs.resolve-context.outputs.should_cleanup == 'true' }}
+    if: ${{ needs.resolve-context.outputs.should-cleanup == 'true' }}
     needs: [resolve-context]
     runs-on: ubuntu-latest
-    environment: ${{ needs.resolve-context.outputs.deployment_lane }}
+    environment: ${{ needs.resolve-context.outputs.deployment-lane }}
     env:
       PGHOST: ${{ vars.POSTGRES_HOST }}
       PGPORT: ${{ vars.POSTGRES_PORT || '5432' }}
@@ -67,7 +67,7 @@ jobs:
       PGPASSWORD: ${{ secrets.PGPASSWORD }}
       PGSSLMODE: ${{ vars.POSTGRES_SSLMODE || 'require' }}
       PGDATABASE: ${{ vars.POSTGRES_DEFAULT_DB || 'postgres' }}
-      DB_NAME_RAW: ${{ needs.resolve-context.outputs.deployment_name }}
+      DB_NAME_RAW: ${{ needs.resolve-context.outputs.deployment-name }}
     steps:
       - name: Validate lane config
         shell: bash
@@ -111,15 +111,15 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -c "DROP DATABASE \"${DB_NAME}\";"
 
   delete-api-container-app:
-    if: ${{ needs.resolve-context.outputs.should_cleanup == 'true' }}
+    if: ${{ needs.resolve-context.outputs.should-cleanup == 'true' }}
     needs: [resolve-context]
     permissions:
       id-token: write
       contents: read
     runs-on: ubuntu-latest
-    environment: ${{ needs.resolve-context.outputs.deployment_lane }}
+    environment: ${{ needs.resolve-context.outputs.deployment-lane }}
     env:
-      CONTAINER_APP_NAME: ${{ format('{0}-api', needs.resolve-context.outputs.deployment_name) }}
+      CONTAINER_APP_NAME: ${{ format('{0}-api', needs.resolve-context.outputs.deployment-name) }}
       AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
     steps:
       - name: Validate lane config
@@ -156,15 +156,15 @@ jobs:
           az containerapp delete --name "$CONTAINER_APP_NAME" --resource-group "$AZURE_RESOURCE_GROUP" --yes
 
   delete-entity-linkage-container-app:
-    if: ${{ needs.resolve-context.outputs.should_cleanup == 'true' }}
+    if: ${{ needs.resolve-context.outputs.should-cleanup == 'true' }}
     needs: [resolve-context]
     permissions:
       id-token: write
       contents: read
     runs-on: ubuntu-latest
-    environment: ${{ needs.resolve-context.outputs.deployment_lane }}
+    environment: ${{ needs.resolve-context.outputs.deployment-lane }}
     env:
-      CONTAINER_APP_NAME: ${{ format('{0}-entity-linkage', needs.resolve-context.outputs.deployment_name) }}
+      CONTAINER_APP_NAME: ${{ format('{0}-entity-linkage', needs.resolve-context.outputs.deployment-name) }}
       AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
     steps:
       - name: Validate lane config
@@ -201,15 +201,15 @@ jobs:
           az containerapp delete --name "$CONTAINER_APP_NAME" --resource-group "$AZURE_RESOURCE_GROUP" --yes
 
   delete-stitch-llm-container-app:
-    if: ${{ needs.resolve-context.outputs.should_cleanup == 'true' }}
+    if: ${{ needs.resolve-context.outputs.should-cleanup == 'true' }}
     needs: [resolve-context]
     permissions:
       id-token: write
       contents: read
     runs-on: ubuntu-latest
-    environment: ${{ needs.resolve-context.outputs.deployment_lane }}
+    environment: ${{ needs.resolve-context.outputs.deployment-lane }}
     env:
-      CONTAINER_APP_NAME: ${{ format('{0}-stitch-llm', needs.resolve-context.outputs.deployment_name) }}
+      CONTAINER_APP_NAME: ${{ format('{0}-stitch-llm', needs.resolve-context.outputs.deployment-name) }}
       AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
     steps:
       - name: Validate lane config
@@ -246,10 +246,10 @@ jobs:
           az containerapp delete --name "$CONTAINER_APP_NAME" --resource-group "$AZURE_RESOURCE_GROUP" --yes
 
   close-static-web-app-preview:
-    if: ${{ needs.resolve-context.outputs.should_cleanup == 'true' }}
+    if: ${{ needs.resolve-context.outputs.should-cleanup == 'true' }}
     needs: [resolve-context]
     runs-on: ubuntu-latest
-    environment: ${{ needs.resolve-context.outputs.deployment_lane }}
+    environment: ${{ needs.resolve-context.outputs.deployment-lane }}
     permissions:
       checks: write
       contents: read

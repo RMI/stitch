@@ -51,8 +51,8 @@ jobs:
       packages: read
     timeout-minutes: 25
     outputs:
-      container-app-url: ${{ steps.export-app-url.outputs.container_app_url }}
-      container-app-fqdn: ${{ steps.export-app-url.outputs.container_app_fqdn }}
+      container-app-url: ${{ steps.export-app-url.outputs.container-app-url }}
+      container-app-fqdn: ${{ steps.export-app-url.outputs.container-app-fqdn }}
     env:
       AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       AZURE_CONTAINER_APP_ENVIRONMENT: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
@@ -64,7 +64,7 @@ jobs:
           set -euo pipefail
           : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
           : "${AZURE_CONTAINER_APP_ENVIRONMENT:?Missing required variable AZURE_CONTAINER_APP_ENVIRONMENT}"
-          if [ "${{ inputs.inject_stitch_app_password }}" = "true" ]; then
+          if [ "${{ inputs.inject-stitch-app-password }}" = "true" ]; then
             : "${STITCH_APP_PASSWORD:?Missing required secret STITCH_APP_PASSWORD}"
           fi
 
@@ -122,8 +122,8 @@ jobs:
           fi
 
           echo "Resolved FQDN: $fqdn"
-          echo "container_app_fqdn=$fqdn" >> "$GITHUB_OUTPUT"
-          echo "container_app_url=https://$fqdn" >> "$GITHUB_OUTPUT"
+          echo "container-app-fqdn=$fqdn" >> "$GITHUB_OUTPUT"
+          echo "container-app-url=https://$fqdn" >> "$GITHUB_OUTPUT"
 
       - name: Write comment JSON
         if: ${{ github.event_name == 'pull_request' }}
@@ -138,8 +138,8 @@ jobs:
             --arg kind "container_app" \
             --arg name "${{ inputs.deployment-label }}" \
             --arg service "${{ inputs.deployment-label }}" \
-            --arg url "[open](${{ steps.export-app-url.outputs.container_app_url }})" \
-            --arg fqdn '`${{ steps.export-app-url.outputs.container_app_fqdn }}`' \
+            --arg url "[open](${{ steps.export-app-url.outputs.container-app-url }})" \
+            --arg fqdn '`${{ steps.export-app-url.outputs.container-app-fqdn }}`' \
             '{
               "section": $section,
               "kind": $kind,
