@@ -8,71 +8,8 @@ on:
 
 jobs:
   resolve-context:
-    name: Resolve deployment context
-    runs-on: ubuntu-latest
-    outputs:
-      deployment-lane: ${{ steps.resolve.outputs.deployment-lane }}
-      deployment-name: ${{ steps.resolve.outputs.deployment-name }}
-    steps:
-      - name: Resolve lane and deployment name
-        id: resolve
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          REF_NAME: ${{ github.ref_name }}
-          BASE_REF: ${{ github.base_ref }}
-          HEAD_REF: ${{ github.head_ref }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          set -euo pipefail
-
-          normalize_name() {
-            local raw="$1"
-            echo "$raw" \
-              | tr '[:upper:]' '[:lower:]' \
-              | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g'
-          }
-
-          deployment-lane=""
-          deployment-name=""
-
-          case "$EVENT_NAME" in
-            push|workflow_dispatch)
-              case "$REF_NAME" in
-                main)
-                  deployment-lane="development"
-                  deployment-name="main"
-                  ;;
-                production)
-                  deployment-lane="dress-rehearsal"
-                  deployment-name="production"
-                  ;;
-                *)
-                  echo "Unsupported push/dispatch target: $REF_NAME" >&2
-                  exit 1
-                  ;;
-              esac
-              ;;
-            pull_request)
-              if [ "$BASE_REF" = "production" ]; then
-                normalized_branch="$(normalize_name "$HEAD_REF")"
-                deployment-lane="staging"
-                deployment-name="$normalized_branch"
-              else
-                deployment-lane="development"
-                deployment-name="pr-$PR_NUMBER"
-              fi
-              ;;
-            *)
-              echo "Unsupported event: $EVENT_NAME" >&2
-              exit 1
-              ;;
-          esac
-
-          {
-            echo "deployment-lane=$deployment-lane"
-            echo "deployment-name=$deployment-name"
-          } >> "$GITHUB_OUTPUT"
+    uses: ./.github/workflows/resolve-deployment-context.yml
+    secrets: inherit
 
   lane-config:
     name: Resolve lane config
