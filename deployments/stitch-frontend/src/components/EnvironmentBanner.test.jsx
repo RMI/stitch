@@ -74,9 +74,7 @@ describe("EnvironmentBanner", () => {
 
     renderWithQueryClient(<EnvironmentBanner />);
 
-    expect(
-      screen.getByText("DRESS-REHEARSAL Environment"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("DRESS-REHEARSAL Environment")).toBeInTheDocument();
   });
 
   it("toggles the diagnostics panel open and closed", async () => {
