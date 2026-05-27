@@ -118,12 +118,11 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     environment: ${{ needs.resolve-context.outputs.deployment-lane }}
-    env:
-      CONTAINER_APP_NAME: ${{ format('{0}-api', needs.resolve-context.outputs.deployment-name) }}
-      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
     steps:
       - name: Validate lane config
         shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
         run: |
           set -euo pipefail
           : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
@@ -141,6 +140,9 @@ jobs:
 
       - name: Delete Container App if it exists
         shell: bash
+        env:
+          CONTAINER_APP_NAME: ${{ format('{0}-api', needs.resolve-context.outputs.deployment-name) }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
         run: |
           set -euo pipefail
           EXISTS="$(
@@ -163,12 +165,11 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     environment: ${{ needs.resolve-context.outputs.deployment-lane }}
-    env:
-      CONTAINER_APP_NAME: ${{ format('{0}-entity-linkage', needs.resolve-context.outputs.deployment-name) }}
-      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
     steps:
       - name: Validate lane config
         shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
         run: |
           set -euo pipefail
           : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
@@ -186,6 +187,9 @@ jobs:
 
       - name: Delete Container App if it exists
         shell: bash
+        env:
+          CONTAINER_APP_NAME: ${{ format('{0}-entity-linkage', needs.resolve-context.outputs.deployment-name) }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
         run: |
           set -euo pipefail
           EXISTS="$(
@@ -208,12 +212,11 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     environment: ${{ needs.resolve-context.outputs.deployment-lane }}
-    env:
-      CONTAINER_APP_NAME: ${{ format('{0}-stitch-llm', needs.resolve-context.outputs.deployment-name) }}
-      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
     steps:
       - name: Validate lane config
         shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
         run: |
           set -euo pipefail
           : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
@@ -231,6 +234,9 @@ jobs:
 
       - name: Delete Container App if it exists
         shell: bash
+        env:
+          CONTAINER_APP_NAME: ${{ format('{0}-stitch-llm', needs.resolve-context.outputs.deployment-name) }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
         run: |
           set -euo pipefail
           EXISTS="$(

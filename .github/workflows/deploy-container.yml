@@ -53,13 +53,12 @@ jobs:
     outputs:
       container-app-url: ${{ steps.export-app-url.outputs.container-app-url }}
       container-app-fqdn: ${{ steps.export-app-url.outputs.container-app-fqdn }}
-    env:
-      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
-      AZURE_CONTAINER_APP_ENVIRONMENT: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
     steps:
       - name: Validate lane config
         shell: bash
         env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_CONTAINER_APP_ENVIRONMENT: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
           STITCH_APP_PASSWORD: ${{ secrets.STITCH_APP_PASSWORD }}
         run: |
           set -euo pipefail
@@ -99,9 +98,9 @@ jobs:
         uses: azure/container-apps-deploy-action@v1
         with:
           imageToDeploy: ${{ inputs.full-image-name }}
-          resourceGroup: ${{ env.AZURE_RESOURCE_GROUP }}
+          resourceGroup: ${{ vars.AZURE_RESOURCE_GROUP }}
           containerAppName: ${{ inputs.container-app-name }}
-          containerAppEnvironment: ${{ env.AZURE_CONTAINER_APP_ENVIRONMENT }}
+          containerAppEnvironment: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
           targetPort: ${{ inputs.target-port }}
           environmentVariables: ${{ steps.envvars.outputs.environment_variables }}
           ingress: "external"
@@ -109,6 +108,8 @@ jobs:
       - name: Export application URL
         id: export-app-url
         shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
         run: |
           set -euo pipefail
           fqdn="$(
