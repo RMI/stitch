@@ -132,7 +132,8 @@ jobs:
     name: "Deploy API"
     needs: [resolve-context, lane-config, build-api-docker-image, deploy-db, run-db-init]
     uses: ./.github/workflows/deploy-container.yml
-    secrets: inherit
+    secrets:
+      stitch-app-password: ${{ secrets.STITCH_APP_PASSWORD }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
@@ -148,7 +149,6 @@ jobs:
         POSTGRES_PORT=${{ needs.deploy-db.outputs.postgres-port }}
         POSTGRES_DB=${{ needs.deploy-db.outputs.postgres-db }}
         POSTGRES_USER=${{ needs.deploy-db.outputs.postgres-user }}
-        POSTGRES_PASSWORD=${{ secrets.STITCH_APP_PASSWORD }}
         PGSSLMODE=${{ needs.deploy-db.outputs.postgres-sslmode }}
       deployment-label: api
 

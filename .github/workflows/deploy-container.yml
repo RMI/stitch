@@ -28,6 +28,9 @@ on:
         required: false
         default: ""
         type: string
+    secrets:
+      stitch-app-password:
+        required: false
 
     outputs:
       container-app-url:
@@ -72,9 +75,14 @@ jobs:
       - name: Assemble environment variables
         id: envvars
         shell: bash
+        env:
+          STITCH_APP_PASSWORD: ${{ secrets.stitch-app-password }}
         run: |
           set -euo pipefail
           envvars='${{ inputs.environment-variables }}'
+          if [ -n "${STITCH_APP_PASSWORD:-}" ]; then
+            envvars="$envvars POSTGRES_PASSWORD=${STITCH_APP_PASSWORD}"
+          fi
           echo "environment-variables<<EOF" >> "$GITHUB_OUTPUT"
           echo "$envvars" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
