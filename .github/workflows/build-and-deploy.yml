@@ -130,7 +130,7 @@ jobs:
 
   deploy-api:
     name: "Deploy API"
-    needs: [resolve-context, lane-config, build-api-docker-image, deploy-db, run-db-init]
+    needs: [resolve-context, lane-config-validate, build-api-docker-image, deploy-db, run-db-init]
     uses: ./.github/workflows/deploy-container.yml
     secrets:
       stitch-app-password: ${{ secrets.STITCH_APP_PASSWORD }}
@@ -140,7 +140,7 @@ jobs:
       container-app-name: ${{ format('{0}-api', needs.resolve-context.outputs.deployment-name) }}
       environment-variables: >-
         LOG_LEVEL=debug
-        FRONTEND_ORIGIN_URL=${{ needs.lane-config.outputs.frontend-origin-url }}
+        FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
         AUTH_DISABLED=true
         DEPLOYMENT_LANE=${{ needs.resolve-context.outputs.deployment-lane }}
         DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
@@ -154,7 +154,7 @@ jobs:
 
   deploy-entity-linkage:
     name: "Deploy entity linkage"
-    needs: [resolve-context, lane-config, build-entity-linkage-docker-image, deploy-api]
+    needs: [resolve-context, lane-config-validate, build-entity-linkage-docker-image, deploy-api]
     uses: ./.github/workflows/deploy-container.yml
     secrets: inherit
     with:
@@ -168,12 +168,12 @@ jobs:
         DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
         STITCH_CLIENT_BEARER_TOKEN=dev-placeholder-token
         ENTITY_LINKAGE_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
-        ENTITY_LINKAGE_FRONTEND_ORIGIN_URL=${{ needs.lane-config.outputs.frontend-origin-url }}
+        ENTITY_LINKAGE_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
       deployment-label: entity-linkage
 
   deploy-stitch-llm:
     name: "Deploy stitch-llm"
-    needs: [resolve-context, lane-config, build-stitch-llm-docker-image, deploy-api]
+    needs: [resolve-context, lane-config-validate, build-stitch-llm-docker-image, deploy-api]
     uses: ./.github/workflows/deploy-container.yml
     secrets: inherit
     with:
@@ -187,7 +187,7 @@ jobs:
         DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
         STITCH_CLIENT_BEARER_TOKEN=dev-placeholder-token
         STITCH_LLM_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
-        STITCH_LLM_FRONTEND_ORIGIN_URL=${{ needs.lane-config.outputs.frontend-origin-url }}
+        STITCH_LLM_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
       deployment-label: stitch-llm
 
   run-seed:
