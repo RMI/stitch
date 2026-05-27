@@ -36,19 +36,19 @@ jobs:
               | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g'
           }
 
-          deployment-lane=""
-          deployment-name=""
+          deployment_lane=""
+          deployment_name=""
 
           case "$EVENT_NAME" in
             push|workflow_dispatch)
               case "$REF_NAME" in
                 main)
-                  deployment-lane="development"
-                  deployment-name="main"
+                  deployment_lane="development"
+                  deployment_name="main"
                   ;;
                 production)
-                  deployment-lane="dress-rehearsal"
-                  deployment-name="production"
+                  deployment_lane="dress-rehearsal"
+                  deployment_name="production"
                   ;;
                 *)
                   echo "Unsupported push/dispatch target: $REF_NAME" >&2
@@ -58,11 +58,11 @@ jobs:
               ;;
             pull_request)
               if [ "$BASE_REF" = "production" ]; then
-                deployment-lane="staging"
-                deployment-name="$(normalize_name "$HEAD_REF")"
+                deployment_lane="staging"
+                deployment_name="$(normalize_name "$HEAD_REF")"
               else
-                deployment-lane="development"
-                deployment-name="pr-$PR_NUMBER"
+                deployment_lane="development"
+                deployment_name="pr-$PR_NUMBER"
               fi
               ;;
             *)
@@ -72,6 +72,6 @@ jobs:
           esac
 
           {
-            echo "deployment-lane=$deployment-lane"
-            echo "deployment-name=$deployment-name"
+            echo "deployment-lane=$deployment_lane"
+            echo "deployment-name=$deployment_name"
           } >> "$GITHUB_OUTPUT"
