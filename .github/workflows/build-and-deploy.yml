@@ -11,11 +11,8 @@ jobs:
     name: Resolve deployment context
     runs-on: ubuntu-latest
     outputs:
-      should-deploy: ${{ steps.resolve.outputs.should-deploy }}
       deployment-lane: ${{ steps.resolve.outputs.deployment-lane }}
       deployment-name: ${{ steps.resolve.outputs.deployment-name }}
-      runtime-environment: ${{ steps.resolve.outputs.runtime-environment }}
-      frontend-target-name: ${{ steps.resolve.outputs.frontend-target-name }}
     steps:
       - name: Resolve lane and deployment name
         id: resolve
@@ -36,66 +33,49 @@ jobs:
               | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g'
           }
 
-          should-deploy=false
           deployment-lane=""
           deployment-name=""
-          runtime-environment=""
-          frontend-target-name=""
 
           case "$EVENT_NAME" in
             push|workflow_dispatch)
               case "$REF_NAME" in
                 main)
-                  should-deploy=true
                   deployment-lane="development"
                   deployment-name="main"
-                  runtime-environment="main"
-                  frontend-target-name="main"
                   ;;
                 production)
-                  should-deploy=true
                   deployment-lane="dress-rehearsal"
                   deployment-name="production"
-                  runtime-environment="dress-rehearsal"
-                  frontend-target-name="production"
+                  ;;
+                *)
+                  echo "Unsupported push/dispatch target: $REF_NAME" >&2
+                  exit 1
                   ;;
               esac
               ;;
             pull_request)
-              if [ "$BASE_REF" = "main" ]; then
-                should-deploy=true
-                deployment-lane="development"
-                deployment-name="pr-$PR_NUMBER"
-                runtime-environment="pr-$PR_NUMBER"
-                frontend-target-name="pr-$PR_NUMBER"
-              elif [ "$BASE_REF" = "production" ] && [ "$HEAD_REF" = "next" ]; then
-                should-deploy=true
-                deployment-lane="staging"
-                deployment-name="next"
-                runtime-environment="next"
-                frontend-target-name="pr-$PR_NUMBER"
-              elif [ "$BASE_REF" = "production" ] && [[ "$HEAD_REF" == hotfix/* ]]; then
+              if [ "$BASE_REF" = "production" ]; then
                 normalized_branch="$(normalize_name "$HEAD_REF")"
-                should-deploy=true
                 deployment-lane="staging"
                 deployment-name="$normalized_branch"
-                runtime-environment="$normalized_branch"
-                frontend-target-name="pr-$PR_NUMBER"
+              else
+                deployment-lane="development"
+                deployment-name="pr-$PR_NUMBER"
               fi
+              ;;
+            *)
+              echo "Unsupported event: $EVENT_NAME" >&2
+              exit 1
               ;;
           esac
 
           {
-            echo "should-deploy=$should-deploy"
             echo "deployment-lane=$deployment-lane"
             echo "deployment-name=$deployment-name"
-            echo "runtime-environment=$runtime-environment"
-            echo "frontend-target-name=$frontend-target-name"
           } >> "$GITHUB_OUTPUT"
 
   lane-config:
     name: Resolve lane config
-    if: ${{ needs.resolve-context.outputs.should-deploy == 'true' }}
     needs: [resolve-context]
     runs-on: ubuntu-latest
     environment: ${{ needs.resolve-context.outputs.deployment-lane }}
@@ -116,7 +96,7 @@ jobs:
         id: compute
         shell: bash
         env:
-          TARGET_NAME: ${{ needs.resolve-context.outputs.frontend-target-name }}
+          TARGET_NAME: ${{ needs.resolve-context.outputs.deployment-name }}
           DEPLOYMENT_LANE: ${{ needs.resolve-context.outputs.deployment-lane }}
         run: |
           set -euo pipefail
@@ -131,14 +111,12 @@ jobs:
 
   build-frontend:
     name: "Build frontend"
-    if: ${{ needs.resolve-context.outputs.should-deploy == 'true' }}
     needs: [resolve-context]
     uses: ./.github/workflows/node-build.yml
     secrets: inherit
 
   build_api_docker_image:
     name: "Build and publish API"
-    if: ${{ needs.resolve-context.outputs.should-deploy == 'true' }}
     needs: [resolve-context]
     uses: ./.github/workflows/build-and-push-Docker-image.yml
     secrets: inherit
@@ -152,7 +130,6 @@ jobs:
 
   build_entity_linkage_docker_image:
     name: "Build and publish Entity Linkage"
-    if: ${{ needs.resolve-context.outputs.should-deploy == 'true' }}
     needs: [resolve-context]
     uses: ./.github/workflows/build-and-push-Docker-image.yml
     secrets: inherit
@@ -166,7 +143,6 @@ jobs:
 
   build_stitch_llm_docker_image:
     name: "Build and publish Stitch LLM"
-    if: ${{ needs.resolve-context.outputs.should-deploy == 'true' }}
     needs: [resolve-context]
     uses: ./.github/workflows/build-and-push-Docker-image.yml
     secrets: inherit
@@ -180,7 +156,6 @@ jobs:
 
   build_seed_docker_image:
     name: "Build and publish Seed"
-    if: ${{ needs.resolve-context.outputs.should-deploy == 'true' }}
     needs: [resolve-context]
     uses: ./.github/workflows/build-and-push-Docker-image.yml
     secrets: inherit
@@ -194,7 +169,6 @@ jobs:
 
   deploy-db:
     name: "Create DB"
-    if: ${{ needs.resolve-context.outputs.should-deploy == 'true' }}
     needs: [resolve-context]
     uses: ./.github/workflows/deploy-db.yml
     secrets: inherit
@@ -204,7 +178,6 @@ jobs:
 
   run-db-init:
     name: "Run DB init"
-    if: ${{ needs.resolve-context.outputs.should-deploy == 'true' }}
     needs: [resolve-context, build_api_docker_image, deploy-db]
     uses: ./.github/workflows/run-db-init.yml
     secrets: inherit
@@ -218,7 +191,6 @@ jobs:
 
   deploy-api:
     name: "Deploy API"
-    if: ${{ needs.resolve-context.outputs.should-deploy == 'true' }}
     needs: [resolve-context, lane-config, build_api_docker_image, deploy-db, run-db-init]
     uses: ./.github/workflows/deploy-container.yml
     secrets: inherit
@@ -232,7 +204,7 @@ jobs:
         AUTH_DISABLED=true
         DEPLOYMENT_LANE=${{ needs.resolve-context.outputs.deployment-lane }}
         DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
-        ENVIRONMENT=${{ needs.resolve-context.outputs.runtime-environment }}
+        ENVIRONMENT=${{ needs.resolve-context.outputs.deployment-name }}
         POSTGRES_HOST=${{ needs.deploy-db.outputs.postgres-host }}
         POSTGRES_PORT=${{ needs.deploy-db.outputs.postgres-port }}
         POSTGRES_DB=${{ needs.deploy-db.outputs.postgres-db }}
@@ -243,7 +215,6 @@ jobs:
 
   deploy-entity-linkage:
     name: "Deploy entity linkage"
-    if: ${{ needs.resolve-context.outputs.should-deploy == 'true' }}
     needs: [resolve-context, lane-config, build_entity_linkage_docker_image, deploy-api]
     uses: ./.github/workflows/deploy-container.yml
     secrets: inherit
@@ -263,7 +234,6 @@ jobs:
 
   deploy-stitch-llm:
     name: "Deploy stitch-llm"
-    if: ${{ needs.resolve-context.outputs.should-deploy == 'true' }}
     needs: [resolve-context, lane-config, build_stitch_llm_docker_image, deploy-api]
     uses: ./.github/workflows/deploy-container.yml
     secrets: inherit
@@ -283,7 +253,7 @@ jobs:
 
   run-seed:
     name: "Run seed"
-    if: ${{ needs.resolve-context.outputs.should-deploy == 'true' && needs.deploy-db.outputs.database-created == 'true' }}
+    if: ${{ needs.deploy-db.outputs.database-created == 'true' }}
     needs: [resolve-context, build_seed_docker_image, deploy-db, deploy-api]
     uses: ./.github/workflows/run-seed.yml
     secrets: inherit
@@ -293,14 +263,13 @@ jobs:
 
   deploy-frontend:
     name: "Deploy frontend"
-    if: ${{ needs.resolve-context.outputs.should-deploy == 'true' }}
     needs: [resolve-context, build-frontend, deploy-api, deploy-entity-linkage, deploy-stitch-llm]
     uses: ./.github/workflows/azure-static-web-apps.yml
     secrets: inherit
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       artifact-name: dist-tgz
-      deployment-name: ${{ needs.resolve-context.outputs.runtime-environment }}
+      deployment-name: ${{ needs.resolve-context.outputs.deployment-name }}
       api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
       entity-linkage-url: ${{ format('{0}/api/v1', needs.deploy-entity-linkage.outputs.container-app-url) }}
       stitch-llm-url: ${{ format('{0}/api/v1', needs.deploy-stitch-llm.outputs.container-app-url) }}
@@ -310,7 +279,7 @@ jobs:
       production-branch: production
 
   comment-summary:
-    if: ${{ always() && github.event_name == 'pull_request' && needs.resolve-context.outputs.should-deploy == 'true' }}
+    if: ${{ always() && github.event_name == 'pull_request' }}
     uses: ./.github/workflows/comment-pr-summary.yml
     secrets: inherit
     needs: [resolve-context, build_api_docker_image, build_entity_linkage_docker_image, build_stitch_llm_docker_image, build_seed_docker_image, deploy-db, run-db-init, deploy-api, deploy-entity-linkage, deploy-stitch-llm, run-seed, deploy-frontend]
