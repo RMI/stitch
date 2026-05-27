@@ -56,10 +56,11 @@ jobs:
     env:
       AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       AZURE_CONTAINER_APP_ENVIRONMENT: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
-      STITCH_APP_PASSWORD: ${{ secrets.STITCH_APP_PASSWORD }}
     steps:
       - name: Validate lane config
         shell: bash
+        env:
+          STITCH_APP_PASSWORD: ${{ secrets.STITCH_APP_PASSWORD }}
         run: |
           set -euo pipefail
           : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
@@ -80,6 +81,8 @@ jobs:
       - name: Assemble environment variables
         id: envvars
         shell: bash
+        env:
+          STITCH_APP_PASSWORD: ${{ secrets.STITCH_APP_PASSWORD }}
         run: |
           set -euo pipefail
           envvars='${{ inputs.environment-variables }}'
