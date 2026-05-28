@@ -1,0 +1,58 @@
+# GitHub Rulesets
+
+These JSON files represent [GitHub Rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets).
+
+Each is created by exporting an existing ruleset in effect in this repo.
+
+## Important limitation
+
+GitHub's rulesets API only returns `bypass_actors` when the caller has write
+access to the ruleset. The default Actions token used in
+[`admin-check_rulesets.yml`](../workflows/admin-check_rulesets.yml)
+does not reliably expose that field, so the rulesets check intentionally ignores
+`bypass_actors` in both the local files and the remote API response.
+
+That means bypass lists are currently treated as UI-managed policy rather than
+fully verified by CI.
+
+# Export
+
+To create a ruleset file from an existing ruleset (usually created through the web UI):
+
+- In Repo Settings, on the sidebar, go to "Rules" -> "Rulesets".
+- Find the ruleset you want to export.
+- In the "..." (three dots) menu, "Export Ruleset".
+
+# Import
+
+NOTE: If you are updating an existing ruleset, see "Update" below.
+
+To import a new ruleset (from a file) into the repo's settings:
+
+- In Repo Settings, on the sidebar, go to "Rules" -> "Rulesets".
+- Click the green "New Ruleset" -> "Import a ruleset".
+- Navigate to a JSON file (on your local machine) that defines the ruleset you want.
+- Scroll to bottom of page and **"Create"**
+
+# Update
+
+If you want to alter an existing ruleset:
+
+- In Repo Settings, on the sidebar, go to "Rules" -> "Rulesets".
+- Find the ruleset you want to update.
+- Click on the ruleset name (not three-dots) to see ruleset definition in the WebUI.
+  - Rename the ruleset (suggestion `rule-name` -> `rule-name-old`)
+  - Set "Enforcement Status" to "Disabled"
+  - Scroll to bottom of page and **"Save Changes"**
+- Return to "Rulesets" main page, and import the updated definition (see above, "Import").
+- Repeat if changing multiple rulesets
+- _(Testing):_
+  - Trigger an empty commit: `git commit -m "Trigger CI" --allow-empty` and push to trigger checking action
+  - The action **should fail** while the temporary `*_old` ruleset still exists.
+    - In the diff, confirm that:
+      - the updated ruleset has no unexpected differences from the JSON file in this repo
+      - the only remaining mismatch is the extra disabled `*_old` ruleset in GitHub
+  - If there are no differences in the ruleset you updated, then it has imported as expected, and you can delete the `*_old` ruleset in the Repo settings.
+    - "Rulesets" -> "`*_old`" -> "..." -> "Delete ruleset".
+  - Trigger a new empty commit and push.
+  - There should be no diffs, and actions run cleanly with new rulesets in effect.
