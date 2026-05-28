@@ -60,6 +60,13 @@ jobs:
           : "${PGPORT:?Missing required variable POSTGRES_PORT}"
           : "${PGUSER:?Missing required variable POSTGRES_ADMIN_USER}"
           : "${PGPASSWORD:?Missing required secret PGPASSWORD}"
+          case "${PGSSLMODE}" in
+            disable|allow|prefer|require|verify-ca|verify-full) ;;
+            *)
+              echo "Invalid POSTGRES_SSLMODE: '${PGSSLMODE}'. Expected one of: disable, allow, prefer, require, verify-ca, verify-full." >&2
+              exit 1
+              ;;
+          esac
 
       - name: Install psql client
         run: |

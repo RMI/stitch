@@ -103,7 +103,7 @@ named:
 
 * `AZURE_RESOURCE_GROUP` (example: `STITCH-DEV-RG`)
 * `AZURE_CONTAINER_APP_ENVIRONMENT` (example: `stitch-dev`)
-* `POSTGRES_HOST` (example: `stitch-dev-pg.postgres.database.azure.com`)
+* `POSTGRES_HOST` (example: `stitch-dev.postgres.database.azure.com`)
 * `POSTGRES_PORT` (example: `5432`)
 * `POSTGRES_ADMIN_USER` (example: `postgres`)
 * `POSTGRES_SSLMODE` (example: `require`)
