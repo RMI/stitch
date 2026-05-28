@@ -5,6 +5,7 @@ import time
 import jwt as pyjwt
 import pytest
 
+from stitch.auth.permissions import RESOURCE_READ, SOURCE_READ_WM
 from stitch.auth.errors import JWKSFetchError, TokenExpiredError, TokenValidationError
 from stitch.auth.validator import JWTValidator
 
@@ -225,8 +226,8 @@ class TestJWTValidatorPermissions:
         token = token_factory(
             extra_claims={
                 "permissions": [
-                    "resource:read:public",
-                    "resource:read:licensed:wm",
+                    RESOURCE_READ,
+                    SOURCE_READ_WM,
                 ],
             },
         )
@@ -234,9 +235,7 @@ class TestJWTValidatorPermissions:
 
         claims = validator.validate(token)
 
-        assert claims.permissions == frozenset(
-            {"resource:read:public", "resource:read:licensed:wm"}
-        )
+        assert claims.permissions == frozenset({RESOURCE_READ, SOURCE_READ_WM})
         assert isinstance(claims.permissions, frozenset)
 
     def test_permissions_empty_when_claim_absent(
@@ -294,7 +293,7 @@ class TestJWTValidatorPermissions:
     ):
         token = token_factory(
             extra_claims={
-                "permissions": "resource:read:public resource:read:licensed:wm",
+                "permissions": "resource:read source:read:wm",
             },
         )
         validator = JWTValidator(oidc_settings)
