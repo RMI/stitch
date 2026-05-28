@@ -97,15 +97,9 @@ describe("ColophonPanel", () => {
               sub: "auth0|test-user-id",
               email: "test@example.com",
               name: "Test User",
-              permissions: [
-                "resource:read:licensed:wm",
-                "resource:read:public",
-              ],
+              permissions: ["resource:read", "source:read:wm"],
               raw: {
-                permissions: [
-                  "resource:read:public",
-                  "resource:read:licensed:wm",
-                ],
+                permissions: ["resource:read", "source:read:wm"],
               },
             },
           }),
@@ -201,7 +195,7 @@ describe("ColophonPanel", () => {
     expect(screen.getByText("Available")).toBeInTheDocument();
     expect(screen.getByText("auth0|test-user-id")).toBeInTheDocument();
     expect(
-      screen.getByText("resource:read:licensed:wm, resource:read:public"),
+      screen.getByText("resource:read, source:read:wm"),
     ).toBeInTheDocument();
 
     await waitFor(() => {
@@ -433,7 +427,7 @@ describe("ColophonPanel", () => {
     expect(copiedText).toContain("DB Reachable: true");
     expect(copiedText).toContain("Auth Subject: auth0|test-user-id");
     expect(copiedText).toContain(
-      "Auth Permissions: resource:read:licensed:wm, resource:read:public",
+      "Auth Permissions: resource:read, source:read:wm",
     );
     expect(copiedText).toContain("### Runtime Info ###");
     expect(copiedText).toContain("User Agent: VitestBrowser/1.0");

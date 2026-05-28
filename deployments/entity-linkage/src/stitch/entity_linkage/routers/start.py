@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from starlette.status import HTTP_502_BAD_GATEWAY
+from stitch.auth.permissions import SERVICE_ENTITY_LINKAGE_RUN
 
-from stitch.entity_linkage.auth import AuthContext
+from stitch.entity_linkage.auth import AuthContext, require_permissions
 from stitch.entity_linkage.client import StitchApiClient
 from stitch.entity_linkage.entities import FieldCandidate, MatchGroup, User
 from stitch.entity_linkage.errors import StitchAPIError
@@ -100,7 +101,11 @@ async def _resolve_match_groups(
     return match_groups, detail_records_fetched
 
 
-@router.post("/start", response_model=StartResponse)
+@router.post(
+    "/start",
+    response_model=StartResponse,
+    dependencies=[Depends(require_permissions(SERVICE_ENTITY_LINKAGE_RUN))],
+)
 async def start(
     request: StartRequest,
     auth_context: AuthContext,

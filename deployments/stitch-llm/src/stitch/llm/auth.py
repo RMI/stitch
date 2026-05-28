@@ -5,10 +5,15 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from starlette.status import HTTP_401_UNAUTHORIZED
+from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_403_FORBIDDEN
 
 from stitch.auth import JWTValidator, OIDCSettings, TokenClaims
 from stitch.auth.errors import AuthError, JWKSFetchError
+from stitch.auth.permissions import (
+    ALL_PERMISSIONS,
+    has_any_permission,
+    missing_permissions,
+)
 
 from stitch.llm.entities import User
 from stitch.llm.settings import get_settings
@@ -30,6 +35,7 @@ _DEV_CLAIMS = TokenClaims(
     sub="dev|local-placeholder",
     email="dev@example.com",
     name="Dev User",
+    permissions=ALL_PERMISSIONS,
     raw={},
 )
 
@@ -110,6 +116,34 @@ async def get_token_claims(
 
 
 Claims = Annotated[TokenClaims, Depends(get_token_claims)]
+
+
+def require_permissions(*required_permissions: str):
+    async def dependency(claims: Claims) -> None:
+        missing = missing_permissions(claims.permissions, required_permissions)
+        if missing:
+            raise HTTPException(
+                status_code=HTTP_403_FORBIDDEN,
+                detail=(
+                    f"Missing required permission(s): {', '.join(sorted(missing))}"
+                ),
+            )
+
+    return dependency
+
+
+def require_any_permission(*candidate_permissions: str):
+    async def dependency(claims: Claims) -> None:
+        if not has_any_permission(claims.permissions, candidate_permissions):
+            raise HTTPException(
+                status_code=HTTP_403_FORBIDDEN,
+                detail=(
+                    "Missing at least one required permission: "
+                    f"{', '.join(sorted(candidate_permissions))}"
+                ),
+            )
+
+    return dependency
 
 
 async def get_current_user(claims: Claims) -> User:

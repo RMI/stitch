@@ -5,6 +5,8 @@ from contextlib import AbstractAsyncContextManager
 import pytest
 from fastapi.testclient import TestClient
 
+from stitch.auth import TokenClaims
+from stitch.auth.permissions import SERVICE_ENTITY_LINKAGE_RUN
 from stitch.entity_linkage.entities import (
     FieldCandidate,
     FieldDetailCandidate,
@@ -15,7 +17,7 @@ from stitch.entity_linkage.errors import StitchAPIError
 from stitch.entity_linkage.main import app
 from stitch.entity_linkage.routers import health as health_module
 from stitch.entity_linkage.routers import start as start_module
-from stitch.entity_linkage.auth import get_request_auth_context
+from stitch.entity_linkage.auth import get_request_auth_context, get_token_claims
 from stitch.entity_linkage import main as main_module
 
 
@@ -156,16 +158,49 @@ def test_client(
     async def override_auth_context() -> RequestAuthContext:
         return auth_context
 
+    def override_token_claims() -> TokenClaims:
+        return TokenClaims(
+            sub=auth_context.user.sub,
+            permissions=frozenset({SERVICE_ENTITY_LINKAGE_RUN}),
+        )
+
     monkeypatch.setattr(main_module, "validate_auth_config_at_startup", lambda: None)
     monkeypatch.setattr(
         main_module, "validate_downstream_auth_config_at_startup", lambda: None
     )
     app.dependency_overrides[get_request_auth_context] = override_auth_context
+    app.dependency_overrides[get_token_claims] = override_token_claims
 
     with TestClient(app) as client:
         yield client
 
     app.dependency_overrides.clear()
+
+
+def test_post_start_requires_service_permission(
+    auth_context: RequestAuthContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def override_auth_context() -> RequestAuthContext:
+        return auth_context
+
+    def override_token_claims() -> TokenClaims:
+        return TokenClaims(sub=auth_context.user.sub, permissions=frozenset())
+
+    monkeypatch.setattr(main_module, "validate_auth_config_at_startup", lambda: None)
+    monkeypatch.setattr(
+        main_module, "validate_downstream_auth_config_at_startup", lambda: None
+    )
+    app.dependency_overrides[get_request_auth_context] = override_auth_context
+    app.dependency_overrides[get_token_claims] = override_token_claims
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/start", json={"apply_merges": False})
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert SERVICE_ENTITY_LINKAGE_RUN in response.json()["detail"]
 
 
 def test_post_start_returns_serialized_response_model(
