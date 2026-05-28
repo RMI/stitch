@@ -35,6 +35,8 @@ jobs:
       AUTH0_CLIENT_ID: ${{ vars.AUTH0_CLIENT_ID }}
       AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
       STITCH_APP_PASSWORD: ${{ secrets.STITCH_APP_PASSWORD }}
+      STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
+      STITCH_CLIENT_LLM_BEARER_TOKEN: ${{ secrets.STITCH_CLIENT_LLM_BEARER_TOKEN }}
     steps:
       - name: Validate lane variables
         shell: bash
@@ -47,6 +49,8 @@ jobs:
           : "${AUTH0_CLIENT_ID:?Missing required variable AUTH0_CLIENT_ID}"
           : "${AUTH0_AUDIENCE:?Missing required variable AUTH0_AUDIENCE}"
           : "${STITCH_APP_PASSWORD:?Missing required secret STITCH_APP_PASSWORD}"
+          : "${STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN:?Missing required secret STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN}"
+          : "${STITCH_CLIENT_LLM_BEARER_TOKEN:?Missing required secret STITCH_CLIENT_LLM_BEARER_TOKEN}"
 
           case "${AUTH_DISABLED}" in
             true|false) ;;
@@ -218,6 +222,7 @@ jobs:
       azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
       azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
       azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      stitch-client-bearer-token: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       full-image-name: ${{ needs.build-entity-linkage-docker-image.outputs.digest-image-name }}
@@ -230,7 +235,6 @@ jobs:
         AUTH_ISSUER=${{ needs.lane-config-validate.outputs.auth-issuer }}
         AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
         AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
-        STITCH_CLIENT_BEARER_TOKEN=dev-placeholder-token
         ENTITY_LINKAGE_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
         ENTITY_LINKAGE_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
       deployment-label: entity-linkage
@@ -243,6 +247,7 @@ jobs:
       azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
       azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
       azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      stitch-client-bearer-token: ${{ secrets.STITCH_CLIENT_LLM_BEARER_TOKEN }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       full-image-name: ${{ needs.build-stitch-llm-docker-image.outputs.digest-image-name }}
@@ -255,7 +260,6 @@ jobs:
         AUTH_ISSUER=${{ needs.lane-config-validate.outputs.auth-issuer }}
         AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
         AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
-        STITCH_CLIENT_BEARER_TOKEN=dev-placeholder-token
         STITCH_LLM_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
         STITCH_LLM_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
       deployment-label: stitch-llm
@@ -265,7 +269,8 @@ jobs:
     if: ${{ needs.deploy-db.outputs.database-created == 'true' }}
     needs: [resolve-context, build-seed-docker-image, deploy-db, deploy-api]
     uses: ./.github/workflows/run-seed.yml
-    secrets: inherit
+    secrets:
+      stitch-client-bearer-token: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
     with:
       full-image-name: ${{ needs.build-seed-docker-image.outputs.digest-image-name }}
       api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
