@@ -77,8 +77,7 @@ def test_source_from_read_permission_ignores_non_source_read_permission():
 
 def test_source_from_read_permission_ignores_malformed_source():
     assert (
-        source_from_read_permission("source:read:", valid_sources=VALID_SOURCES)
-        is None
+        source_from_read_permission("source:read:", valid_sources=VALID_SOURCES) is None
     )
     assert (
         source_from_read_permission("source:read:rmi:", valid_sources=VALID_SOURCES)
