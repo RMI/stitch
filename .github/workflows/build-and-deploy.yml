@@ -43,12 +43,6 @@ jobs:
           : "${FRONTEND_PRODUCTION_URL:?Missing required variable FRONTEND_PRODUCTION_URL}"
           : "${FRONTEND_PREVIEW_URL_TEMPLATE:?Missing required variable FRONTEND_PREVIEW_URL_TEMPLATE}"
           : "${AUTH_DISABLED:?Missing required variable AUTH_DISABLED}"
-          : "${AUTH_ISSUER:?Missing required variable AUTH_ISSUER}"
-          : "${AUTH_AUDIENCE:?Missing required variable AUTH_AUDIENCE}"
-          : "${AUTH_JWKS_URI:?Missing required variable AUTH_JWKS_URI}"
-          : "${AUTH0_DOMAIN:?Missing required variable AUTH0_DOMAIN}"
-          : "${AUTH0_CLIENT_ID:?Missing required variable AUTH0_CLIENT_ID}"
-          : "${AUTH0_AUDIENCE:?Missing required variable AUTH0_AUDIENCE}"
           : "${STITCH_APP_PASSWORD:?Missing required secret STITCH_APP_PASSWORD}"
 
           case "${AUTH_DISABLED}" in
@@ -58,6 +52,15 @@ jobs:
               exit 1
               ;;
           esac
+
+          if [ "${AUTH_DISABLED}" = "false" ]; then
+            : "${AUTH_ISSUER:?Missing required variable AUTH_ISSUER}"
+            : "${AUTH_AUDIENCE:?Missing required variable AUTH_AUDIENCE}"
+            : "${AUTH_JWKS_URI:?Missing required variable AUTH_JWKS_URI}"
+            : "${AUTH0_DOMAIN:?Missing required variable AUTH0_DOMAIN}"
+            : "${AUTH0_CLIENT_ID:?Missing required variable AUTH0_CLIENT_ID}"
+            : "${AUTH0_AUDIENCE:?Missing required variable AUTH0_AUDIENCE}"
+          fi
 
       - name: Compute frontend origin
         id: compute
