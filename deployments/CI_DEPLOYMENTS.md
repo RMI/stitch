@@ -10,10 +10,15 @@ It now uses two explicit workflow concepts:
 Branch behavior is:
 
 * push to `main` -> `deployment_lane=development`, `deployment_name=main`
-* PR to `main` -> `deployment_lane=development`, `deployment_name=pr-<number>`
+* any PR not targeting `production` -> `deployment_lane=development`, `deployment_name=pr-<number>`
 * push to `production` -> `deployment_lane=dress-rehearsal`, `deployment_name=production`
-* PR from `next` to `production` -> `deployment_lane=staging`, `deployment_name=next`
-* PR from `hotfix/*` to `production` -> `deployment_lane=staging`, branch-derived `deployment_name`
+* any PR targeting `production` -> `deployment_lane=staging`, branch-derived `deployment_name`
+
+Examples:
+
+* PR #57 into `main` -> `deployment_name=pr-57`
+* PR from `next` into `production` -> `deployment_name=next`
+* PR from `hotfix/fix-auth` into `production` -> `deployment_name=hotfix-fix-auth`
 
 It builds Docker images for:
 
@@ -31,6 +36,9 @@ It then handles deployments for:
 
 Reusable workflows now select lane-specific configuration from GitHub
 Environments and are expected to fail loudly when required values are absent.
+
+The top-level deploy workflow also performs early lane validation before API and
+frontend deploys proceed.
 
 Backend infrastructure (static resources like PostgreSQL server or Continer App
 environment) are shared within a deploy lane (all `development` lane
@@ -93,15 +101,17 @@ named:
 
 ### Environment variables
 
-* `AZURE_RESOURCE_GROUP`
-* `AZURE_CONTAINER_APP_ENVIRONMENT`
-* `POSTGRES_HOST`
-* `POSTGRES_PORT`
-* `POSTGRES_ADMIN_USER`
-* `POSTGRES_SSLMODE`
-* `POSTGRES_DEFAULT_DB`
-* `FRONTEND_PRODUCTION_URL`
-* `FRONTEND_PREVIEW_URL_TEMPLATE`
+* `AZURE_RESOURCE_GROUP` (example: `STITCH-DEV-RG`)
+* `AZURE_CONTAINER_APP_ENVIRONMENT` (example: `stitch-dev`)
+* `POSTGRES_HOST` (example: `stitch-dev-pg.postgres.database.azure.com`)
+* `POSTGRES_PORT` (example: `5432`)
+* `POSTGRES_ADMIN_USER` (example: `postgres`)
+* `POSTGRES_SSLMODE` (example: `require`)
+* `POSTGRES_DEFAULT_DB` (example: `postgres`)
+* `FRONTEND_PRODUCTION_URL` (example: `https://witty-mushroom-017a3dc1e.1.azurestaticapps.net`)
+* `FRONTEND_PREVIEW_URL_TEMPLATE` (example: `https://witty-mushroom-017a3dc1e-{name}.westus2.1.azurestaticapps.net`)
+  * NOTE: `FRONTEND_PREVIEW_URL_TEMPLATE` must contain the literal `{name}` placeholder.
+The workflow replaces that with `deployment_name`, for example:
 
 ### Environment secrets
 
@@ -109,3 +119,13 @@ named:
 * `STITCH_APP_PASSWORD`
 * `STITCH_MIGRATOR_PASSWORD`
 * `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
+
+Current validation behavior:
+
+* database deploy validates `PGPASSWORD`
+* `lane-config-validate` validates:
+  * `FRONTEND_PRODUCTION_URL`
+  * `FRONTEND_PREVIEW_URL_TEMPLATE`
+  * `STITCH_APP_PASSWORD`
+* DB init validates `STITCH_MIGRATOR_PASSWORD`
+* frontend deploy validates `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
