@@ -272,7 +272,7 @@ jobs:
 
   deploy-frontend:
     name: "Deploy frontend"
-    needs: [resolve-context, build-frontend, deploy-api, deploy-entity-linkage, deploy-stitch-llm]
+    needs: [resolve-context, lane-config-validate, build-frontend, deploy-api, deploy-entity-linkage, deploy-stitch-llm]
     uses: ./.github/workflows/azure-static-web-apps.yml
     secrets:
       azure-static-web-apps-deploy-token: ${{ secrets.AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN }}
