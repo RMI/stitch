@@ -17,18 +17,47 @@ jobs:
     environment: ${{ needs.resolve-context.outputs.deployment-lane }}
     outputs:
       frontend-origin-url: ${{ steps.compute.outputs.frontend-origin-url }}
+      auth-disabled: ${{ steps.export-auth.outputs.auth-disabled }}
+      auth-issuer: ${{ steps.export-auth.outputs.auth-issuer }}
+      auth-audience: ${{ steps.export-auth.outputs.auth-audience }}
+      auth-jwks-uri: ${{ steps.export-auth.outputs.auth-jwks-uri }}
+      auth0-domain: ${{ steps.export-auth.outputs.auth0-domain }}
+      auth0-client-id: ${{ steps.export-auth.outputs.auth0-client-id }}
+      auth0-audience: ${{ steps.export-auth.outputs.auth0-audience }}
     env:
       FRONTEND_PRODUCTION_URL: ${{ vars.FRONTEND_PRODUCTION_URL }}
       FRONTEND_PREVIEW_URL_TEMPLATE: ${{ vars.FRONTEND_PREVIEW_URL_TEMPLATE }}
+      AUTH_DISABLED: ${{ vars.AUTH_DISABLED }}
+      AUTH_ISSUER: ${{ vars.AUTH_ISSUER }}
+      AUTH_AUDIENCE: ${{ vars.AUTH_AUDIENCE }}
+      AUTH_JWKS_URI: ${{ vars.AUTH_JWKS_URI }}
+      AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
+      AUTH0_CLIENT_ID: ${{ vars.AUTH0_CLIENT_ID }}
+      AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
       STITCH_APP_PASSWORD: ${{ secrets.STITCH_APP_PASSWORD }}
     steps:
-      - name: Validate frontend lane variables
+      - name: Validate lane variables
         shell: bash
         run: |
           set -euo pipefail
           : "${FRONTEND_PRODUCTION_URL:?Missing required variable FRONTEND_PRODUCTION_URL}"
           : "${FRONTEND_PREVIEW_URL_TEMPLATE:?Missing required variable FRONTEND_PREVIEW_URL_TEMPLATE}"
+          : "${AUTH_DISABLED:?Missing required variable AUTH_DISABLED}"
+          : "${AUTH_ISSUER:?Missing required variable AUTH_ISSUER}"
+          : "${AUTH_AUDIENCE:?Missing required variable AUTH_AUDIENCE}"
+          : "${AUTH_JWKS_URI:?Missing required variable AUTH_JWKS_URI}"
+          : "${AUTH0_DOMAIN:?Missing required variable AUTH0_DOMAIN}"
+          : "${AUTH0_CLIENT_ID:?Missing required variable AUTH0_CLIENT_ID}"
+          : "${AUTH0_AUDIENCE:?Missing required variable AUTH0_AUDIENCE}"
           : "${STITCH_APP_PASSWORD:?Missing required secret STITCH_APP_PASSWORD}"
+
+          case "${AUTH_DISABLED}" in
+            true|false) ;;
+            *)
+              echo "Invalid AUTH_DISABLED: '${AUTH_DISABLED}'. Expected 'true' or 'false'." >&2
+              exit 1
+              ;;
+          esac
 
       - name: Compute frontend origin
         id: compute
@@ -50,6 +79,19 @@ jobs:
           fi
 
           echo "frontend-origin-url=$frontend_origin_url" >> "$GITHUB_OUTPUT"
+
+      - name: Export auth config
+        id: export-auth
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "auth-disabled=${AUTH_DISABLED}" >> "$GITHUB_OUTPUT"
+          echo "auth-issuer=${AUTH_ISSUER}" >> "$GITHUB_OUTPUT"
+          echo "auth-audience=${AUTH_AUDIENCE}" >> "$GITHUB_OUTPUT"
+          echo "auth-jwks-uri=${AUTH_JWKS_URI}" >> "$GITHUB_OUTPUT"
+          echo "auth0-domain=${AUTH0_DOMAIN}" >> "$GITHUB_OUTPUT"
+          echo "auth0-client-id=${AUTH0_CLIENT_ID}" >> "$GITHUB_OUTPUT"
+          echo "auth0-audience=${AUTH0_AUDIENCE}" >> "$GITHUB_OUTPUT"
 
   build-frontend:
     name: "Build frontend"
@@ -151,10 +193,13 @@ jobs:
       environment-variables: >-
         LOG_LEVEL=debug
         FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
-        AUTH_DISABLED=true
+        AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
         DEPLOYMENT_LANE=${{ needs.resolve-context.outputs.deployment-lane }}
         DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
         ENVIRONMENT=${{ needs.resolve-context.outputs.deployment-name }}
+        AUTH_ISSUER=${{ needs.lane-config-validate.outputs.auth-issuer }}
+        AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
+        AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
         POSTGRES_HOST=${{ needs.deploy-db.outputs.postgres-host }}
         POSTGRES_PORT=${{ needs.deploy-db.outputs.postgres-port }}
         POSTGRES_DB=${{ needs.deploy-db.outputs.postgres-db }}
@@ -176,9 +221,12 @@ jobs:
       container-app-name: ${{ format('{0}-entity-linkage', needs.resolve-context.outputs.deployment-name) }}
       environment-variables: >-
         LOG_LEVEL=info
-        AUTH_DISABLED=true
+        AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
         DEPLOYMENT_LANE=${{ needs.resolve-context.outputs.deployment-lane }}
         DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
+        AUTH_ISSUER=${{ needs.lane-config-validate.outputs.auth-issuer }}
+        AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
+        AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
         STITCH_CLIENT_BEARER_TOKEN=dev-placeholder-token
         ENTITY_LINKAGE_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
         ENTITY_LINKAGE_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
@@ -198,9 +246,12 @@ jobs:
       container-app-name: ${{ format('{0}-stitch-llm', needs.resolve-context.outputs.deployment-name) }}
       environment-variables: >-
         STITCH_LLM_LOG_LEVEL=info
-        AUTH_DISABLED=true
+        AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
         DEPLOYMENT_LANE=${{ needs.resolve-context.outputs.deployment-lane }}
         DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
+        AUTH_ISSUER=${{ needs.lane-config-validate.outputs.auth-issuer }}
+        AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
+        AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
         STITCH_CLIENT_BEARER_TOKEN=dev-placeholder-token
         STITCH_LLM_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
         STITCH_LLM_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
@@ -229,9 +280,9 @@ jobs:
       api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
       entity-linkage-url: ${{ format('{0}/api/v1', needs.deploy-entity-linkage.outputs.container-app-url) }}
       stitch-llm-url: ${{ format('{0}/api/v1', needs.deploy-stitch-llm.outputs.container-app-url) }}
-      auth0-domain: rmi-spd.us.auth0.com
-      auth0-client-id: TS1V1soQbccAV1sitFFCfUaIlSwHD2S2
-      auth0-audience: https://stitch-api.local
+      auth0-domain: ${{ needs.lane-config-validate.outputs.auth0-domain }}
+      auth0-client-id: ${{ needs.lane-config-validate.outputs.auth0-client-id }}
+      auth0-audience: ${{ needs.lane-config-validate.outputs.auth0-audience }}
       production-branch: production
 
   comment-summary:

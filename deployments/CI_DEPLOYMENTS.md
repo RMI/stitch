@@ -118,6 +118,13 @@ named:
 * `POSTGRES_DEFAULT_DB` (example: `postgres`)
 * `FRONTEND_PRODUCTION_URL` (example: `https://witty-mushroom-017a3dc1e.1.azurestaticapps.net`)
 * `FRONTEND_PREVIEW_URL_TEMPLATE` (example: `https://witty-mushroom-017a3dc1e-{name}.westus2.1.azurestaticapps.net`)
+* `AUTH_DISABLED` (example: `true` for `development`, `false` for `staging` / `dress-rehearsal`)
+* `AUTH_ISSUER` (example: `https://rmi-spd.us.auth0.com/`)
+* `AUTH_AUDIENCE` (example: `https://stitch-api.local`)
+* `AUTH_JWKS_URI` (example: `https://rmi-spd.us.auth0.com/.well-known/jwks.json`)
+* `AUTH0_DOMAIN` (example: `rmi-spd.us.auth0.com`)
+* `AUTH0_CLIENT_ID` (example: `<public-client-id>`)
+* `AUTH0_AUDIENCE` (example: `https://stitch-api.local`)
   * NOTE: `FRONTEND_PREVIEW_URL_TEMPLATE` must contain the literal `{name}` placeholder.
 For `dress-rehearsal`, the workflow uses `FRONTEND_PRODUCTION_URL` directly. For pull requests, it replaces `{name}` with the raw PR number so PR #106 resolves to `https://witty-mushroom-017a3dc1e-106.westus2.1.azurestaticapps.net`. For other preview deployments, it replaces `{name}` with `deployment_name`.
 
@@ -134,6 +141,13 @@ Current validation behavior:
 * `lane-config-validate` validates:
   * `FRONTEND_PRODUCTION_URL`
   * `FRONTEND_PREVIEW_URL_TEMPLATE`
+  * `AUTH_DISABLED`
+  * `AUTH_ISSUER`
+  * `AUTH_AUDIENCE`
+  * `AUTH_JWKS_URI`
+  * `AUTH0_DOMAIN`
+  * `AUTH0_CLIENT_ID`
+  * `AUTH0_AUDIENCE`
   * `STITCH_APP_PASSWORD`
 * DB init validates `STITCH_MIGRATOR_PASSWORD`
 * frontend deploy validates `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
