@@ -1,18 +1,21 @@
 import asyncio
 import logging
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Literal, NoReturn
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_403_FORBIDDEN
 
-from stitch.auth import JWTValidator, OIDCSettings, TokenClaims
-from stitch.auth.errors import AuthError, JWKSFetchError
-from stitch.auth.permissions import (
+from stitch.auth import (
     ALL_PERMISSIONS,
-    has_any_permission,
-    missing_permissions,
+    AuthError,
+    InsufficientPermissionsError,
+    JWKSFetchError,
+    JWTValidator,
+    OIDCSettings,
+    TokenClaims,
+    check_permissions,
 )
 
 from stitch.llm.entities import User
@@ -118,30 +121,20 @@ async def get_token_claims(
 Claims = Annotated[TokenClaims, Depends(get_token_claims)]
 
 
-def require_permissions(*required_permissions: str):
+def _permission_exception_handler(exc: InsufficientPermissionsError) -> NoReturn:
+    raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail=exc.detail)
+
+
+def require_permissions(
+    *required_permissions: str, check: Literal["all", "any"] = "all"
+):
     async def dependency(claims: Claims) -> None:
-        missing = missing_permissions(claims.permissions, required_permissions)
-        if missing:
-            raise HTTPException(
-                status_code=HTTP_403_FORBIDDEN,
-                detail=(
-                    f"Missing required permission(s): {', '.join(sorted(missing))}"
-                ),
-            )
-
-    return dependency
-
-
-def require_any_permission(*candidate_permissions: str):
-    async def dependency(claims: Claims) -> None:
-        if not has_any_permission(claims.permissions, candidate_permissions):
-            raise HTTPException(
-                status_code=HTTP_403_FORBIDDEN,
-                detail=(
-                    "Missing at least one required permission: "
-                    f"{', '.join(sorted(candidate_permissions))}"
-                ),
-            )
+        check_permissions(
+            granted=claims.permissions,
+            required=required_permissions,
+            check=check,
+            exc_handler=_permission_exception_handler,
+        )
 
     return dependency
 
