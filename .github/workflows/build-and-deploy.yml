@@ -272,6 +272,7 @@ jobs:
     secrets:
       stitch-client-bearer-token: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
     with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       full-image-name: ${{ needs.build-seed-docker-image.outputs.digest-image-name }}
       api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
 
