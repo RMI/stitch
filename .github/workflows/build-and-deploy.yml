@@ -34,6 +34,8 @@ jobs:
         id: compute
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           TARGET_NAME: ${{ needs.resolve-context.outputs.deployment-name }}
           DEPLOYMENT_LANE: ${{ needs.resolve-context.outputs.deployment-lane }}
         run: |
@@ -41,6 +43,8 @@ jobs:
 
           if [ "${DEPLOYMENT_LANE}" = "dress-rehearsal" ]; then
             frontend_origin_url="${FRONTEND_PRODUCTION_URL}"
+          elif [ "${EVENT_NAME}" = "pull_request" ]; then
+            frontend_origin_url="${FRONTEND_PREVIEW_URL_TEMPLATE//\{name\}/${PR_NUMBER}}"
           else
             frontend_origin_url="${FRONTEND_PREVIEW_URL_TEMPLATE//\{name\}/${TARGET_NAME}}"
           fi
