@@ -10,6 +10,13 @@ on:
         description: "Concrete deployment target name"
         required: true
         type: string
+    secrets:
+      pgpassword:
+        required: true
+      stitch-migrator-password:
+        required: true
+      stitch-app-password:
+        required: true
     outputs:
       database-created:
         description: "Whether this workflow created the database during this run"
@@ -47,7 +54,7 @@ jobs:
       PGHOST: ${{ vars.POSTGRES_HOST }}
       PGPORT: ${{ vars.POSTGRES_PORT || '5432' }}
       PGUSER: ${{ vars.POSTGRES_ADMIN_USER || 'postgres' }}
-      PGPASSWORD: ${{ secrets.PGPASSWORD }}
+      PGPASSWORD: ${{ secrets.pgpassword }}
       PGSSLMODE: ${{ vars.POSTGRES_SSLMODE || 'require' }}
       PGDATABASE: ${{ vars.POSTGRES_DEFAULT_DB || 'postgres' }}
       DB_NAME_RAW: ${{ inputs.deployment-name }}
@@ -150,8 +157,8 @@ jobs:
         env:
           POSTGRES_DB: ${{ steps.normalize-name.outputs.db-name }}
           POSTGRES_USER: ${{ env.PGUSER }}
-          STITCH_MIGRATOR_PASSWORD: ${{ secrets.STITCH_MIGRATOR_PASSWORD }}
-          STITCH_APP_PASSWORD: ${{ secrets.STITCH_APP_PASSWORD }}
+          STITCH_MIGRATOR_PASSWORD: ${{ secrets.stitch-migrator-password }}
+          STITCH_APP_PASSWORD: ${{ secrets.stitch-app-password }}
         run: deployments/db/00-init-roles.sh
 
       - name: Write comment JSON

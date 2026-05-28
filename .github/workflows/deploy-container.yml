@@ -29,9 +29,14 @@ on:
         default: ""
         type: string
     secrets:
+      azure-client-id:
+        required: true
+      azure-tenant-id:
+        required: true
+      azure-subscription-id:
+        required: true
       stitch-app-password:
         required: false
-
     outputs:
       container-app-url:
         description: "HTTPS URL of the deployed Azure Container App"
@@ -66,9 +71,9 @@ jobs:
       - name: Azure login
         uses: azure/login@v3
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.azure-client-id }}
+          tenant-id: ${{ secrets.azure-tenant-id }}
+          subscription-id: ${{ secrets.azure-subscription-id }}
 
       - run: echo "fullname=${{ inputs.full-image-name }}"
 

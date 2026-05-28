@@ -24,6 +24,9 @@ on:
         required: false
         default: "require"
         type: string
+    secrets:
+      stitch-migrator-password:
+        required: true
 
 name: Run DB Init
 
@@ -40,13 +43,13 @@ jobs:
       - name: Validate lane secrets
         shell: bash
         env:
-          STITCH_MIGRATOR_PASSWORD: ${{ secrets.STITCH_MIGRATOR_PASSWORD }}
+          STITCH_MIGRATOR_PASSWORD: ${{ secrets.stitch-migrator-password }}
         run: |
           set -euo pipefail
           : "${STITCH_MIGRATOR_PASSWORD:?Missing required secret STITCH_MIGRATOR_PASSWORD}"
 
       - name: Log in to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Pull init image
         run: docker pull "${{ inputs.full-image-name }}"
@@ -58,7 +61,7 @@ jobs:
           POSTGRES_PORT: ${{ inputs.postgres-port }}
           POSTGRES_DB: ${{ inputs.postgres-db }}
           POSTGRES_USER: stitch_migrator
-          POSTGRES_PASSWORD: ${{ secrets.STITCH_MIGRATOR_PASSWORD }}
+          POSTGRES_PASSWORD: ${{ secrets.stitch-migrator-password }}
           PGSSLMODE: ${{ inputs.postgres-sslmode }}
         run: |
           set -euo pipefail
