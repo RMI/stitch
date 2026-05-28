@@ -67,6 +67,14 @@ are:
 * `repo:RMI/stitch:pull_request`
 * `repo:RMI/stitch:ref:refs/heads/main`
 * `repo:RMI/stitch:ref:refs/heads/production`
+* `repo:RMI/stitch:environment:development`
+* `repo:RMI/stitch:environment:staging`
+* `repo:RMI/stitch:environment:dress-rehearsal`
+
+The branch / PR subjects cover workflows that authenticate outside a GitHub
+Environment. The `environment:*` subjects are also required because the
+lane-scoped deploy jobs authenticate from GitHub Environments named
+`development`, `staging`, and `dress-rehearsal`.
 
 All federated credential fields must match exactly:
 
