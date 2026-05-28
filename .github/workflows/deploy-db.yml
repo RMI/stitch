@@ -50,7 +50,7 @@ jobs:
       PGPASSWORD: ${{ secrets.PGPASSWORD }}
       PGSSLMODE: ${{ vars.POSTGRES_SSLMODE || 'require' }}
       PGDATABASE: ${{ vars.POSTGRES_DEFAULT_DB || 'postgres' }}
-      DB_NAME_RAW: ${{ inputs.deployment_name }}
+      DB_NAME_RAW: ${{ inputs.deployment-name }}
     steps:
       - name: Validate lane config
         shell: bash
