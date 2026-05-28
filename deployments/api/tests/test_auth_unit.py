@@ -11,6 +11,7 @@ from stitch.api.entities import User
 from stitch.api.main import app
 from stitch.api.settings import Settings
 from stitch.auth import TokenClaims
+from stitch.auth.permissions import RESOURCE_READ, SOURCE_READ_WM
 from stitch.auth.settings import OIDCSettings
 
 
@@ -151,10 +152,8 @@ class TestAuthMeEndpoint:
             sub="auth0|claims-user",
             email="claims@example.com",
             name="Claims User",
-            permissions=frozenset(
-                {"resource:read:licensed:wm", "resource:read:public"}
-            ),
-            raw={"permissions": ["resource:read:public", "resource:read:licensed:wm"]},
+            permissions=frozenset({RESOURCE_READ, SOURCE_READ_WM}),
+            raw={"permissions": [RESOURCE_READ, SOURCE_READ_WM]},
         )
         user = User(
             id=42,
@@ -200,13 +199,13 @@ class TestAuthMeEndpoint:
                 "email": "claims@example.com",
                 "name": "Claims User",
                 "permissions": [
-                    "resource:read:licensed:wm",
-                    "resource:read:public",
+                    "resource:read",
+                    "source:read:wm",
                 ],
                 "raw": {
                     "permissions": [
-                        "resource:read:public",
-                        "resource:read:licensed:wm",
+                        "resource:read",
+                        "source:read:wm",
                     ]
                 },
             },
@@ -219,8 +218,8 @@ class TestAuthMeEndpoint:
             sub="auth0|claims-only",
             email=None,
             name=None,
-            permissions=frozenset({"resource:read:public"}),
-            raw={"permissions": ["resource:read:public"]},
+            permissions=frozenset({RESOURCE_READ}),
+            raw={"permissions": [RESOURCE_READ]},
         )
 
         def override_get_token_claims() -> TokenClaims:
@@ -253,7 +252,7 @@ class TestAuthMeEndpoint:
                 "sub": "auth0|claims-only",
                 "email": None,
                 "name": None,
-                "permissions": ["resource:read:public"],
-                "raw": {"permissions": ["resource:read:public"]},
+                "permissions": ["resource:read"],
+                "raw": {"permissions": ["resource:read"]},
             },
         }

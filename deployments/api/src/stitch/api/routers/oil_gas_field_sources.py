@@ -2,10 +2,16 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from stitch.auth.permissions import SOURCE_READ_PERMISSIONS, SOURCE_WRITE
 from stitch.ogsi.model import OGFieldSource, OGFieldSourceView
 
-from stitch.api.auth import Claims, CurrentUser
+from stitch.api.auth import (
+    Claims,
+    CurrentUser,
+    require_any_permission,
+    require_permissions,
+)
 from stitch.api.db import og_field_source_actions
 from stitch.api.db.config import UnitOfWorkDep
 from stitch.api.db.errors import SourceNotFoundError
@@ -18,7 +24,11 @@ from stitch.api.permissions import licensed_sources
 router = APIRouter(prefix="/oil-gas-field-sources", tags=["oil_gas_field_sources"])
 
 
-@router.post("/", response_model=OGFieldSourceView)
+@router.post(
+    "/",
+    response_model=OGFieldSourceView,
+    dependencies=[Depends(require_permissions(SOURCE_WRITE))],
+)
 async def create_oil_gas_field_source(
     source: OGFieldSource,
     uow: UnitOfWorkDep,
@@ -41,7 +51,10 @@ async def create_oil_gas_field_source(
     )
 
 
-@router.get("/")
+@router.get(
+    "/",
+    dependencies=[Depends(require_any_permission(*SOURCE_READ_PERMISSIONS))],
+)
 async def query_oil_gas_field_sources(
     uow: UnitOfWorkDep,
     user: CurrentUser,
@@ -61,7 +74,11 @@ async def query_oil_gas_field_sources(
     )
 
 
-@router.get("/{id}", response_model=OGFieldSourceView)
+@router.get(
+    "/{id}",
+    response_model=OGFieldSourceView,
+    dependencies=[Depends(require_any_permission(*SOURCE_READ_PERMISSIONS))],
+)
 async def get_oil_gas_field(
     id: int, uow: UnitOfWorkDep, user: CurrentUser, claims: Claims
 ) -> OGFieldSourceView:
@@ -75,7 +92,10 @@ async def get_oil_gas_field(
         raise HTTPException(status_code=404, detail=str(exc))
 
 
-@router.get("/{id}/detail")
+@router.get(
+    "/{id}/detail",
+    dependencies=[Depends(require_any_permission(*SOURCE_READ_PERMISSIONS))],
+)
 async def get_oil_gas_field_detail(
     id: int, uow: UnitOfWorkDep, user: CurrentUser, claims: Claims
 ) -> OGFieldSource:
