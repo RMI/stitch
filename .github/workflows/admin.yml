@@ -3,9 +3,12 @@ on:
   pull_request:
     branches:
       - main
+      - next
+      - production
   push:
     branches:
       - main
+      - production
   schedule:
     - cron: "0 3 * * *" # Nightly at 3 AM UTC
   workflow_dispatch:
@@ -23,4 +26,3 @@ jobs:
   pattern-scan:
     name: "Check for forbidden patterns"
     uses: ./.github/workflows/admin-forbidden-patterns.yml
-

@@ -3,9 +3,12 @@ on:
   pull_request:
     branches:
       - main
+      - next
+      - production
   push:
     branches:
       - main
+      - production
 
 name: Python Package Checks
 concurrency:
