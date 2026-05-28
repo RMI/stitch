@@ -91,6 +91,24 @@ jobs:
         run: |
           set -euo pipefail
           envvars='${{ inputs.environment-variables }}'
+
+          echo "Secret presence:"
+          if [ -n "${STITCH_APP_PASSWORD:-}" ]; then
+            echo "  stitch-app-password: yes"
+          else
+            echo "  stitch-app-password: no"
+          fi
+          if [ -n "${STITCH_CLIENT_BEARER_TOKEN:-}" ]; then
+            echo "  stitch-client-bearer-token: yes"
+          else
+            echo "  stitch-client-bearer-token: no"
+          fi
+          if [ -n "${STITCH_LLM_AZURE_OPENAI_API_KEY:-}" ]; then
+            echo "  stitch-llm-azure-openai-api-key: yes"
+          else
+            echo "  stitch-llm-azure-openai-api-key: no"
+          fi
+
           if [ -n "${STITCH_APP_PASSWORD:-}" ]; then
             envvars="$envvars POSTGRES_PASSWORD=${STITCH_APP_PASSWORD}"
           fi
@@ -100,6 +118,13 @@ jobs:
           if [ -n "${STITCH_LLM_AZURE_OPENAI_API_KEY:-}" ]; then
             envvars="$envvars STITCH_LLM_AZURE_OPENAI_API_KEY=${STITCH_LLM_AZURE_OPENAI_API_KEY}"
           fi
+
+          if printf '%s\n' "$envvars" | grep -q 'STITCH_LLM_AZURE_OPENAI_API_KEY='; then
+            echo "Final env payload contains STITCH_LLM_AZURE_OPENAI_API_KEY: yes"
+          else
+            echo "Final env payload contains STITCH_LLM_AZURE_OPENAI_API_KEY: no"
+          fi
+
           echo "environment-variables<<EOF" >> "$GITHUB_OUTPUT"
           echo "$envvars" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
