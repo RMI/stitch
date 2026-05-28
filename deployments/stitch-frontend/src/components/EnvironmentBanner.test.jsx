@@ -74,7 +74,11 @@ describe("EnvironmentBanner", () => {
 
     renderWithQueryClient(<EnvironmentBanner />);
 
-    expect(screen.getByText("DRESS-REHEARSAL Environment")).toBeInTheDocument();
+    const label = screen.getByText("DRESS-REHEARSAL Environment");
+    expect(label).toBeInTheDocument();
+    expect(label.closest("div")).toHaveStyle({
+      backgroundImage: expect.stringContaining("repeating-linear-gradient"),
+    });
   });
 
   it("toggles the diagnostics panel open and closed", async () => {
