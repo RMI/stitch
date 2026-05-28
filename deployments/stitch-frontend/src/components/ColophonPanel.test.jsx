@@ -432,4 +432,28 @@ describe("ColophonPanel", () => {
     expect(copiedText).toContain("### Runtime Info ###");
     expect(copiedText).toContain("User Agent: VitestBrowser/1.0");
   });
+
+  it("requests the configured audience for displayed and copied tokens", async () => {
+    const { default: ColophonPanel } = await import("./ColophonPanel");
+
+    renderWithQueryClient(<ColophonPanel diagnosticsOpen={false} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("test-access-token")).toBeInTheDocument();
+    });
+
+    expect(getAccessTokenSilently).toHaveBeenCalledWith({
+      authorizationParams: { audience: "https://stitch-api.local" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy token" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Token copied!" }),
+      ).toBeInTheDocument();
+    });
+
+    expect(clipboardSpy).toHaveBeenCalledWith("Bearer test-access-token");
+  });
 });
