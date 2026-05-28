@@ -1,5 +1,11 @@
 from .claims import TokenClaims
-from .errors import AuthError, JWKSFetchError, TokenExpiredError, TokenValidationError
+from .errors import (
+    AuthError,
+    InsufficientPermissionsError,
+    JWKSFetchError,
+    TokenExpiredError,
+    TokenValidationError,
+)
 from .permissions import (
     ALL_PERMISSIONS,
     MERGE_CANDIDATE_CREATE,
@@ -16,6 +22,7 @@ from .permissions import (
     SOURCE_READ_RMI,
     SOURCE_READ_WM,
     SOURCE_WRITE,
+    check_permissions,
 )
 from .settings import OIDCSettings
 from .validator import JWTValidator
@@ -23,6 +30,7 @@ from .validator import JWTValidator
 __all__ = [
     "ALL_PERMISSIONS",
     "AuthError",
+    "InsufficientPermissionsError",
     "JWKSFetchError",
     "JWTValidator",
     "MERGE_CANDIDATE_CREATE",
@@ -43,4 +51,5 @@ __all__ = [
     "TokenClaims",
     "TokenExpiredError",
     "TokenValidationError",
+    "check_permissions",
 ]
