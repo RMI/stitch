@@ -48,9 +48,10 @@ If you want to alter an existing ruleset:
 - Repeat if changing multiple rulesets
 - _(Testing):_
   - Trigger an empty commit: `git commit -m "Trigger CI" --allow-empty` and push to trigger checking action
-  - The action **should fail**.
-  - You should see in the `diff`:
-    - You will also see the `*_old` actions as having no comparisons.
+  - The action **should fail** while the temporary `*_old` ruleset still exists.
+    - In the diff, confirm that:
+      - the updated ruleset has no unexpected differences from the JSON file in this repo
+      - the only remaining mismatch is the extra disabled `*_old` ruleset in GitHub
   - If there are no differences in the ruleset you updated, then it has imported as expected, and you can delete the `*_old` ruleset in the Repo settings.
     - "Rulesets" -> "`*_old`" -> "..." -> "Delete ruleset".
   - Trigger a new empty commit and push.
