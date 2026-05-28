@@ -125,6 +125,9 @@ named:
 * `AUTH0_DOMAIN` (example: `rmi-spd.us.auth0.com`)
 * `AUTH0_CLIENT_ID` (example: `<public-client-id>`)
 * `AUTH0_AUDIENCE` (example: `https://stitch-api.local`)
+* `STITCH_LLM_AZURE_OPENAI_BASE_URL` (example: `https://stitch-foundry-dev.openai.azure.com/openai/v1`)
+* `STITCH_LLM_AZURE_OPENAI_MODEL` (example: `gpt-5.1-chat`)
+* `STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS` (example: `30`)
   * NOTE: `FRONTEND_PREVIEW_URL_TEMPLATE` must contain the literal `{name}` placeholder.
 For `dress-rehearsal`, the workflow uses `FRONTEND_PRODUCTION_URL` directly. For pull requests, it replaces `{name}` with the raw PR number so PR #106 resolves to `https://witty-mushroom-017a3dc1e-106.westus2.1.azurestaticapps.net`. For other preview deployments, it replaces `{name}` with `deployment_name`.
 
@@ -135,6 +138,7 @@ For `dress-rehearsal`, the workflow uses `FRONTEND_PRODUCTION_URL` directly. For
 * `STITCH_MIGRATOR_PASSWORD`
 * `STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN`
 * `STITCH_CLIENT_LLM_BEARER_TOKEN`
+* `STITCH_LLM_AZURE_OPENAI_API_KEY`
 * `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
 
 Current validation behavior:
@@ -153,5 +157,6 @@ Current validation behavior:
   * `STITCH_APP_PASSWORD`
   * `STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN`
   * `STITCH_CLIENT_LLM_BEARER_TOKEN`
+  * If any of `STITCH_LLM_AZURE_OPENAI_BASE_URL`, `STITCH_LLM_AZURE_OPENAI_MODEL`, or `STITCH_LLM_AZURE_OPENAI_API_KEY` are set, all three must be set
 * DB init validates `STITCH_MIGRATOR_PASSWORD`
 * frontend deploy validates `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`

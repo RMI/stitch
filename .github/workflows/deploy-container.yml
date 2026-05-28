@@ -39,6 +39,8 @@ on:
         required: false
       stitch-client-bearer-token:
         required: false
+      stitch-llm-azure-openai-api-key:
+        required: false
     outputs:
       container-app-url:
         description: "HTTPS URL of the deployed Azure Container App"
@@ -85,6 +87,7 @@ jobs:
         env:
           STITCH_APP_PASSWORD: ${{ secrets.stitch-app-password }}
           STITCH_CLIENT_BEARER_TOKEN: ${{ secrets.stitch-client-bearer-token }}
+          STITCH_LLM_AZURE_OPENAI_API_KEY: ${{ secrets.stitch-llm-azure-openai-api-key }}
         run: |
           set -euo pipefail
           envvars='${{ inputs.environment-variables }}'
@@ -93,6 +96,9 @@ jobs:
           fi
           if [ -n "${STITCH_CLIENT_BEARER_TOKEN:-}" ]; then
             envvars="$envvars STITCH_CLIENT_BEARER_TOKEN=${STITCH_CLIENT_BEARER_TOKEN}"
+          fi
+          if [ -n "${STITCH_LLM_AZURE_OPENAI_API_KEY:-}" ]; then
+            envvars="$envvars STITCH_LLM_AZURE_OPENAI_API_KEY=${STITCH_LLM_AZURE_OPENAI_API_KEY}"
           fi
           echo "environment-variables<<EOF" >> "$GITHUB_OUTPUT"
           echo "$envvars" >> "$GITHUB_OUTPUT"
