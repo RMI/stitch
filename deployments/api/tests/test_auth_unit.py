@@ -3,15 +3,20 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 from starlette.testclient import TestClient
 
-from stitch.api.auth import get_token_claims, validate_auth_config_at_startup
+from stitch.api.auth import (
+    get_token_claims,
+    require_permissions,
+    validate_auth_config_at_startup,
+)
 from stitch.api.db.config import get_uow
 from stitch.api.entities import User
 from stitch.api.main import app
 from stitch.api.settings import Settings
 from stitch.auth import TokenClaims
-from stitch.auth.permissions import RESOURCE_READ, SOURCE_READ_WM
+from stitch.auth.permissions import RESOURCE_READ, RESOURCE_WRITE, SOURCE_READ_WM
 from stitch.auth.settings import OIDCSettings
 
 
@@ -140,6 +145,70 @@ class TestGetTokenClaims:
 
             assert response.status_code == 401
             assert response.json()["detail"] == "Invalid Authorization header format"
+
+
+class TestRequirePermissions:
+    """Unit tests for the API permission dependency wrapper."""
+
+    @pytest.mark.anyio
+    async def test_default_check_requires_all_permissions(self):
+        dependency = require_permissions(RESOURCE_READ, RESOURCE_WRITE)
+        claims = TokenClaims(
+            sub="auth0|permission-user",
+            permissions=frozenset({RESOURCE_READ, RESOURCE_WRITE}),
+        )
+
+        assert await dependency(claims) is None
+
+    @pytest.mark.anyio
+    async def test_default_check_raises_403_for_missing_permission(self):
+        dependency = require_permissions(RESOURCE_READ, RESOURCE_WRITE)
+        claims = TokenClaims(
+            sub="auth0|permission-user",
+            permissions=frozenset({RESOURCE_READ}),
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await dependency(claims)
+
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail == (
+            "Missing required permission(s): resource:write"
+        )
+
+    @pytest.mark.anyio
+    async def test_any_check_accepts_one_candidate_permission(self):
+        dependency = require_permissions(
+            RESOURCE_WRITE,
+            SOURCE_READ_WM,
+            check="any",
+        )
+        claims = TokenClaims(
+            sub="auth0|permission-user",
+            permissions=frozenset({SOURCE_READ_WM}),
+        )
+
+        assert await dependency(claims) is None
+
+    @pytest.mark.anyio
+    async def test_any_check_raises_403_when_no_candidates_match(self):
+        dependency = require_permissions(
+            RESOURCE_WRITE,
+            SOURCE_READ_WM,
+            check="any",
+        )
+        claims = TokenClaims(
+            sub="auth0|permission-user",
+            permissions=frozenset({RESOURCE_READ}),
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await dependency(claims)
+
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail == (
+            "Missing required permission(s): resource:write, source:read:wm"
+        )
 
 
 class TestAuthMeEndpoint:
