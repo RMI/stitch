@@ -9,7 +9,6 @@ from stitch.ogsi.model import OGFieldSource, OGFieldSourceView
 from stitch.api.auth import (
     Claims,
     CurrentUser,
-    require_any_permission,
     require_permissions,
 )
 from stitch.api.db import og_field_source_actions
@@ -53,7 +52,7 @@ async def create_oil_gas_field_source(
 
 @router.get(
     "/",
-    dependencies=[Depends(require_any_permission(*SOURCE_READ_PERMISSIONS))],
+    dependencies=[Depends(require_permissions(*SOURCE_READ_PERMISSIONS, check="any"))],
 )
 async def query_oil_gas_field_sources(
     uow: UnitOfWorkDep,
@@ -77,7 +76,7 @@ async def query_oil_gas_field_sources(
 @router.get(
     "/{id}",
     response_model=OGFieldSourceView,
-    dependencies=[Depends(require_any_permission(*SOURCE_READ_PERMISSIONS))],
+    dependencies=[Depends(require_permissions(*SOURCE_READ_PERMISSIONS, check="any"))],
 )
 async def get_oil_gas_field(
     id: int, uow: UnitOfWorkDep, user: CurrentUser, claims: Claims
@@ -94,7 +93,7 @@ async def get_oil_gas_field(
 
 @router.get(
     "/{id}/detail",
-    dependencies=[Depends(require_any_permission(*SOURCE_READ_PERMISSIONS))],
+    dependencies=[Depends(require_permissions(*SOURCE_READ_PERMISSIONS, check="any"))],
 )
 async def get_oil_gas_field_detail(
     id: int, uow: UnitOfWorkDep, user: CurrentUser, claims: Claims
