@@ -278,7 +278,7 @@ jobs:
       full-image-name: ${{ needs.build-stitch-llm-docker-image.outputs.digest-image-name }}
       container-app-name: ${{ format('{0}-stitch-llm', needs.resolve-context.outputs.deployment-name) }}
       environment-variables: >-
-        STITCH_LLM_LOG_LEVEL=info
+        STITCH_LLM_LOG_LEVEL=debug
         AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
         DEPLOYMENT_LANE=${{ needs.resolve-context.outputs.deployment-lane }}
         DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}

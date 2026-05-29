@@ -105,6 +105,18 @@ jobs:
           fi
           if [ -n "${STITCH_LLM_AZURE_OPENAI_API_KEY:-}" ]; then
             echo "  stitch-llm-azure-openai-api-key: yes"
+            echo "  stitch-llm-azure-openai-api-key length: ${#STITCH_LLM_AZURE_OPENAI_API_KEY}"
+            if [[ "${STITCH_LLM_AZURE_OPENAI_API_KEY}" == *$'\n'* ]]; then
+              echo "  stitch-llm-azure-openai-api-key contains newline: yes"
+            else
+              echo "  stitch-llm-azure-openai-api-key contains newline: no"
+            fi
+            trimmed_llm_openai_api_key="$(printf '%s' "${STITCH_LLM_AZURE_OPENAI_API_KEY}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+            if [ "${trimmed_llm_openai_api_key}" = "${STITCH_LLM_AZURE_OPENAI_API_KEY}" ]; then
+              echo "  stitch-llm-azure-openai-api-key has outer whitespace: no"
+            else
+              echo "  stitch-llm-azure-openai-api-key has outer whitespace: yes"
+            fi
           else
             echo "  stitch-llm-azure-openai-api-key: no"
           fi
@@ -124,6 +136,7 @@ jobs:
           else
             echo "Final env payload contains STITCH_LLM_AZURE_OPENAI_API_KEY: no"
           fi
+          echo "Final env payload length: ${#envvars}"
 
           echo "environment-variables<<EOF" >> "$GITHUB_OUTPUT"
           echo "$envvars" >> "$GITHUB_OUTPUT"
