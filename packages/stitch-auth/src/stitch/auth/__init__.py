@@ -1,14 +1,55 @@
 from .claims import TokenClaims
-from .errors import AuthError, JWKSFetchError, TokenExpiredError, TokenValidationError
+from .errors import (
+    AuthError,
+    InsufficientPermissionsError,
+    JWKSFetchError,
+    TokenExpiredError,
+    TokenValidationError,
+)
+from .permissions import (
+    ALL_PERMISSIONS,
+    MERGE_CANDIDATE_CREATE,
+    MERGE_CANDIDATE_READ,
+    MERGE_CANDIDATE_REVIEW,
+    RESOURCE_READ,
+    RESOURCE_WRITE,
+    SERVICE_ENTITY_LINKAGE_RUN,
+    SERVICE_LLM_SUGGEST,
+    SOURCE_READ_GEM,
+    SOURCE_READ_LLM,
+    SOURCE_READ_PERMISSIONS,
+    SOURCE_READ_PREFIX,
+    SOURCE_READ_RMI,
+    SOURCE_READ_WM,
+    SOURCE_WRITE,
+    check_permissions,
+)
 from .settings import OIDCSettings
 from .validator import JWTValidator
 
 __all__ = [
+    "ALL_PERMISSIONS",
     "AuthError",
+    "InsufficientPermissionsError",
     "JWKSFetchError",
     "JWTValidator",
+    "MERGE_CANDIDATE_CREATE",
+    "MERGE_CANDIDATE_READ",
+    "MERGE_CANDIDATE_REVIEW",
     "OIDCSettings",
+    "RESOURCE_READ",
+    "RESOURCE_WRITE",
+    "SERVICE_ENTITY_LINKAGE_RUN",
+    "SERVICE_LLM_SUGGEST",
+    "SOURCE_READ_GEM",
+    "SOURCE_READ_LLM",
+    "SOURCE_READ_PERMISSIONS",
+    "SOURCE_READ_PREFIX",
+    "SOURCE_READ_RMI",
+    "SOURCE_READ_WM",
+    "SOURCE_WRITE",
     "TokenClaims",
     "TokenExpiredError",
     "TokenValidationError",
+    "check_permissions",
 ]
