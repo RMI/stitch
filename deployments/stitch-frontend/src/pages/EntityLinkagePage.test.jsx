@@ -6,10 +6,13 @@ import EntityLinkagePage from "./EntityLinkagePage";
 import { auth0TestDefaults, renderWithQueryClient } from "../test/utils";
 
 describe("EntityLinkagePage", () => {
+  let getAccessTokenSilently;
+
   beforeEach(() => {
+    getAccessTokenSilently = vi.fn().mockResolvedValue("test-access-token");
     vi.mocked(useAuth0).mockReturnValue({
       ...auth0TestDefaults,
-      getAccessTokenSilently: vi.fn().mockResolvedValue("test-access-token"),
+      getAccessTokenSilently,
     });
   });
 
@@ -52,5 +55,11 @@ describe("EntityLinkagePage", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Resource 101")).toBeInTheDocument();
     expect(screen.getByText("Resource 205")).toBeInTheDocument();
+    expect(getAccessTokenSilently).toHaveBeenCalledWith({
+      authorizationParams: { audience: "https://stitch-api.local" },
+    });
+    expect(getAccessTokenSilently.mock.invocationCallOrder[0]).toBeLessThan(
+      fetch.mock.invocationCallOrder[0],
+    );
   });
 });

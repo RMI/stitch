@@ -4,6 +4,7 @@ import pytest
 
 from pydantic import ValidationError
 from stitch.auth.claims import TokenClaims
+from stitch.auth.permissions import RESOURCE_READ, SOURCE_READ_WM
 
 
 class TestTokenClaimsConstruction:
@@ -69,12 +70,10 @@ class TestTokenClaimsPermissions:
     def test_permissions_accepts_list_and_coerces_to_frozenset(self):
         claims = TokenClaims(
             sub="auth0|abc",
-            permissions=["resource:read:public", "resource:read:licensed:wm"],
+            permissions=[RESOURCE_READ, SOURCE_READ_WM],
         )
 
-        assert claims.permissions == frozenset(
-            {"resource:read:public", "resource:read:licensed:wm"}
-        )
+        assert claims.permissions == frozenset({RESOURCE_READ, SOURCE_READ_WM})
         assert isinstance(claims.permissions, frozenset)
 
     def test_permissions_accepts_frozenset_directly(self):

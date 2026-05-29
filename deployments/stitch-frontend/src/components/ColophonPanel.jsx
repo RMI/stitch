@@ -191,7 +191,9 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
       }
 
       try {
-        const token = await getAccessTokenSilently();
+        const token = await getAccessTokenSilently({
+          authorizationParams: { audience: config.auth0.audience },
+        });
 
         if (!cancelled) {
           setAccessToken(token);
@@ -212,7 +214,12 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
     return () => {
       cancelled = true;
     };
-  }, [getAccessTokenSilently, isAuthenticated, isLoading]);
+  }, [
+    config.auth0.audience,
+    getAccessTokenSilently,
+    isAuthenticated,
+    isLoading,
+  ]);
 
   const sections = {
     "Frontend Build Info": {
