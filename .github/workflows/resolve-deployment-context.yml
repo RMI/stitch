@@ -48,7 +48,7 @@ jobs:
                   ;;
                 production)
                   deployment_lane="dress-rehearsal"
-                  deployment_name="production"
+                  deployment_name="dress-rehearsal"
                   ;;
                 *)
                   echo "Unsupported push/dispatch target: $REF_NAME" >&2
