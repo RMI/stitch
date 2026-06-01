@@ -2,7 +2,7 @@
 
 The CD pipeline is managed by the GitHub workflow `build-and-deploy.yml`.
 
-It now uses two explicit workflow concepts:
+It uses two explicit workflow concepts:
 
 * `deployment_lane`: deploy class / GitHub Environment name
 * `deployment_name`: concrete runtime target name used for DB and app naming
