@@ -286,7 +286,7 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
     }
 
     try {
-      await navigator.clipboard.writeText(`Bearer ${accessToken}`);
+      await navigator.clipboard.writeText(accessToken);
       setTokenCopied(true);
       setTokenCopyError(false);
       window.setTimeout(() => setTokenCopied(false), 2000);
@@ -310,7 +310,7 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
               onClick={() => void handleCopyToken()}
               disabled={!accessToken}
               className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:border-line-strong hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              title="Copy Bearer token for API tools"
+              title="Copy raw access token for API tools"
             >
               {tokenCopied
                 ? "Token copied!"
