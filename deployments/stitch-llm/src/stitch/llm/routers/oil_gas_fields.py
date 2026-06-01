@@ -4,7 +4,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from starlette.status import (
     HTTP_404_NOT_FOUND,
     HTTP_409_CONFLICT,
@@ -12,8 +12,9 @@ from starlette.status import (
     HTTP_503_SERVICE_UNAVAILABLE,
 )
 from stitch.client import StitchAPIError
+from stitch.auth.permissions import SERVICE_LLM_SUGGEST
 
-from stitch.llm.auth import CurrentUser
+from stitch.llm.auth import CurrentUser, require_permissions
 from stitch.llm.azure_responses import AzureResponsesClient, extract_public_citations
 from stitch.llm.client import StitchApiClient
 from stitch.llm.entities import FieldSuggestionResponse
@@ -45,7 +46,11 @@ router = APIRouter(
 )
 
 
-@router.get("/{id}", response_model=FieldSuggestionResponse)
+@router.get(
+    "/{id}",
+    response_model=FieldSuggestionResponse,
+    dependencies=[Depends(require_permissions(SERVICE_LLM_SUGGEST))],
+)
 async def suggest_oil_gas_field_value(
     *,
     _user: CurrentUser,

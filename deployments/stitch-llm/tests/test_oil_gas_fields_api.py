@@ -7,8 +7,10 @@ import pytest
 from fastapi.testclient import TestClient
 from stitch.client import StitchAPIError
 
+from stitch.auth import TokenClaims
+from stitch.auth.permissions import SERVICE_LLM_SUGGEST
 from stitch.llm import auth as auth_module
-from stitch.llm.auth import get_current_user
+from stitch.llm.auth import get_current_user, get_token_claims
 from stitch.llm.azure_responses import AzureResponsesResult
 from stitch.llm.entities import User
 from stitch.llm.errors import LLMConfigurationError
@@ -120,6 +122,12 @@ def test_client(monkeypatch: pytest.MonkeyPatch):
             name="Test User",
         )
 
+    def override_token_claims() -> TokenClaims:
+        return TokenClaims(
+            sub="test|user",
+            permissions=frozenset({SERVICE_LLM_SUGGEST}),
+        )
+
     test_settings = Settings(
         auth_disabled=True,
         azure_openai_base_url=None,
@@ -132,11 +140,49 @@ def test_client(monkeypatch: pytest.MonkeyPatch):
         main_module, "validate_downstream_auth_config_at_startup", lambda: None
     )
     app.dependency_overrides[get_current_user] = override_current_user
+    app.dependency_overrides[get_token_claims] = override_token_claims
 
     with TestClient(app) as client:
         yield client
 
     app.dependency_overrides.clear()
+
+
+def test_get_suggestion_requires_service_permission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def override_current_user() -> User:
+        return User(
+            id=1,
+            sub="test|user",
+            email="test@example.com",
+            name="Test User",
+        )
+
+    def override_token_claims() -> TokenClaims:
+        return TokenClaims(sub="test|user", permissions=frozenset())
+
+    test_settings = Settings(
+        auth_disabled=True,
+        azure_openai_base_url=None,
+        azure_openai_api_key=None,
+        azure_openai_model=None,
+    )
+    monkeypatch.setattr(auth_module, "get_settings", lambda: test_settings)
+    monkeypatch.setattr(route_module, "get_settings", lambda: test_settings)
+    monkeypatch.setattr(
+        main_module, "validate_downstream_auth_config_at_startup", lambda: None
+    )
+    app.dependency_overrides[get_current_user] = override_current_user
+    app.dependency_overrides[get_token_claims] = override_token_claims
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/oil-gas-fields/42?field=basin")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert SERVICE_LLM_SUGGEST in response.json()["detail"]
 
 
 def install_fakes(
