@@ -1,20 +1,19 @@
 on:
   workflow_call:
     inputs:
+      deployment-lane:
+        description: "Deployment lane and GitHub Environment name"
+        required: true
+        type: string
       full-image-name:
         description: "Full pushed image name including host/registry, name, and tag"
         required: true
         type: string
-      containerAppName:
+      container-app-name:
         description: "The name of the Azure Container App."
         required: true
         type: string
-      containerAppEnvironment:
-        description: "The name of the Azure Container App environment to deploy to."
-        required: false
-        default: "stitch-dev"
-        type: string
-      targetPort:
+      target-port:
         description: "Port the application listens on"
         required: false
         default: 8000
@@ -25,15 +24,23 @@ on:
         default: "container-app"
         type: string
       environment-variables:
-        description: "Whitespace-delimited non-secret KEY=value pairs"
+        description: "Whitespace-delimited KEY=value pairs"
         required: false
         default: ""
         type: string
-      inject-stitch-app-password:
+    secrets:
+      azure-client-id:
+        required: true
+      azure-tenant-id:
+        required: true
+      azure-subscription-id:
+        required: true
+      stitch-app-password:
         required: false
-        default: false
-        type: boolean
-
+      stitch-client-bearer-token:
+        required: false
+      stitch-llm-azure-openai-api-key:
+        required: false
     outputs:
       container-app-url:
         description: "HTTPS URL of the deployed Azure Container App"
@@ -45,37 +52,55 @@ on:
 jobs:
   deploy-container-app:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.deployment-lane }}
     permissions:
       id-token: write
       contents: read
       packages: read
     timeout-minutes: 25
     outputs:
-      container-app-url: ${{ steps.export-app-url.outputs.container_app_url }}
-      container-app-fqdn: ${{ steps.export-app-url.outputs.container_app_fqdn }}
-
+      container-app-url: ${{ steps.export-app-url.outputs.container-app-url }}
+      container-app-fqdn: ${{ steps.export-app-url.outputs.container-app-fqdn }}
     steps:
+      - name: Validate lane config
+        shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_CONTAINER_APP_ENVIRONMENT: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
+        run: |
+          set -euo pipefail
+          : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
+          : "${AZURE_CONTAINER_APP_ENVIRONMENT:?Missing required variable AZURE_CONTAINER_APP_ENVIRONMENT}"
+
       - name: Azure login
         uses: azure/login@v3
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.azure-client-id }}
+          tenant-id: ${{ secrets.azure-tenant-id }}
+          subscription-id: ${{ secrets.azure-subscription-id }}
 
       - run: echo "fullname=${{ inputs.full-image-name }}"
 
       - name: Assemble environment variables
         id: envvars
         shell: bash
+        env:
+          STITCH_APP_PASSWORD: ${{ secrets.stitch-app-password }}
+          STITCH_CLIENT_BEARER_TOKEN: ${{ secrets.stitch-client-bearer-token }}
+          STITCH_LLM_AZURE_OPENAI_API_KEY: ${{ secrets.stitch-llm-azure-openai-api-key }}
         run: |
           set -euo pipefail
           envvars='${{ inputs.environment-variables }}'
-          echo "$envvars"
-          if [ "${{ inputs.inject-stitch-app-password }}" = "true" ]; then
-            envvars="$envvars POSTGRES_PASSWORD=${{ secrets.STITCH_APP_PASSWORD_DEV }}"
-            echo "Also adding POSTGRES_PASSWORD"
+          if [ -n "${STITCH_APP_PASSWORD:-}" ]; then
+            envvars="$envvars POSTGRES_PASSWORD=${STITCH_APP_PASSWORD}"
           fi
-          echo "environment_variables<<EOF" >> "$GITHUB_OUTPUT"
+          if [ -n "${STITCH_CLIENT_BEARER_TOKEN:-}" ]; then
+            envvars="$envvars STITCH_CLIENT_BEARER_TOKEN=${STITCH_CLIENT_BEARER_TOKEN}"
+          fi
+          if [ -n "${STITCH_LLM_AZURE_OPENAI_API_KEY:-}" ]; then
+            envvars="$envvars STITCH_LLM_AZURE_OPENAI_API_KEY=${STITCH_LLM_AZURE_OPENAI_API_KEY}"
+          fi
+          echo "environment-variables<<EOF" >> "$GITHUB_OUTPUT"
           echo "$envvars" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
@@ -83,23 +108,24 @@ jobs:
         uses: azure/container-apps-deploy-action@v1
         with:
           imageToDeploy: ${{ inputs.full-image-name }}
-          resourceGroup: STITCH-DEV-RG
-          containerAppName: ${{ inputs.containerAppName }}
-          containerAppEnvironment: ${{ inputs.containerAppEnvironment }}
-          targetPort: ${{ inputs.targetPort }}
-          environmentVariables: ${{ steps.envvars.outputs.environment_variables }}
+          resourceGroup: ${{ vars.AZURE_RESOURCE_GROUP }}
+          containerAppName: ${{ inputs.container-app-name }}
+          containerAppEnvironment: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
+          targetPort: ${{ inputs.target-port }}
+          environmentVariables: ${{ steps.envvars.outputs.environment-variables }}
           ingress: "external"
 
       - name: Export application URL
         id: export-app-url
         shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
         run: |
           set -euo pipefail
-
           fqdn="$(
             az containerapp show \
-              --name "${{ inputs.containerAppName }}" \
-              --resource-group "STITCH-DEV-RG" \
+              --name "${{ inputs.container-app-name }}" \
+              --resource-group "${AZURE_RESOURCE_GROUP}" \
               --query "properties.configuration.ingress.fqdn" \
               --output tsv
           )"
@@ -110,8 +136,8 @@ jobs:
           fi
 
           echo "Resolved FQDN: $fqdn"
-          echo "container_app_fqdn=$fqdn" >> "$GITHUB_OUTPUT"
-          echo "container_app_url=https://$fqdn" >> "$GITHUB_OUTPUT"
+          echo "container-app-fqdn=$fqdn" >> "$GITHUB_OUTPUT"
+          echo "container-app-url=https://$fqdn" >> "$GITHUB_OUTPUT"
 
       - name: Write comment JSON
         if: ${{ github.event_name == 'pull_request' }}
@@ -126,8 +152,8 @@ jobs:
             --arg kind "container_app" \
             --arg name "${{ inputs.deployment-label }}" \
             --arg service "${{ inputs.deployment-label }}" \
-            --arg url "[open](${{ steps.export-app-url.outputs.container_app_url }})" \
-            --arg fqdn '`${{ steps.export-app-url.outputs.container_app_fqdn }}`' \
+            --arg url "[open](${{ steps.export-app-url.outputs.container-app-url }})" \
+            --arg fqdn '`${{ steps.export-app-url.outputs.container-app-fqdn }}`' \
             '{
               "section": $section,
               "kind": $kind,

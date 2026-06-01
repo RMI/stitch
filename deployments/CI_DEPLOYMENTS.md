@@ -2,6 +2,24 @@
 
 The CD pipeline is managed by the GitHub workflow `build-and-deploy.yml`.
 
+It uses two explicit workflow concepts:
+
+* `deployment_lane`: deploy class / GitHub Environment name
+* `deployment_name`: concrete runtime target name used for DB and app naming
+
+Branch behavior is:
+
+* push to `main` -> `deployment_lane=development`, `deployment_name=main`
+* any PR not targeting `production` -> `deployment_lane=development`, `deployment_name=pr-<number>`
+* push to `production` -> `deployment_lane=dress-rehearsal`, `deployment_name=production`
+* any PR targeting `production` -> `deployment_lane=staging`, branch-derived `deployment_name`
+
+Examples:
+
+* PR #57 into `main` -> `deployment_name=pr-57`
+* PR from `next` into `production` -> `deployment_name=next`
+* PR from `hotfix/fix-auth` into `production` -> `deployment_name=hotfix-fix-auth`
+
 It builds Docker images for:
 
 * `api` (also used for DB migration)
@@ -16,9 +34,16 @@ It then handles deployments for:
 * the entity-linkage Container App in the same environment
 * the stitch-llm Container App in the same environment
 
-For PR preview environments, all preview databases are on the same shared
-Postgres host, and the container apps are all in the same dev ACA
-environment.
+Reusable workflows now select lane-specific configuration from GitHub
+Environments and are expected to fail loudly when required values are absent.
+
+The top-level deploy workflow also performs early lane validation before API and
+frontend deploys proceed.
+
+Backend infrastructure (static resources like PostgreSQL server or Continer App
+environment) are shared within a deploy lane (all `development` lane
+deployments, `pr-*`, `main` deploy to the same PostgreSQL instance, with
+separate logical DBs)
 
 It also handles running `db-init` (`api` container with different script) and
 `seed`, both directly from GH Actions (rather than starting on Azure).
@@ -41,6 +66,15 @@ are:
 
 * `repo:RMI/stitch:pull_request`
 * `repo:RMI/stitch:ref:refs/heads/main`
+* `repo:RMI/stitch:ref:refs/heads/production`
+* `repo:RMI/stitch:environment:development`
+* `repo:RMI/stitch:environment:staging`
+* `repo:RMI/stitch:environment:dress-rehearsal`
+
+The branch / PR subjects cover workflows that authenticate outside a GitHub
+Environment. The `environment:*` subjects are also required because the
+lane-scoped deploy jobs authenticate from GitHub Environments named
+`development`, `staging`, and `dress-rehearsal`.
 
 All federated credential fields must match exactly:
 
@@ -59,19 +93,70 @@ Managed identity roles:
 
 ## Setup Notes
 
-In repo settings, under `Secrets and variables` > `Actions`, add:
+In repo settings, under `Secrets and variables` > `Actions`, add Azure identity
+secrets, then define lane-scoped variables and secrets in GitHub Environments
+named:
 
-### Secrets
+* `development`
+* `staging`
+* `dress-rehearsal`
+
+### Repo-level secrets
 
 * `AZURE_CLIENT_ID`: Client ID for `GHActions-stitch-cicd`
 * `AZURE_SUBSCRIPTION_ID`: Subscription for the target Azure resources
 * `AZURE_TENANT_ID`: Tenant for `GHActions-stitch-cicd`
-* `PGPASSWORD_DEV`: superuser (`postgres`) password for DB
-* `STITCH_APP_PASSWORD_DEV`: password that API user will connect to DB
-* `STITCH_MIGRATOR_PASSWORD_DEV`: password that migrator user will connect to DB
-  for DDL operations
-* `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`: Token for Azure SWA
 
-### Variables
+### Environment variables
 
-* `PGHOST_DEV`: Host for postgres server
+* `AZURE_RESOURCE_GROUP` (example: `STITCH-DEV-RG`)
+* `AZURE_CONTAINER_APP_ENVIRONMENT` (example: `stitch-dev`)
+* `POSTGRES_HOST` (example: `stitch-dev.postgres.database.azure.com`)
+* `POSTGRES_PORT` (example: `5432`)
+* `POSTGRES_ADMIN_USER` (example: `postgres`)
+* `POSTGRES_SSLMODE` (example: `require`)
+* `POSTGRES_DEFAULT_DB` (example: `postgres`)
+* `FRONTEND_PRODUCTION_URL` (example: `https://witty-mushroom-017a3dc1e.1.azurestaticapps.net`)
+* `FRONTEND_PREVIEW_URL_TEMPLATE` (example: `https://witty-mushroom-017a3dc1e-{name}.westus2.1.azurestaticapps.net`)
+* `AUTH_DISABLED` (example: `true` for `development`, `false` for `staging` / `dress-rehearsal`)
+* `AUTH_ISSUER` (example: `https://rmi-spd.us.auth0.com/`)
+* `AUTH_AUDIENCE` (example: `https://stitch-api.local`)
+* `AUTH_JWKS_URI` (example: `https://rmi-spd.us.auth0.com/.well-known/jwks.json`)
+* `AUTH0_DOMAIN` (example: `rmi-spd.us.auth0.com`)
+* `AUTH0_CLIENT_ID` (example: `<public-client-id>`)
+* `AUTH0_AUDIENCE` (example: `https://stitch-api.local`)
+* `STITCH_LLM_AZURE_OPENAI_BASE_URL` (example: `https://stitch-foundry-dev.openai.azure.com/openai/v1`)
+* `STITCH_LLM_AZURE_OPENAI_MODEL` (example: `gpt-5.1-chat`)
+* `STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS` (example: `30`)
+  * NOTE: `FRONTEND_PREVIEW_URL_TEMPLATE` must contain the literal `{name}` placeholder.
+For `dress-rehearsal`, the workflow uses `FRONTEND_PRODUCTION_URL` directly. For pull requests, it replaces `{name}` with the raw PR number so PR #106 resolves to `https://witty-mushroom-017a3dc1e-106.westus2.1.azurestaticapps.net`. For other preview deployments, it replaces `{name}` with `deployment_name`.
+
+### Environment secrets
+
+* `PGPASSWORD`
+* `STITCH_APP_PASSWORD`
+* `STITCH_MIGRATOR_PASSWORD`
+* `STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN`
+* `STITCH_CLIENT_LLM_BEARER_TOKEN`
+* `STITCH_LLM_AZURE_OPENAI_API_KEY`
+* `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
+
+Current validation behavior:
+
+* database deploy validates `PGPASSWORD`
+* `lane-config-validate` validates:
+  * `FRONTEND_PRODUCTION_URL`
+  * `FRONTEND_PREVIEW_URL_TEMPLATE`
+  * `AUTH_DISABLED`
+  * `AUTH_ISSUER`
+  * `AUTH_AUDIENCE`
+  * `AUTH_JWKS_URI`
+  * `AUTH0_DOMAIN`
+  * `AUTH0_CLIENT_ID`
+  * `AUTH0_AUDIENCE`
+  * `STITCH_APP_PASSWORD`
+  * `STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN`
+  * `STITCH_CLIENT_LLM_BEARER_TOKEN`
+  * If any of `STITCH_LLM_AZURE_OPENAI_BASE_URL`, `STITCH_LLM_AZURE_OPENAI_MODEL`, or `STITCH_LLM_AZURE_OPENAI_API_KEY` are set, all three must be set
+* DB init validates `STITCH_MIGRATOR_PASSWORD`
+* frontend deploy validates `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
