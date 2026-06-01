@@ -96,8 +96,6 @@ async def get_resource_filter_options(
     response_model=list[MergeCandidateView],
     dependencies=[Depends(require_permissions(MERGE_CANDIDATE_READ))],
 )
-
-
 async def list_merge_candidates(
     *, uow: UnitOfWorkDep, _user: CurrentUser
 ) -> list[MergeCandidateView]:
