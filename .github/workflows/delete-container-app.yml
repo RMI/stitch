@@ -1,0 +1,66 @@
+name: Delete Container App
+
+on:
+  workflow_call:
+    inputs:
+      deployment-lane:
+        description: Deployment lane and GitHub Environment name
+        required: true
+        type: string
+      container-app-name:
+        description: The name of the Azure Container App to delete
+        required: true
+        type: string
+    secrets:
+      azure-client-id:
+        required: true
+      azure-tenant-id:
+        required: true
+      azure-subscription-id:
+        required: true
+
+jobs:
+  delete-container-app:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.deployment-lane }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Validate lane config
+        shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: |
+          set -euo pipefail
+          : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
+
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.azure-client-id }}
+          tenant-id: ${{ secrets.azure-tenant-id }}
+          subscription-id: ${{ secrets.azure-subscription-id }}
+
+      - name: Ensure containerapp extension is available
+        run: |
+          az extension add --name containerapp --upgrade --allow-preview true
+
+      - name: Delete Container App if it exists
+        shell: bash
+        env:
+          CONTAINER_APP_NAME: ${{ inputs.container-app-name }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: |
+          set -euo pipefail
+          EXISTS="$(
+            az containerapp show \
+              --name "$CONTAINER_APP_NAME" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --query "name" \
+              --output tsv 2>/dev/null || true
+          )"
+          if [ -z "$EXISTS" ]; then
+            exit 0
+          fi
+          az containerapp delete --name "$CONTAINER_APP_NAME" --resource-group "$AZURE_RESOURCE_GROUP" --yes

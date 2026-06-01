@@ -38,10 +38,10 @@ jobs:
 
           python3 .github/scripts/build_pr_summary_comment.py
 
-          echo "comment_body_path=.comment-body.md" >> "$GITHUB_OUTPUT"
+          echo "comment-body-path=.comment-body.md" >> "$GITHUB_OUTPUT"
 
       - name: Create or update summary comment
         uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ github.event.pull_request.number }}
-          body-path: ${{ steps.build-comment.outputs.comment_body_path }}
+          body-path: ${{ steps.build-comment.outputs.comment-body-path }}

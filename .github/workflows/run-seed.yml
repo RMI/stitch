@@ -3,6 +3,10 @@ name: Run seed job
 on:
   workflow_call:
     inputs:
+      deployment-lane:
+        description: "Deployment lane and GitHub Environment name"
+        required: true
+        type: string
       full-image-name:
         description: "Full pushed image name including host/registry, name, and digest"
         required: true
@@ -11,10 +15,14 @@ on:
         description: "Base API URL for the deployed API"
         required: true
         type: string
+    secrets:
+      stitch-client-bearer-token:
+        required: true
 
 jobs:
   run-seed:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.deployment-lane }}
     permissions:
       contents: read
       packages: read
@@ -22,7 +30,7 @@ jobs:
 
     steps:
       - name: Log in to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Pull seed image
         run: docker pull "${{ inputs.full-image-name }}"
@@ -39,7 +47,7 @@ jobs:
           SEED_SOURCE: "mixed"
           NULL_PROBABILITY: "0.3"
           STATIC_PAYLOAD_DIR: "/mnt/data"
-          STITCH_CLIENT_BEARER_TOKEN: "dev-placeholder-token"
+          STITCH_CLIENT_BEARER_TOKEN: ${{ secrets.stitch-client-bearer-token }}
         run: |
           set -euo pipefail
 
@@ -71,7 +79,7 @@ jobs:
             --arg job "seed" \
             --arg api_url '`${{ inputs.api-url }}`' \
             --arg image '`${{ inputs.full-image-name }}`' \
-            --arg auth_mode '`dev placeholder bearer token`' \
+            --arg auth_mode '`stitch-client-bearer-token`' \
             '{
               "section": $section,
               "kind": $kind,

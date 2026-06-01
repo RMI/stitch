@@ -1,6 +1,22 @@
 ---
 on:
   workflow_call:
+    inputs:
+      deployment-lane:
+        description: "Deployment lane and GitHub Environment name"
+        required: true
+        type: string
+      deployment-name:
+        description: "Concrete deployment target name"
+        required: true
+        type: string
+    secrets:
+      pgpassword:
+        required: true
+      stitch-migrator-password:
+        required: true
+      stitch-app-password:
+        required: true
     outputs:
       database-created:
         description: "Whether this workflow created the database during this run"
@@ -17,34 +33,48 @@ on:
       postgres-user:
         description: "Application database user"
         value: ${{ jobs.create-db.outputs.postgres-user }}
+      postgres-sslmode:
+        description: "Database SSL mode"
+        value: ${{ jobs.create-db.outputs.postgres-sslmode }}
 
 name: Create Database
 
 jobs:
   create-db:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.deployment-lane }}
     outputs:
       database-created: ${{ steps.create-db.outputs.database-created }}
       postgres-host: ${{ steps.export-db-config.outputs.postgres-host }}
       postgres-port: ${{ steps.export-db-config.outputs.postgres-port }}
       postgres-db: ${{ steps.export-db-config.outputs.postgres-db }}
       postgres-user: ${{ steps.export-db-config.outputs.postgres-user }}
-
+      postgres-sslmode: ${{ steps.export-db-config.outputs.postgres-sslmode }}
     env:
-      PGHOST: ${{ vars.PGHOST_DEV }}
-      PGPORT: ${{ vars.PGPORT || '5432' }}
-      PGUSER: ${{ vars.PGUSER_DEV || 'postgres' }}
-      PGPASSWORD: ${{ secrets.PGPASSWORD_DEV }}
-      PGSSLMODE: ${{ vars.PGSSLMODE || 'require' }}
-      PGDATABASE: ${{ vars.PGDATABASE || 'postgres' }}
-      DB_NAME_RAW: ${{
-          (github.event_name == 'push' && github.ref_name) ||
-          (github.event_name == 'pull_request' && github.base_ref == 'production' && github.head_ref) ||
-          (github.event_name == 'pull_request' && format('{0}-{1}', 'pr', github.event.pull_request.number)) ||
-          github.ref_name
-        }}
-
+      PGHOST: ${{ vars.POSTGRES_HOST }}
+      PGPORT: ${{ vars.POSTGRES_PORT || '5432' }}
+      PGUSER: ${{ vars.POSTGRES_ADMIN_USER || 'postgres' }}
+      PGPASSWORD: ${{ secrets.pgpassword }}
+      PGSSLMODE: ${{ vars.POSTGRES_SSLMODE || 'require' }}
+      PGDATABASE: ${{ vars.POSTGRES_DEFAULT_DB || 'postgres' }}
+      DB_NAME_RAW: ${{ inputs.deployment-name }}
     steps:
+      - name: Validate lane config
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${PGHOST:?Missing required variable POSTGRES_HOST}"
+          : "${PGPORT:?Missing required variable POSTGRES_PORT}"
+          : "${PGUSER:?Missing required variable POSTGRES_ADMIN_USER}"
+          : "${PGPASSWORD:?Missing required secret PGPASSWORD}"
+          case "${PGSSLMODE}" in
+            disable|allow|prefer|require|verify-ca|verify-full) ;;
+            *)
+              echo "Invalid POSTGRES_SSLMODE: '${PGSSLMODE}'. Expected one of: disable, allow, prefer, require, verify-ca, verify-full." >&2
+              exit 1
+              ;;
+          esac
+
       - name: Install psql client
         run: |
           sudo apt-get update
@@ -71,9 +101,10 @@ jobs:
           echo "postgres-port=${PGPORT}" >> "$GITHUB_OUTPUT"
           echo "postgres-db=${{ steps.normalize-name.outputs.db-name }}" >> "$GITHUB_OUTPUT"
           echo "postgres-user=stitch_app" >> "$GITHUB_OUTPUT"
+          echo "postgres-sslmode=${PGSSLMODE}" >> "$GITHUB_OUTPUT"
 
-      - name: Drop database on push to main
-        if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+      - name: Drop database on long-lived deployments
+        if: ${{ github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_name == 'production') }}
         env:
           DB_NAME: ${{ steps.normalize-name.outputs.db-name }}
         run: |
@@ -91,7 +122,6 @@ jobs:
               WHERE datname = '${DB_NAME}'
                 AND pid <> pg_backend_pid();
             "
-
             psql -X -v ON_ERROR_STOP=1 -c "DROP DATABASE \"${DB_NAME}\";"
             echo "Database '$DB_NAME' dropped."
           else
@@ -127,10 +157,9 @@ jobs:
         env:
           POSTGRES_DB: ${{ steps.normalize-name.outputs.db-name }}
           POSTGRES_USER: ${{ env.PGUSER }}
-          STITCH_MIGRATOR_PASSWORD: ${{ secrets.STITCH_MIGRATOR_PASSWORD_DEV }}
-          STITCH_APP_PASSWORD: ${{ secrets.STITCH_APP_PASSWORD_DEV }}
+          STITCH_MIGRATOR_PASSWORD: ${{ secrets.stitch-migrator-password }}
+          STITCH_APP_PASSWORD: ${{ secrets.stitch-app-password }}
         run: deployments/db/00-init-roles.sh
-
 
       - name: Write comment JSON
         if: ${{ github.event_name == 'pull_request' }}

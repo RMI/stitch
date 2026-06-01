@@ -65,6 +65,22 @@ describe("EnvironmentBanner", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it("renders for dress-rehearsal", async () => {
+    setConfigForTests({
+      ...createMockConfig(),
+      appEnv: "dress-rehearsal",
+    });
+    const { default: EnvironmentBanner } = await import("./EnvironmentBanner");
+
+    renderWithQueryClient(<EnvironmentBanner />);
+
+    const label = screen.getByText("DRESS-REHEARSAL Environment");
+    expect(label).toBeInTheDocument();
+    expect(label.closest("div")).toHaveStyle({
+      backgroundImage: expect.stringContaining("repeating-linear-gradient"),
+    });
+  });
+
   it("toggles the diagnostics panel open and closed", async () => {
     const user = userEvent.setup();
     const { default: EnvironmentBanner } = await import("./EnvironmentBanner");
