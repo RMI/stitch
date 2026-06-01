@@ -108,7 +108,9 @@ export default function EntityLinkagePage() {
     setResult(null);
 
     try {
-      const token = await getAccessTokenSilently();
+      const token = await getAccessTokenSilently({
+        authorizationParams: { audience: config.auth0.audience },
+      });
 
       const response = await fetch(`${config.entityLinkageBaseUrl}/start`, {
         method: "POST",

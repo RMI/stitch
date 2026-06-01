@@ -2,7 +2,6 @@
 
 from collections.abc import AsyncIterator
 from functools import partial
-from typing import get_args
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -11,7 +10,7 @@ from polyfactory.pytest_plugin import register_fixture
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from stitch.auth import TokenClaims
-from stitch.ogsi.model.types import OGSISrcKey
+from stitch.auth.permissions import ALL_PERMISSIONS
 
 from stitch.api.db.config import UnitOfWork, get_uow
 from stitch.api.db.model import (
@@ -29,9 +28,7 @@ _ALL_LICENSED_CLAIMS = TokenClaims(
     sub="test|user-1",
     email="test@test.com",
     name="Test User",
-    permissions=frozenset(
-        f"resource:read:licensed:{src}" for src in get_args(OGSISrcKey)
-    ),
+    permissions=ALL_PERMISSIONS,
 )
 
 
