@@ -47,6 +47,18 @@ function useResourcesReal(
   });
 }
 
+function useResourceFilterOptionsReal(
+  endpoint = "resources",
+  field,
+  enabled = true,
+) {
+  const config = useConfig();
+  return useAuthenticatedQuery({
+    ...resourceQueries.filterOptions(config, endpoint, field),
+    enabled: enabled && Boolean(field),
+  });
+}
+
 function useResourceReal(endpoint = "resources", id, enabled = false) {
   const config = useConfig();
   return useAuthenticatedQuery({
@@ -185,6 +197,18 @@ function getMockResourcePage({
   };
 }
 
+function getMockFilterOptions(field) {
+  const values = Array.from(
+    new Set(
+      MOCK_RESOURCE_ITEMS.map((resource) => getResourceField(resource, field))
+        .filter((value) => value != null && value !== "")
+        .map(String),
+    ),
+  ).sort((a, b) => a.localeCompare(b));
+
+  return { field, values };
+}
+
 function useResourcesMock(
   endpoint = "resources",
   {
@@ -218,6 +242,18 @@ function useResourcesMock(
         }),
       ),
     enabled,
+  });
+}
+
+function useResourceFilterOptionsMock(
+  endpoint = "resources",
+  field,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: resourceKeys.filterOptions(endpoint, field),
+    queryFn: () => Promise.resolve(getMockFilterOptions(field)),
+    enabled: enabled && Boolean(field),
   });
 }
 
@@ -297,6 +333,9 @@ function useMergeCandidatePreviewReal(
 
 // Export one implementation based on the compile-time flag. Assign at module level
 export const useResources = USE_MOCK_DATA ? useResourcesMock : useResourcesReal;
+export const useResourceFilterOptions = USE_MOCK_DATA
+  ? useResourceFilterOptionsMock
+  : useResourceFilterOptionsReal;
 export const useResource = USE_MOCK_DATA ? useResourceMock : useResourceReal;
 export const useResourceDetail = USE_MOCK_DATA
   ? useResourceDetailMock

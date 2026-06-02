@@ -21,6 +21,21 @@ export async function getResources(
   return await response.json();
 }
 
+export async function getResourceFilterOptions(
+  config,
+  fetcher,
+  endpoint = "resources",
+  field,
+) {
+  const params = new URLSearchParams({ field });
+  const url = `${config.apiBaseUrl}/${endpoint}/filter-options?${params}`;
+  const response = await fetcher(url);
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  return await response.json();
+}
+
 export async function getResource(config, id, fetcher, endpoint = "resources") {
   const url = `${config.apiBaseUrl}/${endpoint}/${id}`;
   const response = await fetcher(url);
