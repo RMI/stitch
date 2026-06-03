@@ -16,8 +16,8 @@ services:
       # Local Alembic runs connect as the migrator role (DDL only).
       POSTGRES_USER: stitch_migrator
       POSTGRES_PASSWORD: ${STITCH_MIGRATOR_PASSWORD:?STITCH_MIGRATOR_PASSWORD must be set in .env}
-    entrypoint: ["alembic", "-c", "deployments/api/alembic.ini"]
-    command: ["current"]
+    entrypoint: ["python", "-m"]
+    command: ["stitch.api.alembic_upgrade"]
     depends_on:
       db:
         condition: service_healthy

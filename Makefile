@@ -138,27 +138,27 @@ api-dev: stack-api-dev
 alembic-current:
 	$(DOCKER_COMPOSE_ALEMBIC_BUILD)
 	$(DOCKER_COMPOSE_ALEMBIC_UP)
-	$(DOCKER_COMPOSE_ALEMBIC) current
+	$(DOCKER_COMPOSE_ALEMBIC) alembic -c deployments/api/alembic.ini current
 
 alembic-history:
 	$(DOCKER_COMPOSE_ALEMBIC_BUILD)
 	$(DOCKER_COMPOSE_ALEMBIC_UP)
-	$(DOCKER_COMPOSE_ALEMBIC) history
+	$(DOCKER_COMPOSE_ALEMBIC) alembic -c deployments/api/alembic.ini history
 
 alembic-upgrade:
 	$(DOCKER_COMPOSE_ALEMBIC_BUILD)
 	$(DOCKER_COMPOSE_ALEMBIC_UP)
-	$(DOCKER_COMPOSE_ALEMBIC) upgrade head
+	$(DOCKER_COMPOSE_ALEMBIC) stitch.api.alembic_upgrade
 
 alembic-revision:
 	$(DOCKER_COMPOSE_ALEMBIC_BUILD)
 	$(DOCKER_COMPOSE_ALEMBIC_UP)
-	$(DOCKER_COMPOSE_ALEMBIC) revision -m "baseline"
+	$(DOCKER_COMPOSE_ALEMBIC) alembic -c deployments/api/alembic.ini revision -m "baseline"
 
 alembic-autogenerate:
 	$(DOCKER_COMPOSE_ALEMBIC_BUILD)
 	$(DOCKER_COMPOSE_ALEMBIC_UP)
-	$(DOCKER_COMPOSE_ALEMBIC) revision --autogenerate -m "baseline"
+	$(DOCKER_COMPOSE_ALEMBIC) stitch.api.alembic_autogenerate
 
 stack-api-dev:
 	SEED_API_BASE_URL=http://host.docker.internal:8000/api/v1 \

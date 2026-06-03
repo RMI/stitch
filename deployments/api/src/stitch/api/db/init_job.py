@@ -14,6 +14,7 @@ import hashlib
 import json
 from sqlalchemy.sql.schema import Column
 
+from stitch.api.alembic import run_upgrade
 from stitch.api.db.model import StitchBase
 
 logger = logging.getLogger("db-init")
@@ -273,72 +274,9 @@ def schema_fingerprint(metadata) -> str:
 
 
 def main() -> None:
-    setup_logging()
-
-    settings = load_settings()
-    engine = create_engine(settings.database_url, pool_pre_ping=True)
-
-    logger.info("waiting for DB...")
-    wait_for_db(
-        engine,
-        timeout_s=settings.connect_timeout_s,
-        interval_s=settings.connect_retry_interval_s,
-    )
-
-    logger.info("connecting db engine...")
-    conn = engine.connect()
-
-    try:
-        logger.info("acquiring advisory lock...")
-        acquire_lock(conn)
-
-        expected = expected_table_names()
-        state, existing = classify_db_state(engine, expected)
-
-        logger.info("schema state: %s", state)
-
-        if settings.schema_mode is SchemaMode.NEVER:
-            if state == "partial_or_mismatch":
-                fail_partial(existing, expected)
-
-        elif settings.schema_mode is SchemaMode.ASSERT_ONLY:
-            if state == "empty":
-                raise RuntimeError(
-                    f"DB is empty but STITCH_DB_SCHEMA_MODE={SchemaMode.ASSERT_ONLY.value}."
-                )
-            if state == "partial_or_mismatch":
-                fail_partial(existing, expected)
-        elif settings.schema_mode is SchemaMode.IF_EMPTY:
-            if state == "partial_or_mismatch":
-                fail_partial(existing, expected)
-
-            if state == "empty":
-                logger.info("creating schema from ORM metadata...")
-                non_view_tables = [
-                    t
-                    for t in StitchBase.metadata.sorted_tables
-                    if not t.info.get("is_view")
-                ]
-                StitchBase.metadata.create_all(engine, tables=non_view_tables)
-                ensure_meta_tables(engine)
-                version = schema_fingerprint(StitchBase.metadata)
-                mark_schema_version(engine, version=version)
-            else:
-                ensure_meta_tables(engine)
-        else:
-            raise RuntimeError(f"Unknown STITCH_DB_SCHEMA_MODE: {settings.schema_mode}")
-
-        logger.info("done.")
-
-    finally:
-        logger.info("releasing advisory lock...")
-        try:
-            release_lock(conn)
-        except Exception:
-            logger.exception("ERROR releasing advisory lock")
-        finally:
-            conn.close()
-        engine.dispose()
+    # Compatibility shim: the old db-init entrypoint now runs Alembic-based
+    # migrations instead of SQLAlchemy metadata bootstrap.
+    run_upgrade("head")
 
 
 if __name__ == "__main__":

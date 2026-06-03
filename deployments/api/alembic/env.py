@@ -66,6 +66,18 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    external_connection = config.attributes.get("connection")
+    if external_connection is not None:
+        context.configure(
+            connection=external_connection,
+            target_metadata=target_metadata,
+            compare_type=True,
+        )
+
+        with context.begin_transaction():
+            context.run_migrations()
+        return
+
     configuration = config.get_section(config.config_ini_section, {})
     configuration["sqlalchemy.url"] = get_database_url()
 
