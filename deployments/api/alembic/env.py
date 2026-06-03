@@ -22,9 +22,7 @@ target_metadata = StitchBase.metadata
 
 
 def get_database_url() -> str:
-    return Settings().get_sync_database_url().render_as_string(
-        hide_password=False
-    )
+    return Settings().get_sync_database_url().render_as_string(hide_password=False)
 
 
 def wait_for_connection(connectable) -> None:
