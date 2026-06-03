@@ -1,6 +1,9 @@
 UV ?= uv
 DOCKER_COMPOSE := docker compose -f docker-compose.yml
 DOCKER_COMPOSE_DEV := $(DOCKER_COMPOSE) -f docker-compose.local.yml
+DOCKER_COMPOSE_ALEMBIC_BUILD := $(DOCKER_COMPOSE_DEV) --profile alembic build alembic
+DOCKER_COMPOSE_ALEMBIC_UP := $(DOCKER_COMPOSE_DEV) --profile alembic up db adminer -d
+DOCKER_COMPOSE_ALEMBIC := $(DOCKER_COMPOSE_DEV) --profile alembic run --rm alembic
 PYTEST := $(UV) run pytest
 RUFF := $(UV) run ruff
 TEST_PKG := ./scripts/test-package.py
@@ -131,6 +134,31 @@ api-dev: stack-api-dev
 		--reload-dir deployments/api/src \
 		--reload-dir packages \
 		--reload-exclude '*/tests/*'
+
+alembic-current:
+	$(DOCKER_COMPOSE_ALEMBIC_BUILD)
+	$(DOCKER_COMPOSE_ALEMBIC_UP)
+	$(DOCKER_COMPOSE_ALEMBIC) current
+
+alembic-history:
+	$(DOCKER_COMPOSE_ALEMBIC_BUILD)
+	$(DOCKER_COMPOSE_ALEMBIC_UP)
+	$(DOCKER_COMPOSE_ALEMBIC) history
+
+alembic-upgrade:
+	$(DOCKER_COMPOSE_ALEMBIC_BUILD)
+	$(DOCKER_COMPOSE_ALEMBIC_UP)
+	$(DOCKER_COMPOSE_ALEMBIC) upgrade head
+
+alembic-revision:
+	$(DOCKER_COMPOSE_ALEMBIC_BUILD)
+	$(DOCKER_COMPOSE_ALEMBIC_UP)
+	$(DOCKER_COMPOSE_ALEMBIC) revision -m "baseline"
+
+alembic-autogenerate:
+	$(DOCKER_COMPOSE_ALEMBIC_BUILD)
+	$(DOCKER_COMPOSE_ALEMBIC_UP)
+	$(DOCKER_COMPOSE_ALEMBIC) revision --autogenerate -m "baseline"
 
 stack-api-dev:
 	SEED_API_BASE_URL=http://host.docker.internal:8000/api/v1 \
@@ -276,6 +304,7 @@ follow-stack-logs:
 	\
 	# API
 	api-build api-test api-test-exact api-dev stack-api-dev \
+	alembic-current alembic-history alembic-upgrade alembic-revision alembic-autogenerate \
 	seed-test seed-test-exact \
 	stitch-llm-build stitch-llm-test stitch-llm-test-exact \
 	\
