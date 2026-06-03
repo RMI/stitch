@@ -33,7 +33,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      db-init:
+      alembic:
         condition: service_completed_successfully
 
   db:
@@ -60,7 +60,7 @@ services:
       - db_data:/var/lib/postgresql/data
       - ./deployments/db/00-init-roles.sh:/docker-entrypoint-initdb.d/00-init-roles.sh:ro
 
-  db-init:
+  alembic:
     build:
       context: .
       dockerfile: deployments/api/Dockerfile
@@ -73,13 +73,13 @@ services:
       - .env
     environment:
       LOG_LEVEL: ${DBINIT_LOG_LEVEL:-info}
-      # db-init connects as the migrator role (DDL + seed)
+      # Alembic migrator connects as the DDL role.
       POSTGRES_USER: stitch_migrator
       POSTGRES_PASSWORD: ${STITCH_MIGRATOR_PASSWORD:?STITCH_MIGRATOR_PASSWORD must be set in .env}
     depends_on:
       db:
         condition: service_healthy
-    command: ["python", "-m", "stitch.api.db.init_job"]
+    command: ["python", "-m", "stitch.api.alembic_upgrade"]
     restart: "no"
 
   frontend:
