@@ -81,3 +81,19 @@ def test_run_autogenerate_uses_shared_connection_for_alembic(monkeypatch):
     assert captured["message"] == "baseline"
     assert captured["autogenerate"] is True
     assert captured["connection"] is conn
+
+
+def test_alembic_upgrade_main_uses_cli_revision(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr("sys.argv", ["alembic_upgrade", "base"])
+    monkeypatch.setattr(
+        "stitch.api.alembic_upgrade.run_upgrade",
+        lambda revision: captured.setdefault("revision", revision),
+    )
+
+    from stitch.api.alembic_upgrade import main
+
+    main()
+
+    assert captured["revision"] == "base"
