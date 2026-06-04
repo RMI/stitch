@@ -34,9 +34,9 @@ def upgrade() -> None:
             sa.column("priority", sa.Integer),
         ),
         [
-            {"source": "gem", "priority": 1},
+            {"source": "rmi", "priority": 1},
             {"source": "wm", "priority": 2},
-            {"source": "rmi", "priority": 3},
+            {"source": "gem", "priority": 3},
             {"source": "llm", "priority": 4},
         ],
     )
