@@ -9,6 +9,8 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.engine import Engine
@@ -137,6 +139,19 @@ def _run_with_connection(
 
 def run_upgrade(revision: str = "head") -> None:
     def _upgrade(config: Config, settings: Settings) -> None:
+        conn = config.attributes["connection"]
+
+        if settings.revision == "head":
+            current = current_revision(conn)
+            head = head_revision(config)
+
+            if current == head:
+                logger.info(
+                    "database already at Alembic head %s; no migrations to run",
+                    head,
+                )
+                return
+
         command.upgrade(config, settings.revision)
 
     _run_with_connection(
@@ -154,3 +169,11 @@ def run_autogenerate(message: str = "baseline") -> None:
         operation_name=f'autogenerate revision "{message}"',
         runner=_autogenerate,
     )
+
+
+def current_revision(conn) -> str | None:
+    return MigrationContext.configure(conn).get_current_revision()
+
+
+def head_revision(config: Config) -> str | None:
+    return ScriptDirectory.from_config(config).get_current_head()
