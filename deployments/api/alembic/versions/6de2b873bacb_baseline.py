@@ -2,7 +2,7 @@
 
 Revision ID: 6de2b873bacb
 Revises:
-Create Date: 2026-06-03 14:03:40.860348
+Create Date: 2026-06-04 12:35:31.176312
 """
 
 from __future__ import annotations
@@ -298,6 +298,10 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["resource_id"],
             ["og_field_resources.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["source"],
+            ["og_field_source_priority.source"],
         ),
         sa.ForeignKeyConstraint(
             ["source_pk"],
