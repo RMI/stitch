@@ -9,8 +9,8 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlalchemy.exc import OperationalError
 
+from stitch.api.alembic import build_db_url
 from stitch.api.db.model import StitchBase
-from stitch.api.settings import Settings
 
 config = context.config
 
@@ -22,7 +22,7 @@ target_metadata = StitchBase.metadata
 
 
 def get_database_url() -> str:
-    return Settings().get_sync_database_url().render_as_string(hide_password=False)
+    return build_db_url()
 
 
 def wait_for_connection(connectable) -> None:
