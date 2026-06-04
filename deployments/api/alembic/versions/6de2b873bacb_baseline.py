@@ -27,6 +27,19 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("source"),
         sa.UniqueConstraint("priority"),
     )
+    op.bulk_insert(
+        sa.table(
+            "og_field_source_priority",
+            sa.column("source", sa.String),
+            sa.column("priority", sa.Integer),
+        ),
+        [
+            {"source": "gem", "priority": 1},
+            {"source": "wm", "priority": 2},
+            {"source": "rmi", "priority": 3},
+            {"source": "llm", "priority": 4},
+        ],
+    )
     op.create_table(
         "users",
         sa.Column("id", sa.Integer(), nullable=False),
