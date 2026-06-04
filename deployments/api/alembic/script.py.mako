@@ -1,4 +1,5 @@
 """${message}
+TODO: manually inspect this upgrade script to ensure effect matches intent, then delete this line
 
 Revision ID: ${up_revision}
 Revises: ${down_revision | comma,n}
