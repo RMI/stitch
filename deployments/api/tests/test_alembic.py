@@ -40,6 +40,8 @@ def test_run_upgrade_uses_shared_connection_for_alembic(monkeypatch):
     monkeypatch.setattr(api_alembic, "create_engine", lambda *args, **kwargs: engine)
     monkeypatch.setattr(api_alembic, "wait_for_db", lambda *args, **kwargs: None)
     monkeypatch.setattr(api_alembic, "setup_logging", lambda: None)
+    monkeypatch.setattr(api_alembic, "current_revision", lambda conn: "base")
+    monkeypatch.setattr(api_alembic, "head_revision", lambda config: "head")
 
     captured: dict[str, object] = {}
 
@@ -97,3 +99,23 @@ def test_alembic_upgrade_main_uses_cli_revision(monkeypatch):
     main()
 
     assert captured["revision"] == "base"
+
+def test_run_upgrade_logs_when_already_at_head(monkeypatch, caplog):
+    conn = MagicMock()
+
+    engine = MagicMock()
+    engine.begin.return_value.__enter__.return_value = conn
+
+    monkeypatch.setattr(api_alembic, "create_engine", lambda *args, **kwargs: engine)
+    monkeypatch.setattr(api_alembic, "wait_for_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr(api_alembic, "setup_logging", lambda: None)
+    monkeypatch.setattr(api_alembic, "current_revision", lambda conn: "head")
+    monkeypatch.setattr(api_alembic, "head_revision", lambda config: "head")
+
+    upgrade = MagicMock()
+    monkeypatch.setattr(api_alembic.command, "upgrade", upgrade)
+
+    api_alembic.run_upgrade()
+
+    upgrade.assert_not_called()
+    assert "database already at Alembic head head; no migrations to run" in caplog.text
