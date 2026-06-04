@@ -132,26 +132,6 @@ api-dev: stack-api-dev
 		--reload-dir packages \
 		--reload-exclude '*/tests/*'
 
-alembic-current:
-	$(DOCKER_COMPOSE_ALEMBIC_BUILD)
-	$(DOCKER_COMPOSE_ALEMBIC_UP)
-	$(DOCKER_COMPOSE_ALEMBIC) alembic -c deployments/api/alembic.ini current
-
-alembic-history:
-	$(DOCKER_COMPOSE_ALEMBIC_BUILD)
-	$(DOCKER_COMPOSE_ALEMBIC_UP)
-	$(DOCKER_COMPOSE_ALEMBIC) alembic -c deployments/api/alembic.ini history
-
-alembic-upgrade:
-	$(DOCKER_COMPOSE_ALEMBIC_BUILD)
-	$(DOCKER_COMPOSE_ALEMBIC_UP)
-	$(DOCKER_COMPOSE_ALEMBIC) stitch.api.alembic_upgrade
-
-alembic-revision:
-	$(DOCKER_COMPOSE_ALEMBIC_BUILD)
-	$(DOCKER_COMPOSE_ALEMBIC_UP)
-	$(DOCKER_COMPOSE_ALEMBIC) alembic -c deployments/api/alembic.ini revision -m "baseline"
-
 alembic-autogenerate:
 	$(DOCKER_COMPOSE_DEV) --profile alembic-generate build alembic-generate
 	$(DOCKER_COMPOSE_DEV) --profile alembic-generate run --rm alembic-generate
@@ -300,7 +280,7 @@ follow-stack-logs:
 	\
 	# API
 	api-build api-test api-test-exact api-dev stack-api-dev \
-	alembic-current alembic-history alembic-upgrade alembic-revision alembic-autogenerate \
+	alembic-autogenerate \
 	seed-test seed-test-exact \
 	stitch-llm-build stitch-llm-test stitch-llm-test-exact \
 	\
