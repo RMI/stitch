@@ -35,7 +35,7 @@ def test_run_upgrade_uses_shared_connection_for_alembic(monkeypatch):
     conn.__exit__.return_value = False
 
     engine = MagicMock()
-    engine.connect.return_value = conn
+    engine.begin.return_value.__enter__.return_value = conn
 
     monkeypatch.setattr(api_alembic, "create_engine", lambda *args, **kwargs: engine)
     monkeypatch.setattr(api_alembic, "wait_for_db", lambda *args, **kwargs: None)
@@ -61,7 +61,7 @@ def test_run_autogenerate_uses_shared_connection_for_alembic(monkeypatch):
     conn.__exit__.return_value = False
 
     engine = MagicMock()
-    engine.connect.return_value = conn
+    engine.begin.return_value.__enter__.return_value = conn
 
     monkeypatch.setattr(api_alembic, "create_engine", lambda *args, **kwargs: engine)
     monkeypatch.setattr(api_alembic, "wait_for_db", lambda *args, **kwargs: None)
