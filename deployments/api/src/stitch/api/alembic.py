@@ -73,7 +73,7 @@ def wait_for_db(engine: Engine, timeout_s: int, interval_s: float) -> None:
     last_err: Exception | None = None
     while time.time() < deadline:
         try:
-            with engine.connect() as conn:
+            with engine.begin() as conn:
                 conn.execute(text("SELECT 1"))
             return
         except OperationalError as exc:
@@ -117,7 +117,7 @@ def _run_with_connection(
     )
 
     logger.info("running alembic %s...", operation_name)
-    with engine.connect() as conn:
+    with engine.begin() as conn:
         try:
             if settings.use_advisory_lock:
                 logger.info("acquiring advisory lock...")
