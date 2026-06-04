@@ -1,9 +1,6 @@
 UV ?= uv
 DOCKER_COMPOSE := docker compose -f docker-compose.yml
 DOCKER_COMPOSE_DEV := $(DOCKER_COMPOSE) -f docker-compose.local.yml
-DOCKER_COMPOSE_ALEMBIC_BUILD := $(DOCKER_COMPOSE_DEV) --profile alembic build alembic
-DOCKER_COMPOSE_ALEMBIC_UP := $(DOCKER_COMPOSE_DEV) --profile alembic up db adminer -d
-DOCKER_COMPOSE_ALEMBIC := $(DOCKER_COMPOSE_DEV) --profile alembic run --rm alembic
 PYTEST := $(UV) run pytest
 RUFF := $(UV) run ruff
 TEST_PKG := ./scripts/test-package.py
@@ -156,9 +153,8 @@ alembic-revision:
 	$(DOCKER_COMPOSE_ALEMBIC) alembic -c deployments/api/alembic.ini revision -m "baseline"
 
 alembic-autogenerate:
-	$(DOCKER_COMPOSE_ALEMBIC_BUILD)
-	$(DOCKER_COMPOSE_ALEMBIC_UP)
-	$(DOCKER_COMPOSE_ALEMBIC) stitch.api.alembic_autogenerate
+	$(DOCKER_COMPOSE_DEV) --profile alembic-generate build alembic-generate
+	$(DOCKER_COMPOSE_DEV) --profile alembic-generate run --rm alembic-generate
 
 stack-api-dev:
 	SEED_API_BASE_URL=http://host.docker.internal:8000/api/v1 \

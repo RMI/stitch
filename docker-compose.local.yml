@@ -4,10 +4,38 @@ services:
     image: adminer:latest
     ports:
       - "8081:8080"
-    profiles: ["tools", "full"]
+    profiles: ["tools", "full", "alembic-generate"]
     depends_on:
       db:
         condition: service_healthy
+
+  alembic-generate:
+    build:
+      context: .
+      dockerfile: deployments/api/Dockerfile
+      args:
+        APP_VERSION: ${API_APP_VERSION:-0.1.0}
+        BUILD_ID: ${API_BUILD_ID:-docker-local}
+        GIT_SHA: ${API_GIT_SHA:-unknown}
+        BUILD_TIME: ${API_BUILD_TIME:-unknown}
+    read_only: true
+    env_file:
+      - .env
+    environment:
+      LOG_LEVEL: ${DBINIT_LOG_LEVEL:-info}
+      # Alembic migrator connects as the DDL role.
+      POSTGRES_USER: stitch_migrator
+      POSTGRES_PASSWORD: ${STITCH_MIGRATOR_PASSWORD:?STITCH_MIGRATOR_PASSWORD must be set in .env}
+    depends_on:
+      db:
+        condition: service_healthy
+      alembic:
+        condition: service_completed_successfully
+    volumes:
+      - ./deployments/api/alembic/versions:/app/deployments/api/alembic/versions:rw
+    command: ["python", "-m", "stitch.api.alembic_autogenerate"]
+    profiles: ["tools", "full", "alembic-generate"]
+    restart: "no"
 
   seed:
     build:
