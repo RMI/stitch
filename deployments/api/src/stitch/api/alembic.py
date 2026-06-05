@@ -171,6 +171,16 @@ def run_autogenerate(message: str = "baseline") -> None:
     )
 
 
+def run_check() -> None:
+    def _check(config: Config, settings: Settings) -> None:
+        command.check(config)
+
+    _run_with_connection(
+        operation_name="check",
+        runner=_check,
+    )
+
+
 def current_revision(conn) -> str | None:
     return MigrationContext.configure(conn).get_current_revision()
 
