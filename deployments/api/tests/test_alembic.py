@@ -29,6 +29,14 @@ def test_build_db_url_uses_app_settings_sync_url(monkeypatch):
     assert url == expected.render_as_string(hide_password=False)
 
 
+def test_build_db_url_normalizes_async_sqlite_database_url(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///tmp/test.db")
+
+    url = api_alembic.build_db_url()
+
+    assert url == "sqlite+pysqlite:///tmp/test.db"
+
+
 def test_run_upgrade_uses_shared_connection_for_alembic(monkeypatch):
     conn = MagicMock()
     conn.__enter__.return_value = conn
