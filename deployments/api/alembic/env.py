@@ -9,20 +9,22 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlalchemy.exc import OperationalError
 
-from stitch.api.alembic import build_db_url
+from stitch.api.alembic_support import build_database_url
 from stitch.api.db.model import StitchBase
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+else:
+    logging.basicConfig(level=logging.INFO)
 
 logger = logging.getLogger("alembic.env")
 target_metadata = StitchBase.metadata
 
 
 def get_database_url() -> str:
-    return build_db_url()
+    return build_database_url()
 
 
 def wait_for_connection(connectable) -> None:
