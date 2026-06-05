@@ -8,9 +8,10 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.engine import make_url
 
-from stitch.api.alembic_support import build_database_url
 from stitch.api.db.model import StitchBase
+from stitch.api.settings import Settings as ApiSettings
 
 config = context.config
 
@@ -24,7 +25,13 @@ target_metadata = StitchBase.metadata
 
 
 def get_database_url() -> str:
-    return build_database_url()
+    url = os.environ.get("DATABASE_URL")
+    if url:
+        parsed = make_url(url)
+        if parsed.drivername == "sqlite+aiosqlite":
+            parsed = parsed.set(drivername="sqlite+pysqlite")
+        return parsed.render_as_string(hide_password=False)
+    return ApiSettings().get_sync_database_url().render_as_string(hide_password=False)
 
 
 def wait_for_connection(connectable) -> None:
