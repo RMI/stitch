@@ -194,10 +194,10 @@ jobs:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       deployment-name: ${{ needs.resolve-context.outputs.deployment-name }}
 
-  run-db-init:
-    name: "Run DB init"
+  run-db-migrations:
+    name: "Run DB Migrations"
     needs: [resolve-context, build-api-docker-image, deploy-db]
-    uses: ./.github/workflows/run-db-init.yml
+    uses: ./.github/workflows/run-alembic.yml
     secrets:
       stitch-migrator-password: ${{ secrets.STITCH_MIGRATOR_PASSWORD }}
     with:
@@ -210,7 +210,7 @@ jobs:
 
   deploy-api:
     name: "Deploy API"
-    needs: [resolve-context, lane-config-validate, build-api-docker-image, deploy-db, run-db-init]
+    needs: [resolve-context, lane-config-validate, build-api-docker-image, deploy-db, run-db-migrations]
     uses: ./.github/workflows/deploy-container.yml
     secrets:
       azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -326,4 +326,4 @@ jobs:
     if: ${{ always() && github.event_name == 'pull_request' }}
     uses: ./.github/workflows/comment-pr-summary.yml
     secrets: inherit
-    needs: [resolve-context, build-api-docker-image, build-entity-linkage-docker-image, build-stitch-llm-docker-image, build-seed-docker-image, deploy-db, run-db-init, deploy-api, deploy-entity-linkage, deploy-stitch-llm, run-seed, deploy-frontend]
+    needs: [resolve-context, build-api-docker-image, build-entity-linkage-docker-image, build-stitch-llm-docker-image, build-seed-docker-image, deploy-db, run-db-migrations, deploy-api, deploy-entity-linkage, deploy-stitch-llm, run-seed, deploy-frontend]

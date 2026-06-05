@@ -28,10 +28,10 @@ on:
       stitch-migrator-password:
         required: true
 
-name: Run DB Init
+name: Run DB Migrations
 
 jobs:
-  run-db-init:
+  run-db-migrations:
     runs-on: ubuntu-latest
     environment: ${{ inputs.deployment-lane }}
     permissions:
@@ -51,10 +51,10 @@ jobs:
       - name: Log in to GHCR
         run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      - name: Pull init image
+      - name: Pull migrator image
         run: docker pull "${{ inputs.full-image-name }}"
 
-      - name: Run DB init job
+      - name: Run DB migrations job
         env:
           LOG_LEVEL: info
           POSTGRES_HOST: ${{ inputs.postgres-host }}
@@ -74,7 +74,7 @@ jobs:
             -e POSTGRES_PASSWORD \
             -e PGSSLMODE \
             "${{ inputs.full-image-name }}" \
-            python -m stitch.api.db.init_job
+            alembic -c deployments/api/alembic.ini upgrade head
 
       - name: Write comment JSON
         if: ${{ github.event_name == 'pull_request' }}
@@ -82,13 +82,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/comment-json
-          json_file="/tmp/comment-json/comment-json-db-init.json"
+          json_file="/tmp/comment-json/comment-json-db-migrations.json"
 
           jq -n \
             --arg section "jobs" \
-            --arg kind "db_init" \
-            --arg name "db-init" \
-            --arg job "db-init" \
+            --arg kind "db_migrations" \
+            --arg name "db-migrations" \
+            --arg job "db-migrations" \
             --arg image '`${{ inputs.full-image-name }}`' \
             --arg postgres_db '`${{ inputs.postgres-db }}`' \
             '{
@@ -110,6 +110,6 @@ jobs:
         if: ${{ github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v4
         with:
-          name: comment-json-db-init
+          name: comment-json-db-migrations
           path: /tmp/comment-json/*.json
           if-no-files-found: error

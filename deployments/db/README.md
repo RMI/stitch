@@ -146,7 +146,7 @@ docker run \
   -e POSTGRES_PASSWORD='CHANGE_ME123!' \
   -e POSTGRES_DB=<database_name> \
   --rm \
-  stitch-api:latest python -m stitch.api.db.init_job
+  stitch-api:latest alembic -c deployments/api/alembic.ini upgrade head
 ```
 
 Re-run API container.
@@ -163,7 +163,7 @@ It will eventually be replaced with CI-driven migrations.
 
 ### Local Docker Database
 
-Remove docker volume (`make clean-docker`) and re-run `db-init`.
+Remove docker volume (`make clean-docker`) and re-run `alembic`.
 
 ### Shared Cloud Database Strategy
 
@@ -187,10 +187,9 @@ stitch → stitch_old_YYYYMMDD
 5. Run:
 
 ```bash
-docker compose up db-init
+docker compose up alembic
 ```
 
 This should recreate schema and seed data.
 
 Manual schema diffs are not currently supported.
-

@@ -34,6 +34,9 @@ class PostgresConfig(BaseSettings, cli_parse_args=False):
             port=self.port,
         )
 
+    def to_sync_url(self) -> URL:
+        return self.to_url()
+
 
 class SqliteConfig(BaseSettings):
     db_path: Path | None = None
@@ -48,6 +51,10 @@ class SqliteConfig(BaseSettings):
     def to_url(self) -> URL:
         db = str(self.db_path) if self.db_path is not None else ":memory:"
         return URL.create(drivername="sqlite+aiosqlite", database=db)
+
+    def to_sync_url(self) -> URL:
+        db = str(self.db_path) if self.db_path is not None else ":memory:"
+        return URL.create(drivername="sqlite+pysqlite", database=db)
 
 
 def _validate_origin(url: HttpUrl):
@@ -102,6 +109,11 @@ class Settings(BaseSettings):
         if self.dialect == "sqlite":
             return SqliteConfig().to_url()
         return PostgresConfig().to_url()
+
+    def get_sync_database_url(self) -> URL:
+        if self.dialect == "sqlite":
+            return SqliteConfig().to_sync_url()
+        return PostgresConfig().to_sync_url()
 
 
 @lru_cache
