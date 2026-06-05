@@ -80,7 +80,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    command: ["python", "-m", "stitch.api.alembic_upgrade"]
+    command: ["alembic", "-c", "deployments/api/alembic.ini", "upgrade", "head"]
     restart: "no"
 
   frontend:

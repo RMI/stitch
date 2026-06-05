@@ -74,7 +74,7 @@ jobs:
             -e POSTGRES_PASSWORD \
             -e PGSSLMODE \
             "${{ inputs.full-image-name }}" \
-            python -m stitch.api.alembic_upgrade head
+            alembic -c deployments/api/alembic.ini upgrade head
 
       - name: Write comment JSON
         if: ${{ github.event_name == 'pull_request' }}

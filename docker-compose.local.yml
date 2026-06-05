@@ -33,7 +33,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./deployments/api/alembic/versions:/app/deployments/api/alembic/versions:rw
-    command: ["python", "-m", "stitch.api.alembic_autogenerate"]
+    command: ["alembic", "-c", "deployments/api/alembic.ini", "revision", "--autogenerate", "-m", "baseline"]
     profiles: ["tools", "full", "alembic-generate"]
     restart: "no"
 
