@@ -45,7 +45,7 @@ environment) are shared within a deploy lane (all `development` lane
 deployments, `pr-*`, `main` deploy to the same PostgreSQL instance, with
 separate logical DBs)
 
-It also handles running `db-init` (`api` container with different script) and
+It also handles running `db-migrations` (via Alembic in the `api` image) and
 `seed`, both directly from GH Actions (rather than starting on Azure).
 
 ## Azure Permissions
@@ -158,5 +158,5 @@ Current validation behavior:
   * `STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN`
   * `STITCH_CLIENT_LLM_BEARER_TOKEN`
   * If any of `STITCH_LLM_AZURE_OPENAI_BASE_URL`, `STITCH_LLM_AZURE_OPENAI_MODEL`, or `STITCH_LLM_AZURE_OPENAI_API_KEY` are set, all three must be set
-* DB init validates `STITCH_MIGRATOR_PASSWORD`
+* DB migrations validate `STITCH_MIGRATOR_PASSWORD`
 * frontend deploy validates `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
