@@ -1,10 +1,6 @@
 on:
   workflow_call:
     inputs:
-      deployment-lane:
-        description: "Deployment lane and GitHub Environment name"
-        required: true
-        type: string
       full-image-name:
         description: "Full pushed image name including host/registry, name, and tag"
         required: true
@@ -52,7 +48,6 @@ on:
 jobs:
   deploy-container-app:
     runs-on: ubuntu-latest
-    environment: ${{ inputs.deployment-lane }}
     permissions:
       id-token: write
       contents: read
@@ -62,7 +57,7 @@ jobs:
       container-app-url: ${{ steps.export-app-url.outputs.container-app-url }}
       container-app-fqdn: ${{ steps.export-app-url.outputs.container-app-fqdn }}
     steps:
-      - name: Validate lane config
+      - name: Validate config
         shell: bash
         env:
           AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}

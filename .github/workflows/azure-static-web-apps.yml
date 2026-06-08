@@ -3,10 +3,6 @@ name: Azure Static Web Apps CI/CD
 on:
   workflow_call:
     inputs:
-      deployment-lane:
-        description: "Deployment lane and GitHub Environment name"
-        required: true
-        type: string
       artifact-name:
         description: "Uploaded frontend artifact name"
         required: true
@@ -51,7 +47,6 @@ on:
 jobs:
   build-and-deploy-job:
     runs-on: ubuntu-latest
-    environment: ${{ inputs.deployment-lane }}
     name: Build and Deploy Job
     permissions:
       checks: write
@@ -59,7 +54,7 @@ jobs:
       id-token: write
       pull-requests: write
     steps:
-      - name: Validate lane secrets
+      - name: Validate secrets
         shell: bash
         env:
           AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN: ${{ secrets.azure-static-web-apps-deploy-token }}

@@ -3,10 +3,6 @@ name: Run seed job
 on:
   workflow_call:
     inputs:
-      deployment-lane:
-        description: "Deployment lane and GitHub Environment name"
-        required: true
-        type: string
       full-image-name:
         description: "Full pushed image name including host/registry, name, and digest"
         required: true
@@ -22,7 +18,6 @@ on:
 jobs:
   run-seed:
     runs-on: ubuntu-latest
-    environment: ${{ inputs.deployment-lane }}
     permissions:
       contents: read
       packages: read
