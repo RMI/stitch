@@ -26,11 +26,11 @@ on:
         type: string
     secrets:
       azure-client-id:
-        required: true
+        required: false
       azure-tenant-id:
-        required: true
+        required: false
       azure-subscription-id:
-        required: true
+        required: false
       stitch-app-password:
         required: false
       stitch-client-bearer-token:
@@ -66,6 +66,34 @@ jobs:
           set -euo pipefail
           : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
           : "${AZURE_CONTAINER_APP_ENVIRONMENT:?Missing required variable AZURE_CONTAINER_APP_ENVIRONMENT}"
+
+      - name: Validate secrets
+        shell: bash
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.azure-client-id }}
+          AZURE_TENANT_ID: ${{ secrets.azure-tenant-id }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.azure-subscription-id }}
+          STITCH_APP_PASSWORD: ${{ secrets.stitch-app-password }}
+          STITCH_CLIENT_BEARER_TOKEN: ${{ secrets.stitch-client-bearer-token }}
+          STITCH_LLM_AZURE_OPENAI_API_KEY: ${{ secrets.stitch-llm-azure-openai-api-key }}
+        run: |
+          set -euo pipefail
+
+          # Required
+          : "${AZURE_CLIENT_ID:?Missing required secret AZURE_CLIENT_ID}"
+          : "${AZURE_TENANT_ID:?Missing required secret AZURE_TENANT_ID}"
+          : "${AZURE_SUBSCRIPTION_ID:?Missing required secret AZURE_SUBSCRIPTION_ID}"
+
+          # Optional (log only)
+          if [ -z "${STITCH_APP_PASSWORD:-}" ]; then
+            echo "ℹ️ STITCH_APP_PASSWORD not set"
+          fi
+          if [ -z "${STITCH_CLIENT_BEARER_TOKEN:-}" ]; then
+            echo "ℹ️ STITCH_CLIENT_BEARER_TOKEN not set"
+          fi
+          if [ -z "${STITCH_LLM_AZURE_OPENAI_API_KEY:-}" ]; then
+            echo "ℹ️ STITCH_LLM_AZURE_OPENAI_API_KEY not set"
+          fi
 
       - name: Azure login
         uses: azure/login@v3

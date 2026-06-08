@@ -9,11 +9,11 @@ on:
         type: string
     secrets:
       azure-client-id:
-        required: true
+        required: false
       azure-tenant-id:
-        required: true
+        required: false
       azure-subscription-id:
-        required: true
+        required: false
 
 jobs:
   delete-container-app:
@@ -29,6 +29,18 @@ jobs:
         run: |
           set -euo pipefail
           : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
+
+      - name: Validate secrets
+        shell: bash
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.azure-client-id }}
+          AZURE_TENANT_ID: ${{ secrets.azure-tenant-id }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.azure-subscription-id }}
+        run: |
+          set -euo pipefail
+          : "${AZURE_CLIENT_ID:?Missing required secret AZURE_CLIENT_ID}"
+          : "${AZURE_TENANT_ID:?Missing required secret AZURE_TENANT_ID}"
+          : "${AZURE_SUBSCRIPTION_ID:?Missing required secret AZURE_SUBSCRIPTION_ID}"
 
       - name: Azure login
         uses: azure/login@v3

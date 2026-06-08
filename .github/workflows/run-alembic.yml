@@ -22,7 +22,7 @@ on:
         type: string
     secrets:
       stitch-migrator-password:
-        required: true
+        required: false
 
 name: Run DB Migrations
 

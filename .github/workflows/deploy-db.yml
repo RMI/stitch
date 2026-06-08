@@ -8,11 +8,11 @@ on:
         type: string
     secrets:
       pgpassword:
-        required: true
+        required: false
       stitch-migrator-password:
-        required: true
+        required: false
       stitch-app-password:
-        required: true
+        required: false
     outputs:
       database-created:
         description: "Whether this workflow created the database during this run"
@@ -69,6 +69,18 @@ jobs:
               exit 1
               ;;
           esac
+
+      - name: Validate secrets
+        shell: bash
+        env:
+          PGPASSWORD: ${{ secrets.pgpassword }}
+          STITCH_MIGRATOR_PASSWORD: ${{ secrets.stitch-migrator-password }}
+          STITCH_APP_PASSWORD: ${{ secrets.stitch-app-password }}
+        run: |
+          set -euo pipefail
+          : "${PGPASSWORD:?Missing required secret PGPASSWORD}"
+          : "${STITCH_MIGRATOR_PASSWORD:?Missing required secret STITCH_MIGRATOR_PASSWORD}"
+          : "${STITCH_APP_PASSWORD:?Missing required secret STITCH_APP_PASSWORD}"
 
       - name: Install psql client
         run: |

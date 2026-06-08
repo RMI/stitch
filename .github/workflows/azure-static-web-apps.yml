@@ -42,7 +42,7 @@ on:
         type: string
     secrets:
       azure-static-web-apps-deploy-token:
-        required: true
+        required: false
 
 jobs:
   build-and-deploy-job:
