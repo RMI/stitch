@@ -184,7 +184,6 @@ jobs:
 
   deploy-db:
     name: "Create DB"
-    environment: ${{ needs.resolve-context.outputs.deployment-lane }}
     needs: [resolve-context]
     uses: ./.github/workflows/deploy-db.yml
     secrets:
@@ -192,16 +191,17 @@ jobs:
       stitch-migrator-password: ${{ secrets.STITCH_MIGRATOR_PASSWORD }}
       stitch-app-password: ${{ secrets.STITCH_APP_PASSWORD }}
     with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       deployment-name: ${{ needs.resolve-context.outputs.deployment-name }}
 
   run-db-migrations:
     name: "Run DB Migrations"
-    environment: ${{ needs.resolve-context.outputs.deployment-lane }}
     needs: [resolve-context, build-api-docker-image, deploy-db]
     uses: ./.github/workflows/run-alembic.yml
     secrets:
       stitch-migrator-password: ${{ secrets.STITCH_MIGRATOR_PASSWORD }}
     with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
       postgres-host: ${{ needs.deploy-db.outputs.postgres-host }}
       postgres-port: ${{ needs.deploy-db.outputs.postgres-port }}
@@ -210,7 +210,6 @@ jobs:
 
   deploy-api:
     name: "Deploy API"
-    environment: ${{ needs.resolve-context.outputs.deployment-lane }}
     needs: [resolve-context, lane-config-validate, build-api-docker-image, deploy-db, run-db-migrations]
     uses: ./.github/workflows/deploy-container.yml
     secrets:
@@ -219,6 +218,7 @@ jobs:
       azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       stitch-app-password: ${{ secrets.STITCH_APP_PASSWORD }}
     with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
       container-app-name: ${{ format('{0}-api', needs.resolve-context.outputs.deployment-name) }}
       environment-variables: >-
@@ -240,7 +240,6 @@ jobs:
 
   deploy-entity-linkage:
     name: "Deploy entity linkage"
-    environment: ${{ needs.resolve-context.outputs.deployment-lane }}
     needs: [resolve-context, lane-config-validate, build-entity-linkage-docker-image, deploy-api]
     uses: ./.github/workflows/deploy-container.yml
     secrets:
@@ -249,6 +248,7 @@ jobs:
       azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       stitch-client-bearer-token: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
     with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       full-image-name: ${{ needs.build-entity-linkage-docker-image.outputs.digest-image-name }}
       container-app-name: ${{ format('{0}-entity-linkage', needs.resolve-context.outputs.deployment-name) }}
       environment-variables: >-
@@ -265,7 +265,6 @@ jobs:
 
   deploy-stitch-llm:
     name: "Deploy stitch-llm"
-    environment: ${{ needs.resolve-context.outputs.deployment-lane }}
     needs: [resolve-context, lane-config-validate, build-stitch-llm-docker-image, deploy-api]
     uses: ./.github/workflows/deploy-container.yml
     secrets:
@@ -275,6 +274,7 @@ jobs:
       stitch-client-bearer-token: ${{ secrets.STITCH_CLIENT_LLM_BEARER_TOKEN }}
       stitch-llm-azure-openai-api-key: ${{ secrets.STITCH_LLM_AZURE_OPENAI_API_KEY }}
     with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       full-image-name: ${{ needs.build-stitch-llm-docker-image.outputs.digest-image-name }}
       container-app-name: ${{ format('{0}-stitch-llm', needs.resolve-context.outputs.deployment-name) }}
       environment-variables: >-
@@ -294,24 +294,24 @@ jobs:
 
   run-seed:
     name: "Run seed"
-    environment: ${{ needs.resolve-context.outputs.deployment-lane }}
     if: ${{ needs.deploy-db.outputs.database-created == 'true' }}
     needs: [resolve-context, build-seed-docker-image, deploy-db, deploy-api]
     uses: ./.github/workflows/run-seed.yml
     secrets:
       stitch-client-bearer-token: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
     with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       full-image-name: ${{ needs.build-seed-docker-image.outputs.digest-image-name }}
       api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
 
   deploy-frontend:
     name: "Deploy frontend"
-    environment: ${{ needs.resolve-context.outputs.deployment-lane }}
     needs: [resolve-context, lane-config-validate, build-frontend, deploy-api, deploy-entity-linkage, deploy-stitch-llm]
     uses: ./.github/workflows/azure-static-web-apps.yml
     secrets:
       azure-static-web-apps-deploy-token: ${{ secrets.AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN }}
     with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       artifact-name: dist-tgz
       deployment-name: ${{ needs.resolve-context.outputs.deployment-name }}
       api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}

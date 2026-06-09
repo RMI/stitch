@@ -3,6 +3,10 @@ name: Delete Container App
 on:
   workflow_call:
     inputs:
+      deployment-lane:
+        description: Deployment lane and GitHub Environment name
+        required: true
+        type: string
       container-app-name:
         description: The name of the Azure Container App to delete
         required: true
@@ -18,11 +22,12 @@ on:
 jobs:
   delete-container-app:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.deployment-lane }}
     permissions:
       id-token: write
       contents: read
     steps:
-      - name: Validate config
+      - name: Validate lane config
         shell: bash
         env:
           AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}

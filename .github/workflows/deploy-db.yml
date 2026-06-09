@@ -2,6 +2,10 @@
 on:
   workflow_call:
     inputs:
+      deployment-lane:
+        description: "Deployment lane and GitHub Environment name"
+        required: true
+        type: string
       deployment-name:
         description: "Concrete deployment target name"
         required: true
@@ -38,6 +42,7 @@ name: Create Database
 jobs:
   create-db:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.deployment-lane }}
     outputs:
       database-created: ${{ steps.create-db.outputs.database-created }}
       postgres-host: ${{ steps.export-db-config.outputs.postgres-host }}
@@ -54,7 +59,7 @@ jobs:
       PGDATABASE: ${{ vars.POSTGRES_DEFAULT_DB || 'postgres' }}
       DB_NAME_RAW: ${{ inputs.deployment-name }}
     steps:
-      - name: Validate config
+      - name: Validate lane config
         shell: bash
         run: |
           set -euo pipefail

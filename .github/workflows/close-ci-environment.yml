@@ -23,7 +23,7 @@ jobs:
       PGDATABASE: ${{ vars.POSTGRES_DEFAULT_DB || 'postgres' }}
       DB_NAME_RAW: ${{ needs.resolve-context.outputs.deployment-name }}
     steps:
-      - name: Validate config
+      - name: Validate lane config
         shell: bash
         run: |
           set -euo pipefail
@@ -73,7 +73,6 @@ jobs:
 
   delete-api-container-app:
     name: Delete API container app
-    environment: ${{ needs.resolve-context.outputs.deployment-lane }}
     needs: [resolve-context]
     uses: ./.github/workflows/delete-container-app.yml
     secrets:
@@ -81,11 +80,11 @@ jobs:
       azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
       azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       container-app-name: ${{ format('{0}-api', needs.resolve-context.outputs.deployment-name) }}
 
   delete-entity-linkage-container-app:
     name: Delete entity-linkage container app
-    environment: ${{ needs.resolve-context.outputs.deployment-lane }}
     needs: [resolve-context]
     uses: ./.github/workflows/delete-container-app.yml
     secrets:
@@ -93,11 +92,11 @@ jobs:
       azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
       azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       container-app-name: ${{ format('{0}-entity-linkage', needs.resolve-context.outputs.deployment-name) }}
 
   delete-stitch-llm-container-app:
     name: Delete stitch-llm container app
-    environment: ${{ needs.resolve-context.outputs.deployment-lane }}
     needs: [resolve-context]
     uses: ./.github/workflows/delete-container-app.yml
     secrets:
@@ -105,6 +104,7 @@ jobs:
       azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
       azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       container-app-name: ${{ format('{0}-stitch-llm', needs.resolve-context.outputs.deployment-name) }}
 
   close-static-web-app-preview:
@@ -117,7 +117,7 @@ jobs:
       id-token: write
       pull-requests: write
     steps:
-      - name: Validate secrets
+      - name: Validate lane secrets
         shell: bash
         env:
           AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN }}
