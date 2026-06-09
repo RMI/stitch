@@ -83,10 +83,7 @@ class Resource[TResId: IdType, TSrc: Source](BaseModel):
         return self
 
 
-class Resource_[
-    TResId: IdType,
-    TPayload: SourcePayload,
-](BaseModel):
+class Resource_[TResId: IdType, TPayload: SourcePayload](BaseModel):
     id: TResId | None = None
     source_data: TPayload
     repointed_to: TResId | None = Field(default=None)
