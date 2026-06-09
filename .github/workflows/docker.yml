@@ -23,3 +23,7 @@ jobs:
   compose-build:
     name: "docker compose build"
     uses: ./.github/workflows/docker-compose-build.yml
+
+  alembic-check:
+    name: "alembic check"
+    uses: ./.github/workflows/docker-alembic-check.yml
