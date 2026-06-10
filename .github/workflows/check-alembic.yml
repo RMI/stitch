@@ -89,13 +89,10 @@ jobs:
           SECRET_APP_PASSWORD: ${{ secrets.stitch-app-password }}
         run: |
           set -euo pipefail
-          # Secret takes precedence; fall back to env.example value for the throwaway path.
           # Grep rather than sourcing .env wholesale — sourcing would overwrite the GH env
           # vars above (e.g. POSTGRES_HOST=db would clobber the 127.0.0.1 we set).
-          # Grep rather than sourcing .env wholesale — sourcing would overwrite the GH env
-          # vars above (e.g. POSTGRES_HOST=db would clobber the 127.0.0.1 we set).
-          # Use assignment form (-e KEY=VALUE) so the resolved password is passed explicitly
-          # rather than relying on a local shell variable being exported.
+          # Use assignment form (-e KEY=VALUE) so the resolved password reaches the container
+          # rather than relying on the shell variable being exported.
           _env_app_password=$(grep '^STITCH_APP_PASSWORD=' .env | cut -d= -f2-)
           docker run --rm --network host \
             -e POSTGRES_HOST \
