@@ -220,7 +220,7 @@ jobs:
 
   check-db-migrations-live:
     name: "Check DB Migrations (live)"
-    needs: [build-api-docker-image, deploy-db, run-db-migrations]
+    needs: [resolve-context, build-api-docker-image, deploy-db, run-db-migrations]
     uses: ./.github/workflows/check-alembic.yml
     permissions:
       contents: read
@@ -229,6 +229,7 @@ jobs:
       stitch-app-password: ${{ secrets.STITCH_APP_PASSWORD }}
     with:
       full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       postgres-host: ${{ needs.deploy-db.outputs.postgres-host }}
       postgres-port: ${{ needs.deploy-db.outputs.postgres-port }}
       postgres-db: ${{ needs.deploy-db.outputs.postgres-db }}

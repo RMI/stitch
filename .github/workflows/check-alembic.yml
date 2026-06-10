@@ -24,6 +24,15 @@ on:
         required: false
         default: "disable"
         type: string
+      deployment-lane:
+        description: >
+          Deployment environment name (e.g. preview, dress-rehearsal). When
+          provided, the job runs in that GH environment and reads STITCH_APP_PASSWORD
+          directly from its secrets. Required for the live DB check; omit for the
+          throwaway path (password is read from env.example instead).
+        required: false
+        default: ""
+        type: string
     secrets:
       stitch-app-password:
         description: >
@@ -37,6 +46,7 @@ jobs:
   check-migrations:
     name: "alembic check (migration drift)"
     runs-on: ubuntu-latest
+    environment: ${{ inputs.deployment-lane || null }}
     permissions:
       contents: read
       packages: read
