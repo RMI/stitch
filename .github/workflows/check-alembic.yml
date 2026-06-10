@@ -92,14 +92,17 @@ jobs:
           # Secret takes precedence; fall back to env.example value for the throwaway path.
           # Grep rather than sourcing .env wholesale — sourcing would overwrite the GH env
           # vars above (e.g. POSTGRES_HOST=db would clobber the 127.0.0.1 we set).
+          # Grep rather than sourcing .env wholesale — sourcing would overwrite the GH env
+          # vars above (e.g. POSTGRES_HOST=db would clobber the 127.0.0.1 we set).
+          # Use assignment form (-e KEY=VALUE) so the resolved password is passed explicitly
+          # rather than relying on a local shell variable being exported.
           _env_app_password=$(grep '^STITCH_APP_PASSWORD=' .env | cut -d= -f2-)
-          POSTGRES_PASSWORD="${SECRET_APP_PASSWORD:-${_env_app_password}}"
           docker run --rm --network host \
             -e POSTGRES_HOST \
             -e POSTGRES_PORT \
             -e POSTGRES_DB \
             -e POSTGRES_USER \
-            -e POSTGRES_PASSWORD \
+            -e POSTGRES_PASSWORD="${SECRET_APP_PASSWORD:-${_env_app_password}}" \
             -e PGSSLMODE \
             "$IMAGE" \
             alembic -c deployments/api/alembic.ini check
