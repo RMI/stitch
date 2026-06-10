@@ -68,12 +68,12 @@ jobs:
           IMAGE: ${{ inputs.full-image-name }}
         run: |
           set -euo pipefail
-          set -a; . ./.env; set +a
+          _migrator_password=$(grep '^STITCH_MIGRATOR_PASSWORD=' .env | cut -d= -f2-)
           docker run --rm --network host \
             --env-file .env \
             -e POSTGRES_HOST=127.0.0.1 \
             -e POSTGRES_USER=stitch_migrator \
-            -e POSTGRES_PASSWORD="$STITCH_MIGRATOR_PASSWORD" \
+            -e POSTGRES_PASSWORD="${_migrator_password}" \
             -e PGSSLMODE=disable \
             "$IMAGE" \
             alembic -c deployments/api/alembic.ini upgrade head
@@ -89,9 +89,11 @@ jobs:
           SECRET_APP_PASSWORD: ${{ secrets.stitch-app-password }}
         run: |
           set -euo pipefail
-          set -a; . ./.env; set +a
           # Secret takes precedence; fall back to env.example value for the throwaway path.
-          POSTGRES_PASSWORD="${SECRET_APP_PASSWORD:-${STITCH_APP_PASSWORD}}"
+          # Grep rather than sourcing .env wholesale — sourcing would overwrite the GH env
+          # vars above (e.g. POSTGRES_HOST=db would clobber the 127.0.0.1 we set).
+          _env_app_password=$(grep '^STITCH_APP_PASSWORD=' .env | cut -d= -f2-)
+          POSTGRES_PASSWORD="${SECRET_APP_PASSWORD:-${_env_app_password}}"
           docker run --rm --network host \
             -e POSTGRES_HOST \
             -e POSTGRES_PORT \
