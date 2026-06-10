@@ -3,9 +3,33 @@ on:
   workflow_call:
     inputs:
       full-image-name:
-        description: "Digest-pinned image reference (host/registry, name, @sha256:...) to check migrations with"
+        description: "Digest-pinned image reference (host/registry/name@sha256:...) to run alembic with"
         required: true
         type: string
+      postgres-host:
+        description: >
+          Live Postgres host. When omitted, a throwaway Postgres is started
+          locally and migrations are run to head before the check.
+        required: false
+        type: string
+      postgres-port:
+        required: false
+        default: "5432"
+        type: string
+      postgres-db:
+        required: false
+        default: "stitch"
+        type: string
+      postgres-sslmode:
+        required: false
+        default: "disable"
+        type: string
+    secrets:
+      stitch-app-password:
+        description: >
+          stitch_app password. Required for live DB checks. For the throwaway
+          path this is read from env.example instead.
+        required: false
 
 name: Check DB Migrations
 
@@ -32,47 +56,52 @@ jobs:
         run: docker pull "${{ inputs.full-image-name }}"
 
       - name: Start throwaway Postgres
+        if: ${{ inputs.postgres-host == '' }}
         run: docker compose -f docker-compose.yml up -d --wait db
 
-      # `alembic check` compares the live schema against the model metadata, so the
-      # throwaway DB must first be brought to head. We reuse the same image the CD
-      # pipeline built and pushed (digest-pinned) rather than rebuilding it here.
+      # Only needed for the throwaway path — the live DB is already at head.
+      # POSTGRES_PASSWORD must be remapped from STITCH_MIGRATOR_PASSWORD since .env
+      # sets POSTGRES_PASSWORD to the stitch_app credential, not the migrator's.
       - name: Apply migrations (upgrade head)
+        if: ${{ inputs.postgres-host == '' }}
         env:
           IMAGE: ${{ inputs.full-image-name }}
         run: |
           set -euo pipefail
-          # shellcheck disable=SC1091
           set -a; . ./.env; set +a
           docker run --rm --network host \
             --env-file .env \
-            -e LOG_LEVEL=info \
             -e POSTGRES_HOST=127.0.0.1 \
-            -e POSTGRES_PORT=5432 \
             -e POSTGRES_USER=stitch_migrator \
             -e POSTGRES_PASSWORD="$STITCH_MIGRATOR_PASSWORD" \
             -e PGSSLMODE=disable \
             "$IMAGE" \
             alembic -c deployments/api/alembic.ini upgrade head
 
-      - name: Check for un-generated migrations
+      - name: Check for migration drift
         env:
           IMAGE: ${{ inputs.full-image-name }}
+          POSTGRES_HOST: ${{ inputs.postgres-host || '127.0.0.1' }}
+          POSTGRES_PORT: ${{ inputs.postgres-port }}
+          POSTGRES_DB: ${{ inputs.postgres-db }}
+          POSTGRES_USER: stitch_app
+          PGSSLMODE: ${{ inputs.postgres-sslmode }}
+          SECRET_APP_PASSWORD: ${{ secrets.stitch-app-password }}
         run: |
           set -euo pipefail
-          # shellcheck disable=SC1091
           set -a; . ./.env; set +a
+          # Secret takes precedence; fall back to env.example value for the throwaway path.
+          POSTGRES_PASSWORD="${SECRET_APP_PASSWORD:-${STITCH_APP_PASSWORD}}"
           docker run --rm --network host \
-            --env-file .env \
-            -e LOG_LEVEL=info \
-            -e POSTGRES_HOST=127.0.0.1 \
-            -e POSTGRES_PORT=5432 \
-            -e POSTGRES_USER=stitch_migrator \
-            -e POSTGRES_PASSWORD="$STITCH_MIGRATOR_PASSWORD" \
-            -e PGSSLMODE=disable \
+            -e POSTGRES_HOST \
+            -e POSTGRES_PORT \
+            -e POSTGRES_DB \
+            -e POSTGRES_USER \
+            -e POSTGRES_PASSWORD \
+            -e PGSSLMODE \
             "$IMAGE" \
             alembic -c deployments/api/alembic.ini check
 
-      - name: Tear down Postgres
-        if: always()
+      - name: Tear down throwaway Postgres
+        if: ${{ always() && inputs.postgres-host == '' }}
         run: docker compose -f docker-compose.yml down -v
