@@ -1,0 +1,78 @@
+---
+on:
+  workflow_call:
+    inputs:
+      full-image-name:
+        description: "Digest-pinned image reference (host/registry, name, @sha256:...) to check migrations with"
+        required: true
+        type: string
+
+name: Check DB Migrations
+
+jobs:
+  check-migrations:
+    name: "alembic check (migration drift)"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up example Env file
+        run: cp env.example .env
+
+      - name: Log in to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Pull API image
+        run: docker pull "${{ inputs.full-image-name }}"
+
+      - name: Start throwaway Postgres
+        run: docker compose -f docker-compose.yml up -d --wait db
+
+      # `alembic check` compares the live schema against the model metadata, so the
+      # throwaway DB must first be brought to head. We reuse the same image the CD
+      # pipeline built and pushed (digest-pinned) rather than rebuilding it here.
+      - name: Apply migrations (upgrade head)
+        env:
+          IMAGE: ${{ inputs.full-image-name }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          set -a; . ./.env; set +a
+          docker run --rm --network host \
+            --env-file .env \
+            -e LOG_LEVEL=info \
+            -e POSTGRES_HOST=127.0.0.1 \
+            -e POSTGRES_PORT=5432 \
+            -e POSTGRES_USER=stitch_migrator \
+            -e POSTGRES_PASSWORD="$STITCH_MIGRATOR_PASSWORD" \
+            -e PGSSLMODE=disable \
+            "$IMAGE" \
+            alembic -c deployments/api/alembic.ini upgrade head
+
+      - name: Check for un-generated migrations
+        env:
+          IMAGE: ${{ inputs.full-image-name }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          set -a; . ./.env; set +a
+          docker run --rm --network host \
+            --env-file .env \
+            -e LOG_LEVEL=info \
+            -e POSTGRES_HOST=127.0.0.1 \
+            -e POSTGRES_PORT=5432 \
+            -e POSTGRES_USER=stitch_migrator \
+            -e POSTGRES_PASSWORD="$STITCH_MIGRATOR_PASSWORD" \
+            -e PGSSLMODE=disable \
+            "$IMAGE" \
+            alembic -c deployments/api/alembic.ini check
+
+      - name: Tear down Postgres
+        if: always()
+        run: docker compose -f docker-compose.yml down -v

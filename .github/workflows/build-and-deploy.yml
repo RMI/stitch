@@ -143,6 +143,16 @@ jobs:
       image-name: ${{ github.event.repository.name }}-api
       image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
 
+  check-db-migrations:
+    name: "Check DB Migrations"
+    needs: [build-api-docker-image]
+    uses: ./.github/workflows/check-alembic.yml
+    permissions:
+      contents: read
+      packages: read
+    with:
+      full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
+
   build-entity-linkage-docker-image:
     name: "Build and publish Entity Linkage"
     needs: [resolve-context]
