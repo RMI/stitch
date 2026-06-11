@@ -171,6 +171,9 @@ jobs:
 
   build-seed-docker-image:
     name: "Build and publish Seed"
+    # Seed only runs in development; non-development lanes are populated by the
+    # ETL pipelines instead (one or the other, never both).
+    if: ${{ needs.resolve-context.outputs.deployment-lane == 'development' }}
     needs: [resolve-context]
     uses: ./.github/workflows/build-and-push-Docker-image.yml
     secrets: inherit
@@ -353,7 +356,8 @@ jobs:
 
   run-seed:
     name: "Run seed"
-    if: ${{ needs.deploy-db.outputs.database-created == 'true' }}
+    # Seed only runs in development; non-development lanes use the ETL pipelines.
+    if: ${{ needs.resolve-context.outputs.deployment-lane == 'development' && needs.deploy-db.outputs.database-created == 'true' }}
     needs: [resolve-context, build-seed-docker-image, deploy-db, deploy-api]
     uses: ./.github/workflows/run-seed.yml
     secrets:
