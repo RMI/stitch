@@ -33,6 +33,11 @@ on:
         required: false
         default: ""
         type: string
+      registry-username:
+        description: "Username for the image registry. Not sensitive (the token is the secret), so pass it as a variable."
+        required: false
+        default: ""
+        type: string
     secrets:
       azure-client-id:
         required: true
@@ -47,8 +52,6 @@ on:
       stitch-llm-azure-openai-api-key:
         required: false
       woodmac-api-key:
-        required: false
-      registry-username:
         required: false
       registry-password:
         required: false
@@ -78,10 +81,22 @@ jobs:
         env:
           AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
           AZURE_CONTAINER_APP_ENVIRONMENT: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
+          REGISTRY_SERVER: ${{ inputs.registry-server }}
+          REGISTRY_USERNAME: ${{ inputs.registry-username }}
+          REGISTRY_PASSWORD: ${{ secrets.registry-password }}
         run: |
           set -euo pipefail
           : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
           : "${AZURE_CONTAINER_APP_ENVIRONMENT:?Missing required variable AZURE_CONTAINER_APP_ENVIRONMENT}"
+
+          # If a registry server is configured (e.g. for private/internal GHCR
+          # images), the pull credentials must accompany it. Fail fast with a
+          # clear message rather than letting `az containerapp up` return an
+          # opaque "UNAUTHORIZED: authentication required".
+          if [ -n "${REGISTRY_SERVER:-}" ]; then
+            : "${REGISTRY_USERNAME:?registry-server is set but the registry-username variable is empty}"
+            : "${REGISTRY_PASSWORD:?registry-server is set but the registry-password secret is empty}"
+          fi
 
       - name: Azure login
         uses: azure/login@v3
@@ -133,7 +148,7 @@ jobs:
           # set (e.g. for cross-repo private/internal GHCR images). Existing
           # callers omit these and the action leaves registry config untouched.
           registryUrl: ${{ inputs.registry-server }}
-          registryUsername: ${{ secrets.registry-username }}
+          registryUsername: ${{ inputs.registry-username }}
           registryPassword: ${{ secrets.registry-password }}
 
       - name: Export application URL
