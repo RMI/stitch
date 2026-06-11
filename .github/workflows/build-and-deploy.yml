@@ -143,6 +143,16 @@ jobs:
       image-name: ${{ github.event.repository.name }}-api
       image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
 
+  check-db-migrations:
+    name: "Check DB Migrations (clean)"
+    needs: [build-api-docker-image]
+    uses: ./.github/workflows/check-alembic.yml
+    permissions:
+      contents: read
+      packages: read
+    with:
+      full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
+
   build-entity-linkage-docker-image:
     name: "Build and publish Entity Linkage"
     needs: [resolve-context]
@@ -206,6 +216,23 @@ jobs:
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
+      postgres-host: ${{ needs.deploy-db.outputs.postgres-host }}
+      postgres-port: ${{ needs.deploy-db.outputs.postgres-port }}
+      postgres-db: ${{ needs.deploy-db.outputs.postgres-db }}
+      postgres-sslmode: ${{ needs.deploy-db.outputs.postgres-sslmode }}
+
+  check-db-migrations-live:
+    name: "Check DB Migrations (live)"
+    needs: [resolve-context, build-api-docker-image, deploy-db, run-db-migrations]
+    uses: ./.github/workflows/check-alembic.yml
+    permissions:
+      contents: read
+      packages: read
+    secrets:
+      stitch-app-password: ${{ secrets.STITCH_APP_PASSWORD }}
+    with:
+      full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       postgres-host: ${{ needs.deploy-db.outputs.postgres-host }}
       postgres-port: ${{ needs.deploy-db.outputs.postgres-port }}
       postgres-db: ${{ needs.deploy-db.outputs.postgres-db }}
