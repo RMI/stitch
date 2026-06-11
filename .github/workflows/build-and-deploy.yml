@@ -351,6 +351,7 @@ jobs:
         AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
         AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
         API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
+        ETL_GEM_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
         GEM_FILE_DIR=/mnt/data
       deployment-label: etl-gem
 
@@ -381,6 +382,7 @@ jobs:
         AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
         AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
         API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
+        ETL_WOODMAC_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
         WOODMAC_DATA_DIR=/tmp/woodmac
       deployment-label: etl-woodmac
 
