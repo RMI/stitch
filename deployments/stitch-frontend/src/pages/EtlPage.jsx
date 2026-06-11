@@ -76,7 +76,10 @@ async function parseJsonResponse(response) {
 function EtlPanel({ title, description, baseUrl, fields, getToken }) {
   const [values, setValues] = useState(() =>
     Object.fromEntries(
-      fields.map((field) => [field.key, field.type === "checkbox" ? false : ""]),
+      fields.map((field) => [
+        field.key,
+        field.type === "checkbox" ? false : "",
+      ]),
     ),
   );
   const [starting, setStarting] = useState(false);
@@ -236,7 +239,9 @@ function EtlPanel({ title, description, baseUrl, fields, getToken }) {
 
       {error ? (
         <div className="mt-4 rounded-md border border-danger/25 bg-danger-soft p-3 text-sm text-danger">
-          {error.message ? <p className="mb-2 font-medium">{error.message}</p> : null}
+          {error.message ? (
+            <p className="mb-2 font-medium">{error.message}</p>
+          ) : null}
           <StructuredDataView
             data={{ status: error.status, response: error.body }}
             label={`${title} error`}
@@ -250,7 +255,8 @@ function EtlPanel({ title, description, baseUrl, fields, getToken }) {
           <StructuredDataView data={record} label={`${title} run status`} />
         ) : (
           <p className="text-sm text-ink-muted">
-            No run started yet. Start a run or refresh to fetch the latest status.
+            No run started yet. Start a run or refresh to fetch the latest
+            status.
           </p>
         )}
       </div>
@@ -275,8 +281,8 @@ export default function EtlPage() {
         </p>
         <h1 className="mt-1 text-3xl font-semibold text-ink">ETL Pipelines</h1>
         <p className="mt-2 text-sm text-ink-muted">
-          Start an ETL run and check its status. Only one run per pipeline may be
-          active at a time.
+          Start an ETL run and check its status. Only one run per pipeline may
+          be active at a time.
         </p>
       </div>
 

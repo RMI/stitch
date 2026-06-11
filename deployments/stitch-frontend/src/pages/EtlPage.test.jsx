@@ -27,9 +27,9 @@ describe("EtlPage", () => {
     expect(
       screen.getByRole("heading", { name: "WoodMac" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getAllByRole("button", { name: "Start run" }),
-    ).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Start run" })).toHaveLength(
+      2,
+    );
     expect(
       screen.getAllByRole("button", { name: "Refresh status" }),
     ).toHaveLength(2);
@@ -56,9 +56,9 @@ describe("EtlPage", () => {
     );
 
     await waitFor(() => {
-      expect(
-        within(gemPanel).getAllByText("running").length,
-      ).toBeGreaterThan(0);
+      expect(within(gemPanel).getAllByText("running").length).toBeGreaterThan(
+        0,
+      );
     });
 
     expect(getAccessTokenSilently).toHaveBeenCalledWith({
