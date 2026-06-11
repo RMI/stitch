@@ -33,6 +33,30 @@ It then handles deployments for:
 * the API Container App, assuming an existing Container Apps environment
 * the entity-linkage Container App in the same environment
 * the stitch-llm Container App in the same environment
+* the ETL Container Apps (`etl-gem`, `etl-woodmac`) in the same environment,
+  on non-`development` lanes only (see below)
+
+### ETL pipelines (temporary POC wiring)
+
+The `etl-gem` and `etl-woodmac` Container Apps are deployed from pre-built images
+published by the separate `stitch-etl-poc` repository
+(`ghcr.io/rmi/stitch-etl-poc-etl-{gem,woodmac}`). This pipeline does **not** build
+them; it only deploys the tag named by the `ETL_GEM_IMAGE_TAG` /
+`ETL_WOODMAC_IMAGE_TAG` variables (defaulting to `pr-9`).
+
+Seed and ETL are mutually exclusive per lane:
+
+* `development`: `seed` builds and runs; ETL deploys are skipped.
+* `staging` / `dress-rehearsal`: ETL deploys run; `seed` is skipped.
+
+Because the ETL images live in another repo's GHCR, the Container App needs
+stored pull credentials. The ephemeral `GITHUB_TOKEN` cannot be used (it expires
+and the app re-pulls on every restart), so a long-lived classic PAT with
+`read:packages` is required — GHCR does not support fine-grained tokens. These
+are supplied to `deploy-container.yml` via the `registry-server` /
+`registry-username` inputs and the `registry-password` secret. The frontend
+receives each ETL Container App URL (empty when not deployed) and renders the ETL
+control page.
 
 Reusable workflows now select lane-specific configuration from GitHub
 Environments and are expected to fail loudly when required values are absent.
@@ -128,6 +152,13 @@ named:
 * `STITCH_LLM_AZURE_OPENAI_BASE_URL` (example: `https://stitch-foundry-dev.openai.azure.com/openai/v1`)
 * `STITCH_LLM_AZURE_OPENAI_MODEL` (example: `gpt-5.1-chat`)
 * `STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS` (example: `30`)
+* `GHCR_ETL_PULL_USERNAME` (example: `your-github-username`) — registry username
+  for pulling the ETL images; not sensitive, so it is a variable. Only needed on
+  `staging` / `dress-rehearsal`.
+* `ETL_GEM_IMAGE_TAG` (example: `pr-9`) — optional; ETL GEM image tag to deploy,
+  defaults to `pr-9`. Only used on `staging` / `dress-rehearsal`.
+* `ETL_WOODMAC_IMAGE_TAG` (example: `pr-9`) — optional; ETL WoodMac image tag to
+  deploy, defaults to `pr-9`. Only used on `staging` / `dress-rehearsal`.
   * NOTE: `FRONTEND_PREVIEW_URL_TEMPLATE` must contain the literal `{name}` placeholder.
 For `dress-rehearsal`, the workflow uses `FRONTEND_PRODUCTION_URL` directly. For pull requests, it replaces `{name}` with the raw PR number so PR #106 resolves to `https://witty-mushroom-017a3dc1e-106.westus2.1.azurestaticapps.net`. For other preview deployments, it replaces `{name}` with `deployment_name`.
 
@@ -140,6 +171,11 @@ For `dress-rehearsal`, the workflow uses `FRONTEND_PRODUCTION_URL` directly. For
 * `STITCH_CLIENT_LLM_BEARER_TOKEN`
 * `STITCH_LLM_AZURE_OPENAI_API_KEY`
 * `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
+* `WOODMAC_API_KEY` — WoodMac API key for the `etl-woodmac` Container App. Only
+  needed on `staging` / `dress-rehearsal`.
+* `GHCR_ETL_PULL_TOKEN` — classic PAT with `read:packages` used to pull the ETL
+  images from the `stitch-etl-poc` GHCR. Only needed on `staging` /
+  `dress-rehearsal`.
 
 Current validation behavior:
 
@@ -160,3 +196,7 @@ Current validation behavior:
   * If any of `STITCH_LLM_AZURE_OPENAI_BASE_URL`, `STITCH_LLM_AZURE_OPENAI_MODEL`, or `STITCH_LLM_AZURE_OPENAI_API_KEY` are set, all three must be set
 * DB migrations validate `STITCH_MIGRATOR_PASSWORD`
 * frontend deploy validates `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
+* container deploy validates that, when `registry-server` is set, both
+  `registry-username` (variable) and `registry-password` (secret) are present —
+  so a missing ETL pull credential fails fast instead of surfacing as an opaque
+  registry `UNAUTHORIZED` from `az containerapp up`
