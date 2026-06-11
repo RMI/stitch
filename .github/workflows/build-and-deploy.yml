@@ -27,6 +27,7 @@ jobs:
       stitch-llm-azure-openai-base-url: ${{ steps.export-auth.outputs.stitch-llm-azure-openai-base-url }}
       stitch-llm-azure-openai-model: ${{ steps.export-auth.outputs.stitch-llm-azure-openai-model }}
       stitch-llm-azure-openai-timeout-seconds: ${{ steps.export-auth.outputs.stitch-llm-azure-openai-timeout-seconds }}
+      ghcr-etl-pull-username: ${{ steps.export-auth.outputs.ghcr-etl-pull-username }}
     env:
       FRONTEND_PRODUCTION_URL: ${{ vars.FRONTEND_PRODUCTION_URL }}
       FRONTEND_PREVIEW_URL_TEMPLATE: ${{ vars.FRONTEND_PREVIEW_URL_TEMPLATE }}
@@ -40,6 +41,7 @@ jobs:
       STITCH_LLM_AZURE_OPENAI_BASE_URL: ${{ vars.STITCH_LLM_AZURE_OPENAI_BASE_URL }}
       STITCH_LLM_AZURE_OPENAI_MODEL: ${{ vars.STITCH_LLM_AZURE_OPENAI_MODEL }}
       STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS: ${{ vars.STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS }}
+      GHCR_ETL_PULL_USERNAME: ${{ vars.GHCR_ETL_PULL_USERNAME }}
       STITCH_APP_PASSWORD: ${{ secrets.STITCH_APP_PASSWORD }}
       STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
       STITCH_CLIENT_LLM_BEARER_TOKEN: ${{ secrets.STITCH_CLIENT_LLM_BEARER_TOKEN }}
@@ -123,6 +125,7 @@ jobs:
           echo "stitch-llm-azure-openai-base-url=${STITCH_LLM_AZURE_OPENAI_BASE_URL}" >> "$GITHUB_OUTPUT"
           echo "stitch-llm-azure-openai-model=${STITCH_LLM_AZURE_OPENAI_MODEL}" >> "$GITHUB_OUTPUT"
           echo "stitch-llm-azure-openai-timeout-seconds=${STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS:-30}" >> "$GITHUB_OUTPUT"
+          echo "ghcr-etl-pull-username=${GHCR_ETL_PULL_USERNAME:-}" >> "$GITHUB_OUTPUT"
 
   build-frontend:
     name: "Build frontend"
@@ -338,7 +341,7 @@ jobs:
       full-image-name: ghcr.io/rmi/stitch-etl-poc-etl-gem:${{ vars.ETL_GEM_IMAGE_TAG || 'pr-9' }}
       container-app-name: ${{ format('{0}-etl-gem', needs.resolve-context.outputs.deployment-name) }}
       registry-server: ghcr.io
-      registry-username: ${{ vars.GHCR_ETL_PULL_USERNAME }}
+      registry-username: ${{ needs.lane-config-validate.outputs.ghcr-etl-pull-username }}
       environment-variables: >-
         LOG_LEVEL=info
         AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
@@ -368,7 +371,7 @@ jobs:
       full-image-name: ghcr.io/rmi/stitch-etl-poc-etl-woodmac:${{ vars.ETL_WOODMAC_IMAGE_TAG || 'pr-9' }}
       container-app-name: ${{ format('{0}-etl-woodmac', needs.resolve-context.outputs.deployment-name) }}
       registry-server: ghcr.io
-      registry-username: ${{ vars.GHCR_ETL_PULL_USERNAME }}
+      registry-username: ${{ needs.lane-config-validate.outputs.ghcr-etl-pull-username }}
       environment-variables: >-
         LOG_LEVEL=info
         AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
