@@ -52,6 +52,9 @@ describe("App", () => {
       "href",
       "/merge-candidate-review",
     );
+    expect(
+      screen.getByRole("link", { name: "ETL Pipelines" }),
+    ).toHaveAttribute("href", "/etl");
     expect(screen.getByRole("button", { name: "Log out" })).toBeInTheDocument();
     expect(screen.getByRole("main")).toBeInTheDocument();
   });

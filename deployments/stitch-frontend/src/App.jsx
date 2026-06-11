@@ -4,12 +4,14 @@ import HomePage from "./pages/HomePage";
 import ResourceDetailPage from "./pages/ResourceDetailPage";
 import EntityLinkagePage from "./pages/EntityLinkagePage";
 import MergeCandidateReviewPage from "./pages/MergeCandidateReviewPage";
+import EtlPage from "./pages/EtlPage";
 import { LogoutButton } from "./components/LogoutButton";
 
 const NAV_ITEMS = [
   { to: "/", label: "Resources", end: true },
   { to: "/entity-linkage", label: "Entity Linkage" },
   { to: "/merge-candidate-review", label: "Merge Review" },
+  { to: "/etl", label: "ETL Pipelines" },
 ];
 
 function getNavLinkClassName({ isActive }) {
@@ -68,6 +70,7 @@ function App() {
             path="/merge-candidate-review"
             element={<MergeCandidateReviewPage />}
           />
+          <Route path="/etl" element={<EtlPage />} />
         </Routes>
       </main>
     </div>
