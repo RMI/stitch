@@ -11,6 +11,7 @@ on:
           Live Postgres host. When omitted, a throwaway Postgres is started
           locally and migrations are run to head before the check.
         required: false
+        default: ""
         type: string
       postgres-port:
         required: false
