@@ -28,6 +28,11 @@ on:
         required: false
         default: ""
         type: string
+      registry-server:
+        description: "Container image registry server (e.g. ghcr.io). Set to configure pull credentials on the Container App; required for private/internal images."
+        required: false
+        default: ""
+        type: string
     secrets:
       azure-client-id:
         required: true
@@ -40,6 +45,12 @@ on:
       stitch-client-bearer-token:
         required: false
       stitch-llm-azure-openai-api-key:
+        required: false
+      woodmac-api-key:
+        required: false
+      registry-username:
+        required: false
+      registry-password:
         required: false
     outputs:
       container-app-url:
@@ -88,6 +99,7 @@ jobs:
           STITCH_APP_PASSWORD: ${{ secrets.stitch-app-password }}
           STITCH_CLIENT_BEARER_TOKEN: ${{ secrets.stitch-client-bearer-token }}
           STITCH_LLM_AZURE_OPENAI_API_KEY: ${{ secrets.stitch-llm-azure-openai-api-key }}
+          WOODMAC_API_KEY: ${{ secrets.woodmac-api-key }}
         run: |
           set -euo pipefail
           envvars='${{ inputs.environment-variables }}'
@@ -99,6 +111,9 @@ jobs:
           fi
           if [ -n "${STITCH_LLM_AZURE_OPENAI_API_KEY:-}" ]; then
             envvars="$envvars STITCH_LLM_AZURE_OPENAI_API_KEY=${STITCH_LLM_AZURE_OPENAI_API_KEY}"
+          fi
+          if [ -n "${WOODMAC_API_KEY:-}" ]; then
+            envvars="$envvars WOODMAC_API_KEY=${WOODMAC_API_KEY}"
           fi
           echo "environment-variables<<EOF" >> "$GITHUB_OUTPUT"
           echo "$envvars" >> "$GITHUB_OUTPUT"
@@ -114,6 +129,12 @@ jobs:
           targetPort: ${{ inputs.target-port }}
           environmentVariables: ${{ steps.envvars.outputs.environment-variables }}
           ingress: "external"
+          # Registry pull credentials are only configured when registry-server is
+          # set (e.g. for cross-repo private/internal GHCR images). Existing
+          # callers omit these and the action leaves registry config untouched.
+          registryUrl: ${{ inputs.registry-server }}
+          registryUsername: ${{ secrets.registry-username }}
+          registryPassword: ${{ secrets.registry-password }}
 
       - name: Export application URL
         id: export-app-url
