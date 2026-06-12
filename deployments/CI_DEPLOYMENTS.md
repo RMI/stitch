@@ -42,7 +42,7 @@ The `etl-gem` and `etl-woodmac` Container Apps are deployed from pre-built image
 published by the separate `stitch-etl-poc` repository
 (`ghcr.io/rmi/stitch-etl-poc-etl-{gem,woodmac}`). This pipeline does **not** build
 them; it only deploys the tag named by the `ETL_GEM_IMAGE_TAG` /
-`ETL_WOODMAC_IMAGE_TAG` variables (defaulting to `pr-9`).
+`ETL_WOODMAC_IMAGE_TAG` variables (defaulting to `main`).
 
 Seed and ETL are mutually exclusive per lane:
 
@@ -283,10 +283,10 @@ named:
   registered on the Container Apps environment; mounted into both ETL apps at
   `/mnt/data`. Only needed on `staging` / `dress-rehearsal` (see ETL durable
   storage above).
-* `ETL_GEM_IMAGE_TAG` (example: `pr-9`) — optional; ETL GEM image tag to deploy,
-  defaults to `pr-9`. Only used on `staging` / `dress-rehearsal`.
-* `ETL_WOODMAC_IMAGE_TAG` (example: `pr-9`) — optional; ETL WoodMac image tag to
-  deploy, defaults to `pr-9`. Only used on `staging` / `dress-rehearsal`.
+* `ETL_GEM_IMAGE_TAG` (example: `main`) — optional; ETL GEM image tag to deploy,
+  defaults to `main`. Only used on `staging` / `dress-rehearsal`.
+* `ETL_WOODMAC_IMAGE_TAG` (example: `main`) — optional; ETL WoodMac image tag to
+  deploy, defaults to `main`. Only used on `staging` / `dress-rehearsal`.
   * NOTE: `FRONTEND_PREVIEW_URL_TEMPLATE` must contain the literal `{name}` placeholder.
 For `dress-rehearsal`, the workflow uses `FRONTEND_PRODUCTION_URL` directly. For pull requests, it replaces `{name}` with the raw PR number so PR #106 resolves to `https://witty-mushroom-017a3dc1e-106.westus2.1.azurestaticapps.net`. For other preview deployments, it replaces `{name}` with `deployment_name`.
 

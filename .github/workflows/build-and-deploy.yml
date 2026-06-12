@@ -347,7 +347,7 @@ jobs:
       registry-password: ${{ secrets.GHCR_ETL_PULL_TOKEN }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      full-image-name: ghcr.io/rmi/stitch-etl-poc-etl-gem:${{ vars.ETL_GEM_IMAGE_TAG || 'pr-9' }}
+      full-image-name: ghcr.io/rmi/stitch-etl-poc-etl-gem:${{ vars.ETL_GEM_IMAGE_TAG || 'main' }}
       container-app-name: ${{ format('{0}-etl-gem', needs.resolve-context.outputs.deployment-name) }}
       registry-server: ghcr.io
       registry-username: ${{ needs.lane-config-validate.outputs.ghcr-etl-pull-username }}
@@ -384,7 +384,7 @@ jobs:
       registry-password: ${{ secrets.GHCR_ETL_PULL_TOKEN }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      full-image-name: ghcr.io/rmi/stitch-etl-poc-etl-woodmac:${{ vars.ETL_WOODMAC_IMAGE_TAG || 'pr-9' }}
+      full-image-name: ghcr.io/rmi/stitch-etl-poc-etl-woodmac:${{ vars.ETL_WOODMAC_IMAGE_TAG || 'main' }}
       container-app-name: ${{ format('{0}-etl-woodmac', needs.resolve-context.outputs.deployment-name) }}
       registry-server: ghcr.io
       registry-username: ${{ needs.lane-config-validate.outputs.ghcr-etl-pull-username }}
