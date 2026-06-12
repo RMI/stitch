@@ -48,6 +48,16 @@ on:
         required: false
         default: ""
         type: string
+      storage-name:
+        description: "Optional. Name of an Azure Files storage already registered on the Container Apps environment. When set, it is mounted into the app after deploy."
+        required: false
+        default: ""
+        type: string
+      storage-mount-path:
+        description: "Container path to mount the Azure Files storage at (e.g. /mnt/data). Required when storage-name is set."
+        required: false
+        default: ""
+        type: string
     secrets:
       azure-client-id:
         required: true
@@ -180,6 +190,44 @@ jobs:
             --name "${{ inputs.container-app-name }}" \
             --resource-group "${AZURE_RESOURCE_GROUP}" \
             "${args[@]}"
+
+      - name: Mount Azure Files volume
+        # The deploy action cannot mount volumes, so attach the (already
+        # environment-registered) Azure Files storage afterward by reading the
+        # current app spec, injecting a volume + volumeMount, and re-applying.
+        # show -> mutate -> update --yaml is the documented pattern and preserves
+        # everything the action just set (image, env vars, scale, registry).
+        if: ${{ inputs.storage-name != '' }}
+        shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          STORAGE_NAME: ${{ inputs.storage-name }}
+          MOUNT_PATH: ${{ inputs.storage-mount-path }}
+        run: |
+          set -euo pipefail
+          : "${MOUNT_PATH:?storage-name is set but storage-mount-path is empty}"
+
+          az containerapp show \
+            --name "${{ inputs.container-app-name }}" \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --output json > /tmp/app.json
+
+          jq \
+            --arg sn "${STORAGE_NAME}" \
+            --arg mp "${MOUNT_PATH}" \
+            'del(.systemData)
+             | .properties.template.volumes = [
+                 {name: "data", storageType: "AzureFile", storageName: $sn}
+               ]
+             | .properties.template.containers |= map(
+                 .volumeMounts = [{volumeName: "data", mountPath: $mp}]
+               )' \
+            /tmp/app.json > /tmp/app.yaml
+
+          az containerapp update \
+            --name "${{ inputs.container-app-name }}" \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --yaml /tmp/app.yaml
 
       - name: Export application URL
         id: export-app-url

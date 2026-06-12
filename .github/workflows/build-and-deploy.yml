@@ -28,6 +28,7 @@ jobs:
       stitch-llm-azure-openai-model: ${{ steps.export-auth.outputs.stitch-llm-azure-openai-model }}
       stitch-llm-azure-openai-timeout-seconds: ${{ steps.export-auth.outputs.stitch-llm-azure-openai-timeout-seconds }}
       ghcr-etl-pull-username: ${{ steps.export-auth.outputs.ghcr-etl-pull-username }}
+      etl-storage-name: ${{ steps.export-auth.outputs.etl-storage-name }}
     env:
       FRONTEND_PRODUCTION_URL: ${{ vars.FRONTEND_PRODUCTION_URL }}
       FRONTEND_PREVIEW_URL_TEMPLATE: ${{ vars.FRONTEND_PREVIEW_URL_TEMPLATE }}
@@ -42,6 +43,7 @@ jobs:
       STITCH_LLM_AZURE_OPENAI_MODEL: ${{ vars.STITCH_LLM_AZURE_OPENAI_MODEL }}
       STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS: ${{ vars.STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS }}
       GHCR_ETL_PULL_USERNAME: ${{ vars.GHCR_ETL_PULL_USERNAME }}
+      ETL_STORAGE_NAME: ${{ vars.ETL_STORAGE_NAME }}
       STITCH_APP_PASSWORD: ${{ secrets.STITCH_APP_PASSWORD }}
       STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
       STITCH_CLIENT_LLM_BEARER_TOKEN: ${{ secrets.STITCH_CLIENT_LLM_BEARER_TOKEN }}
@@ -126,6 +128,7 @@ jobs:
           echo "stitch-llm-azure-openai-model=${STITCH_LLM_AZURE_OPENAI_MODEL}" >> "$GITHUB_OUTPUT"
           echo "stitch-llm-azure-openai-timeout-seconds=${STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS:-30}" >> "$GITHUB_OUTPUT"
           echo "ghcr-etl-pull-username=${GHCR_ETL_PULL_USERNAME:-}" >> "$GITHUB_OUTPUT"
+          echo "etl-storage-name=${ETL_STORAGE_NAME:-}" >> "$GITHUB_OUTPUT"
 
   build-frontend:
     name: "Build frontend"
@@ -361,8 +364,11 @@ jobs:
         AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
         API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
         ETL_GEM_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
-        GEM_FILE_DIR=/mnt/data
+        GEM_FILE_DIR=/mnt/data/gem
       deployment-label: etl-gem
+      # Mount the lane's Azure Files share; GEM reads its xlsx from the gem/ subdir.
+      storage-name: ${{ needs.lane-config-validate.outputs.etl-storage-name }}
+      storage-mount-path: /mnt/data
 
   deploy-etl-woodmac:
     name: "Deploy ETL WoodMac"
@@ -395,8 +401,11 @@ jobs:
         AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
         API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
         ETL_WOODMAC_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
-        WOODMAC_DATA_DIR=/tmp/woodmac
+        WOODMAC_DATA_DIR=/mnt/data/woodmac
       deployment-label: etl-woodmac
+      # Mount the lane's Azure Files share; WoodMac caches under the woodmac/ subdir.
+      storage-name: ${{ needs.lane-config-validate.outputs.etl-storage-name }}
+      storage-mount-path: /mnt/data
 
   run-seed:
     name: "Run seed"
