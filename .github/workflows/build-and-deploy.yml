@@ -342,6 +342,9 @@ jobs:
       container-app-name: ${{ format('{0}-etl-gem', needs.resolve-context.outputs.deployment-name) }}
       registry-server: ghcr.io
       registry-username: ${{ needs.lane-config-validate.outputs.ghcr-etl-pull-username }}
+      # Single job at a time + in-memory /status state: keep exactly one replica.
+      min-replicas: "1"
+      max-replicas: "1"
       environment-variables: >-
         LOG_LEVEL=info
         AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
@@ -373,6 +376,9 @@ jobs:
       container-app-name: ${{ format('{0}-etl-woodmac', needs.resolve-context.outputs.deployment-name) }}
       registry-server: ghcr.io
       registry-username: ${{ needs.lane-config-validate.outputs.ghcr-etl-pull-username }}
+      # Single job at a time + in-memory /status state: keep exactly one replica.
+      min-replicas: "1"
+      max-replicas: "1"
       environment-variables: >-
         LOG_LEVEL=info
         AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
