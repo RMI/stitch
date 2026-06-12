@@ -92,7 +92,7 @@ account / share / environment-storage name:
 | Lane | Storage account | File share | Env storage name (`ETL_STORAGE_NAME`) |
 |---|---|---|---|
 | `staging` | `stitchstaging` | `etl-staging` | `etl-staging` |
-| `dress-rehearsal` | _(tbd)_ | _(tbd)_ | _(tbd)_ |
+| `dress-rehearsal` | `stitchstaging` | `etl-dress-rehearsal` | `etl-dress-rehearsal` |
 
 1. **Create a storage account + file share.** Create a Storage account (Standard
    LRS, StorageV2) or reuse one, then under **File shares** add a share (for
