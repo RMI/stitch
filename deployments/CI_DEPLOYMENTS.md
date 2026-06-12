@@ -156,9 +156,31 @@ reset on the next pipeline run. Instead, `deploy-container.yml` takes optional
 `min-replicas` / `max-replicas` inputs and, when either is set, runs a post-deploy
 `az containerapp update --min-replicas … --max-replicas …` to reassert them. The
 ETL jobs pass `min-replicas: "1"` and `max-replicas: "1"`, so the pin is
-self-healing — no manual Portal step needed, and it survives every redeploy. Other
-deploys (api, entity-linkage, stitch-llm) omit these inputs and keep their default
-scaling.
+self-healing — no manual Portal step needed, and it survives every redeploy.
+
+#### Keeping staging / dress-rehearsal awake (scale-to-zero policy)
+
+By default a Container App scales to zero (`min-replicas: 0`) when idle, so the
+first request after a quiet period pays a cold-start. That is fine for
+`development` (keeps costs down when nobody is using it) but undesirable for
+`staging` / `dress-rehearsal`, which we want responsive.
+
+The always-on services — `api`, `entity-linkage`, `stitch-llm` — therefore pass a
+**lane-conditional** `min-replicas` through the same mechanism:
+
+```yaml
+min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
+```
+
+So on `staging` / `dress-rehearsal` they reassert `min-replicas: 1` (always one
+warm replica, `max` left at the default so they can still scale out), and on
+`development` the input is empty, the post-deploy step is skipped, and they keep
+the default scale-to-zero. The ETL apps are always-on on those lanes too, since
+they pin `min = max = 1` and only deploy on non-`development` lanes.
+
+This only affects the Container Apps. The frontend is an Azure Static Web App
+(always served, no hibernation), and the PostgreSQL flexible server's
+pause behavior, if any, is a separate server-level setting not managed here.
 
 Reusable workflows now select lane-specific configuration from GitHub
 Environments and are expected to fail loudly when required values are absent.

@@ -270,6 +270,8 @@ jobs:
         POSTGRES_USER=${{ needs.deploy-db.outputs.postgres-user }}
         PGSSLMODE=${{ needs.deploy-db.outputs.postgres-sslmode }}
       deployment-label: api
+      # Keep staging / dress-rehearsal always-on; development scales to zero.
+      min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
 
   deploy-entity-linkage:
     name: "Deploy entity linkage"
@@ -295,6 +297,8 @@ jobs:
         ENTITY_LINKAGE_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
         ENTITY_LINKAGE_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
       deployment-label: entity-linkage
+      # Keep staging / dress-rehearsal always-on; development scales to zero.
+      min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
 
   deploy-stitch-llm:
     name: "Deploy stitch-llm"
@@ -324,6 +328,8 @@ jobs:
         STITCH_LLM_AZURE_OPENAI_MODEL=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-model }}
         STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-timeout-seconds }}
       deployment-label: stitch-llm
+      # Keep staging / dress-rehearsal always-on; development scales to zero.
+      min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
 
   deploy-etl-gem:
     name: "Deploy ETL GEM"
