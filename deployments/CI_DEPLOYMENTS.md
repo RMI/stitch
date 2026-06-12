@@ -80,11 +80,17 @@ These prerequisites are done in the **Azure Portal** (web UI) — no `az` requir
 SMB Azure Files registration and mounting are fully supported in the Portal; only
 NFS forces the CLI/YAML route, which is another reason to use SMB. Do this per
 lane (`staging`, `dress-rehearsal`), in that lane's resource group and Container
-Apps environment.
+Apps environment. Each lane gets its own storage account / share / environment
+storage name — the table tracks the concrete values:
+
+| Lane | Storage account | File share | Env storage (mount) name |
+|---|---|---|---|
+| `staging` | `stitchstaging` | `etl-staging` | `etl-staging` |
+| `dress-rehearsal` | _(tbd)_ | _(tbd)_ | _(tbd)_ |
 
 1. **Create a storage account + file share.** Create a Storage account (Standard
-   LRS, StorageV2) or reuse one, then under **File shares** add a share named
-   `etl-data`.
+   LRS, StorageV2) or reuse one, then under **File shares** add a share (for
+   `staging`: account `stitchstaging`, share `etl-staging`).
 
 2. **Upload the data into the share.** In the share's **Browse** view, create a
    `gem/` folder and upload the GEM reference spreadsheet
@@ -93,10 +99,11 @@ Apps environment.
 
 3. **Register the share on the Container Apps environment.** Open the Container
    Apps **Environment** → **Settings → Volume mounts → Add** → choose **SMB**, and
-   enter the storage account name, account key, share name (`etl-data`), and
-   access mode. This registration lives on the *environment* and persists across
-   app deploys. (Container Apps does not support managed-identity access to Azure
-   Files, so the account key is required regardless of Portal vs. CLI.)
+   enter the storage account name, account key, share name (`etl-staging` for
+   staging), and access mode; name the environment storage to match (`etl-staging`).
+   This registration lives on the *environment* and persists across app deploys.
+   (Container Apps does not support managed-identity access to Azure Files, so the
+   account key is required regardless of Portal vs. CLI.)
 
    To get the account key: go to the **storage account** → **Security +
    networking → Access keys** → **Show** under `key1` and copy the **Key** value
@@ -105,9 +112,10 @@ Apps environment.
    full access to the storage account; rotate via the same blade if exposed.
 
 4. **Record the names for the future CI wiring** as environment-scoped GitHub
-   config: variables `ETL_STORAGE_NAME` (e.g. `etl-data`) and
-   `ETL_STORAGE_SHARE_NAME`, and — if the YAML deploy authenticates with the key
-   rather than the pre-registered env storage — secret `ETL_STORAGE_ACCOUNT_KEY`.
+   config: variables `ETL_STORAGE_NAME` (the env storage name, e.g. `etl-staging`)
+   and `ETL_STORAGE_SHARE_NAME` (e.g. `etl-staging`), and — if the YAML deploy
+   authenticates with the key rather than the pre-registered env storage — secret
+   `ETL_STORAGE_ACCOUNT_KEY`.
 
 The per-app **volume mount** (attaching the registered storage to a container at
 a path) can also be added in the Portal by editing the app and creating a new
@@ -121,23 +129,36 @@ safe to do in the Portal now because they persist independently of app deploys.
 Equivalent CLI, for reference (registration is the key step):
 
 ```bash
+# staging values shown
 az containerapp env storage set \
   --name <AZURE_CONTAINER_APP_ENVIRONMENT> \
   --resource-group <AZURE_RESOURCE_GROUP> \
-  --storage-name etl-data \
-  --azure-file-account-name <storageacct> \
+  --storage-name etl-staging \
+  --azure-file-account-name stitchstaging \
   --azure-file-account-key <key> \
-  --azure-file-share-name etl-data \
+  --azure-file-share-name etl-staging \
   --access-mode ReadWrite
 ```
 
 See the Microsoft docs for the full Portal walkthrough:
 <https://learn.microsoft.com/en-us/azure/container-apps/storage-mounts-azure-files>.
 
-Once mounted, the apps should also be pinned to **min = max = 1 replica**: they
-hold job state in memory (the `/status` endpoint) and run one job at a time, so a
-second replica would both fragment status responses and create a concurrent
-writer on the shared share.
+#### ETL replica pinning (wired in CI)
+
+The ETL apps must run a **single replica**: they hold job state in memory (the
+`/status` endpoint) and run one job at a time, so a second replica would fragment
+status responses and (once the share is mounted) create a concurrent writer.
+
+This is **enforced on every deploy**, not as a one-time manual setting. The
+`azure/container-apps-deploy-action@v1` step (`az containerapp up`) does not
+reliably preserve scale settings, so a value set by hand in the Portal can be
+reset on the next pipeline run. Instead, `deploy-container.yml` takes optional
+`min-replicas` / `max-replicas` inputs and, when either is set, runs a post-deploy
+`az containerapp update --min-replicas … --max-replicas …` to reassert them. The
+ETL jobs pass `min-replicas: "1"` and `max-replicas: "1"`, so the pin is
+self-healing — no manual Portal step needed, and it survives every redeploy. Other
+deploys (api, entity-linkage, stitch-llm) omit these inputs and keep their default
+scaling.
 
 Reusable workflows now select lane-specific configuration from GitHub
 Environments and are expected to fail loudly when required values are absent.

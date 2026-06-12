@@ -38,6 +38,16 @@ on:
         required: false
         default: ""
         type: string
+      min-replicas:
+        description: "Optional. If set, reassert the Container App min replica count after deploy. Use to pin single-replica apps (set min and max to 1)."
+        required: false
+        default: ""
+        type: string
+      max-replicas:
+        description: "Optional. If set, reassert the Container App max replica count after deploy."
+        required: false
+        default: ""
+        type: string
     secrets:
       azure-client-id:
         required: true
@@ -150,6 +160,26 @@ jobs:
           registryUrl: ${{ inputs.registry-server }}
           registryUsername: ${{ inputs.registry-username }}
           registryPassword: ${{ secrets.registry-password }}
+
+      - name: Pin replica scaling
+        # `az containerapp up` (the deploy action) does not reliably preserve
+        # scale settings, so reassert them after every deploy when requested.
+        # Single-job apps (the ETLs) pass min=max=1 to avoid multiple replicas.
+        if: ${{ inputs.min-replicas != '' || inputs.max-replicas != '' }}
+        shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          MIN_REPLICAS: ${{ inputs.min-replicas }}
+          MAX_REPLICAS: ${{ inputs.max-replicas }}
+        run: |
+          set -euo pipefail
+          args=()
+          [ -n "${MIN_REPLICAS}" ] && args+=(--min-replicas "${MIN_REPLICAS}")
+          [ -n "${MAX_REPLICAS}" ] && args+=(--max-replicas "${MAX_REPLICAS}")
+          az containerapp update \
+            --name "${{ inputs.container-app-name }}" \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            "${args[@]}"
 
       - name: Export application URL
         id: export-app-url
