@@ -117,7 +117,7 @@ jobs:
       azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      container-app-name: ${{ format('{0}-stitch-etl-gem', needs.resolve-context.outputs.deployment-name) }}
+      container-app-name: ${{ format('{0}-etl-gem', needs.resolve-context.outputs.deployment-name) }}
 
   delete-stitch-etl-woodmac-container-app:
     name: Delete stitch-etl-woodmac container app
@@ -129,7 +129,7 @@ jobs:
       azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      container-app-name: ${{ format('{0}-stitch-etl-woodmac', needs.resolve-context.outputs.deployment-name) }}
+      container-app-name: ${{ format('{0}-etl-woodmac', needs.resolve-context.outputs.deployment-name) }}
 
   close-static-web-app-preview:
     needs: [resolve-context]
