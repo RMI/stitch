@@ -58,6 +58,87 @@ are supplied to `deploy-container.yml` via the `registry-server` /
 receives each ETL Container App URL (empty when not deployed) and renders the ETL
 control page.
 
+CORS: each ETL app allows exactly one browser origin, set at deploy time via
+`ETL_GEM_FRONTEND_ORIGIN_URL` / `ETL_WOODMAC_FRONTEND_ORIGIN_URL` (sourced from
+the lane's computed `frontend-origin-url`). Unset, they default to
+`http://localhost:3000`, so a missing value shows up as a browser CORS
+("No 'Access-Control-Allow-Origin' header") failure, not a server error.
+
+#### ETL durable storage (Azure Files — manual setup, not yet wired)
+
+The ETL apps need persistent storage that the current deploy path does not yet
+provide: `etl-gem` reads a read-only reference spreadsheet (`GEM_FILE_DIR`,
+`/mnt/data`) and `etl-woodmac` keeps a read-write cache (`WOODMAC_DATA_DIR`,
+currently the ephemeral `/tmp/woodmac`, lost on every restart/revision). The plan
+is one **SMB Azure Files** share per lane, mounted into both apps (gem read-only,
+woodmac read-write). `azure/container-apps-deploy-action@v1` cannot mount volumes,
+so wiring this in CI requires graduating the ETL jobs to an `az containerapp
+update --yaml` step — tracked separately. The Azure-side prerequisites below are
+manual and must exist **before** that CI work lands.
+
+These prerequisites are done in the **Azure Portal** (web UI) — no `az` required.
+SMB Azure Files registration and mounting are fully supported in the Portal; only
+NFS forces the CLI/YAML route, which is another reason to use SMB. Do this per
+lane (`staging`, `dress-rehearsal`), in that lane's resource group and Container
+Apps environment.
+
+1. **Create a storage account + file share.** Create a Storage account (Standard
+   LRS, StorageV2) or reuse one, then under **File shares** add a share named
+   `etl-data`.
+
+2. **Upload the data into the share.** In the share's **Browse** view, create a
+   `gem/` folder and upload the GEM reference spreadsheet
+   (`Global-Oil-and-Gas-Extraction-Tracker-*.xlsx`); add any woodmac seed files
+   similarly. The data is intentionally **not** baked into the image.
+
+3. **Register the share on the Container Apps environment.** Open the Container
+   Apps **Environment** → **Settings → Volume mounts → Add** → choose **SMB**, and
+   enter the storage account name, account key, share name (`etl-data`), and
+   access mode. This registration lives on the *environment* and persists across
+   app deploys. (Container Apps does not support managed-identity access to Azure
+   Files, so the account key is required regardless of Portal vs. CLI.)
+
+   To get the account key: go to the **storage account** → **Security +
+   networking → Access keys** → **Show** under `key1` and copy the **Key** value
+   (either `key1` or `key2` works). This is the same key recorded as the
+   `ETL_STORAGE_ACCOUNT_KEY` secret in step 4. Treat it as a secret — it grants
+   full access to the storage account; rotate via the same blade if exposed.
+
+4. **Record the names for the future CI wiring** as environment-scoped GitHub
+   config: variables `ETL_STORAGE_NAME` (e.g. `etl-data`) and
+   `ETL_STORAGE_SHARE_NAME`, and — if the YAML deploy authenticates with the key
+   rather than the pre-registered env storage — secret `ETL_STORAGE_ACCOUNT_KEY`.
+
+The per-app **volume mount** (attaching the registered storage to a container at
+a path) can also be added in the Portal by editing the app and creating a new
+revision — but **do not rely on that for a stable setup**: our deploys run through
+`azure/container-apps-deploy-action@v1` (`az containerapp up`), which re-applies
+the container spec and will drop a hand-added mount on the next pipeline run. A
+Portal mount is fine for a one-off smoke test; for durability the mount must live
+in the deploy path (the YAML step in the follow-up task). Steps 1–3 above are
+safe to do in the Portal now because they persist independently of app deploys.
+
+Equivalent CLI, for reference (registration is the key step):
+
+```bash
+az containerapp env storage set \
+  --name <AZURE_CONTAINER_APP_ENVIRONMENT> \
+  --resource-group <AZURE_RESOURCE_GROUP> \
+  --storage-name etl-data \
+  --azure-file-account-name <storageacct> \
+  --azure-file-account-key <key> \
+  --azure-file-share-name etl-data \
+  --access-mode ReadWrite
+```
+
+See the Microsoft docs for the full Portal walkthrough:
+<https://learn.microsoft.com/en-us/azure/container-apps/storage-mounts-azure-files>.
+
+Once mounted, the apps should also be pinned to **min = max = 1 replica**: they
+hold job state in memory (the `/status` endpoint) and run one job at a time, so a
+second replica would both fragment status responses and create a concurrent
+writer on the shared share.
+
 Reusable workflows now select lane-specific configuration from GitHub
 Environments and are expected to fail loudly when required values are absent.
 
