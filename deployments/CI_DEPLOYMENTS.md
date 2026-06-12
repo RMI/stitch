@@ -64,26 +64,32 @@ the lane's computed `frontend-origin-url`). Unset, they default to
 `http://localhost:3000`, so a missing value shows up as a browser CORS
 ("No 'Access-Control-Allow-Origin' header") failure, not a server error.
 
-#### ETL durable storage (Azure Files — manual setup, not yet wired)
+#### ETL durable storage (Azure Files — wired in CI; storage prerequisites manual)
 
-The ETL apps need persistent storage that the current deploy path does not yet
-provide: `etl-gem` reads a read-only reference spreadsheet (`GEM_FILE_DIR`,
-`/mnt/data`) and `etl-woodmac` keeps a read-write cache (`WOODMAC_DATA_DIR`,
-currently the ephemeral `/tmp/woodmac`, lost on every restart/revision). The plan
-is one **SMB Azure Files** share per lane, mounted into both apps (gem read-only,
-woodmac read-write). `azure/container-apps-deploy-action@v1` cannot mount volumes,
-so wiring this in CI requires graduating the ETL jobs to an `az containerapp
-update --yaml` step — tracked separately. The Azure-side prerequisites below are
-manual and must exist **before** that CI work lands.
+The ETL apps mount a persistent **SMB Azure Files** share so their data survives
+restarts/revisions: `etl-gem` reads its reference spreadsheet from
+`GEM_FILE_DIR=/mnt/data/gem` and `etl-woodmac` keeps its cache at
+`WOODMAC_DATA_DIR=/mnt/data/woodmac`. One share per lane is mounted into both apps
+at `/mnt/data`, with each app using its own subfolder (`gem/`, `woodmac/`).
 
-These prerequisites are done in the **Azure Portal** (web UI) — no `az` required.
-SMB Azure Files registration and mounting are fully supported in the Portal; only
-NFS forces the CLI/YAML route, which is another reason to use SMB. Do this per
-lane (`staging`, `dress-rehearsal`), in that lane's resource group and Container
-Apps environment. Each lane gets its own storage account / share / environment
-storage name — the table tracks the concrete values:
+The **per-app mount is applied automatically by the pipeline** —
+`azure/container-apps-deploy-action@v1` can't mount volumes, so
+`deploy-container.yml` takes optional `storage-name` / `storage-mount-path` inputs
+and, after the deploy, reads the app spec (`az containerapp show`), injects the
+volume + volumeMount with `jq`, and re-applies it (`az containerapp update
+--yaml`). The ETL jobs pass `storage-name` (from the lane's `ETL_STORAGE_NAME`
+variable, routed via `lane-config-validate` because env-scoped variables aren't
+visible to reusable-workflow callers) and `storage-mount-path: /mnt/data`. Because
+it runs every deploy, **do not configure the mount by hand in the Portal** — the
+pipeline reasserts it and a manual mount would just be overwritten.
 
-| Lane | Storage account | File share | Env storage (mount) name |
+What *is* manual is the storage itself. Do the steps below in the **Azure Portal**
+(no `az` needed; SMB registration and mounting are fully Portal-supported — only
+NFS forces CLI/YAML) per lane (`staging`, `dress-rehearsal`), in that lane's
+resource group and Container Apps environment. Each lane gets its own storage
+account / share / environment-storage name:
+
+| Lane | Storage account | File share | Env storage name (`ETL_STORAGE_NAME`) |
 |---|---|---|---|
 | `staging` | `stitchstaging` | `etl-staging` | `etl-staging` |
 | `dress-rehearsal` | _(tbd)_ | _(tbd)_ | _(tbd)_ |
@@ -92,41 +98,35 @@ storage name — the table tracks the concrete values:
    LRS, StorageV2) or reuse one, then under **File shares** add a share (for
    `staging`: account `stitchstaging`, share `etl-staging`).
 
-2. **Upload the data into the share.** In the share's **Browse** view, create a
-   `gem/` folder and upload the GEM reference spreadsheet
-   (`Global-Oil-and-Gas-Extraction-Tracker-*.xlsx`); add any woodmac seed files
-   similarly. The data is intentionally **not** baked into the image.
+2. **Create the subfolders and upload data.** In the share's **Browse** view,
+   create a `gem/` folder and upload the GEM reference spreadsheet
+   (`Global-Oil-and-Gas-Extraction-Tracker-*.xlsx`) into it, and create a
+   `woodmac/` folder for the cache (and any woodmac seed files). These match
+   `GEM_FILE_DIR=/mnt/data/gem` and `WOODMAC_DATA_DIR=/mnt/data/woodmac`. The data
+   is intentionally **not** baked into the image.
 
 3. **Register the share on the Container Apps environment.** Open the Container
    Apps **Environment** → **Settings → Volume mounts → Add** → choose **SMB**, and
    enter the storage account name, account key, share name (`etl-staging` for
-   staging), and access mode; name the environment storage to match (`etl-staging`).
-   This registration lives on the *environment* and persists across app deploys.
+   staging), and access mode `ReadWrite`; name the environment storage to match
+   (`etl-staging`) — this exact name is what `ETL_STORAGE_NAME` must hold. The
+   registration lives on the *environment* and persists across app deploys.
    (Container Apps does not support managed-identity access to Azure Files, so the
    account key is required regardless of Portal vs. CLI.)
 
    To get the account key: go to the **storage account** → **Security +
    networking → Access keys** → **Show** under `key1` and copy the **Key** value
-   (either `key1` or `key2` works). This is the same key recorded as the
-   `ETL_STORAGE_ACCOUNT_KEY` secret in step 4. Treat it as a secret — it grants
-   full access to the storage account; rotate via the same blade if exposed.
+   (either `key1` or `key2` works). Treat it as a secret — it grants full access to
+   the storage account; rotate via the same blade if exposed. It is only used here
+   for the manual registration; the pipeline does **not** need it as a GitHub
+   secret (it references the share by the registered env-storage name).
 
-4. **Record the names for the future CI wiring** as environment-scoped GitHub
-   config: variables `ETL_STORAGE_NAME` (the env storage name, e.g. `etl-staging`)
-   and `ETL_STORAGE_SHARE_NAME` (e.g. `etl-staging`), and — if the YAML deploy
-   authenticates with the key rather than the pre-registered env storage — secret
-   `ETL_STORAGE_ACCOUNT_KEY`.
+4. **Set the `ETL_STORAGE_NAME` environment variable** (GitHub Environment →
+   Variables) to the env-storage name from step 3, e.g. `etl-staging`. This is the
+   one piece of GitHub config the CI wiring consumes; the share name and account
+   key are used only during the manual registration above.
 
-The per-app **volume mount** (attaching the registered storage to a container at
-a path) can also be added in the Portal by editing the app and creating a new
-revision — but **do not rely on that for a stable setup**: our deploys run through
-`azure/container-apps-deploy-action@v1` (`az containerapp up`), which re-applies
-the container spec and will drop a hand-added mount on the next pipeline run. A
-Portal mount is fine for a one-off smoke test; for durability the mount must live
-in the deploy path (the YAML step in the follow-up task). Steps 1–3 above are
-safe to do in the Portal now because they persist independently of app deploys.
-
-Equivalent CLI, for reference (registration is the key step):
+Equivalent CLI for step 3, for reference:
 
 ```bash
 # staging values shown
@@ -279,6 +279,10 @@ named:
 * `GHCR_ETL_PULL_USERNAME` (example: `your-github-username`) — registry username
   for pulling the ETL images; not sensitive, so it is a variable. Only needed on
   `staging` / `dress-rehearsal`.
+* `ETL_STORAGE_NAME` (example: `etl-staging`) — the Azure Files env-storage name
+  registered on the Container Apps environment; mounted into both ETL apps at
+  `/mnt/data`. Only needed on `staging` / `dress-rehearsal` (see ETL durable
+  storage above).
 * `ETL_GEM_IMAGE_TAG` (example: `pr-9`) — optional; ETL GEM image tag to deploy,
   defaults to `pr-9`. Only used on `staging` / `dress-rehearsal`.
 * `ETL_WOODMAC_IMAGE_TAG` (example: `pr-9`) — optional; ETL WoodMac image tag to
