@@ -104,6 +104,8 @@ jobs:
           REGISTRY_SERVER: ${{ inputs.registry-server }}
           REGISTRY_USERNAME: ${{ inputs.registry-username }}
           REGISTRY_PASSWORD: ${{ secrets.registry-password }}
+          STORAGE_NAME: ${{ inputs.storage-name }}
+          MOUNT_PATH: ${{ inputs.storage-mount-path }}
         run: |
           set -euo pipefail
           : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
@@ -116,6 +118,20 @@ jobs:
           if [ -n "${REGISTRY_SERVER:-}" ]; then
             : "${REGISTRY_USERNAME:?registry-server is set but the registry-username variable is empty}"
             : "${REGISTRY_PASSWORD:?registry-server is set but the registry-password secret is empty}"
+          fi
+
+          # storage-name and storage-mount-path must be set together. Callers that
+          # need durable storage (the ETL apps) hardcode the mount path, so an
+          # empty storage-name means a missing/typo'd ETL_STORAGE_NAME variable.
+          # Without this check the mount step below silently skips and the app
+          # deploys with no durable storage. Fail fast on either-without-the-other.
+          if [ -n "${STORAGE_NAME:-}" ] && [ -z "${MOUNT_PATH:-}" ]; then
+            echo "::error::storage-name is set but storage-mount-path is empty" >&2
+            exit 1
+          fi
+          if [ -n "${MOUNT_PATH:-}" ] && [ -z "${STORAGE_NAME:-}" ]; then
+            echo "::error::storage-mount-path is set but storage-name is empty (check the lane's ETL_STORAGE_NAME variable)" >&2
+            exit 1
           fi
 
       - name: Azure login
