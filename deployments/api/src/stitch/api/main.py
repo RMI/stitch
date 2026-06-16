@@ -8,6 +8,7 @@ from starlette.status import HTTP_503_SERVICE_UNAVAILABLE
 from .middleware import register_middlewares
 from .db.config import dispose_engine
 from .auth import validate_auth_config_at_startup
+from .observability import configure_logging
 from .settings import get_settings
 
 from .routers.auth import router as auth_router
@@ -32,9 +33,11 @@ async def lifespan(app: FastAPI):
     await dispose_engine()
 
 
-app = FastAPI(lifespan=lifespan)
-
 settings = get_settings()
+
+configure_logging(level=settings.log_level, log_format=settings.log_format)
+
+app = FastAPI(lifespan=lifespan)
 
 register_middlewares(application=app, settings=settings)
 
