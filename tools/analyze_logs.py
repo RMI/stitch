@@ -184,15 +184,14 @@ def report_routes(events: list[dict], top: int, sort_key: str, width: int) -> No
     )
     print(
         f"{'reqs':>6} {'mean_ms':>8} {'p95_ms':>8} {'max_ms':>8} "
-        f"{'avg_q':>6} {'max_q':>6} {'errs':>5}  route"
+        f"{'avg_q':>6} {'max_q':>6} {'err%':>6}  route"
     )
-    print("-" * (6 + 8 + 8 + 8 + 6 + 6 + 5 + 40))
+    print("-" * (6 + 8 + 8 + 8 + 6 + 6 + 6 + 40))
     for s in ranked[:top]:
-        errs = sum(1 for c in s.statuses if c >= 500)
         flag = "  ⚠ N+1?" if avg_db(s) >= 10 else ""
         print(
             f"{s.count:>6} {s.mean:>8.1f} {s.p95:>8.1f} {s.maximum:>8.1f} "
-            f"{avg_db(s):>6.1f} {max(s.db_counts, default=0):>6} {errs:>5}  "
+            f"{avg_db(s):>6.1f} {max(s.db_counts, default=0):>6} {_error_rate(s):>5.1f}%  "
             f"{_truncate(s.key, width)}{flag}"
         )
 
@@ -215,7 +214,14 @@ def _grouped_stats(
         stat = by_scenario.setdefault(scenario, Stat(scenario))
         stat.durations.append(float(e.get("duration_ms") or 0.0))
         stat.db_counts.append(int(e.get("db_query_count") or 0))
+        stat.statuses.append(int(e.get("status_code") or 0))
     return grouped
+
+
+def _error_rate(stat: Stat) -> float:
+    """Percentage of requests that failed (status >= 400, incl. 401/403)."""
+    failures = sum(1 for c in stat.statuses if c >= 400)
+    return 100.0 * failures / stat.count if stat.count else 0.0
 
 
 def _baseline_scenario(by_scenario: dict[str, Stat], baseline: str | None) -> str:
@@ -262,7 +268,7 @@ def report_by_scenario(
         print(f"\n{_truncate(primary, width)}")
         base = _baseline_scenario(by_scenario, baseline)
         base_mean = by_scenario[base].mean
-        extra = f" {'avg_q':>6}" if show_db else ""
+        extra = f" {'avg_q':>6} {'err%':>6}" if show_db else ""
         print(
             f"  {'scenario':<24} {'count':>7} {'mean':>8} {'p95':>8} "
             f"{'total_ms':>10}{extra} {'vs base':>9}"
@@ -271,7 +277,7 @@ def report_by_scenario(
             s = by_scenario[sc]
             ratio = (s.mean / base_mean) if base_mean else 0.0
             avg_q = (sum(s.db_counts) / s.count) if (show_db and s.count) else 0.0
-            extra_val = f" {avg_q:>6.1f}" if show_db else ""
+            extra_val = f" {avg_q:>6.1f} {_error_rate(s):>5.1f}%" if show_db else ""
             tag = "  ← base" if sc == base else ""
             print(
                 f"  {_truncate(sc, 24):<24} {s.count:>7} {s.mean:>8.1f} "

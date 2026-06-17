@@ -86,22 +86,54 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml \
   --profile seed up seed --build
 ```
 
-Then generate load against the endpoint you suspect. Dev lanes run with auth
-disabled, so plain `curl` works. A simple repeat loop is enough to surface a hot
-query:
+> **Auth matters here.** Protected endpoints return **401 before the handler
+> runs**, so unauthenticated requests do *zero* DB work — you'll see requests
+> logged with `db_query_count: 0` and a high `err%`, and no query events. If your
+> query report comes back empty or routes show `err%` near 100%, this is almost
+> certainly why. Two ways to make load actually hit the DB:
+>
+> - **Disable auth (simplest, dev only):** set `AUTH_DISABLED=true` in `.env`
+>   (allowed when `ENVIRONMENT` is `dev`/`main`/`dev-*`/`pr-*`) and restart the
+>   stack — requests then run as a dev user.
+> - **Send a token:** reuse the privileged bearer token the `seed` service
+>   already authenticates with, read straight from `.env` (see the loop below).
+
+Then generate load against the endpoint you suspect. Pull the token from `.env`
+(without printing it), confirm one request is accepted, then hammer the endpoint:
 
 ```bash
-# hammer the list endpoint 200x
+# Extract the token: everything after the '=', minus quotes / CR.
+# (Add a single-quote to the tr set if your value is single-quoted.)
+TOKEN=$(sed -n 's/^STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN=//p' .env | tr -d '"\r')
+
+# Sanity check — expect 200, not 401:
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=1"
+
+# Hammer the list endpoint 200x, tagged for comparison:
 for i in $(seq 200); do
-  curl -s -o /dev/null "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=50"
+  curl -s -o /dev/null \
+    -H "Authorization: Bearer $TOKEN" \
+    -H 'X-Perf-Scenario: vol=8k' \
+    "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=50"
 done
 ```
 
+> Don't `echo "$TOKEN"` — keep the secret out of your shell history. If the
+> sanity check still returns `401`, the running API validates against a
+> different token than what's in `.env` (a quick tell is whether the `seed`
+> service itself succeeds, since it uses the same one). If auth is disabled
+> instead, drop the `Authorization` header — the `TOKEN` line is then unneeded.
+
 For concurrency/throughput numbers, use a load tool if you have one installed
-(`hey`, `wrk`, `ab`):
+(`hey`, `wrk`, `ab`) — pass the same auth header (and scenario label):
 
 ```bash
-hey -n 500 -c 20 "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=50"
+hey -n 500 -c 20 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Perf-Scenario: vol=8k" \
+  "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=50"
 ```
 
 The instrumentation records every request regardless of how it's generated.
@@ -177,9 +209,9 @@ QUERIES — top 3 by total
     300       348.3      1.2      1.9      2.0  ························  SELECT * FROM oil_gas_field_sources WHERE pk = ?
 
 ROUTES — top 3 by total
-  reqs  mean_ms   p95_ms   max_ms  avg_q  max_q  errs  route
-   125    396.3    489.9   1433.8    3.0      3     5  /api/v1/oil-gas-fields/
-    60    103.6    156.9    159.4   14.9     18     0  /api/v1/oil-gas-fields/{id}  ⚠ N+1?
+  reqs  mean_ms   p95_ms   max_ms  avg_q  max_q   err%  route
+   125    396.3    489.9   1433.8    3.0      3   4.0%  /api/v1/oil-gas-fields/
+    60    103.6    156.9    159.4   14.9     18   0.0%  /api/v1/oil-gas-fields/{id}  ⚠ N+1?
 ```
 
 ### How to read it
@@ -194,7 +226,10 @@ ROUTES — top 3 by total
 - **`ROUTES` `avg_q` (avg queries/request)** = N+1 smell. A detail endpoint
   firing 15 queries per request is doing per-row lookups; the `⚠ N+1?` flag marks
   ≥ 10. Cross-reference with the query stream to see which statement repeats.
-- **`errs`** counts 5xx responses per route.
+- **`err%`** = share of requests with status ≥ 400 (includes **401/403** auth
+  failures, not just 5xx). A route at ~100% `err%` with `avg_q` 0 means the
+  requests are being rejected before any DB work — usually unauthenticated load
+  (see the auth note in Step 2).
 
 ---
 
