@@ -1,5 +1,6 @@
 from .common import Base as StitchBase
 from .og_field_query_mixin import OGFieldQueryMixin
+from .og_field_resource_query_view import OGFieldResourceQueryView
 from .og_field_source_priority import OGFieldSourcePriority
 from .oil_gas_field_source import OilGasFieldSourceModel
 from .membership import MembershipModel, MembershipStatus
@@ -11,6 +12,7 @@ __all__ = [
     "MembershipModel",
     "MembershipStatus",
     "OGFieldQueryMixin",
+    "OGFieldResourceQueryView",
     "OGFieldSourcePriority",
     "OilGasFieldSourceModel",
     "MergeCandidateItemModel",
