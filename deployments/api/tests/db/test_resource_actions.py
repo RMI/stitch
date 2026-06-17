@@ -274,10 +274,10 @@ class TestResourceQueryAction:
         assert [item.id for item in items] == [resource_id]
         assert items[0].data.name == "RMI Name"
         assert items[0].provenance["name"] == "rmi"
-        assert items[0].data.country == "CAN"
-        assert items[0].provenance["country"] == "gem"
-        assert items[0].data.basin == "GEM Basin"
-        assert items[0].provenance["basin"] == "gem"
+        assert items[0].data.country == "USA"
+        assert items[0].provenance["country"] == "wm"
+        assert items[0].data.basin == "WM Basin"
+        assert items[0].provenance["basin"] == "wm"
         assert items[0].data.reservoir_formation == "WM Formation"
         assert items[0].provenance["reservoir_formation"] == "wm"
 
