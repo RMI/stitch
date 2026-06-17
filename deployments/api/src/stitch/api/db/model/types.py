@@ -1,4 +1,4 @@
-from sqlalchemy import JSON, BigInteger, Dialect, TypeDecorator
+from sqlalchemy import JSON, BigInteger, Dialect, Float, TypeDecorator
 from sqlalchemy.dialects import postgresql, sqlite
 
 
@@ -8,6 +8,14 @@ PORTABLE_BIGINT = (
     .with_variant(sqlite.INTEGER(), "sqlite")
 )
 PORTABLE_JSON = JSON().with_variant(postgresql.JSONB(), "postgresql")
+PORTABLE_FLOAT = Float().with_variant(postgresql.DOUBLE_PRECISION(), "postgresql")
+
+# JSON column where a Python ``None`` binds to SQL NULL (not the JSON ``null``
+# literal). Needed so the long values table's "exactly one column populated"
+# check sees an unset value column as truly NULL.
+PORTABLE_JSON_NULL = JSON(none_as_null=True).with_variant(
+    postgresql.JSONB(none_as_null=True), "postgresql"
+)
 
 
 class StitchJson(TypeDecorator):

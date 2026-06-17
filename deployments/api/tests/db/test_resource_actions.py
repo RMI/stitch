@@ -10,7 +10,6 @@ from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db.model import (
     MembershipModel,
     MembershipStatus,
-    OilGasFieldSourceModel,
     ResourceModel,
 )
 from stitch.api.entities import (
@@ -19,7 +18,7 @@ from stitch.api.entities import (
     User,
 )
 from tests.factories import ResourceCreateFactory
-from tests.utils import make_source_record
+from tests.utils import make_source_model
 
 
 _QueryParams = OGFieldQueryParams
@@ -36,16 +35,11 @@ async def _create_resource_with_sources(
     await session.flush()
 
     for row in source_rows:
-        payload = {
-            "source": row["source"],
-            "name": row.get("name"),
-            "country": row.get("country"),
-        }
-        source = OilGasFieldSourceModel(
-            **row,
-            source_record=make_source_record(payload=payload).model_dump(mode="json"),
+        attrs = {k: v for k, v in row.items() if k != "source"}
+        source = make_source_model(
+            source=row["source"],
             created_by_id=user.id,
-            last_updated_by_id=user.id,
+            **attrs,
         )
         session.add(source)
         await session.flush()
@@ -629,8 +623,8 @@ class TestResourceFilterOptionsAction:
 
     def test_postgres_distinct_query_orders_by_selected_value_alias(self):
         params = OGFieldFilterOptionsParams(field="basin")
-        coalesced = resource_actions._build_licensed_resource_list_cte(
-            params,
+        coalesced = resource_actions.build_resource_list_cte(
+            params.source,
             licensed_sources=frozenset({"gem", "wm", "rmi", "llm"}),
         )
         col = resource_actions._resource_list_column(coalesced, params.field)

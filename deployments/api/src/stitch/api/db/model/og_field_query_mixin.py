@@ -1,4 +1,12 @@
-"""Declarative mixin: shared OG field columns + query classmethods."""
+"""Declarative mixin: long-aware filter/sort/paginate over source records.
+
+A source record is no longer one wide row -- its attributes live in the long
+``oil_gas_field_source_values`` table. This mixin pivots each record's value
+rows back into a wide, one-row-per-record subquery (restricted to records with
+an active membership), then applies the same conditions/sort/pagination the
+endpoint always used. Numeric attributes pivot out of ``value_num`` so ordering
+is numerically correct without casts.
+"""
 
 from __future__ import annotations
 
@@ -7,43 +15,36 @@ from typing import Any, ClassVar, Self
 
 from sqlalchemy import (
     ColumnElement,
-    Float,
-    Integer,
-    Select,
-    String,
     asc,
+    case,
     desc,
     func,
     or_,
     select,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Mapped, declarative_mixin, mapped_column
+from sqlalchemy.orm import declarative_mixin
 
 from stitch.api.entities import OGFieldQueryParams, OGSI_SOURCE_DEFAULT
-from stitch.ogsi.model import LocationType
-from stitch.ogsi.model.types import (
-    FieldStatus,
-    OGSISrcKey,
-    PrimaryHydrocarbonGroup,
-    ProductionConventionality,
+from stitch.ogsi.model.types import OGSISrcKey
+
+from .membership import MembershipModel, MembershipStatus
+from .oil_gas_field_source_value import (
+    ATTRIBUTE_KINDS,
+    ATTRIBUTE_NAMES,
+    OilGasFieldSourceValueModel,
+    ValueKind,
+    value_attr_for,
 )
 
 
 @declarative_mixin
 class OGFieldQueryMixin:
-    """Shared OG field columns and query classmethods.
+    """Long-aware query classmethods for source-record models.
 
-    Provides the full set of domain columns (aligned with OilGasFieldBase,
-    minus owners/operators) and classmethods for filtered, sorted, paginated
-    queries.  Subclasses may override ``_base_query`` to customise the FROM
-    clause (e.g. adding joins) while inheriting conditions, sorting, and
-    pagination logic.
+    The host model must declare ``id`` and ``source`` columns; attribute values
+    are read from the related ``oil_gas_field_source_values`` rows.
     """
-
-    # ------------------------------------------------------------------
-    # Query field configuration
-    # ------------------------------------------------------------------
 
     _q_fields: ClassVar[tuple[str, ...]] = (
         "name",
@@ -63,37 +64,46 @@ class OGFieldQueryMixin:
         "primary_hydrocarbon_group",
     )
 
+    __primary_sort_col__: ClassVar[str] = "id"
+
     # ------------------------------------------------------------------
-    # Shared column declarations
+    # Pivot: one wide row per source record (active-membership only)
     # ------------------------------------------------------------------
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str | None] = mapped_column(String, nullable=True)
-    country: Mapped[str | None] = mapped_column(String, nullable=True)
-    name_local: Mapped[str | None] = mapped_column(String, nullable=True)
-    state_province: Mapped[str | None] = mapped_column(String, nullable=True)
-    region: Mapped[str | None] = mapped_column(String, nullable=True)
-    basin: Mapped[str | None] = mapped_column(String, nullable=True)
-    reservoir_formation: Mapped[str | None] = mapped_column(String, nullable=True)
-    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
-    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
-    discovery_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    production_start_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    fid_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    @classmethod
+    def _source_pivot(cls, licensed_sources: Collection[OGSISrcKey] | None = None):
+        """Build a CTE with one row per source record and a column per attr."""
+        v = OilGasFieldSourceValueModel
+        active_membership = (
+            select(1)
+            .where(MembershipModel.source_pk == cls.id)
+            .where(MembershipModel.status == MembershipStatus.ACTIVE)
+            .exists()
+        )
+        stmt = (
+            select(cls.id.label("id"), cls.source.label("source"))
+            .select_from(cls)
+            .outerjoin(v, v.source_pk == cls.id)
+            .where(active_membership)
+        )
+        if licensed_sources is not None:
+            stmt = stmt.where(cls.source.in_(list(dict.fromkeys(licensed_sources))))
+        stmt = stmt.group_by(cls.id, cls.source)
+        # JSON attributes (owners/operators) are neither filterable nor
+        # sortable, so they are omitted -- this also avoids max(jsonb), which
+        # Postgres has no aggregate for.
+        for field_name in ATTRIBUTE_NAMES:
+            if ATTRIBUTE_KINDS[field_name] is ValueKind.JSON:
+                continue
+            value_col = getattr(v, value_attr_for(field_name))
+            stmt = stmt.add_columns(
+                func.max(case((v.colname == field_name, value_col))).label(field_name)
+            )
+        return stmt.cte("source_pivot")
 
-    # Enum/Literal columns
-    location_type: Mapped[LocationType | None] = mapped_column(
-        default=None, nullable=True
-    )
-    production_conventionality: Mapped[ProductionConventionality | None] = (
-        mapped_column(default=None, nullable=True)
-    )
-    primary_hydrocarbon_group: Mapped[PrimaryHydrocarbonGroup | None] = mapped_column(
-        default=None, nullable=True
-    )
-    field_status: Mapped[FieldStatus | None] = mapped_column(
-        default=None, nullable=True
-    )
+    @staticmethod
+    def _pivot_column(pivot, field_name: str):
+        return getattr(pivot.c, field_name, None)
 
     # ------------------------------------------------------------------
     # Public query classmethods
@@ -106,11 +116,20 @@ class OGFieldQueryMixin:
         params: OGFieldQueryParams,
         licensed_sources: Collection[OGSISrcKey] | None = None,
     ) -> Sequence[Self]:
-        """Execute a filtered, sorted, paginated query and return (rows, total)."""
-        base = cls._base_query(params, licensed_sources=licensed_sources)
-        stmt = cls._apply_pagination(base, params)
-        rows = (await session.scalars(stmt)).all()
-        return rows
+        """Filtered, sorted, paginated source records (as ORM instances)."""
+        pivot = cls._source_pivot(licensed_sources)
+        stmt = select(pivot.c.id)
+        for cond in cls._build_conditions(params, pivot, licensed_sources):
+            stmt = stmt.where(cond)
+        stmt = stmt.order_by(*cls._create_sort_clauses(params, pivot))
+        stmt = stmt.offset(params.offset).limit(params.limit)
+
+        ids = list((await session.scalars(stmt)).all())
+        if not ids:
+            return []
+        headers = (await session.scalars(select(cls).where(cls.id.in_(ids)))).all()
+        by_id = {h.id: h for h in headers}
+        return [by_id[i] for i in ids if i in by_id]
 
     @classmethod
     async def count(
@@ -119,56 +138,34 @@ class OGFieldQueryMixin:
         params: OGFieldQueryParams | None = None,
         licensed_sources: Collection[OGSISrcKey] | None = None,
     ) -> int:
-        """Return the total number of matching rows (unfiltered when params is None)."""
-        if params is None:
-            stmt = select(func.count()).select_from(cls)
-        else:
-            stmt = select(func.count()).select_from(
-                cls._base_query(params, licensed_sources=licensed_sources).subquery()
-            )
-        return await session.scalar(stmt) or 0
+        """Count matching source records (all active-membership records when no params)."""
+        pivot = cls._source_pivot(licensed_sources)
+        stmt = select(pivot.c.id)
+        if params is not None:
+            for cond in cls._build_conditions(params, pivot, licensed_sources):
+                stmt = stmt.where(cond)
+        return (
+            await session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        )
 
     # ------------------------------------------------------------------
-    # Internal helpers (overridable)
+    # Condition / sort builders (operate on the pivot's labeled columns)
     # ------------------------------------------------------------------
-
-    __primary_sort_col__: ClassVar[str] = "id"
-
-    @classmethod
-    def _base_query[QM: OGFieldQueryMixin](
-        cls: type[QM],
-        params: OGFieldQueryParams,
-        licensed_sources: Collection[OGSISrcKey] | None = None,
-    ) -> Select[tuple[QM]]:
-        """Filtered + sorted SELECT with no pagination.
-
-        Override this in subclasses to modify the FROM clause (e.g. add joins).
-        """
-        stmt: Select[tuple[QM]] = select(cls).distinct()
-        for cond in cls._build_conditions(params, licensed_sources=licensed_sources):
-            stmt = stmt.where(cond)
-        return stmt.order_by(*cls._create_sort_clauses(params))
 
     @classmethod
     def _build_conditions(
         cls,
         params: OGFieldQueryParams,
+        pivot,
         licensed_sources: Collection[OGSISrcKey] | None = None,
     ) -> list[ColumnElement[bool]]:
-        """Build WHERE conditions from filter params.
-
-        ``params.source`` and ``licensed_sources`` are conceptually distinct:
-        the former is the user-requested existence filter; the latter is the
-        server-derived data-access filter. They are applied as separate
-        predicates so the intent stays explicit.
-        """
         conditions: list[ColumnElement[bool]] = []
 
         if params.q:
             q_term = f"%{params.q}%"
             q_conds: list[ColumnElement[bool]] = []
             for field_name in cls._q_fields:
-                col: ColumnElement[bool] | None = getattr(cls, field_name, None)
+                col = cls._pivot_column(pivot, field_name)
                 if col is not None:
                     q_conds.append(col.ilike(q_term))
             if q_conds:
@@ -176,39 +173,28 @@ class OGFieldQueryMixin:
 
         for field_name in cls._exact_match_fields:
             value = getattr(params, field_name, None)
-            if value is not None:
-                col = getattr(cls, field_name, None)
-                if col is not None:
-                    conditions.append(col == value)
+            if value is None:
+                continue
+            col = cls._pivot_column(pivot, field_name)
+            if col is not None:
+                conditions.append(col == value)
 
-        source_col = getattr(cls, "source", None)
-        if source_col is not None:
-            sources = list(
-                dict.fromkeys(getattr(params, "source", OGSI_SOURCE_DEFAULT))
-            )
-            conditions.append(source_col.in_(sources))
-            if licensed_sources is not None:
-                conditions.append(source_col.in_(list(dict.fromkeys(licensed_sources))))
+        sources = list(dict.fromkeys(getattr(params, "source", OGSI_SOURCE_DEFAULT)))
+        conditions.append(pivot.c.source.in_(sources))
+        if licensed_sources is not None:
+            conditions.append(pivot.c.source.in_(list(dict.fromkeys(licensed_sources))))
 
         return conditions
 
     @classmethod
-    def _create_sort_clauses(cls, params: OGFieldQueryParams) -> list[Any]:
-        """Create ORDER BY clauses with a stable primary-key tie-breaker."""
+    def _create_sort_clauses(cls, params: OGFieldQueryParams, pivot) -> list[Any]:
         clauses: list[Any] = []
-        sort_col = getattr(cls, params.sort_by, None)
+        sort_col = cls._pivot_column(pivot, params.sort_by)
         if sort_col is not None:
             direction = desc if params.sort_order == "desc" else asc
             clauses.append(direction(sort_col).nulls_last())
         if params.sort_by != cls.__primary_sort_col__:
-            primary_sort_col = getattr(cls, cls.__primary_sort_col__, None)
+            primary_sort_col = cls._pivot_column(pivot, cls.__primary_sort_col__)
             if primary_sort_col is not None:
                 clauses.append(asc(primary_sort_col))
         return clauses
-
-    @classmethod
-    def _apply_pagination[QM: OGFieldQueryMixin](
-        cls: type[QM], stmt: Select[tuple[QM]], params: OGFieldQueryParams
-    ) -> Select[tuple[QM]]:
-        """Apply offset/limit for pagination."""
-        return stmt.offset(params.offset).limit(params.limit)

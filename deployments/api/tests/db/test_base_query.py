@@ -1,16 +1,20 @@
 """Integration tests for OGFieldQueryMixin query helpers against OilGasFieldSourceModel."""
 
 import pytest
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from stitch.api.db.model import OilGasFieldSourceModel
+from stitch.api.db.model import (
+    MembershipModel,
+    MembershipStatus,
+    OilGasFieldSourceModel,
+    ResourceModel,
+)
 from stitch.api.entities import (
     OGFieldQueryParams,
     OGFieldSortParams,
     User,
 )
-from tests.utils import make_source_record
+from tests.utils import make_source_model
 
 
 @pytest.fixture
@@ -18,23 +22,12 @@ async def seeded_sources(
     seeded_integration_session: AsyncSession,
     test_user: User,
 ):
-    """Seed 8 diverse source rows for query testing."""
+    """Seed 8 diverse source rows (each with an active membership) for query testing."""
     session = seeded_integration_session
     uid = test_user.id
 
     def with_record(source: str, **kwargs):
-        payload = {
-            "source": source,
-            "name": kwargs.get("name"),
-            "country": kwargs.get("country"),
-        }
-        return OilGasFieldSourceModel(
-            source=source,
-            source_record=make_source_record(payload=payload).model_dump(mode="json"),
-            created_by_id=uid,
-            last_updated_by_id=uid,
-            **kwargs,
-        )
+        return make_source_model(source=source, created_by_id=uid, **kwargs)
 
     sources = [
         with_record(
@@ -103,23 +96,32 @@ async def seeded_sources(
     ]
     session.add_all(sources)
     await session.flush()
+
+    # Each source needs an active membership to be visible to the source-list query.
+    resource = ResourceModel.create(created_by=test_user)
+    session.add(resource)
+    await session.flush()
+    session.add_all(
+        MembershipModel.create(
+            created_by=test_user,
+            resource_id=resource.id,
+            source=src.source,
+            source_pk=src.id,
+            status=MembershipStatus.ACTIVE,
+        )
+        for src in sources
+    )
+    await session.flush()
     return sources
 
 
 async def _execute(session: AsyncSession, **overrides):
-    """Helper: build and execute a query using the mixin's building blocks directly."""
+    """Run the long-aware source-list query and return coalesced entities + total."""
     params = OGFieldQueryParams(**overrides)
     M = OilGasFieldSourceModel
-
-    base = select(M).distinct()
-    for cond in M._build_conditions(params):
-        base = base.where(cond)
-    base = base.order_by(*M._create_sort_clauses(params))
-
-    total = await session.scalar(select(func.count()).select_from(base.subquery())) or 0
-    stmt = M._apply_pagination(base, params)
-    rows = (await session.scalars(stmt)).all()
-    return rows, total
+    rows = await M.query(session, params)
+    total = await M.count(session, params)
+    return [m.as_entity() for m in rows], total
 
 
 class TestBaseQuerySubstringSearch:
