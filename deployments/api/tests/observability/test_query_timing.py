@@ -1,14 +1,16 @@
 """Tests for the SQLAlchemy query timing listener."""
 
 import logging
+import sys
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from stitch.api.observability import query_timing
 from stitch.api.observability.context import db_stats_var, new_db_stats
-from stitch.api.observability.logging_config import JsonFormatter
+from stitch.api.observability.logging_config import JsonFormatter, configure_logging
+from stitch.api.observability.query_timing import _START_KEY
 
 
 @pytest.fixture
@@ -74,6 +76,30 @@ class TestQueryTiming:
 
         assert captured == []
 
+    def test_failed_query_does_not_leak_start_time(self, monkeypatch):
+        # A statement that raises skips after_cursor_execute; the handle_error
+        # listener must pop the start time the before-hook pushed, or it leaks
+        # on the connection. Tested on a sync engine for direct conn.info access.
+        captured: list[dict] = []
+        monkeypatch.setattr(
+            query_timing, "emit_query_event", lambda event: captured.append(event)
+        )
+        engine = create_engine("sqlite://")
+        query_timing.register_query_timing(
+            engine, slow_query_ms=0, log_all_queries=True
+        )
+        try:
+            with engine.connect() as conn:
+                with pytest.raises(Exception):
+                    conn.execute(text("SELECT * FROM does_not_exist"))
+                assert not conn.info.get(_START_KEY)  # popped by handle_error
+                conn.execute(text("SELECT 1"))
+                assert not conn.info.get(_START_KEY)  # no residual leak
+        finally:
+            engine.dispose()
+
+        assert any(e["statement"] == "SELECT 1" for e in captured)
+
     def test_normalize_statement_collapses_and_truncates(self):
         collapsed = query_timing._normalize_statement(
             "SELECT\n  a,\n  b\nFROM t", max_chars=2000
@@ -105,3 +131,16 @@ class TestJsonFormatter:
         assert payload["duration_ms"] == 12.3
         assert payload["route"] == "/oil-gas-fields/"
         assert payload["level"] == "INFO"
+
+
+class TestConfigureLogging:
+    def test_handler_writes_to_stdout(self):
+        root = logging.getLogger()
+        saved_handlers, saved_level = root.handlers, root.level
+        try:
+            configure_logging(level="INFO", log_format="json")
+            assert root.handlers, "expected a handler to be installed"
+            stream = getattr(root.handlers[0], "stream", None)
+            assert stream is sys.stdout
+        finally:
+            root.handlers, root.level = saved_handlers, saved_level

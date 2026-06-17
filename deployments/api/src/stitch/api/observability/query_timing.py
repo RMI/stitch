@@ -54,6 +54,18 @@ def register_query_timing(
     def _before(conn, cursor, statement, parameters, context, executemany):
         conn.info.setdefault(_START_KEY, []).append(perf_counter())
 
+    @event.listens_for(sync_engine, "handle_error")
+    def _on_error(exc_context):
+        # after_cursor_execute does not fire when execution raises, so pop the
+        # start time the before-hook pushed; otherwise it leaks and corrupts the
+        # timing of the next query on this connection.
+        conn = exc_context.connection
+        if conn is None:
+            return
+        start_stack = conn.info.get(_START_KEY)
+        if start_stack:
+            start_stack.pop()
+
     @event.listens_for(sync_engine, "after_cursor_execute")
     def _after(conn, cursor, statement, parameters, context, executemany):
         start_stack = conn.info.get(_START_KEY)

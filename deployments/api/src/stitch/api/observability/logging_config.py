@@ -9,6 +9,7 @@ JSON formatter so the per-query / per-request events emitted via
 import json
 import logging
 import os
+import sys
 from typing import Literal
 
 # Standard LogRecord attributes; everything else attached via ``extra`` is
@@ -71,7 +72,9 @@ def configure_logging(
     level_name = (level or os.getenv("LOG_LEVEL", "INFO")).upper()
     resolved = getattr(logging, level_name, logging.INFO)
 
-    handler = logging.StreamHandler()
+    # Explicitly stdout: StreamHandler() defaults to stderr, which would
+    # contradict the docstring and break stdout-only capture pipelines.
+    handler = logging.StreamHandler(sys.stdout)
     if log_format == "json":
         handler.setFormatter(JsonFormatter())
     else:
