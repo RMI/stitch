@@ -267,9 +267,10 @@ def report_by_scenario(
         reverse=True,
     )[:top]
 
-    _print_header(
-        f"{label} by scenario — top {len(ranked)} (baseline = fastest variant)"
+    baseline_desc = (
+        f"baseline = {baseline}" if baseline else "baseline = fastest variant"
     )
+    _print_header(f"{label} by scenario — top {len(ranked)} ({baseline_desc})")
     for primary, by_scenario in ranked:
         print(f"\n{_truncate(primary, width)}")
         base = _baseline_scenario(by_scenario, baseline)
