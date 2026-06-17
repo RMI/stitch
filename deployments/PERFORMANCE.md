@@ -163,6 +163,29 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml \
 (`--no-log-prefix` keeps lines as pure JSON. The analyzer in the next step also
 strips the `api-1 | ` prefix and skips non-JSON lines, so a raw capture is fine.)
 
+This one-shot dump reads whatever the container still has on disk — fine for
+modest runs. It does **not** time out, but two things can make earlier events
+disappear before you capture them:
+
+- **Container recreation.** `make reboot-docker` (via `clean-docker`) and
+  `docker compose down` discard the container's logs entirely. A plain
+  stop/start keeps them.
+- **Log rotation.** *Only* if the `json-file`/`local` driver has `max-size` /
+  `max-file` set (it isn't by default, so logs grow unbounded). If a cap is
+  configured, the oldest lines silently roll off once it's hit. Check with:
+  `docker compose ... ps -q api` →
+  `docker inspect <id> --format '{{json .HostConfig.LogConfig}}'`.
+
+**For large or long runs, capture the live stream instead** — start this
+*before* driving load and Ctrl-C when done. `-f` follows; `tee -a` writes to disk
+as events arrive, so nothing depends on container retention and it survives a
+later `reboot-docker`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml \
+  logs -f --no-log-prefix api | tee -a /tmp/stitch-api.log
+```
+
 ### Deployed (Log Analytics via `az`)
 
 ```bash
