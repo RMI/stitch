@@ -107,6 +107,30 @@ jobs:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       container-app-name: ${{ format('{0}-stitch-llm', needs.resolve-context.outputs.deployment-name) }}
 
+  delete-stitch-etl-gem-container-app:
+    name: Delete stitch-etl-gem container app
+    needs: [resolve-context]
+    uses: ./.github/workflows/delete-container-app.yml
+    secrets:
+      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+    with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
+      container-app-name: ${{ format('{0}-etl-gem', needs.resolve-context.outputs.deployment-name) }}
+
+  delete-stitch-etl-woodmac-container-app:
+    name: Delete stitch-etl-woodmac container app
+    needs: [resolve-context]
+    uses: ./.github/workflows/delete-container-app.yml
+    secrets:
+      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+    with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
+      container-app-name: ${{ format('{0}-etl-woodmac', needs.resolve-context.outputs.deployment-name) }}
+
   close-static-web-app-preview:
     needs: [resolve-context]
     runs-on: ubuntu-latest
