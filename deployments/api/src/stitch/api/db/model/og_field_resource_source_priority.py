@@ -22,6 +22,10 @@ class OGFieldResourceSourcePriority(Base):
         ForeignKey("og_field_resources.id", ondelete="CASCADE"),
         primary_key=True,
     )
+    # FUTURE: key the override on a specific source record (FK to
+    # oil_gas_field_sources.id) rather than the source *key*, so a resource with
+    # multiple records from the same source (e.g. two WoodMac records) can be
+    # ranked individually. Today priority is per source-class.
     source: Mapped[OGSISrcKey] = mapped_column(
         String(10),
         ForeignKey("og_field_source_priority.source"),
