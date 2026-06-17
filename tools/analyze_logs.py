@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 from dataclasses import dataclass, field
@@ -37,14 +38,17 @@ _DOCKER_PREFIX = re.compile(r"^[a-zA-Z0-9._-]+\s*\|\s*")
 
 
 def _percentile(values: list[float], pct: float) -> float:
-    """Nearest-rank percentile (pct in 0..100). values need not be sorted."""
+    """Nearest-rank percentile (pct in 0..100). values need not be sorted.
+
+    Uses the textbook nearest-rank method: the smallest value at or below which
+    at least ``pct`` percent of the data falls (rank = ceil(pct/100 * n)).
+    """
     if not values:
         return 0.0
     ordered = sorted(values)
-    if len(ordered) == 1:
-        return ordered[0]
-    rank = max(0, min(len(ordered) - 1, round((pct / 100) * (len(ordered) - 1))))
-    return ordered[rank]
+    rank = math.ceil((pct / 100.0) * len(ordered))
+    rank = min(max(rank, 1), len(ordered))
+    return ordered[rank - 1]
 
 
 def parse_events(lines) -> list[dict]:
@@ -131,10 +135,12 @@ def report_queries(events: list[dict], top: int, sort_key: str, width: int) -> N
         "max": lambda s: s.maximum,
         "mean": lambda s: s.mean,
     }
-    ranked = sorted(stats.values(), key=sorters[sort_key], reverse=True)
+    # 'queries' (avg DB queries/request) is routes-only; fall back to total.
+    effective = sort_key if sort_key in sorters else "total"
+    ranked = sorted(stats.values(), key=sorters[effective], reverse=True)
     peak_total = ranked[0].total
 
-    _print_header(f"QUERIES — top {min(top, len(ranked))} by {sort_key}")
+    _print_header(f"QUERIES — top {min(top, len(ranked))} by {effective}")
     print(
         f"{'count':>7} {'total_ms':>11} {'mean':>8} {'p95':>8} {'max':>8}  "
         f"{'share':<24}  statement"

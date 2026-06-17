@@ -39,7 +39,7 @@ Configured via env vars (read by [`settings.py`](api/src/stitch/api/settings.py)
 | `LOG_ALL_QUERIES` | `false` | `true` logs **every** query — use for local profiling |
 | `SLOW_QUERY_MS` | `200` | log only queries at/above this many ms — use in prod |
 | `LOG_FORMAT` | `json` | `json` (structured) or `plain` |
-| `API_LOG_LEVEL` | `info` | events log at INFO; this already shows them |
+| `LOG_LEVEL` | `INFO` | events log at INFO, so the default already shows them |
 
 The request stream is always on. The query stream is gated: by default you only
 see queries ≥ 200 ms. For local profiling you usually want **everything**.
@@ -63,9 +63,12 @@ SLOW_QUERY_MS=0
 
 then `make reboot-docker` as usual.
 
-> ⚠️ `LOG_LEVEL` is **not** read from `.env` for the compose `api` service — the
-> `environment:` block hard-sets it from `API_LOG_LEVEL`. Use `API_LOG_LEVEL` to
-> change the level. `LOG_ALL_QUERIES` / `SLOW_QUERY_MS` pass through `.env` fine.
+> ⚠️ The settings model reads **`LOG_LEVEL`** (that's the variable to set for
+> non-docker runs like `make api-dev`). Under docker-compose, though, the `api`
+> service's `environment:` block hard-sets `LOG_LEVEL` from `API_LOG_LEVEL`, so
+> for `make reboot-docker` set **`API_LOG_LEVEL`** in `.env` (a plain `LOG_LEVEL`
+> there is ignored). `LOG_ALL_QUERIES` / `SLOW_QUERY_MS` pass through `.env` fine
+> either way.
 
 ### Deployed (Azure Container Apps)
 
@@ -78,8 +81,10 @@ start — only genuinely slow queries are recorded, keeping log volume sane).
 
 Make sure the DB has realistic row counts first. The `full` profile (used by
 `make reboot-docker` and `make dev-docker`) includes the `seed` service, so a
-fresh stack is already seeded; tune volume with `FAKER_POST_COUNT` in `.env`
-(see [`deployments/seed`](seed)). To re-seed an existing stack:
+fresh stack is already seeded; tune volume by setting `SEED_FAKER_POST_COUNT` in
+`.env` (compose maps it to the seed service's `FAKER_POST_COUNT` — a bare
+`FAKER_POST_COUNT` in `.env` is ignored; see [`deployments/seed`](seed)). To
+re-seed an existing stack:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.local.yml \
