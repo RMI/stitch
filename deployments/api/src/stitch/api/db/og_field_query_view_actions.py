@@ -19,11 +19,13 @@ Postgres and SQLite >= 3.25 (unlike Postgres-only ``DISTINCT ON``).
 from __future__ import annotations
 
 from collections.abc import Collection
+from typing import get_args
 
 from fastapi import HTTPException
 from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from stitch.api.entities import FilterOptionField, OGFieldFilterOptionsParams
 from stitch.ogsi.model import OGFieldListItemView
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
@@ -40,6 +42,7 @@ from .model.og_field_resource_query_view import (
 _YEAR_FIELDS = frozenset(VALUE_NUM_FIELDS) - {"latitude", "longitude"}
 _JSON_FIELDS = frozenset(VALUE_JSON_FIELDS)
 _MODEL_FIELDS = tuple(OilGasFieldBase.model_fields)
+_FILTER_OPTION_FIELDS: frozenset[str] = frozenset(get_args(FilterOptionField))
 
 
 def _licensed_list(
@@ -61,6 +64,23 @@ def _winner_row_number(view: type[OGFieldResourceQueryView]):
         )
         .label("rn")
     )
+
+
+def _coalesced_value_cte(field: str, licensed_list: list[OGSISrcKey] | None):
+    """Build a CTE of (resource_id, v) for the winning licensed value of one field.
+
+    The winner is the row with the lowest (priority, source_id) — identical to
+    the window used in ``query_v2_ids``.  Returns a named CTE ``cv_<field>``.
+    """
+    view = OGFieldResourceQueryView
+    value_col = getattr(view, FIELD_TO_VALUE_COLUMN[field])
+    sub = select(view.resource_id, value_col.label("v"), _winner_row_number(view)).where(
+        view.column_name == field
+    )
+    if licensed_list is not None:
+        sub = sub.where(view.source.in_(licensed_list))
+    sub = sub.subquery()
+    return select(sub.c.resource_id, sub.c.v).where(sub.c.rn == 1).cte(f"cv_{field}")
 
 
 async def query_v2_ids(
@@ -108,17 +128,7 @@ async def query_v2_ids(
     # 3. One coalesced-value CTE per involved field over LICENSED rows.
     ctes: dict = {}
     for field in involved:
-        value_col = getattr(view, FIELD_TO_VALUE_COLUMN[field])
-        sub = (
-            select(view.resource_id, value_col.label("v"), _winner_row_number(view))
-            .where(view.column_name == field)
-        )
-        if licensed_list is not None:
-            sub = sub.where(view.source.in_(licensed_list))
-        sub = sub.subquery()
-        ctes[field] = (
-            select(sub.c.resource_id, sub.c.v).where(sub.c.rn == 1).cte(f"cv_{field}")
-        )
+        ctes[field] = _coalesced_value_cte(field, licensed_list)
 
     # 4. LEFT JOIN each CTE so nulls survive sort/filter.
     selected = select(universe_resource_id.label("resource_id"))
@@ -245,3 +255,35 @@ async def query_v2(
     ids, total = await query_v2_ids(session, params, licensed_sources)
     items = await hydrate_v2(session, ids, licensed_sources)
     return items, total
+
+
+async def filter_options_v2(
+    session: AsyncSession,
+    params: OGFieldFilterOptionsParams,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> list[str]:
+    """Return distinct coalesced values for one filterable field (v2 read path).
+
+    Drop-in replacement for ``filter_options()``.  Reads the precomputed
+    ``og_field_resource_query_view`` projection.  Licensing semantics are
+    identical to ``query_v2``: ``licensed_sources=None`` ⇒ no source filter;
+    a collection (incl. empty ``frozenset()``) ⇒ ``source IN (licensed)``.
+    ``params.source`` is ignored, as in Task 4.
+    """
+    if params.field not in _FILTER_OPTION_FIELDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"field={params.field} is not supported for resource filter options.",
+        )
+
+    licensed_list = _licensed_list(licensed_sources)
+    cte = _coalesced_value_cte(params.field, licensed_list)
+    v = cte.c.v
+    stmt = (
+        select(v)
+        .where(v.is_not(None), v != "")
+        .distinct()
+        .order_by(v)
+    )
+    values = await session.scalars(stmt)
+    return list(values.all())
