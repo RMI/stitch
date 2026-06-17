@@ -17,6 +17,7 @@ from sqlalchemy.engine import Engine
 from .context import db_stats_var
 from .context import request_id_var
 from .context import route_var
+from .context import scenario_var
 from .sinks import emit_query_event
 
 try:  # py3.12+: monotonic, nanosecond resolution
@@ -83,5 +84,6 @@ def register_query_timing(
                 "statement": _normalize_statement(statement, statement_max_chars),
                 "request_id": request_id_var.get(),
                 "route": route_var.get(),
+                "scenario": scenario_var.get(),
             }
         )

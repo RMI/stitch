@@ -14,10 +14,14 @@ Input is tolerant: it accepts a clean ``.jsonl`` file, raw ``docker compose
 logs`` output (the ``api-1 | `` prefix is stripped), or stdin. Non-JSON lines
 are ignored, so you can point it straight at mixed log output.
 
+Tag traffic with an ``X-Perf-Scenario: <label>`` request header to compare
+variants (data volume, query params, ...) with ``--group-by scenario``.
+
 Examples:
     python3 tools/analyze_logs.py /tmp/stitch-events.jsonl
     docker compose logs --no-log-prefix api | python3 tools/analyze_logs.py -
     python3 tools/analyze_logs.py dump.jsonl --top 25 --sort count
+    python3 tools/analyze_logs.py dump.jsonl --group-by scenario --baseline vol=1k
 """
 
 from __future__ import annotations
@@ -193,6 +197,88 @@ def report_routes(events: list[dict], top: int, sort_key: str, width: int) -> No
         )
 
 
+def _scenario_of(event: dict) -> str:
+    return event.get("scenario") or "(none)"
+
+
+def _grouped_stats(
+    events: list[dict], suffix: str, key_field: str
+) -> dict[str, dict[str, Stat]]:
+    """Bucket events as {primary_key: {scenario: Stat}}."""
+    grouped: dict[str, dict[str, Stat]] = {}
+    for e in events:
+        if not e.get("logger", "").endswith(suffix):
+            continue
+        primary = e.get(key_field, "<none>")
+        scenario = _scenario_of(e)
+        by_scenario = grouped.setdefault(primary, {})
+        stat = by_scenario.setdefault(scenario, Stat(scenario))
+        stat.durations.append(float(e.get("duration_ms") or 0.0))
+        stat.db_counts.append(int(e.get("db_query_count") or 0))
+    return grouped
+
+
+def _baseline_scenario(by_scenario: dict[str, Stat], baseline: str | None) -> str:
+    if baseline and baseline in by_scenario:
+        return baseline
+    # Default: the fastest variant, so deltas read as "N× slower than best".
+    return min(by_scenario.values(), key=lambda s: s.mean).key
+
+
+def report_by_scenario(
+    events: list[dict],
+    *,
+    suffix: str,
+    key_field: str,
+    label: str,
+    top: int,
+    width: int,
+    baseline: str | None,
+    show_db: bool,
+) -> None:
+    grouped = _grouped_stats(events, suffix, key_field)
+    if not grouped:
+        print(f"\n(no {label.lower()} events found)")
+        return
+
+    scenarios = {sc for sm in grouped.values() for sc in sm}
+    if scenarios == {"(none)"}:
+        print(
+            f"\n{label}: no scenarios tagged — send requests with an "
+            "'X-Perf-Scenario: <label>' header to compare variants."
+        )
+        return
+
+    ranked = sorted(
+        grouped.items(),
+        key=lambda kv: sum(s.total for s in kv[1].values()),
+        reverse=True,
+    )[:top]
+
+    _print_header(
+        f"{label} by scenario — top {len(ranked)} (baseline = fastest variant)"
+    )
+    for primary, by_scenario in ranked:
+        print(f"\n{_truncate(primary, width)}")
+        base = _baseline_scenario(by_scenario, baseline)
+        base_mean = by_scenario[base].mean
+        extra = f" {'avg_q':>6}" if show_db else ""
+        print(
+            f"  {'scenario':<24} {'count':>7} {'mean':>8} {'p95':>8} "
+            f"{'total_ms':>10}{extra} {'vs base':>9}"
+        )
+        for sc in sorted(by_scenario):
+            s = by_scenario[sc]
+            ratio = (s.mean / base_mean) if base_mean else 0.0
+            avg_q = (sum(s.db_counts) / s.count) if (show_db and s.count) else 0.0
+            extra_val = f" {avg_q:>6.1f}" if show_db else ""
+            tag = "  ← base" if sc == base else ""
+            print(
+                f"  {_truncate(sc, 24):<24} {s.count:>7} {s.mean:>8.1f} "
+                f"{s.p95:>8.1f} {s.total:>10.1f}{extra_val} {ratio:>7.2f}×{tag}"
+            )
+
+
 def summarize(events: list[dict]) -> None:
     reqs = [e for e in events if e.get("logger", "").endswith(".request")]
     queries = [e for e in events if e.get("logger", "").endswith(".query")]
@@ -225,6 +311,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--queries-only", action="store_true")
     parser.add_argument("--routes-only", action="store_true")
+    parser.add_argument(
+        "--group-by",
+        choices=["scenario"],
+        help="compare variants tagged via the X-Perf-Scenario header, "
+        "broken down per query/route",
+    )
+    parser.add_argument(
+        "--baseline",
+        help="scenario to use as the 1.0× baseline (default: fastest variant)",
+    )
     args = parser.parse_args(argv)
 
     if args.path == "-":
@@ -238,11 +334,34 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     summarize(events)
-    if not args.routes_only:
-        report_queries(events, args.top, args.sort, args.width)
-    if not args.queries_only:
-        route_sort = args.sort
-        report_routes(events, args.top, route_sort, args.width)
+    if args.group_by == "scenario":
+        if not args.routes_only:
+            report_by_scenario(
+                events,
+                suffix=".query",
+                key_field="statement",
+                label="QUERIES",
+                top=args.top,
+                width=args.width,
+                baseline=args.baseline,
+                show_db=False,
+            )
+        if not args.queries_only:
+            report_by_scenario(
+                events,
+                suffix=".request",
+                key_field="route",
+                label="ROUTES",
+                top=args.top,
+                width=args.width,
+                baseline=args.baseline,
+                show_db=True,
+            )
+    else:
+        if not args.routes_only:
+            report_queries(events, args.top, args.sort, args.width)
+        if not args.queries_only:
+            report_routes(events, args.top, args.sort, args.width)
     print()
     return 0
 

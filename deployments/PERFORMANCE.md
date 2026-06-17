@@ -163,7 +163,9 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml \
 
 Useful flags: `--top N`, `--width N` (statement column),
 `--sort {total,count,p95,max,mean,queries}` (`queries` = avg DB queries per
-request, for hunting N+1), `--queries-only`, `--routes-only`.
+request, for hunting N+1), `--queries-only`, `--routes-only`,
+`--group-by scenario` (compare tagged variants — see
+[Comparing variants](#comparing-variants-data-volume--params)), `--baseline`.
 
 Example output:
 
@@ -193,6 +195,111 @@ ROUTES — top 3 by total
   firing 15 queries per request is doing per-row lookups; the `⚠ N+1?` flag marks
   ≥ 10. Cross-reference with the query stream to see which statement repeats.
 - **`errs`** counts 5xx responses per route.
+
+---
+
+## Comparing variants (data volume / params)
+
+To see how the *same* query behaves under different conditions, **tag each batch
+of traffic** with an `X-Perf-Scenario: <label>` request header. The label is
+recorded on every request *and* query event it triggers, so a single log
+captures all variants and the analyzer compares them with `--group-by scenario`.
+No log slicing, no separate files.
+
+Make sure `LOG_ALL_QUERIES=true` is set in `.env` first (Step 1) so query events
+are recorded. Define a shorthand for the compose command:
+
+```bash
+COMPOSE="docker compose -f docker-compose.yml -f docker-compose.local.yml"
+```
+
+### Variant by data volume (re-seed between runs)
+
+The seed volume is controlled from `.env` via `SEED_FAKER_POST_COUNT` (the
+`seed` service reads it; default 5). Re-running the seed service **adds** more
+rows, so you can build up a volume ladder on a live stack.
+
+1. **Start the stack at the first volume.** Set `SEED_FAKER_POST_COUNT=1000` in
+   `.env`, then bring it up — the `full` profile seeds automatically:
+
+   ```bash
+   make reboot-docker        # (foreground; or `$COMPOSE --profile full up -d`)
+   ```
+
+2. **Drive load, tagging it with the volume label:**
+
+   ```bash
+   for i in $(seq 200); do
+     curl -s -o /dev/null -H 'X-Perf-Scenario: vol=1k' \
+       "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=50"
+   done
+   ```
+
+3. **Re-seed to a larger volume.** Bump `SEED_FAKER_POST_COUNT` (e.g. to
+   `50000`) in `.env`, then re-run *only* the seed service against the running
+   stack:
+
+   ```bash
+   $COMPOSE --profile seed up seed --build
+   ```
+
+4. **Drive load again with a new label:**
+
+   ```bash
+   for i in $(seq 200); do
+     curl -s -o /dev/null -H 'X-Perf-Scenario: vol=50k' \
+       "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=50"
+   done
+   ```
+
+5. **Dump the log once and compare** — both variants are in the same stream:
+
+   ```bash
+   $COMPOSE logs --no-log-prefix api > /tmp/perf.log
+   python3 tools/analyze_logs.py /tmp/perf.log --group-by scenario
+   ```
+
+   ```
+   QUERIES by scenario — top 1 (baseline = fastest variant)
+
+   SELECT r.id, max(case when p.priority=? then s.name end) FROM resources r ...
+     scenario                   count     mean      p95   total_ms   vs base
+     vol=1k                       150     43.9     53.9     6582.0    1.00×  ← base
+     vol=50k                      150    394.3    453.7    59147.5    8.99×
+   ```
+
+   A statement whose `vs base` ratio climbs steeply with volume is the one that
+   scales badly — your culprit. By default the fastest variant is the baseline;
+   pin a specific one with `--baseline vol=1k`.
+
+> Re-seeding is **cumulative** (volume keeps growing), which is what you want for
+> a volume ladder. For *independent*, repeatable volumes, set
+> `SEED_FAKER_POST_COUNT` and run `make reboot-docker` before each labelled run —
+> it wipes the DB so the volumes don't stack.
+
+### Variant by query params
+
+Keep the data volume fixed and vary the request between batches, giving each its
+own label — the param values are a natural label:
+
+```bash
+for ps in 50 500; do
+  for i in $(seq 200); do
+    curl -s -o /dev/null -H "X-Perf-Scenario: page_size=$ps" \
+      "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=$ps"
+  done
+done
+$COMPOSE logs --no-log-prefix api > /tmp/perf.log
+python3 tools/analyze_logs.py /tmp/perf.log --group-by scenario
+```
+
+The `--group-by scenario` view breaks each query/route down by label, so
+`page_size=50` and `page_size=500` sit side by side even though they hit the
+same route template.
+
+> The `X-Perf-Scenario` label is opaque to the server (truncated to 80 chars)
+> and recorded only when sent, so it's safe to leave the feature in place — it
+> costs nothing on untagged production traffic.
 
 ---
 

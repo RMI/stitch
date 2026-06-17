@@ -12,14 +12,18 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from stitch.api.observability import RequestTimingMiddleware, register_query_timing
-from stitch.api.observability import request_logging
+from stitch.api.observability import query_timing, request_logging
 
 
 @pytest.fixture
 async def instrumented_app(monkeypatch):
     captured: list[dict] = []
+    captured_queries: list[dict] = []
     monkeypatch.setattr(
         request_logging, "emit_request_event", lambda event: captured.append(event)
+    )
+    monkeypatch.setattr(
+        query_timing, "emit_query_event", lambda event: captured_queries.append(event)
     )
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -39,14 +43,14 @@ async def instrumented_app(monkeypatch):
     async def no_db():
         return {"ok": True}
 
-    yield app, captured
+    yield app, captured, captured_queries
     await engine.dispose()
 
 
 class TestRequestTimingMiddleware:
     @pytest.mark.anyio
     async def test_emits_summary_with_db_aggregates(self, instrumented_app):
-        app, captured = instrumented_app
+        app, captured, _ = instrumented_app
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -63,10 +67,11 @@ class TestRequestTimingMiddleware:
         assert event["db_query_count"] == 2
         assert event["duration_ms"] >= 0
         assert event["db_time_ms"] >= 0
+        assert event["scenario"] is None
 
     @pytest.mark.anyio
     async def test_route_without_db_has_zero_queries(self, instrumented_app):
-        app, captured = instrumented_app
+        app, captured, _ = instrumented_app
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -74,3 +79,28 @@ class TestRequestTimingMiddleware:
 
         assert captured[-1]["route"] == "/no-db"
         assert captured[-1]["db_query_count"] == 0
+
+    @pytest.mark.anyio
+    async def test_scenario_header_tags_request_and_query_events(
+        self, instrumented_app
+    ):
+        app, captured, captured_queries = instrumented_app
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            await client.get("/things/42", headers={"X-Perf-Scenario": "vol=50k"})
+
+        assert captured[-1]["scenario"] == "vol=50k"
+        # The label propagates from the middleware to the query listener.
+        assert captured_queries, "expected query events to be captured"
+        assert all(q["scenario"] == "vol=50k" for q in captured_queries)
+
+    @pytest.mark.anyio
+    async def test_scenario_header_is_truncated(self, instrumented_app):
+        app, captured, _ = instrumented_app
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            await client.get("/no-db", headers={"X-Perf-Scenario": "x" * 200})
+
+        assert len(captured[-1]["scenario"]) == 80

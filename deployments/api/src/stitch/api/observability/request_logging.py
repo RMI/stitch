@@ -17,10 +17,13 @@ from .context import db_stats_var
 from .context import new_db_stats
 from .context import request_id_var
 from .context import route_var
+from .context import scenario_var
 from .sinks import emit_request_event
 from .query_timing import perf_counter
 
 _REQUEST_ID_HEADER = "X-Request-ID"
+_SCENARIO_HEADER = "X-Perf-Scenario"
+_SCENARIO_MAX_CHARS = 80
 
 
 def _route_template(request: Request) -> str:
@@ -43,10 +46,14 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
         # Route matching uses scope path/method, both available pre-dispatch, so
         # query events emitted during the request can carry the route too.
         route = _route_template(request)
+        scenario = request.headers.get(_SCENARIO_HEADER)
+        if scenario:
+            scenario = scenario[:_SCENARIO_MAX_CHARS]
         stats = new_db_stats()
         id_token = request_id_var.set(request_id)
         stats_token = db_stats_var.set(stats)
         route_token = route_var.set(route)
+        scenario_token = scenario_var.set(scenario)
 
         start = perf_counter()
         status_code = 500
@@ -66,8 +73,10 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
                     "duration_ms": round(duration_ms, 2),
                     "db_query_count": stats["count"],
                     "db_time_ms": round(stats["time_ms"], 2),
+                    "scenario": scenario,
                 }
             )
             request_id_var.reset(id_token)
             db_stats_var.reset(stats_token)
             route_var.reset(route_token)
+            scenario_var.reset(scenario_token)
