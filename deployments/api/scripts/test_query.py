@@ -291,10 +291,12 @@ async def build_db(
                     break
                 attempts += 1
             else:
-                # fallback: any source
-                s_id = src_pool[src_idx % len(src_pool)]
-                src_idx += 1
-                s_key = source_key_by_id[s_id]
+                # No unused source key found (cannot happen with 4 distinct keys
+                # and <=3 memberships per resource). Skip rather than add a
+                # duplicate-key membership: two ACTIVE memberships of the same
+                # source key trigger the documented v2-vs-old tiebreak divergence
+                # and would make --compare-old report false mismatches.
+                continue
 
             # ~8 % INACTIVE memberships
             status = (
