@@ -147,7 +147,12 @@ class TestQueryV2:
             seeded_integration_session,
             test_user,
             {"source": "rmi", "name": "RMI Name", "country": None},
-            {"source": "gem", "name": "GEM Name", "country": "CAN", "basin": "GEM Basin"},
+            {
+                "source": "gem",
+                "name": "GEM Name",
+                "country": "CAN",
+                "basin": "GEM Basin",
+            },
             {
                 "source": "wm",
                 "name": "WM Name",
@@ -205,7 +210,9 @@ class TestQueryV2:
         assert total == 1
         assert [item.id for item in items] == [resource_id]
         assert items[0].data.owners is not None
-        assert [(o.name, o.stake) for o in items[0].data.owners] == [("RMI Owner", 55.0)]
+        assert [(o.name, o.stake) for o in items[0].data.owners] == [
+            ("RMI Owner", 55.0)
+        ]
         assert items[0].provenance["owners"] == "rmi"
         assert items[0].data.operators is not None
         assert [(o.name, o.stake) for o in items[0].data.operators] == [
@@ -244,7 +251,9 @@ class TestQueryV2:
 
         assert total == 1
         assert [item.id for item in items] == [resource_id]
-        assert [(o.name, o.stake) for o in items[0].data.owners] == [("GEM Owner", 45.0)]
+        assert [(o.name, o.stake) for o in items[0].data.owners] == [
+            ("GEM Owner", 45.0)
+        ]
         assert items[0].provenance["owners"] == "gem"
         assert [(o.name, o.stake) for o in items[0].data.operators] == [
             ("GEM Operator", 100.0)
@@ -372,7 +381,9 @@ class TestQueryV2:
 
         assert total == 1
         assert [item.id for item in items] == [resource_id]
-        assert [(o.name, o.stake) for o in items[0].data.owners] == [("GEM Owner", 45.0)]
+        assert [(o.name, o.stake) for o in items[0].data.owners] == [
+            ("GEM Owner", 45.0)
+        ]
         assert items[0].provenance["owners"] == "gem"
         assert [(o.name, o.stake) for o in items[0].data.operators] == [
             ("GEM Operator", 100.0)
@@ -478,9 +489,7 @@ class TestQueryV2:
             seeded_integration_session, params
         )
         assert total == ref_total
-        assert [_item_tuple(i) for i in items] == [
-            _item_tuple(i) for i in ref_items
-        ]
+        assert [_item_tuple(i) for i in items] == [_item_tuple(i) for i in ref_items]
 
     @pytest.mark.anyio
     async def test_filters_apply_to_final_coalesced_values_after_licensing(
@@ -618,7 +627,9 @@ class TestQueryV2:
         )
         await rebuild_all(seeded_integration_session)
 
-        params = _QueryParams(sort_by="discovery_year", sort_order="asc", page=1, page_size=10)
+        params = _QueryParams(
+            sort_by="discovery_year", sort_order="asc", page=1, page_size=10
+        )
         items, total = await v2.query_v2(seeded_integration_session, params)
 
         assert total == 3
@@ -820,8 +831,12 @@ async def _seed_varied_db(session: AsyncSession, user: User) -> None:
         session,
         user,
         {"source": "rmi", "name": "EmptyOwners", "country": "USA", "owners": []},
-        {"source": "gem", "name": "EmptyOwners GEM", "country": "USA",
-         "owners": [{"name": "GEM Owner", "stake": 50.0}]},
+        {
+            "source": "gem",
+            "name": "EmptyOwners GEM",
+            "country": "USA",
+            "owners": [{"name": "GEM Owner", "stake": 50.0}],
+        },
     )
     # repointed (excluded) + inactive (excluded)
     root_id = await _create_resource_with_sources(
@@ -853,7 +868,9 @@ _PARAM_MATRIX = [
     pytest.param({"q": "Basin", "page": 1, "page_size": 50}, id="q-search-coalesced"),
     pytest.param({"country": "SAU", "page": 1, "page_size": 50}, id="filter-country"),
     pytest.param({"name": "Alpha", "page": 1, "page_size": 50}, id="filter-name"),
-    pytest.param({"basin": "Arabian Basin WM", "page": 1, "page_size": 50}, id="filter-basin"),
+    pytest.param(
+        {"basin": "Arabian Basin WM", "page": 1, "page_size": 50}, id="filter-basin"
+    ),
     pytest.param({"id": 1, "page": 1, "page_size": 50}, id="filter-id"),
     pytest.param(
         {"sort_by": "name", "sort_order": "asc", "page": 1, "page_size": 50},
@@ -909,6 +926,4 @@ class TestQueryV2Equivalence:
 
         assert v2_total == ref_total
         assert [i.id for i in v2_items] == [i.id for i in ref_items]
-        assert [_item_tuple(i) for i in v2_items] == [
-            _item_tuple(i) for i in ref_items
-        ]
+        assert [_item_tuple(i) for i in v2_items] == [_item_tuple(i) for i in ref_items]

@@ -10,11 +10,25 @@ from .types import PORTABLE_BIGINT, PORTABLE_JSON, PORTABLE_REAL
 
 # Field → value-column routing constants (single source of truth)
 VALUE_TEXT_FIELDS = (
-    "name", "country", "name_local", "state_province", "region", "basin",
-    "reservoir_formation", "location_type", "production_conventionality",
-    "primary_hydrocarbon_group", "field_status",
+    "name",
+    "country",
+    "name_local",
+    "state_province",
+    "region",
+    "basin",
+    "reservoir_formation",
+    "location_type",
+    "production_conventionality",
+    "primary_hydrocarbon_group",
+    "field_status",
 )
-VALUE_NUM_FIELDS = ("latitude", "longitude", "discovery_year", "production_start_year", "fid_year")
+VALUE_NUM_FIELDS = (
+    "latitude",
+    "longitude",
+    "discovery_year",
+    "production_start_year",
+    "fid_year",
+)
 VALUE_JSON_FIELDS = ("owners", "operators")
 
 FIELD_TO_VALUE_COLUMN: dict[str, str] = {

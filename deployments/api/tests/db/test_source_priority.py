@@ -92,10 +92,14 @@ async def test_seeded_sqlite_table_matches_canonical_order(
 ):
     """The og_field_source_priority table seeded via after_create must match canonical order."""
     rows = (
-        await integration_session.execute(
-            select(OGFieldSourcePriority).order_by(OGFieldSourcePriority.priority)
+        (
+            await integration_session.execute(
+                select(OGFieldSourcePriority).order_by(OGFieldSourcePriority.priority)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     db_order = tuple(row.source for row in rows)
     assert db_order == _CANONICAL_ORDER, (
         f"Seeded SQLite table order is {db_order!r}, expected {_CANONICAL_ORDER!r}"

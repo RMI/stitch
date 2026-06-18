@@ -6,12 +6,10 @@ TDD: these tests must go RED before the model/migration are created.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from stitch.api.db.model import StitchBase
 from stitch.api.db.model.og_field_resource_query_view import (
-    OGFieldResourceQueryView,
     VALUE_TEXT_FIELDS,
     VALUE_NUM_FIELDS,
     VALUE_JSON_FIELDS,

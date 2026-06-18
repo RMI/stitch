@@ -84,9 +84,9 @@ def _coalesced_value_cte(field: str, licensed_list: list[OGSISrcKey] | None):
     """
     view = OGFieldResourceQueryView
     value_col = getattr(view, FIELD_TO_VALUE_COLUMN[field])
-    sub = select(view.resource_id, value_col.label("v"), _winner_row_number(view)).where(
-        view.column_name == field
-    )
+    sub = select(
+        view.resource_id, value_col.label("v"), _winner_row_number(view)
+    ).where(view.column_name == field)
     if licensed_list is not None:
         sub = sub.where(view.source.in_(licensed_list))
     sub = sub.subquery()
@@ -157,10 +157,14 @@ async def query_v2_ids(
     #    hydrate_v2, so phase-1 values match phase-2 hydration.
     pivot = None
     if involved:
-        rn = func.row_number().over(
-            partition_by=(view.resource_id, view.column_name),
-            order_by=(view.priority.asc(), view.source_id.asc()),
-        ).label("rn")
+        rn = (
+            func.row_number()
+            .over(
+                partition_by=(view.resource_id, view.column_name),
+                order_by=(view.priority.asc(), view.source_id.asc()),
+            )
+            .label("rn")
+        )
         ranked_sel = select(
             view.resource_id, view.column_name, view.value_text, view.value_num, rn
         ).where(view.column_name.in_(involved))
@@ -210,15 +214,18 @@ async def query_v2_ids(
     if params.q:
         q_term = f"%{params.q}%"
         joined = joined.where(
-            or_(*[pivot.c[field].ilike(q_term) for field in OilGasFieldSourceModel._q_fields])
+            or_(
+                *[
+                    pivot.c[field].ilike(q_term)
+                    for field in OilGasFieldSourceModel._q_fields
+                ]
+            )
         )
 
     filtered = joined.subquery()
 
     # 6. Count before pagination.
-    total = (
-        await session.scalar(select(func.count()).select_from(filtered))
-    ) or 0
+    total = (await session.scalar(select(func.count()).select_from(filtered))) or 0
 
     # 7. Order by (mirror _build_sort_clauses) then paginate.
     page_stmt = select(filtered.c.resource_id)
@@ -228,9 +235,7 @@ async def query_v2_ids(
         page_stmt = page_stmt.order_by(direction(sort_id).nulls_last())
     else:
         sort_col = filtered.c[params.sort_by]
-        page_stmt = page_stmt.order_by(
-            direction(sort_col).nulls_last(), asc(sort_id)
-        )
+        page_stmt = page_stmt.order_by(direction(sort_col).nulls_last(), asc(sort_id))
 
     page_stmt = page_stmt.offset(params.offset).limit(params.limit)
 
@@ -337,11 +342,6 @@ async def filter_options_v2(
     licensed_list = _licensed_list(licensed_sources)
     cte = _coalesced_value_cte(params.field, licensed_list)
     v = cte.c.v
-    stmt = (
-        select(v)
-        .where(v.is_not(None), v != "")
-        .distinct()
-        .order_by(v)
-    )
+    stmt = select(v).where(v.is_not(None), v != "").distinct().order_by(v)
     values = await session.scalars(stmt)
     return list(values.all())
