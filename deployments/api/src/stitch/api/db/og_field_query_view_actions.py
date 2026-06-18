@@ -22,7 +22,7 @@ from collections.abc import Collection
 from typing import get_args
 
 from fastapi import HTTPException
-from sqlalchemy import asc, desc, func, or_, select
+from sqlalchemy import asc, case, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from stitch.api.entities import FilterOptionField, OGFieldFilterOptionsParams
@@ -125,18 +125,53 @@ async def query_v2_ids(
         for field in OilGasFieldSourceModel._q_fields:
             _add(field)
 
-    # 3. One coalesced-value CTE per involved field over LICENSED rows.
-    ctes: dict = {}
-    for field in involved:
-        ctes[field] = _coalesced_value_cte(field, licensed_list)
+    # 3. Coalesce every involved field in ONE windowed pass + GROUP BY pivot.
+    #    A single GROUP BY derived table (which SQLite/Postgres can hash- or
+    #    auto-index for the universe join) — NOT one windowed CTE per field
+    #    LEFT JOINed individually. The latter forces SQLite to nested-loop
+    #    scan an unindexable windowed CTE per universe row -> O(n^2) at scale.
+    #    The winner is still rn == 1 over (priority, source_id), identical to
+    #    hydrate_v2, so phase-1 values match phase-2 hydration.
+    pivot = None
+    if involved:
+        rn = func.row_number().over(
+            partition_by=(view.resource_id, view.column_name),
+            order_by=(view.priority.asc(), view.source_id.asc()),
+        ).label("rn")
+        ranked_sel = select(
+            view.resource_id, view.column_name, view.value_text, view.value_num, rn
+        ).where(view.column_name.in_(involved))
+        if licensed_list is not None:
+            ranked_sel = ranked_sel.where(view.source.in_(licensed_list))
+        ranked = ranked_sel.subquery()
+        pivot_cols = [
+            func.max(
+                case(
+                    (
+                        ranked.c.column_name == field,
+                        ranked.c[FIELD_TO_VALUE_COLUMN[field]],
+                    )
+                )
+            ).label(field)
+            for field in involved
+        ]
+        pivot = (
+            select(ranked.c.resource_id, *pivot_cols)
+            .where(ranked.c.rn == 1)
+            .group_by(ranked.c.resource_id)
+            .cte("coalesced")
+        )
 
-    # 4. LEFT JOIN each CTE so nulls survive sort/filter.
+    # 4. LEFT JOIN the pivot so null-shells (no licensed/involved rows) survive.
     selected = select(universe_resource_id.label("resource_id"))
-    for field, cte in ctes.items():
-        selected = selected.add_columns(cte.c.v.label(field))
+    if pivot is not None:
+        for field in involved:
+            selected = selected.add_columns(pivot.c[field].label(field))
     joined = selected.select_from(universe)
-    for field, cte in ctes.items():
-        joined = joined.join(cte, cte.c.resource_id == universe_resource_id, isouter=True)
+    if pivot is not None:
+        joined = joined.join(
+            pivot, pivot.c.resource_id == universe_resource_id, isouter=True
+        )
 
     # 5. Filters on the coalesced (post-licensing) values.
     if params.id is not None:
@@ -147,12 +182,12 @@ async def query_v2_ids(
             continue
         value = getattr(params, field, None)
         if value is not None:
-            joined = joined.where(ctes[field].c.v == value)
+            joined = joined.where(pivot.c[field] == value)
 
     if params.q:
         q_term = f"%{params.q}%"
         joined = joined.where(
-            or_(*[ctes[field].c.v.ilike(q_term) for field in OilGasFieldSourceModel._q_fields])
+            or_(*[pivot.c[field].ilike(q_term) for field in OilGasFieldSourceModel._q_fields])
         )
 
     filtered = joined.subquery()
