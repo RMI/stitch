@@ -77,9 +77,12 @@ class OGFieldQueryMixin:
         # EXISTS rather than a join to memberships: a source record can have
         # several memberships, and a join would fan the record out to one row
         # per membership, inflating the GROUP BY pivot and needing a DISTINCT.
+        # Correlate on both pk AND source key (membership.source is not FK-tied
+        # to the header's source) so a mismatched row can't mark it active.
         active_membership = (
             select(1)
             .where(MembershipModel.source_pk == cls.id)
+            .where(MembershipModel.source == cls.source)
             .where(MembershipModel.status == MembershipStatus.ACTIVE)
             .exists()
         )

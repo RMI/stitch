@@ -84,8 +84,12 @@ def build_coalesced_values(
         )
     if resource_ids is not None:
         active_src = active_src.where(r.id.in_(list(resource_ids)))
-    # `s` join keeps the header reachable and confirms the source row exists.
-    active_src = active_src.join(s, s.id == m.source_pk).cte("active_src")
+    # Join the source header on both pk AND source key: membership.source is not
+    # FK-tied to the header's source, so matching only on source_pk could let a
+    # mismatched membership row participate in coalescing.
+    active_src = active_src.join(
+        s, and_(s.id == m.source_pk, s.source == m.source)
+    ).cte("active_src")
 
     ranked = (
         select(

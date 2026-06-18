@@ -42,7 +42,7 @@ def make_source_record(
 
 def make_source_model(
     *,
-    source: str,
+    source: OGSISrcKey,
     created_by_id: int,
     source_record: dict[str, Any] | None = None,
     **attrs: Any,
