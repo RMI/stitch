@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -46,7 +47,11 @@ def upgrade() -> None:
             .with_variant(sa.REAL(), "sqlite"),
             nullable=True,
         ),
-        sa.Column("value_json", sa.JSON(), nullable=True),
+        sa.Column(
+            "value_json",
+            sa.JSON().with_variant(postgresql.JSONB(), "postgresql"),
+            nullable=True,
+        ),
         sa.ForeignKeyConstraint(
             ["resource_id"],
             ["og_field_resources.id"],

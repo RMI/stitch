@@ -25,6 +25,7 @@ from stitch.api.db.model import (
     ResourceModel,
 )
 from stitch.api.entities import User, OGFieldQueryParams
+from stitch.ogsi.model.og_field import OilGasFieldBase
 from tests.utils import make_source_record
 
 
@@ -441,6 +442,45 @@ class TestQueryV2:
         assert items[0].provenance["country"] is None
         assert items[0].provenance["owners"] is None
         assert items[0].provenance["operators"] is None
+
+    @pytest.mark.anyio
+    async def test_all_null_source_returns_null_shell(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """A resource whose only ACTIVE source has ALL fields None is a null-shell.
+
+        Refresh emits zero projection rows for an all-null source (every field
+        hits the None skip), so the resource must enter the v2 universe via its
+        membership, not the projection.  query() returns it as total=1, so
+        query_v2 must too -- and they must be equal.
+        """
+        resource_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "rmi"},  # all OilGasFieldBase fields default to None
+        )
+        await rebuild_all(seeded_integration_session)
+
+        params = _QueryParams(page=1, page_size=10)
+        items, total = await v2.query_v2(seeded_integration_session, params)
+
+        assert total == 1
+        assert [item.id for item in items] == [resource_id]
+        # all-None data and all-None provenance
+        for field in OilGasFieldBase.model_fields:
+            assert getattr(items[0].data, field) is None
+            assert items[0].provenance[field] is None
+
+        # Strongest assertion: identical to the reference query().
+        ref_items, ref_total = await resource_actions.query(
+            seeded_integration_session, params
+        )
+        assert total == ref_total
+        assert [_item_tuple(i) for i in items] == [
+            _item_tuple(i) for i in ref_items
+        ]
 
     @pytest.mark.anyio
     async def test_filters_apply_to_final_coalesced_values_after_licensing(

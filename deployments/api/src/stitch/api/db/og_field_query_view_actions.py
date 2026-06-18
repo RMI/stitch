@@ -25,12 +25,22 @@ from fastapi import HTTPException
 from sqlalchemy import asc, case, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from stitch.api.entities import FilterOptionField, OGFieldFilterOptionsParams
+from stitch.api.entities import (
+    FilterOptionField,
+    OGFieldFilterOptionsParams,
+    OGFieldQueryParams,
+)
 from stitch.ogsi.model import OGFieldListItemView
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
 
-from .model import OGFieldResourceQueryView, OilGasFieldSourceModel
+from .model import (
+    MembershipModel,
+    MembershipStatus,
+    OGFieldResourceQueryView,
+    OilGasFieldSourceModel,
+    ResourceModel,
+)
 from .model.og_field_resource_query_view import (
     FIELD_TO_VALUE_COLUMN,
     VALUE_JSON_FIELDS,
@@ -85,7 +95,7 @@ def _coalesced_value_cte(field: str, licensed_list: list[OGSISrcKey] | None):
 
 async def query_v2_ids(
     session: AsyncSession,
-    params,
+    params: OGFieldQueryParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> tuple[list[int], int]:
     """Phase 1: filtered/sorted/paginated resource ids + total (before pagination)."""
@@ -98,9 +108,22 @@ async def query_v2_ids(
     view = OGFieldResourceQueryView
     licensed_list = _licensed_list(licensed_sources)
 
-    # 1. Universe: every (non-repointed, active) resource, NOT licensing-filtered,
-    #    so an all-unlicensed resource still appears as a null-shell.
-    universe = select(view.resource_id).distinct().cte("universe")
+    # 1. Universe: every (non-repointed) resource with an ACTIVE membership,
+    #    NOT licensing-filtered, so an all-unlicensed resource still appears as a
+    #    null-shell. Derived from memberships (NOT the projection) to match
+    #    query()'s universe exactly: refresh emits zero projection rows for an
+    #    all-null source, so a projection-derived universe would drop a resource
+    #    whose only source is all-null -- query() still returns it (total=1).
+    universe = (
+        select(MembershipModel.resource_id)
+        .join(ResourceModel, ResourceModel.id == MembershipModel.resource_id)
+        .where(
+            MembershipModel.status == MembershipStatus.ACTIVE,
+            ResourceModel.repointed_id.is_(None),
+        )
+        .distinct()
+        .cte("universe")
+    )
     universe_resource_id = universe.c.resource_id
 
     # 2. Involved fields: sort field (if a scalar, not id/resource_id), exact-match
@@ -271,7 +294,7 @@ async def hydrate_v2(
                 provenance[field] = None
             else:
                 data_kwargs[field] = _coerce_value(field, win)
-                provenance[field] = win.source or None
+                provenance[field] = win.source
         items_by_id[resource_id] = OGFieldListItemView(
             id=resource_id,
             data=OilGasFieldBase(**data_kwargs),
@@ -283,7 +306,7 @@ async def hydrate_v2(
 
 async def query_v2(
     session: AsyncSession,
-    params,
+    params: OGFieldQueryParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> tuple[list[OGFieldListItemView], int]:
     """Drop-in replacement for ``query()``: phase 1 ids + phase 2 hydration."""

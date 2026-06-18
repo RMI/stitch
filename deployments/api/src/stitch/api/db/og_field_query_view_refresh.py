@@ -39,6 +39,8 @@ async def refresh_resources(
         )
     )
 
+    # `priority` is denormalized into the projection at build time, so a change
+    # to `og_field_source_priority` requires a `rebuild_all` to take effect.
     stmt = (
         select(
             MembershipModel.resource_id,
