@@ -59,3 +59,4 @@ jobs:
             **/__pycache__/**/*
             **/package-lock.json
             **/uv.lock
+            deployments/api/alembic/script.py.mako

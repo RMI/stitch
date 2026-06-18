@@ -1,5 +1,5 @@
 from collections.abc import Collection, Sequence
-from typing import Any
+from typing import Any, get_args
 
 from fastapi import HTTPException
 from sqlalchemy import (
@@ -25,7 +25,11 @@ from stitch.api.db.errors import (
     ResourceNotFoundError,
 )
 from stitch.api.auth import CurrentUser
-from stitch.api.entities import OGFieldQueryParams
+from stitch.api.entities import (
+    FilterOptionField,
+    OGFieldFilterOptionsParams,
+    OGFieldQueryParams,
+)
 from stitch.api.db.og_field_source_actions import (
     attach_sources_to_resource,
     get_or_create_sources,
@@ -53,6 +57,7 @@ _LIST_SCALAR_FIELDS = tuple(
 )
 _LIST_DATA_FIELDS = (*_LIST_SCALAR_FIELDS, *_LIST_JSON_FIELDS)
 _PROVENANCE_SUFFIX = "__provenance_source"
+_FILTER_OPTION_FIELDS: frozenset[str] = frozenset(get_args(FilterOptionField))
 
 
 def _priority_values() -> tuple[int, ...]:
@@ -87,6 +92,37 @@ async def query(
     rows = (await session.execute(page_stmt)).mappings().all()
 
     return [_list_item_from_row(row) for row in rows], total
+
+
+async def filter_options(
+    session: AsyncSession,
+    params: OGFieldFilterOptionsParams,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> list[str]:
+    """Return distinct coalesced resource values for one filterable field."""
+    if params.field not in _FILTER_OPTION_FIELDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"field={params.field} is not supported for resource filter options.",
+        )
+
+    coalesced = _build_licensed_resource_list_cte(params, licensed_sources)
+    col = _resource_list_column(coalesced, params.field)
+    if col is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"field={params.field} is not supported for resource filter options.",
+        )
+
+    value_col = cast(col, String).label("value")
+    stmt = (
+        select(value_col)
+        .where(col.is_not(None), cast(col, String) != "")
+        .distinct()
+        .order_by(value_col)
+    )
+    values = await session.scalars(stmt)
+    return list(values.all())
 
 
 def _build_licensed_resource_list_cte(

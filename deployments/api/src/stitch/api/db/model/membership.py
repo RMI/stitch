@@ -28,7 +28,11 @@ class MembershipModel(TimestampMixin, UserAuditMixin, Base):
     resource_id: Mapped[int] = mapped_column(
         ForeignKey("og_field_resources.id"), nullable=False
     )
-    source: Mapped[OGSISrcKey] = mapped_column(String(10), nullable=False)
+    source: Mapped[OGSISrcKey] = mapped_column(
+        String(10),
+        ForeignKey("og_field_source_priority.source"),
+        nullable=False,
+    )
     source_pk: Mapped[int] = mapped_column(
         ForeignKey("oil_gas_field_sources.id"), nullable=False
     )

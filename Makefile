@@ -132,6 +132,15 @@ api-dev: stack-api-dev
 		--reload-dir packages \
 		--reload-exclude '*/tests/*'
 
+alembic-autogenerate:
+	$(DOCKER_COMPOSE_DEV) --profile alembic-generate build alembic-generate
+	$(DOCKER_COMPOSE_DEV) --profile alembic-generate run --rm alembic-generate
+
+alembic-check:
+	$(DOCKER_COMPOSE_DEV) --profile alembic-generate build alembic-generate
+	$(DOCKER_COMPOSE_DEV) --profile alembic-generate run --rm alembic-generate \
+		alembic -c deployments/api/alembic.ini check
+
 stack-api-dev:
 	SEED_API_BASE_URL=http://host.docker.internal:8000/api/v1 \
 	ENTITY_LINKAGE_API_BASE_URL=http://host.docker.internal:8000/api/v1 \
@@ -276,6 +285,7 @@ follow-stack-logs:
 	\
 	# API
 	api-build api-test api-test-exact api-dev stack-api-dev \
+	alembic-autogenerate \
 	seed-test seed-test-exact \
 	stitch-llm-build stitch-llm-test stitch-llm-test-exact \
 	\

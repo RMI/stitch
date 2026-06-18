@@ -2,6 +2,8 @@
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.dialects import postgresql
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from stitch.api.db import og_field_resource_actions as resource_actions
@@ -12,6 +14,7 @@ from stitch.api.db.model import (
     ResourceModel,
 )
 from stitch.api.entities import (
+    OGFieldFilterOptionsParams,
     OGFieldQueryParams,
     User,
 )
@@ -516,6 +519,146 @@ class TestResourceQueryAction:
         assert [item.id for item in items] == [resource_id]
         assert items[0].data.name == "LLM Name"
         assert items[0].provenance["name"] == "llm"
+
+
+class TestResourceFilterOptionsAction:
+    """Integration tests for resource_actions.filter_options()."""
+
+    @pytest.mark.anyio
+    async def test_returns_distinct_sorted_coalesced_values(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "rmi", "country": None},
+            {"source": "gem", "country": "CAN"},
+        )
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "rmi", "country": "USA"},
+        )
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "rmi", "country": ""},
+        )
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "rmi", "country": None},
+        )
+
+        values = await resource_actions.filter_options(
+            seeded_integration_session,
+            OGFieldFilterOptionsParams(field="country"),
+        )
+
+        assert values == ["CAN", "USA"]
+
+    @pytest.mark.anyio
+    async def test_honors_licensed_sources_after_coalescing(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "rmi", "country": None},
+            {"source": "gem", "country": "CAN"},
+        )
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "rmi", "country": "USA"},
+        )
+
+        values = await resource_actions.filter_options(
+            seeded_integration_session,
+            OGFieldFilterOptionsParams(field="country"),
+            licensed_sources=frozenset({"gem", "wm", "llm"}),
+        )
+
+        assert values == ["CAN"]
+
+    @pytest.mark.anyio
+    async def test_excludes_repointed_and_inactive_memberships(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        active_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "rmi", "country": "USA"},
+        )
+        repointed_to_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "rmi", "country": "BRA"},
+        )
+        inactive_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "rmi", "country": "CAN"},
+        )
+
+        repointed_resource = await seeded_integration_session.get(
+            ResourceModel, repointed_to_id
+        )
+        assert repointed_resource is not None
+        repointed_resource.repointed_id = active_id
+
+        inactive_membership = await seeded_integration_session.scalar(
+            select(MembershipModel).where(MembershipModel.resource_id == inactive_id)
+        )
+        assert inactive_membership is not None
+        inactive_membership.status = MembershipStatus.INACTIVE
+        await seeded_integration_session.flush()
+
+        values = await resource_actions.filter_options(
+            seeded_integration_session,
+            OGFieldFilterOptionsParams(field="country"),
+        )
+
+        assert values == ["USA"]
+
+    def test_postgres_distinct_query_orders_by_selected_value_alias(self):
+        params = OGFieldFilterOptionsParams(field="basin")
+        coalesced = resource_actions._build_licensed_resource_list_cte(
+            params,
+            licensed_sources=frozenset({"gem", "wm", "rmi", "llm"}),
+        )
+        col = resource_actions._resource_list_column(coalesced, params.field)
+        assert col is not None
+
+        value_col = resource_actions.cast(col, resource_actions.String).label("value")
+        stmt = (
+            resource_actions.select(value_col)
+            .where(
+                col.is_not(None),
+                resource_actions.cast(col, resource_actions.String) != "",
+            )
+            .distinct()
+            .order_by(value_col)
+        )
+
+        sql = str(
+            stmt.compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        )
+
+        assert (
+            "SELECT DISTINCT CAST(licensed_resource_list.basin AS VARCHAR) AS value"
+            in sql
+        )
+        assert "ORDER BY value" in sql
 
     @pytest.mark.anyio
     async def test_only_unlicensed_selected_sources_still_return_resource(

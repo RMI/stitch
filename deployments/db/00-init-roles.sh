@@ -5,7 +5,7 @@ set -eu
 # via /docker-entrypoint-initdb.d.
 #
 # It bootstraps two roles:
-#   - stitch_migrator: DDL + seed (used by db-init job)
+#   - stitch_migrator: DDL + seed (used by DB migrations job)
 #   - stitch_app:      runtime access only (used by API)
 #
 # Passwords and DB name are taken from environment variables.

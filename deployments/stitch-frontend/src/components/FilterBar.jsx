@@ -1,30 +1,22 @@
-import { useMemo } from "react";
 import FilterDropdown from "./FilterDropdown";
 import { FILTER_FIELDS, EMPTY_FILTERS } from "../config/filters";
-import { getResourceField } from "../utils/resourceDisplay";
+import { useResourceFilterOptions } from "../hooks/useResources";
 
-// Compute sorted option list with static counts from the full dataset.
-function buildOptions(resources, field) {
-  const counts = {};
-  for (const r of resources) {
-    const val = getResourceField(r, field);
-    if (val != null) counts[val] = (counts[val] ?? 0) + 1;
-  }
-  return Object.entries(counts)
-    .map(([value, count]) => ({ value, count }))
-    .sort((a, b) => a.value.localeCompare(b.value));
+function FilterFieldDropdown({ endpoint, field, label, selected, onChange }) {
+  const { data } = useResourceFilterOptions(endpoint, field);
+  const options = (data?.values ?? []).map((value) => ({ value }));
+
+  return (
+    <FilterDropdown
+      label={label}
+      options={options}
+      selected={selected}
+      onChange={onChange}
+    />
+  );
 }
 
-export default function FilterBar({ resources, filters, onFiltersChange }) {
-  // Memoize per-field options so O(n) passes only re-run when `resources` changes,
-  // not on every filter interaction.
-  const optionsByField = useMemo(
-    () =>
-      Object.fromEntries(
-        FILTER_FIELDS.map(({ key }) => [key, buildOptions(resources, key)]),
-      ),
-    [resources],
-  );
+export default function FilterBar({ endpoint, filters, onFiltersChange }) {
   // Flatten active filters into chips: [{ field, label, value }, ...]
   const chips = FILTER_FIELDS.flatMap(({ key, label }) =>
     (filters[key] ?? []).map((value) => ({ field: key, label, value })),
@@ -46,10 +38,11 @@ export default function FilterBar({ resources, filters, onFiltersChange }) {
       {/* Dropdowns row */}
       <div className="flex flex-wrap gap-2">
         {FILTER_FIELDS.map(({ key, label }) => (
-          <FilterDropdown
+          <FilterFieldDropdown
             key={key}
+            endpoint={endpoint}
+            field={key}
             label={label}
-            options={optionsByField[key]}
             selected={filters[key] ?? []}
             onChange={(values) => handleDropdownChange(key, values)}
           />

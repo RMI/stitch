@@ -3,6 +3,7 @@ import {
   createLLMSuggestion,
   createMergeCandidate,
   createResource,
+  getResourceFilterOptions,
   getResources,
   getResource,
   reviewMergeCandidate,
@@ -124,6 +125,46 @@ describe("API Functions", () => {
       await expect(getResources(config, mockFetcher)).rejects.toThrow(
         "Network error",
       );
+    });
+  });
+
+  describe("getResourceFilterOptions", () => {
+    it("fetches and returns filter options successfully", async () => {
+      const mockOptions = { field: "basin", values: ["Arabian", "Permian"] };
+
+      mockFetcher.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockOptions,
+      });
+
+      const result = await getResourceFilterOptions(
+        config,
+        mockFetcher,
+        "oil-gas-fields",
+        "basin",
+      );
+
+      expect(mockFetcher).toHaveBeenCalledWith(
+        "http://localhost:8000/api/v1/oil-gas-fields/filter-options?field=basin",
+      );
+      expect(result).toEqual(mockOptions);
+    });
+
+    it("throws error when filter options response is not ok", async () => {
+      mockFetcher.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+      });
+
+      await expect(
+        getResourceFilterOptions(
+          config,
+          mockFetcher,
+          "oil-gas-fields",
+          "basin",
+        ),
+      ).rejects.toThrow("HTTP error! status: 500");
     });
   });
 

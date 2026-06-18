@@ -11,6 +11,8 @@ from stitch.auth.permissions import (
 )
 
 from stitch.api.entities import (
+    OGFieldFilterOptionsParams,
+    OGFieldFilterOptionsResponse,
     MergeCandidateCreateRequest,
     MergeCandidateReviewRequest,
     MergeCandidateView,
@@ -71,6 +73,22 @@ async def get_all_resources(
         page=params.page,
         page_size=params.page_size,
     )
+
+
+@router.get("/filter-options", response_model=OGFieldFilterOptionsResponse)
+async def get_resource_filter_options(
+    *,
+    uow: UnitOfWorkDep,
+    _user: CurrentUser,
+    claims: Claims,
+    params: Annotated[OGFieldFilterOptionsParams, Query()],
+) -> OGFieldFilterOptionsResponse:
+    values = await resource_actions.filter_options(
+        session=uow.session,
+        params=params,
+        licensed_sources=licensed_sources(claims),
+    )
+    return OGFieldFilterOptionsResponse(field=params.field, values=values)
 
 
 @router.get(

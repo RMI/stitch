@@ -10,6 +10,8 @@ const TEST_CONFIG = {
   apiBaseUrl: "http://localhost:8000/api/v1",
   entityLinkageBaseUrl: "http://localhost:8001/api/v1",
   stitchLlmBaseUrl: "http://localhost:8002/api/v1",
+  etlGemBaseUrl: "http://localhost:8101/api/v1",
+  etlWoodmacBaseUrl: "http://localhost:8102/api/v1",
   auth0: {
     domain: "example.auth0.com",
     clientId: "client-id",
