@@ -300,7 +300,9 @@ async def build_db(
 
             # ~8 % INACTIVE memberships
             status = (
-                MembershipStatus.INACTIVE if _RNG.random() < 0.08 else MembershipStatus.ACTIVE
+                MembershipStatus.INACTIVE
+                if _RNG.random() < 0.08
+                else MembershipStatus.ACTIVE
             )
             mem_batch.append(
                 {
