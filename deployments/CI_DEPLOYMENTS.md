@@ -33,6 +33,154 @@ It then handles deployments for:
 * the API Container App, assuming an existing Container Apps environment
 * the entity-linkage Container App in the same environment
 * the stitch-llm Container App in the same environment
+* the ETL Container Apps (`etl-gem`, `etl-woodmac`) in the same environment,
+  on non-`development` lanes only (see below)
+
+### ETL pipelines (temporary POC wiring)
+
+The `etl-gem` and `etl-woodmac` Container Apps are deployed from pre-built images
+published by the separate `stitch-etl-poc` repository
+(`ghcr.io/rmi/stitch-etl-poc-etl-{gem,woodmac}`). This pipeline does **not** build
+them; it only deploys the tag named by the `ETL_GEM_IMAGE_TAG` /
+`ETL_WOODMAC_IMAGE_TAG` variables (defaulting to `main`).
+
+Seed and ETL are mutually exclusive per lane:
+
+* `development`: `seed` builds and runs; ETL deploys are skipped.
+* `staging` / `dress-rehearsal`: ETL deploys run; `seed` is skipped.
+
+Because the ETL images live in another repo's GHCR, the Container App needs
+stored pull credentials. The ephemeral `GITHUB_TOKEN` cannot be used (it expires
+and the app re-pulls on every restart), so a long-lived classic PAT with
+`read:packages` is required — GHCR does not support fine-grained tokens. These
+are supplied to `deploy-container.yml` via the `registry-server` /
+`registry-username` inputs and the `registry-password` secret. The frontend
+receives each ETL Container App URL (empty when not deployed) and renders the ETL
+control page.
+
+CORS: each ETL app allows exactly one browser origin, set at deploy time via
+`ETL_GEM_FRONTEND_ORIGIN_URL` / `ETL_WOODMAC_FRONTEND_ORIGIN_URL` (sourced from
+the lane's computed `frontend-origin-url`). Unset, they default to
+`http://localhost:3000`, so a missing value shows up as a browser CORS
+("No 'Access-Control-Allow-Origin' header") failure, not a server error.
+
+#### ETL durable storage (Azure Files — wired in CI; storage prerequisites manual)
+
+The ETL apps mount a persistent **SMB Azure Files** share so their data survives
+restarts/revisions: `etl-gem` reads its reference spreadsheet from
+`GEM_FILE_DIR=/mnt/data/gem` and `etl-woodmac` keeps its cache at
+`WOODMAC_DATA_DIR=/mnt/data/woodmac`. One share per lane is mounted into both apps
+at `/mnt/data`, with each app using its own subfolder (`gem/`, `woodmac/`).
+
+The **per-app mount is applied automatically by the pipeline** —
+`azure/container-apps-deploy-action@v1` can't mount volumes, so
+`deploy-container.yml` takes optional `storage-name` / `storage-mount-path` inputs
+and, after the deploy, reads the app spec (`az containerapp show`), injects the
+volume + volumeMount with `jq`, and re-applies it (`az containerapp update
+--yaml`). The ETL jobs pass `storage-name` (from the lane's `ETL_STORAGE_NAME`
+variable, routed via `lane-config-validate` because env-scoped variables aren't
+visible to reusable-workflow callers) and `storage-mount-path: /mnt/data`. Because
+it runs every deploy, **do not configure the mount by hand in the Portal** — the
+pipeline reasserts it and a manual mount would just be overwritten.
+
+What *is* manual is the storage itself. Do the steps below in the **Azure Portal**
+(no `az` needed; SMB registration and mounting are fully Portal-supported — only
+NFS forces CLI/YAML) per lane (`staging`, `dress-rehearsal`), in that lane's
+resource group and Container Apps environment. Each lane gets its own storage
+account / share / environment-storage name:
+
+| Lane | Storage account | File share | Env storage name (`ETL_STORAGE_NAME`) |
+|---|---|---|---|
+| `staging` | `stitchstaging` | `etl-staging` | `etl-staging` |
+| `dress-rehearsal` | `stitchstaging` | `etl-dress-rehearsal` | `etl-dress-rehearsal` |
+
+1. **Create a storage account + file share.** Create a Storage account (Standard
+   LRS, StorageV2) or reuse one, then under **File shares** add a share (for
+   `staging`: account `stitchstaging`, share `etl-staging`).
+
+2. **Create the subfolders and upload data.** In the share's **Browse** view,
+   create a `gem/` folder and upload the GEM reference spreadsheet
+   (`Global-Oil-and-Gas-Extraction-Tracker-*.xlsx`) into it, and create a
+   `woodmac/` folder for the cache (and any woodmac seed files). These match
+   `GEM_FILE_DIR=/mnt/data/gem` and `WOODMAC_DATA_DIR=/mnt/data/woodmac`. The data
+   is intentionally **not** baked into the image.
+
+3. **Register the share on the Container Apps environment.** Open the Container
+   Apps **Environment** → **Settings → Volume mounts → Add** → choose **SMB**, and
+   enter the storage account name, account key, share name (`etl-staging` for
+   staging), and access mode `ReadWrite`; name the environment storage to match
+   (`etl-staging`) — this exact name is what `ETL_STORAGE_NAME` must hold. The
+   registration lives on the *environment* and persists across app deploys.
+   (Container Apps does not support managed-identity access to Azure Files, so the
+   account key is required regardless of Portal vs. CLI.)
+
+   To get the account key: go to the **storage account** → **Security +
+   networking → Access keys** → **Show** under `key1` and copy the **Key** value
+   (either `key1` or `key2` works). Treat it as a secret — it grants full access to
+   the storage account; rotate via the same blade if exposed. It is only used here
+   for the manual registration; the pipeline does **not** need it as a GitHub
+   secret (it references the share by the registered env-storage name).
+
+4. **Set the `ETL_STORAGE_NAME` environment variable** (GitHub Environment →
+   Variables) to the env-storage name from step 3, e.g. `etl-staging`. This is the
+   one piece of GitHub config the CI wiring consumes; the share name and account
+   key are used only during the manual registration above.
+
+Equivalent CLI for step 3, for reference:
+
+```bash
+# staging values shown
+az containerapp env storage set \
+  --name <AZURE_CONTAINER_APP_ENVIRONMENT> \
+  --resource-group <AZURE_RESOURCE_GROUP> \
+  --storage-name etl-staging \
+  --azure-file-account-name stitchstaging \
+  --azure-file-account-key <key> \
+  --azure-file-share-name etl-staging \
+  --access-mode ReadWrite
+```
+
+See the Microsoft docs for the full Portal walkthrough:
+<https://learn.microsoft.com/en-us/azure/container-apps/storage-mounts-azure-files>.
+
+#### ETL replica pinning (wired in CI)
+
+The ETL apps must run a **single replica**: they hold job state in memory (the
+`/status` endpoint) and run one job at a time, so a second replica would fragment
+status responses and (once the share is mounted) create a concurrent writer.
+
+This is **enforced on every deploy**, not as a one-time manual setting. The
+`azure/container-apps-deploy-action@v1` step (`az containerapp up`) does not
+reliably preserve scale settings, so a value set by hand in the Portal can be
+reset on the next pipeline run. Instead, `deploy-container.yml` takes optional
+`min-replicas` / `max-replicas` inputs and, when either is set, runs a post-deploy
+`az containerapp update --min-replicas … --max-replicas …` to reassert them. The
+ETL jobs pass `min-replicas: "1"` and `max-replicas: "1"`, so the pin is
+self-healing — no manual Portal step needed, and it survives every redeploy.
+
+#### Keeping staging / dress-rehearsal awake (scale-to-zero policy)
+
+By default a Container App scales to zero (`min-replicas: 0`) when idle, so the
+first request after a quiet period pays a cold-start. That is fine for
+`development` (keeps costs down when nobody is using it) but undesirable for
+`staging` / `dress-rehearsal`, which we want responsive.
+
+The always-on services — `api`, `entity-linkage`, `stitch-llm` — therefore pass a
+**lane-conditional** `min-replicas` through the same mechanism:
+
+```yaml
+min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
+```
+
+So on `staging` / `dress-rehearsal` they reassert `min-replicas: 1` (always one
+warm replica, `max` left at the default so they can still scale out), and on
+`development` the input is empty, the post-deploy step is skipped, and they keep
+the default scale-to-zero. The ETL apps are always-on on those lanes too, since
+they pin `min = max = 1` and only deploy on non-`development` lanes.
+
+This only affects the Container Apps. The frontend is an Azure Static Web App
+(always served, no hibernation), and the PostgreSQL flexible server's
+pause behavior, if any, is a separate server-level setting not managed here.
 
 Reusable workflows now select lane-specific configuration from GitHub
 Environments and are expected to fail loudly when required values are absent.
@@ -128,6 +276,17 @@ named:
 * `STITCH_LLM_AZURE_OPENAI_BASE_URL` (example: `https://stitch-foundry-dev.openai.azure.com/openai/v1`)
 * `STITCH_LLM_AZURE_OPENAI_MODEL` (example: `gpt-5.1-chat`)
 * `STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS` (example: `30`)
+* `GHCR_ETL_PULL_USERNAME` (example: `your-github-username`) — registry username
+  for pulling the ETL images; not sensitive, so it is a variable. Only needed on
+  `staging` / `dress-rehearsal`.
+* `ETL_STORAGE_NAME` (example: `etl-staging`) — the Azure Files env-storage name
+  registered on the Container Apps environment; mounted into both ETL apps at
+  `/mnt/data`. Only needed on `staging` / `dress-rehearsal` (see ETL durable
+  storage above).
+* `ETL_GEM_IMAGE_TAG` (example: `main`) — optional; ETL GEM image tag to deploy,
+  defaults to `main`. Only used on `staging` / `dress-rehearsal`.
+* `ETL_WOODMAC_IMAGE_TAG` (example: `main`) — optional; ETL WoodMac image tag to
+  deploy, defaults to `main`. Only used on `staging` / `dress-rehearsal`.
   * NOTE: `FRONTEND_PREVIEW_URL_TEMPLATE` must contain the literal `{name}` placeholder.
 For `dress-rehearsal`, the workflow uses `FRONTEND_PRODUCTION_URL` directly. For pull requests, it replaces `{name}` with the raw PR number so PR #106 resolves to `https://witty-mushroom-017a3dc1e-106.westus2.1.azurestaticapps.net`. For other preview deployments, it replaces `{name}` with `deployment_name`.
 
@@ -140,6 +299,11 @@ For `dress-rehearsal`, the workflow uses `FRONTEND_PRODUCTION_URL` directly. For
 * `STITCH_CLIENT_LLM_BEARER_TOKEN`
 * `STITCH_LLM_AZURE_OPENAI_API_KEY`
 * `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
+* `WOODMAC_API_KEY` — WoodMac API key for the `etl-woodmac` Container App. Only
+  needed on `staging` / `dress-rehearsal`.
+* `GHCR_ETL_PULL_TOKEN` — classic PAT with `read:packages` used to pull the ETL
+  images from the `stitch-etl-poc` GHCR. Only needed on `staging` /
+  `dress-rehearsal`.
 
 Current validation behavior:
 
@@ -160,3 +324,7 @@ Current validation behavior:
   * If any of `STITCH_LLM_AZURE_OPENAI_BASE_URL`, `STITCH_LLM_AZURE_OPENAI_MODEL`, or `STITCH_LLM_AZURE_OPENAI_API_KEY` are set, all three must be set
 * DB migrations validate `STITCH_MIGRATOR_PASSWORD`
 * frontend deploy validates `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
+* container deploy validates that, when `registry-server` is set, both
+  `registry-username` (variable) and `registry-password` (secret) are present —
+  so a missing ETL pull credential fails fast instead of surfacing as an opaque
+  registry `UNAUTHORIZED` from `az containerapp up`
