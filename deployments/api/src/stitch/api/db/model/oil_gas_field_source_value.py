@@ -59,11 +59,13 @@ ATTRIBUTE_KINDS: dict[str, ValueKind] = {
     "operators": ValueKind.JSON,
 }
 
-# Fail fast if the registry drifts from the entity it mirrors.
-assert set(ATTRIBUTE_KINDS) == set(OilGasFieldBase.model_fields), (
-    "ATTRIBUTE_KINDS out of sync with OilGasFieldBase fields: "
-    f"{set(ATTRIBUTE_KINDS) ^ set(OilGasFieldBase.model_fields)}"
-)
+# Fail fast if the registry drifts from the entity it mirrors. Use an explicit
+# raise (not assert) so the check survives `python -O`.
+if set(ATTRIBUTE_KINDS) != set(OilGasFieldBase.model_fields):
+    raise RuntimeError(
+        "ATTRIBUTE_KINDS out of sync with OilGasFieldBase fields: "
+        f"{set(ATTRIBUTE_KINDS) ^ set(OilGasFieldBase.model_fields)}"
+    )
 
 ATTRIBUTE_NAMES: tuple[str, ...] = tuple(ATTRIBUTE_KINDS)
 
