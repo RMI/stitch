@@ -27,7 +27,9 @@ class OilGasFieldSourceModel(OGFieldQueryMixin, TimestampMixin, UserAuditMixin, 
 
     __tablename__: str = "oil_gas_field_sources"
 
-    id: Mapped[int] = mapped_column(PORTABLE_BIGINT, primary_key=True)
+    id: Mapped[int] = mapped_column(
+        PORTABLE_BIGINT, primary_key=True, autoincrement=True
+    )
 
     # SqlAlchemy will translate the Literal type into an Enum.
     source: Mapped[OGSISrcKey] = mapped_column(nullable=False)
