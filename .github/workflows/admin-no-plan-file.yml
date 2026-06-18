@@ -9,7 +9,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v5
 
       - name: Ensure no plan files are tracked
         shell: bash
@@ -20,10 +20,13 @@ jobs:
           #
           # Matches (case-insensitive), at the repo root or any subdirectory:
           #   PLAN.md, PLAN.<anything>.md  (e.g. PLAN.feature-x.md)
-          found="$(git ls-files | grep -iE '(^|/)PLAN(\.[^/]+)*\.md$' || true)"
+          #
+          # Capture tracked files first so a git failure surfaces instead of
+          # being swallowed by grep's no-match exit under `set -o pipefail`.
+          tracked="$(git ls-files)"
+          found="$(printf '%s\n' "$tracked" | grep -iE '(^|/)PLAN(\.[^/]+)*\.md$' || true)"
 
           if [ -n "$found" ]; then
-            echo "::error::Found committed plan file(s). Remove them before merging:"
             while IFS= read -r f; do
               echo "::error file=$f::Plan file '$f' must not be committed to a merged branch"
             done <<< "$found"
