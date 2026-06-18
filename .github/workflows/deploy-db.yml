@@ -104,7 +104,7 @@ jobs:
           echo "postgres-sslmode=${PGSSLMODE}" >> "$GITHUB_OUTPUT"
 
       - name: Drop database on long-lived deployments
-        if: ${{ github.event_name != 'pull_request' && inputs.deployment-lane == 'development' }}
+        if: ${{ inputs.deployment-lane == 'development' && github.ref_name == 'main' }}
         env:
           DB_NAME: ${{ steps.normalize-name.outputs.db-name }}
         run: |
