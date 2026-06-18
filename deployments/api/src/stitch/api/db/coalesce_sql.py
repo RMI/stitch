@@ -103,7 +103,14 @@ def build_coalesced_values(
             func.row_number()
             .over(
                 partition_by=(active_src.c.resource_id, v.colname),
-                order_by=(active_src.c.priority.asc(), active_src.c.source.asc()),
+                # source_pk is the final tie-break so the winner is deterministic
+                # even when a resource has multiple records of the same source
+                # (same priority + same source key).
+                order_by=(
+                    active_src.c.priority.asc(),
+                    active_src.c.source.asc(),
+                    active_src.c.source_pk.asc(),
+                ),
             )
             .label("rn"),
         )
