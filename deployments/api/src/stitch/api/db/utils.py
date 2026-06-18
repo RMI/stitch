@@ -13,7 +13,7 @@ from stitch.ogsi.model import (
     OGSISrcKey,
 )
 from stitch.api.coalesce import coalesce_og_field_resource
-from stitch.api.db.coalesce_sql import coalesce_resource
+from stitch.api.db.coalesce_sql import coalesce_persisted_resource
 from stitch.api.db.errors import ResourceIntegrityError
 
 from .model import ResourceModel
@@ -62,7 +62,7 @@ async def resource_model_to_entity(
         rep_res = rep_model.as_empty_entity() if rep_model else None
 
     # Coalesce in SQL (priority-resolved, override-aware) over the long values.
-    view, provenance = await coalesce_resource(
+    view, provenance = await coalesce_persisted_resource(
         session, model.id, licensed_sources=licensed_sources
     )
 

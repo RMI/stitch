@@ -40,12 +40,12 @@ from .model.oil_gas_field_source_value import (
 PROVENANCE_SUFFIX = "__provenance_source"
 
 
-def build_coalesced_winners(
+def build_coalesced_values(
     selected_sources: Collection[OGSISrcKey] | None = None,
     licensed_sources: Collection[OGSISrcKey] | None = None,
     resource_ids: Collection[int] | None = None,
 ):
-    """CTE of the winning value per (resource_id, colname).
+    """CTE of the priority-winning value per (resource_id, colname).
 
     Columns: ``resource_id, colname, value_text, value_num, value_json,
     source, source_pk``.
@@ -107,28 +107,29 @@ def build_coalesced_winners(
         .join(v, v.source_pk == active_src.c.source_pk)
     ).cte("ranked")
 
-    return select(ranked).where(ranked.c.rn == 1).cte("winners")
+    # rn == 1 keeps the single highest-priority row per (resource, colname).
+    return select(ranked).where(ranked.c.rn == 1).cte("coalesced_values")
 
 
-def _when_col(winners, field_name: str, value_col):
+def _when_col(values_cte, field_name: str, value_col):
     """``value_col`` only on rows whose colname matches (NULL otherwise)."""
-    return case((winners.c.colname == field_name, value_col))
+    return case((values_cte.c.colname == field_name, value_col))
 
 
-def _pivot_value_column(winners, field_name: str):
-    """The winning value for ``field_name`` as a labeled column.
+def _pivot_value_column(values_cte, field_name: str):
+    """The coalesced value for ``field_name`` as a labeled column.
 
-    Exactly one winner row exists per (resource, colname), so MAX just selects
-    that single non-null value. Postgres has no ``max(jsonb)`` aggregate, so
-    JSON values are maxed as text; the caller (``_list_item_from_row``)
-    deserializes those JSON-typed fields back to Python.
+    Exactly one row exists per (resource, colname), so MAX just selects that
+    single non-null value. Postgres has no ``max(jsonb)`` aggregate, so JSON
+    values are maxed as text; the caller (``_list_item_from_row``) deserializes
+    those JSON-typed fields back to Python.
     """
     if ATTRIBUTE_KINDS[field_name] is ValueKind.JSON:
         return func.max(
-            _when_col(winners, field_name, cast(winners.c.value_json, Text))
+            _when_col(values_cte, field_name, cast(values_cte.c.value_json, Text))
         ).label(field_name)
-    value_col = getattr(winners.c, value_attr_for(field_name))
-    return func.max(_when_col(winners, field_name, value_col)).label(field_name)
+    value_col = getattr(values_cte.c, value_attr_for(field_name))
+    return func.max(_when_col(values_cte, field_name, value_col)).label(field_name)
 
 
 def _resource_spine(selected_sources: Collection[OGSISrcKey] | None):
@@ -159,18 +160,18 @@ def build_resource_list_cte(
     The resource spine (existence) is LEFT JOINed to the coalesced licensed
     values, so resources with only unlicensed/absent data appear with NULLs.
     """
-    winners = build_coalesced_winners(
+    values_cte = build_coalesced_values(
         selected_sources=selected_sources, licensed_sources=licensed_sources
     )
-    pivot = select(winners.c.resource_id.label("resource_id"))
+    pivot = select(values_cte.c.resource_id.label("resource_id"))
     for field_name in ATTRIBUTE_NAMES:
         pivot = pivot.add_columns(
-            _pivot_value_column(winners, field_name),
-            func.max(_when_col(winners, field_name, winners.c.source)).label(
+            _pivot_value_column(values_cte, field_name),
+            func.max(_when_col(values_cte, field_name, values_cte.c.source)).label(
                 f"{field_name}{PROVENANCE_SUFFIX}"
             ),
         )
-    pivot = pivot.group_by(winners.c.resource_id).cte("resource_value_pivot")
+    pivot = pivot.group_by(values_cte.c.resource_id).cte("resource_value_pivot")
 
     spine = _resource_spine(selected_sources).cte("resource_spine")
     coalesced = select(spine.c.id.label("id"))
@@ -185,24 +186,24 @@ def build_resource_list_cte(
     return coalesced.cte("licensed_resource_list")
 
 
-async def coalesce_resource(
+async def coalesce_persisted_resource(
     session: AsyncSession,
     resource_id: int,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> tuple[OilGasFieldBase, dict[str, tuple | None]]:
-    """Coalesce a single resource, pivoting winning rows in Python."""
-    winners = build_coalesced_winners(
+    """Coalesce a single persisted resource, pivoting the winning rows in Python."""
+    values_cte = build_coalesced_values(
         selected_sources=None,
         licensed_sources=licensed_sources,
         resource_ids=[resource_id],
     )
     stmt = select(
-        winners.c.colname,
-        winners.c.value_text,
-        winners.c.value_num,
-        winners.c.value_json,
-        winners.c.source,
-        winners.c.source_pk,
+        values_cte.c.colname,
+        values_cte.c.value_text,
+        values_cte.c.value_num,
+        values_cte.c.value_json,
+        values_cte.c.source,
+        values_cte.c.source_pk,
     )
     rows = (await session.execute(stmt)).mappings().all()
 

@@ -74,6 +74,9 @@ class OGFieldQueryMixin:
     def _source_pivot(cls, licensed_sources: Collection[OGSISrcKey] | None = None):
         """Build a CTE with one row per source record and a column per attr."""
         v = OilGasFieldSourceValueModel
+        # EXISTS rather than a join to memberships: a source record can have
+        # several memberships, and a join would fan the record out to one row
+        # per membership, inflating the GROUP BY pivot and needing a DISTINCT.
         active_membership = (
             select(1)
             .where(MembershipModel.source_pk == cls.id)
