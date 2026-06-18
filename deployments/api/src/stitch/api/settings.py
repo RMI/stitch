@@ -81,6 +81,13 @@ class Settings(BaseSettings):
     git_sha: str | None = None
     build_time: str | None = None
 
+    # Observability: queries slower than this (ms) are logged individually;
+    # set log_all_queries=True (or slow_query_ms=0) to log every query in dev.
+    log_level: str = "INFO"
+    log_format: Literal["json", "plain"] = "json"
+    slow_query_ms: float = 200.0
+    log_all_queries: bool = False
+
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

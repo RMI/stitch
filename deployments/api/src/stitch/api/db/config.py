@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from stitch.api.observability import register_query_timing
 from stitch.api.settings import get_settings
 
 
@@ -47,11 +48,17 @@ class UnitOfWork:
 @lru_cache
 def get_engine() -> AsyncEngine:
     settings = get_settings()
-    return create_async_engine(
+    engine = create_async_engine(
         settings.get_database_url(),
         echo=not settings.is_prod,
         pool_pre_ping=True,
     )
+    register_query_timing(
+        engine.sync_engine,
+        slow_query_ms=settings.slow_query_ms,
+        log_all_queries=settings.log_all_queries,
+    )
+    return engine
 
 
 @lru_cache
