@@ -3,16 +3,19 @@ on:
   pull_request:
     branches:
       - main
+      - next
+      - production
   push:
     branches:
       - main
+      - production
   schedule:
     - cron: "0 3 * * *" # Nightly at 3 AM UTC
   workflow_dispatch:
 
 name: Admin Checks
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ github.event_action }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ github.event.action }}
   cancel-in-progress: true
 
 jobs:
@@ -24,3 +27,6 @@ jobs:
     name: "Check for forbidden patterns"
     uses: ./.github/workflows/admin-forbidden-patterns.yml
 
+  no-plan-file:
+    name: "Check for committed plan files"
+    uses: ./.github/workflows/admin-no-plan-file.yml

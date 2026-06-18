@@ -48,14 +48,14 @@ jobs:
         shell: bash
         run: |
           if [[ -f dist.tgz ]]; then
-            echo "has_artifact=true" >> "$GITHUB_OUTPUT"
+            echo "has-artifact=true" >> "$GITHUB_OUTPUT"
           else
-            echo "has_artifact=false" >> "$GITHUB_OUTPUT"
+            echo "has-artifact=false" >> "$GITHUB_OUTPUT"
           fi
 
         # Reuse the artifact for downstream deploy
       - name: Upload dist.tgz as workflow artifact
-        if: ${{ steps.check_artifact.outputs.has_artifact == 'true' }}
+        if: ${{ steps.check_artifact.outputs.has-artifact == 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: dist-tgz

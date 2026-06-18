@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager
+import json
 
 import pytest
 from fastapi.testclient import TestClient
 from stitch.client import StitchAPIError
 
+from stitch.auth import TokenClaims
+from stitch.auth.permissions import SERVICE_LLM_SUGGEST
 from stitch.llm import auth as auth_module
-from stitch.llm.auth import get_current_user
+from stitch.llm.auth import get_current_user, get_token_claims
 from stitch.llm.azure_responses import AzureResponsesResult
 from stitch.llm.entities import User
 from stitch.llm.errors import LLMConfigurationError
@@ -119,6 +122,12 @@ def test_client(monkeypatch: pytest.MonkeyPatch):
             name="Test User",
         )
 
+    def override_token_claims() -> TokenClaims:
+        return TokenClaims(
+            sub="test|user",
+            permissions=frozenset({SERVICE_LLM_SUGGEST}),
+        )
+
     test_settings = Settings(
         auth_disabled=True,
         azure_openai_base_url=None,
@@ -131,11 +140,49 @@ def test_client(monkeypatch: pytest.MonkeyPatch):
         main_module, "validate_downstream_auth_config_at_startup", lambda: None
     )
     app.dependency_overrides[get_current_user] = override_current_user
+    app.dependency_overrides[get_token_claims] = override_token_claims
 
     with TestClient(app) as client:
         yield client
 
     app.dependency_overrides.clear()
+
+
+def test_get_suggestion_requires_service_permission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def override_current_user() -> User:
+        return User(
+            id=1,
+            sub="test|user",
+            email="test@example.com",
+            name="Test User",
+        )
+
+    def override_token_claims() -> TokenClaims:
+        return TokenClaims(sub="test|user", permissions=frozenset())
+
+    test_settings = Settings(
+        auth_disabled=True,
+        azure_openai_base_url=None,
+        azure_openai_api_key=None,
+        azure_openai_model=None,
+    )
+    monkeypatch.setattr(auth_module, "get_settings", lambda: test_settings)
+    monkeypatch.setattr(route_module, "get_settings", lambda: test_settings)
+    monkeypatch.setattr(
+        main_module, "validate_downstream_auth_config_at_startup", lambda: None
+    )
+    app.dependency_overrides[get_current_user] = override_current_user
+    app.dependency_overrides[get_token_claims] = override_token_claims
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/oil-gas-fields/42?field=basin")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert SERVICE_LLM_SUGGEST in response.json()["detail"]
 
 
 def install_fakes(
@@ -197,7 +244,11 @@ def test_get_suggestion_returns_validated_value(
     response = test_client.get("/api/v1/oil-gas-fields/42?field=basin")
 
     assert response.status_code == 200
-    assert response.json() == {
+    body = response.json()
+    assert body["observed_at"].endswith("Z")
+    prompt_payload = json.loads(azure_client.calls[0]["input_messages"][1]["content"])
+    assert "source_record" not in prompt_payload["source_records"][0]
+    assert body == {
         "resource_id": 42,
         "field": "basin",
         "value": "Permian Basin",
@@ -207,6 +258,7 @@ def test_get_suggestion_returns_validated_value(
         "query_succeeded": True,
         "model": "test-model",
         "rationale": "Public sources identify the basin.",
+        "observed_at": body["observed_at"],
         "foundry_request": {
             "model": "test-model",
             "input": azure_client.calls[0]["input_messages"],
@@ -318,6 +370,7 @@ def test_get_suggestion_returns_placeholder_when_auth_disabled_and_azure_missing
     assert response.json()["value"] == ":warning: placeholder LLM value"
     assert response.json()["citations"] == []
     assert response.json()["model"] == "placeholder-llm"
+    assert response.json()["observed_at"].endswith("Z")
     assert azure_client.calls == []
 
 
@@ -336,6 +389,7 @@ def test_get_suggestion_returns_null_for_non_string_placeholder_fallback(
     assert response.json()["value"] is None
     assert response.json()["citations"] == []
     assert response.json()["model"] == "placeholder-llm"
+    assert response.json()["observed_at"].endswith("Z")
     assert azure_client.calls == []
 
 

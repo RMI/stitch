@@ -1,20 +1,19 @@
 on:
   workflow_call:
     inputs:
+      deployment-lane:
+        description: "Deployment lane and GitHub Environment name"
+        required: true
+        type: string
       full-image-name:
         description: "Full pushed image name including host/registry, name, and tag"
         required: true
         type: string
-      containerAppName:
+      container-app-name:
         description: "The name of the Azure Container App."
         required: true
         type: string
-      containerAppEnvironment:
-        description: "The name of the Azure Container App environment to deploy to."
-        required: false
-        default: "stitch-dev"
-        type: string
-      targetPort:
+      target-port:
         description: "Port the application listens on"
         required: false
         default: 8000
@@ -25,15 +24,57 @@ on:
         default: "container-app"
         type: string
       environment-variables:
-        description: "Whitespace-delimited non-secret KEY=value pairs"
+        description: "Whitespace-delimited KEY=value pairs"
         required: false
         default: ""
         type: string
-      inject-stitch-app-password:
+      registry-server:
+        description: "Container image registry server (e.g. ghcr.io). Set to configure pull credentials on the Container App; required for private/internal images."
         required: false
-        default: false
-        type: boolean
-
+        default: ""
+        type: string
+      registry-username:
+        description: "Username for the image registry. Not sensitive (the token is the secret), so pass it as a variable."
+        required: false
+        default: ""
+        type: string
+      min-replicas:
+        description: "Optional. If set, reassert the Container App min replica count after deploy. Use to pin single-replica apps (set min and max to 1)."
+        required: false
+        default: ""
+        type: string
+      max-replicas:
+        description: "Optional. If set, reassert the Container App max replica count after deploy."
+        required: false
+        default: ""
+        type: string
+      storage-name:
+        description: "Optional. Name of an Azure Files storage already registered on the Container Apps environment. When set, it is mounted into the app after deploy."
+        required: false
+        default: ""
+        type: string
+      storage-mount-path:
+        description: "Container path to mount the Azure Files storage at (e.g. /mnt/data). Required when storage-name is set."
+        required: false
+        default: ""
+        type: string
+    secrets:
+      azure-client-id:
+        required: true
+      azure-tenant-id:
+        required: true
+      azure-subscription-id:
+        required: true
+      stitch-app-password:
+        required: false
+      stitch-client-bearer-token:
+        required: false
+      stitch-llm-azure-openai-api-key:
+        required: false
+      woodmac-api-key:
+        required: false
+      registry-password:
+        required: false
     outputs:
       container-app-url:
         description: "HTTPS URL of the deployed Azure Container App"
@@ -45,37 +86,87 @@ on:
 jobs:
   deploy-container-app:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.deployment-lane }}
     permissions:
       id-token: write
       contents: read
       packages: read
     timeout-minutes: 25
     outputs:
-      container-app-url: ${{ steps.export-app-url.outputs.container_app_url }}
-      container-app-fqdn: ${{ steps.export-app-url.outputs.container_app_fqdn }}
-
+      container-app-url: ${{ steps.export-app-url.outputs.container-app-url }}
+      container-app-fqdn: ${{ steps.export-app-url.outputs.container-app-fqdn }}
     steps:
+      - name: Validate lane config
+        shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_CONTAINER_APP_ENVIRONMENT: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
+          REGISTRY_SERVER: ${{ inputs.registry-server }}
+          REGISTRY_USERNAME: ${{ inputs.registry-username }}
+          REGISTRY_PASSWORD: ${{ secrets.registry-password }}
+          STORAGE_NAME: ${{ inputs.storage-name }}
+          MOUNT_PATH: ${{ inputs.storage-mount-path }}
+        run: |
+          set -euo pipefail
+          : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
+          : "${AZURE_CONTAINER_APP_ENVIRONMENT:?Missing required variable AZURE_CONTAINER_APP_ENVIRONMENT}"
+
+          # If a registry server is configured (e.g. for private/internal GHCR
+          # images), the pull credentials must accompany it. Fail fast with a
+          # clear message rather than letting `az containerapp up` return an
+          # opaque "UNAUTHORIZED: authentication required".
+          if [ -n "${REGISTRY_SERVER:-}" ]; then
+            : "${REGISTRY_USERNAME:?registry-server is set but the registry-username variable is empty}"
+            : "${REGISTRY_PASSWORD:?registry-server is set but the registry-password secret is empty}"
+          fi
+
+          # storage-name and storage-mount-path must be set together. Callers that
+          # need durable storage (the ETL apps) hardcode the mount path, so an
+          # empty storage-name means a missing/typo'd ETL_STORAGE_NAME variable.
+          # Without this check the mount step below silently skips and the app
+          # deploys with no durable storage. Fail fast on either-without-the-other.
+          if [ -n "${STORAGE_NAME:-}" ] && [ -z "${MOUNT_PATH:-}" ]; then
+            echo "::error::storage-name is set but storage-mount-path is empty" >&2
+            exit 1
+          fi
+          if [ -n "${MOUNT_PATH:-}" ] && [ -z "${STORAGE_NAME:-}" ]; then
+            echo "::error::storage-mount-path is set but storage-name is empty (check the lane's ETL_STORAGE_NAME variable)" >&2
+            exit 1
+          fi
+
       - name: Azure login
         uses: azure/login@v3
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.azure-client-id }}
+          tenant-id: ${{ secrets.azure-tenant-id }}
+          subscription-id: ${{ secrets.azure-subscription-id }}
 
       - run: echo "fullname=${{ inputs.full-image-name }}"
 
       - name: Assemble environment variables
         id: envvars
         shell: bash
+        env:
+          STITCH_APP_PASSWORD: ${{ secrets.stitch-app-password }}
+          STITCH_CLIENT_BEARER_TOKEN: ${{ secrets.stitch-client-bearer-token }}
+          STITCH_LLM_AZURE_OPENAI_API_KEY: ${{ secrets.stitch-llm-azure-openai-api-key }}
+          WOODMAC_API_KEY: ${{ secrets.woodmac-api-key }}
         run: |
           set -euo pipefail
           envvars='${{ inputs.environment-variables }}'
-          echo "$envvars"
-          if [ "${{ inputs.inject-stitch-app-password }}" = "true" ]; then
-            envvars="$envvars POSTGRES_PASSWORD=${{ secrets.STITCH_APP_PASSWORD_DEV }}"
-            echo "Also adding POSTGRES_PASSWORD"
+          if [ -n "${STITCH_APP_PASSWORD:-}" ]; then
+            envvars="$envvars POSTGRES_PASSWORD=${STITCH_APP_PASSWORD}"
           fi
-          echo "environment_variables<<EOF" >> "$GITHUB_OUTPUT"
+          if [ -n "${STITCH_CLIENT_BEARER_TOKEN:-}" ]; then
+            envvars="$envvars STITCH_CLIENT_BEARER_TOKEN=${STITCH_CLIENT_BEARER_TOKEN}"
+          fi
+          if [ -n "${STITCH_LLM_AZURE_OPENAI_API_KEY:-}" ]; then
+            envvars="$envvars STITCH_LLM_AZURE_OPENAI_API_KEY=${STITCH_LLM_AZURE_OPENAI_API_KEY}"
+          fi
+          if [ -n "${WOODMAC_API_KEY:-}" ]; then
+            envvars="$envvars WOODMAC_API_KEY=${WOODMAC_API_KEY}"
+          fi
+          echo "environment-variables<<EOF" >> "$GITHUB_OUTPUT"
           echo "$envvars" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
@@ -83,23 +174,88 @@ jobs:
         uses: azure/container-apps-deploy-action@v1
         with:
           imageToDeploy: ${{ inputs.full-image-name }}
-          resourceGroup: STITCH-DEV-RG
-          containerAppName: ${{ inputs.containerAppName }}
-          containerAppEnvironment: ${{ inputs.containerAppEnvironment }}
-          targetPort: ${{ inputs.targetPort }}
-          environmentVariables: ${{ steps.envvars.outputs.environment_variables }}
+          resourceGroup: ${{ vars.AZURE_RESOURCE_GROUP }}
+          containerAppName: ${{ inputs.container-app-name }}
+          containerAppEnvironment: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
+          targetPort: ${{ inputs.target-port }}
+          environmentVariables: ${{ steps.envvars.outputs.environment-variables }}
           ingress: "external"
+          # Registry pull credentials are only configured when registry-server is
+          # set (e.g. for cross-repo private/internal GHCR images). Existing
+          # callers omit these and the action leaves registry config untouched.
+          registryUrl: ${{ inputs.registry-server }}
+          registryUsername: ${{ inputs.registry-username }}
+          registryPassword: ${{ secrets.registry-password }}
+
+      - name: Pin replica scaling
+        # `az containerapp up` (the deploy action) does not reliably preserve
+        # scale settings, so reassert them after every deploy when requested.
+        # Single-job apps (the ETLs) pass min=max=1 to avoid multiple replicas.
+        if: ${{ inputs.min-replicas != '' || inputs.max-replicas != '' }}
+        shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          MIN_REPLICAS: ${{ inputs.min-replicas }}
+          MAX_REPLICAS: ${{ inputs.max-replicas }}
+        run: |
+          set -euo pipefail
+          args=()
+          [ -n "${MIN_REPLICAS}" ] && args+=(--min-replicas "${MIN_REPLICAS}")
+          [ -n "${MAX_REPLICAS}" ] && args+=(--max-replicas "${MAX_REPLICAS}")
+          az containerapp update \
+            --name "${{ inputs.container-app-name }}" \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            "${args[@]}"
+
+      - name: Mount Azure Files volume
+        # The deploy action cannot mount volumes, so attach the (already
+        # environment-registered) Azure Files storage afterward by reading the
+        # current app spec, injecting a volume + volumeMount, and re-applying.
+        # show -> mutate -> update --yaml is the documented pattern and preserves
+        # everything the action just set (image, env vars, scale, registry).
+        if: ${{ inputs.storage-name != '' }}
+        shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          STORAGE_NAME: ${{ inputs.storage-name }}
+          MOUNT_PATH: ${{ inputs.storage-mount-path }}
+        run: |
+          set -euo pipefail
+          : "${MOUNT_PATH:?storage-name is set but storage-mount-path is empty}"
+
+          az containerapp show \
+            --name "${{ inputs.container-app-name }}" \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --output json > /tmp/app.json
+
+          jq \
+            --arg sn "${STORAGE_NAME}" \
+            --arg mp "${MOUNT_PATH}" \
+            'del(.systemData)
+             | .properties.template.volumes = [
+                 {name: "data", storageType: "AzureFile", storageName: $sn}
+               ]
+             | .properties.template.containers |= map(
+                 .volumeMounts = [{volumeName: "data", mountPath: $mp}]
+               )' \
+            /tmp/app.json > /tmp/app.yaml
+
+          az containerapp update \
+            --name "${{ inputs.container-app-name }}" \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --yaml /tmp/app.yaml
 
       - name: Export application URL
         id: export-app-url
         shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
         run: |
           set -euo pipefail
-
           fqdn="$(
             az containerapp show \
-              --name "${{ inputs.containerAppName }}" \
-              --resource-group "STITCH-DEV-RG" \
+              --name "${{ inputs.container-app-name }}" \
+              --resource-group "${AZURE_RESOURCE_GROUP}" \
               --query "properties.configuration.ingress.fqdn" \
               --output tsv
           )"
@@ -110,8 +266,8 @@ jobs:
           fi
 
           echo "Resolved FQDN: $fqdn"
-          echo "container_app_fqdn=$fqdn" >> "$GITHUB_OUTPUT"
-          echo "container_app_url=https://$fqdn" >> "$GITHUB_OUTPUT"
+          echo "container-app-fqdn=$fqdn" >> "$GITHUB_OUTPUT"
+          echo "container-app-url=https://$fqdn" >> "$GITHUB_OUTPUT"
 
       - name: Write comment JSON
         if: ${{ github.event_name == 'pull_request' }}
@@ -126,8 +282,8 @@ jobs:
             --arg kind "container_app" \
             --arg name "${{ inputs.deployment-label }}" \
             --arg service "${{ inputs.deployment-label }}" \
-            --arg url "[open](${{ steps.export-app-url.outputs.container_app_url }})" \
-            --arg fqdn '`${{ steps.export-app-url.outputs.container_app_fqdn }}`' \
+            --arg url "[open](${{ steps.export-app-url.outputs.container-app-url }})" \
+            --arg fqdn '`${{ steps.export-app-url.outputs.container-app-fqdn }}`' \
             '{
               "section": $section,
               "kind": $kind,

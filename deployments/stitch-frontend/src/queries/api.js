@@ -21,6 +21,21 @@ export async function getResources(
   return await response.json();
 }
 
+export async function getResourceFilterOptions(
+  config,
+  fetcher,
+  endpoint = "resources",
+  field,
+) {
+  const params = new URLSearchParams({ field });
+  const url = `${config.apiBaseUrl}/${endpoint}/filter-options?${params}`;
+  const response = await fetcher(url);
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  return await response.json();
+}
+
 export async function getResource(config, id, fetcher, endpoint = "resources") {
   const url = `${config.apiBaseUrl}/${endpoint}/${id}`;
   const response = await fetcher(url);
@@ -99,6 +114,52 @@ async function getErrorDetail(response) {
   }
 }
 
+export async function createResource(
+  config,
+  payload,
+  fetcher,
+  endpoint = "oil-gas-fields",
+) {
+  const url = `${config.apiBaseUrl}/${endpoint}/`;
+  const response = await fetcher(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const detail = await getErrorDetail(response);
+    const error = new Error(detail);
+    error.status = response.status;
+    throw error;
+  }
+
+  return await response.json();
+}
+
+export async function createMergeCandidate(
+  config,
+  resource_ids,
+  fetcher,
+  endpoint = "oil-gas-fields",
+) {
+  const url = `${config.apiBaseUrl}/${endpoint}/merge-candidates`;
+  const response = await fetcher(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ resource_ids }),
+  });
+
+  if (!response.ok) {
+    const detail = await getErrorDetail(response);
+    const error = new Error(detail);
+    error.status = response.status;
+    throw error;
+  }
+
+  return await response.json();
+}
+
 export async function getMergeCandidates(
   config,
   fetcher,
@@ -150,18 +211,8 @@ export async function reviewMergeCandidate(
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    let detail = text;
-
-    try {
-      detail = text ? JSON.parse(text) : null;
-    } catch {
-      // leave as text
-    }
-
-    const error = new Error(
-      typeof detail === "string" ? detail : JSON.stringify(detail, null, 2),
-    );
+    const detail = await getErrorDetail(response);
+    const error = new Error(detail);
     error.status = response.status;
     throw error;
   }

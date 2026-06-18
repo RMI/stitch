@@ -2,6 +2,10 @@
 on:
   workflow_call:
     inputs:
+      deployment-lane:
+        description: "Deployment lane and GitHub Environment name"
+        required: true
+        type: string
       full-image-name:
         description: "Full pushed image name including host/registry, name, and digest"
         required: true
@@ -20,36 +24,47 @@ on:
         required: false
         default: "require"
         type: string
+    secrets:
+      stitch-migrator-password:
+        required: true
 
-name: Run DB Init
+name: Run DB Migrations
 
 jobs:
-  run-db-init:
+  run-db-migrations:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.deployment-lane }}
     permissions:
       contents: read
       packages: read
     timeout-minutes: 25
 
     steps:
-      - name: Log in to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Validate lane secrets
+        shell: bash
+        env:
+          STITCH_MIGRATOR_PASSWORD: ${{ secrets.stitch-migrator-password }}
+        run: |
+          set -euo pipefail
+          : "${STITCH_MIGRATOR_PASSWORD:?Missing required secret STITCH_MIGRATOR_PASSWORD}"
 
-      - name: Pull init image
+      - name: Log in to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Pull migrator image
         run: docker pull "${{ inputs.full-image-name }}"
 
-      - name: Run DB init job
+      - name: Run DB migrations job
         env:
           LOG_LEVEL: info
           POSTGRES_HOST: ${{ inputs.postgres-host }}
           POSTGRES_PORT: ${{ inputs.postgres-port }}
           POSTGRES_DB: ${{ inputs.postgres-db }}
           POSTGRES_USER: stitch_migrator
-          POSTGRES_PASSWORD: ${{ secrets.STITCH_MIGRATOR_PASSWORD_DEV }}
+          POSTGRES_PASSWORD: ${{ secrets.stitch-migrator-password }}
           PGSSLMODE: ${{ inputs.postgres-sslmode }}
         run: |
           set -euo pipefail
-
           docker run --rm \
             -e LOG_LEVEL \
             -e POSTGRES_HOST \
@@ -59,8 +74,7 @@ jobs:
             -e POSTGRES_PASSWORD \
             -e PGSSLMODE \
             "${{ inputs.full-image-name }}" \
-            python -m stitch.api.db.init_job
-
+            alembic -c deployments/api/alembic.ini upgrade head
 
       - name: Write comment JSON
         if: ${{ github.event_name == 'pull_request' }}
@@ -68,13 +82,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/comment-json
-          json_file="/tmp/comment-json/comment-json-db-init.json"
+          json_file="/tmp/comment-json/comment-json-db-migrations.json"
 
           jq -n \
             --arg section "jobs" \
-            --arg kind "db_init" \
-            --arg name "db-init" \
-            --arg job "db-init" \
+            --arg kind "db_migrations" \
+            --arg name "db-migrations" \
+            --arg job "db-migrations" \
             --arg image '`${{ inputs.full-image-name }}`' \
             --arg postgres_db '`${{ inputs.postgres-db }}`' \
             '{
@@ -96,6 +110,6 @@ jobs:
         if: ${{ github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v4
         with:
-          name: comment-json-db-init
+          name: comment-json-db-migrations
           path: /tmp/comment-json/*.json
           if-no-files-found: error

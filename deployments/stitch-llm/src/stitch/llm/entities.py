@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, EmailStr, Field
@@ -24,5 +25,6 @@ class FieldSuggestionResponse(BaseModel):
     query_succeeded: bool
     model: str
     rationale: str
+    observed_at: datetime
     foundry_request: dict[str, Any]
     foundry_response: dict[str, Any]

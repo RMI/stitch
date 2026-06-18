@@ -1,17 +1,24 @@
 import asyncio
 import logging
 from functools import lru_cache
-from typing import Annotated, get_args
+from typing import Annotated, Literal, NoReturn
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from starlette.status import HTTP_401_UNAUTHORIZED
+from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_403_FORBIDDEN
 
-from stitch.auth import JWTValidator, OIDCSettings, TokenClaims
-from stitch.auth.errors import AuthError, JWKSFetchError
-from stitch.ogsi.model.types import OGSISrcKey
+from stitch.auth import (
+    ALL_PERMISSIONS,
+    AuthError,
+    InsufficientPermissionsError,
+    JWKSFetchError,
+    JWTValidator,
+    OIDCSettings,
+    TokenClaims,
+    check_permissions,
+)
 
 from stitch.api.db.config import SessionFactoryDep
 from stitch.api.db.model.user import User as UserModel
@@ -35,9 +42,7 @@ _DEV_CLAIMS = TokenClaims(
     sub="dev|local-placeholder",
     email="dev@example.com",
     name="Dev User",
-    permissions=frozenset(
-        f"resource:read:licensed:{src}" for src in get_args(OGSISrcKey)
-    ),
+    permissions=ALL_PERMISSIONS,
     raw={},
 )
 
@@ -111,12 +116,30 @@ async def get_token_claims(
 
     if not claims.permissions:
         logger.warning(
-            "authenticated token has no permissions; user will see null-shell data"
+            "authenticated token has no permissions; protected routes will reject it"
         )
     return claims
 
 
 Claims = Annotated[TokenClaims, Depends(get_token_claims)]
+
+
+def _permission_exception_handler(exc: InsufficientPermissionsError) -> NoReturn:
+    raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail=exc.detail)
+
+
+def require_permissions(
+    *required_permissions: str, check: Literal["all", "any"] = "all"
+):
+    async def dependency(claims: Claims) -> None:
+        check_permissions(
+            granted=claims.permissions,
+            required=required_permissions,
+            check=check,
+            exc_handler=_permission_exception_handler,
+        )
+
+    return dependency
 
 
 async def get_current_user(claims: Claims, session_factory: SessionFactoryDep) -> User:

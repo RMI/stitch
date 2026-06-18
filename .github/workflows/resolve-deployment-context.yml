@@ -1,0 +1,77 @@
+name: Resolve deployment context
+
+on:
+  workflow_call:
+    outputs:
+      deployment-lane:
+        description: Deployment lane and GitHub Environment name
+        value: ${{ jobs.resolve-context.outputs.deployment-lane }}
+      deployment-name:
+        description: Concrete deployment target name
+        value: ${{ jobs.resolve-context.outputs.deployment-name }}
+
+jobs:
+  resolve-context:
+    runs-on: ubuntu-latest
+    outputs:
+      deployment-lane: ${{ steps.resolve.outputs.deployment-lane }}
+      deployment-name: ${{ steps.resolve.outputs.deployment-name }}
+    steps:
+      - name: Resolve lane and deployment name
+        id: resolve
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          normalize_name() {
+            local raw="$1"
+            echo "$raw" \
+              | tr '[:upper:]' '[:lower:]' \
+              | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g'
+          }
+
+          deployment_lane=""
+          deployment_name=""
+
+          case "$EVENT_NAME" in
+            push|workflow_dispatch)
+              case "$REF_NAME" in
+                main)
+                  deployment_lane="development"
+                  deployment_name="main"
+                  ;;
+                production)
+                  deployment_lane="dress-rehearsal"
+                  deployment_name="dress-rehearsal"
+                  ;;
+                *)
+                  echo "Unsupported push/dispatch target: $REF_NAME" >&2
+                  exit 1
+                  ;;
+              esac
+              ;;
+            pull_request)
+              if [ "$BASE_REF" = "production" ]; then
+                deployment_lane="staging"
+                deployment_name="$(normalize_name "$HEAD_REF")"
+              else
+                deployment_lane="development"
+                deployment_name="pr-$PR_NUMBER"
+              fi
+              ;;
+            *)
+              echo "Unsupported event: $EVENT_NAME" >&2
+              exit 1
+              ;;
+          esac
+
+          {
+            echo "deployment-lane=$deployment_lane"
+            echo "deployment-name=$deployment_name"
+          } >> "$GITHUB_OUTPUT"

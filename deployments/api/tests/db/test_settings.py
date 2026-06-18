@@ -43,6 +43,19 @@ class TestPostgresConfig:
 
         assert url.password == "secret123"
 
+    def test_to_sync_url_matches_postgres_driver(self):
+        config = PostgresConfig(
+            host="localhost",
+            port=5432,
+            db="testdb",
+            user="testuser",
+            password=SecretStr("testpass"),
+        )
+
+        url = config.to_sync_url()
+
+        assert url.drivername == "postgresql+psycopg"
+
     def test_defaults(self, monkeypatch):
         """Verify default values are applied when env vars are unset."""
         monkeypatch.setenv("POSTGRES_DB", "postgres")
@@ -77,6 +90,15 @@ class TestSqliteConfig:
         url = config.to_url()
 
         assert url.drivername == "sqlite+aiosqlite"
+        assert url.database == str(db_file)
+
+    def test_to_sync_url_uses_pysqlite(self, tmp_path: Path):
+        db_file = tmp_path / "test.db"
+        config = SqliteConfig(db_path=db_file)
+
+        url = config.to_sync_url()
+
+        assert url.drivername == "sqlite+pysqlite"
         assert url.database == str(db_file)
 
 
@@ -148,6 +170,25 @@ class TestSettings:
 
         assert url.drivername == "sqlite+aiosqlite"
         assert url.database == ":memory:"
+
+    def test_get_sync_database_url_sqlite_dialect(self):
+        settings = Settings(dialect="sqlite")
+
+        url = settings.get_sync_database_url()
+
+        assert url.drivername == "sqlite+pysqlite"
+        assert url.database == ":memory:"
+
+    def test_get_sync_database_url_postgres_dialect(self, monkeypatch):
+        monkeypatch.setenv("POSTGRES_HOST", "pghost")
+        monkeypatch.setenv("POSTGRES_DB", "pgdb")
+
+        settings = Settings(dialect="postgresql")
+        url = settings.get_sync_database_url()
+
+        assert url.drivername == "postgresql+psycopg"
+        assert url.host == "pghost"
+        assert url.database == "pgdb"
 
     def test_default_dialect_is_postgresql(self):
         """Verify default dialect is postgresql."""

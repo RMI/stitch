@@ -3,17 +3,142 @@ name: CD Pipeline
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, production]
   workflow_dispatch:
 
 jobs:
+  resolve-context:
+    uses: ./.github/workflows/resolve-deployment-context.yml
+
+  lane-config-validate:
+    name: Resolve lane config
+    needs: [resolve-context]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-context.outputs.deployment-lane }}
+    outputs:
+      frontend-origin-url: ${{ steps.compute.outputs.frontend-origin-url }}
+      auth-disabled: ${{ steps.export-auth.outputs.auth-disabled }}
+      auth-issuer: ${{ steps.export-auth.outputs.auth-issuer }}
+      auth-audience: ${{ steps.export-auth.outputs.auth-audience }}
+      auth-jwks-uri: ${{ steps.export-auth.outputs.auth-jwks-uri }}
+      auth0-domain: ${{ steps.export-auth.outputs.auth0-domain }}
+      auth0-client-id: ${{ steps.export-auth.outputs.auth0-client-id }}
+      auth0-audience: ${{ steps.export-auth.outputs.auth0-audience }}
+      stitch-llm-azure-openai-base-url: ${{ steps.export-auth.outputs.stitch-llm-azure-openai-base-url }}
+      stitch-llm-azure-openai-model: ${{ steps.export-auth.outputs.stitch-llm-azure-openai-model }}
+      stitch-llm-azure-openai-timeout-seconds: ${{ steps.export-auth.outputs.stitch-llm-azure-openai-timeout-seconds }}
+      ghcr-etl-pull-username: ${{ steps.export-auth.outputs.ghcr-etl-pull-username }}
+      etl-storage-name: ${{ steps.export-auth.outputs.etl-storage-name }}
+    env:
+      FRONTEND_PRODUCTION_URL: ${{ vars.FRONTEND_PRODUCTION_URL }}
+      FRONTEND_PREVIEW_URL_TEMPLATE: ${{ vars.FRONTEND_PREVIEW_URL_TEMPLATE }}
+      AUTH_DISABLED: ${{ vars.AUTH_DISABLED }}
+      AUTH_ISSUER: ${{ vars.AUTH_ISSUER }}
+      AUTH_AUDIENCE: ${{ vars.AUTH_AUDIENCE }}
+      AUTH_JWKS_URI: ${{ vars.AUTH_JWKS_URI }}
+      AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
+      AUTH0_CLIENT_ID: ${{ vars.AUTH0_CLIENT_ID }}
+      AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
+      STITCH_LLM_AZURE_OPENAI_BASE_URL: ${{ vars.STITCH_LLM_AZURE_OPENAI_BASE_URL }}
+      STITCH_LLM_AZURE_OPENAI_MODEL: ${{ vars.STITCH_LLM_AZURE_OPENAI_MODEL }}
+      STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS: ${{ vars.STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS }}
+      GHCR_ETL_PULL_USERNAME: ${{ vars.GHCR_ETL_PULL_USERNAME }}
+      ETL_STORAGE_NAME: ${{ vars.ETL_STORAGE_NAME }}
+      STITCH_APP_PASSWORD: ${{ secrets.STITCH_APP_PASSWORD }}
+      STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
+      STITCH_CLIENT_LLM_BEARER_TOKEN: ${{ secrets.STITCH_CLIENT_LLM_BEARER_TOKEN }}
+      STITCH_LLM_AZURE_OPENAI_API_KEY: ${{ secrets.STITCH_LLM_AZURE_OPENAI_API_KEY }}
+    steps:
+      - name: Validate lane variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${FRONTEND_PRODUCTION_URL:?Missing required variable FRONTEND_PRODUCTION_URL}"
+          : "${FRONTEND_PREVIEW_URL_TEMPLATE:?Missing required variable FRONTEND_PREVIEW_URL_TEMPLATE}"
+          : "${AUTH_DISABLED:?Missing required variable AUTH_DISABLED}"
+          : "${AUTH0_DOMAIN:?Missing required variable AUTH0_DOMAIN}"
+          : "${AUTH0_CLIENT_ID:?Missing required variable AUTH0_CLIENT_ID}"
+          : "${AUTH0_AUDIENCE:?Missing required variable AUTH0_AUDIENCE}"
+          : "${STITCH_APP_PASSWORD:?Missing required secret STITCH_APP_PASSWORD}"
+          : "${STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN:?Missing required secret STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN}"
+          : "${STITCH_CLIENT_LLM_BEARER_TOKEN:?Missing required secret STITCH_CLIENT_LLM_BEARER_TOKEN}"
+
+          case "${AUTH_DISABLED}" in
+            true|false) ;;
+            *)
+              echo "Invalid AUTH_DISABLED: '${AUTH_DISABLED}'. Expected 'true' or 'false'." >&2
+              exit 1
+              ;;
+          esac
+
+          if [ "${AUTH_DISABLED}" = "false" ]; then
+            : "${AUTH_ISSUER:?Missing required variable AUTH_ISSUER}"
+            : "${AUTH_AUDIENCE:?Missing required variable AUTH_AUDIENCE}"
+            : "${AUTH_JWKS_URI:?Missing required variable AUTH_JWKS_URI}"
+          fi
+
+          has_llm_base_url=false
+          has_llm_model=false
+          has_llm_api_key=false
+
+          [ -n "${STITCH_LLM_AZURE_OPENAI_BASE_URL:-}" ] && has_llm_base_url=true
+          [ -n "${STITCH_LLM_AZURE_OPENAI_MODEL:-}" ] && has_llm_model=true
+          [ -n "${STITCH_LLM_AZURE_OPENAI_API_KEY:-}" ] && has_llm_api_key=true
+
+          if $has_llm_base_url || $has_llm_model || $has_llm_api_key; then
+            : "${STITCH_LLM_AZURE_OPENAI_BASE_URL:?Missing required variable STITCH_LLM_AZURE_OPENAI_BASE_URL}"
+            : "${STITCH_LLM_AZURE_OPENAI_MODEL:?Missing required variable STITCH_LLM_AZURE_OPENAI_MODEL}"
+            : "${STITCH_LLM_AZURE_OPENAI_API_KEY:?Missing required secret STITCH_LLM_AZURE_OPENAI_API_KEY}"
+          fi
+
+      - name: Compute frontend origin
+        id: compute
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          TARGET_NAME: ${{ needs.resolve-context.outputs.deployment-name }}
+          DEPLOYMENT_LANE: ${{ needs.resolve-context.outputs.deployment-lane }}
+        run: |
+          set -euo pipefail
+
+          if [ "${DEPLOYMENT_LANE}" = "dress-rehearsal" ]; then
+            frontend_origin_url="${FRONTEND_PRODUCTION_URL}"
+          elif [ "${EVENT_NAME}" = "pull_request" ]; then
+            frontend_origin_url="${FRONTEND_PREVIEW_URL_TEMPLATE//\{name\}/${PR_NUMBER}}"
+          else
+            frontend_origin_url="${FRONTEND_PREVIEW_URL_TEMPLATE//\{name\}/${TARGET_NAME}}"
+          fi
+
+          echo "frontend-origin-url=$frontend_origin_url" >> "$GITHUB_OUTPUT"
+
+      - name: Export auth config
+        id: export-auth
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "auth-disabled=${AUTH_DISABLED}" >> "$GITHUB_OUTPUT"
+          echo "auth-issuer=${AUTH_ISSUER}" >> "$GITHUB_OUTPUT"
+          echo "auth-audience=${AUTH_AUDIENCE}" >> "$GITHUB_OUTPUT"
+          echo "auth-jwks-uri=${AUTH_JWKS_URI}" >> "$GITHUB_OUTPUT"
+          echo "auth0-domain=${AUTH0_DOMAIN}" >> "$GITHUB_OUTPUT"
+          echo "auth0-client-id=${AUTH0_CLIENT_ID}" >> "$GITHUB_OUTPUT"
+          echo "auth0-audience=${AUTH0_AUDIENCE}" >> "$GITHUB_OUTPUT"
+          echo "stitch-llm-azure-openai-base-url=${STITCH_LLM_AZURE_OPENAI_BASE_URL}" >> "$GITHUB_OUTPUT"
+          echo "stitch-llm-azure-openai-model=${STITCH_LLM_AZURE_OPENAI_MODEL}" >> "$GITHUB_OUTPUT"
+          echo "stitch-llm-azure-openai-timeout-seconds=${STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS:-30}" >> "$GITHUB_OUTPUT"
+          echo "ghcr-etl-pull-username=${GHCR_ETL_PULL_USERNAME:-}" >> "$GITHUB_OUTPUT"
+          echo "etl-storage-name=${ETL_STORAGE_NAME:-}" >> "$GITHUB_OUTPUT"
+
   build-frontend:
     name: "Build frontend"
+    needs: [resolve-context]
     uses: ./.github/workflows/node-build.yml
     secrets: inherit
 
-  build_api_docker_image:
+  build-api-docker-image:
     name: "Build and publish API"
+    needs: [resolve-context]
     uses: ./.github/workflows/build-and-push-Docker-image.yml
     secrets: inherit
     permissions:
@@ -22,16 +147,21 @@ jobs:
     with:
       dockerfile: deployments/api/Dockerfile
       image-name: ${{ github.event.repository.name }}-api
-      image-tag: ${{
-          github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
-          github.event_name == 'schedule' && 'nightly' ||
-          github.event_name == 'push' && github.ref_name ||
-          github.event_name == 'workflow_dispatch' && github.ref_name ||
-          github.sha
-        }}
+      image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
 
-  build_entity_linkage_docker_image:
+  check-db-migrations:
+    name: "Check DB Migrations (clean)"
+    needs: [build-api-docker-image]
+    uses: ./.github/workflows/check-alembic.yml
+    permissions:
+      contents: read
+      packages: read
+    with:
+      full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
+
+  build-entity-linkage-docker-image:
     name: "Build and publish Entity Linkage"
+    needs: [resolve-context]
     uses: ./.github/workflows/build-and-push-Docker-image.yml
     secrets: inherit
     permissions:
@@ -40,16 +170,11 @@ jobs:
     with:
       dockerfile: deployments/entity-linkage/Dockerfile
       image-name: ${{ github.event.repository.name }}-entity-linkage
-      image-tag: ${{
-          github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
-          github.event_name == 'schedule' && 'nightly' ||
-          github.event_name == 'push' && github.ref_name ||
-          github.event_name == 'workflow_dispatch' && github.ref_name ||
-          github.sha
-        }}
+      image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
 
-  build_stitch_llm_docker_image:
+  build-stitch-llm-docker-image:
     name: "Build and publish Stitch LLM"
+    needs: [resolve-context]
     uses: ./.github/workflows/build-and-push-Docker-image.yml
     secrets: inherit
     permissions:
@@ -58,16 +183,14 @@ jobs:
     with:
       dockerfile: deployments/stitch-llm/Dockerfile
       image-name: ${{ github.event.repository.name }}-stitch-llm
-      image-tag: ${{
-          github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
-          github.event_name == 'schedule' && 'nightly' ||
-          github.event_name == 'push' && github.ref_name ||
-          github.event_name == 'workflow_dispatch' && github.ref_name ||
-          github.sha
-        }}
+      image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
 
-  build_seed_docker_image:
+  build-seed-docker-image:
     name: "Build and publish Seed"
+    # Seed only runs in development; non-development lanes are populated by the
+    # ETL pipelines instead (one or the other, never both).
+    if: ${{ needs.resolve-context.outputs.deployment-lane == 'development' }}
+    needs: [resolve-context]
     uses: ./.github/workflows/build-and-push-Docker-image.yml
     secrets: inherit
     permissions:
@@ -76,158 +199,252 @@ jobs:
     with:
       dockerfile: deployments/seed/Dockerfile
       image-name: ${{ github.event.repository.name }}-seed
-      image-tag: ${{
-          github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
-          github.event_name == 'schedule' && 'nightly' ||
-          github.event_name == 'push' && github.ref_name ||
-          github.event_name == 'workflow_dispatch' && github.ref_name ||
-          github.sha
-        }}
+      image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
 
   deploy-db:
     name: "Create DB"
+    needs: [resolve-context]
     uses: ./.github/workflows/deploy-db.yml
-    secrets: inherit
-
-  run-db-init:
-    name: "Run DB init"
-    uses: ./.github/workflows/run-db-init.yml
-    secrets: inherit
-    needs: [build_api_docker_image, deploy-db]
+    secrets:
+      pgpassword: ${{ secrets.PGPASSWORD }}
+      stitch-migrator-password: ${{ secrets.STITCH_MIGRATOR_PASSWORD }}
+      stitch-app-password: ${{ secrets.STITCH_APP_PASSWORD }}
     with:
-      full-image-name: ${{ needs.build_api_docker_image.outputs.digest-image-name }}
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
+      deployment-name: ${{ needs.resolve-context.outputs.deployment-name }}
+
+  run-db-migrations:
+    name: "Run DB Migrations"
+    needs: [resolve-context, build-api-docker-image, deploy-db]
+    uses: ./.github/workflows/run-alembic.yml
+    secrets:
+      stitch-migrator-password: ${{ secrets.STITCH_MIGRATOR_PASSWORD }}
+    with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
+      full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
       postgres-host: ${{ needs.deploy-db.outputs.postgres-host }}
       postgres-port: ${{ needs.deploy-db.outputs.postgres-port }}
       postgres-db: ${{ needs.deploy-db.outputs.postgres-db }}
+      postgres-sslmode: ${{ needs.deploy-db.outputs.postgres-sslmode }}
+
+  check-db-migrations-live:
+    name: "Check DB Migrations (live)"
+    needs: [resolve-context, build-api-docker-image, deploy-db, run-db-migrations]
+    uses: ./.github/workflows/check-alembic.yml
+    permissions:
+      contents: read
+      packages: read
+    secrets:
+      stitch-app-password: ${{ secrets.STITCH_APP_PASSWORD }}
+    with:
+      full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
+      postgres-host: ${{ needs.deploy-db.outputs.postgres-host }}
+      postgres-port: ${{ needs.deploy-db.outputs.postgres-port }}
+      postgres-db: ${{ needs.deploy-db.outputs.postgres-db }}
+      postgres-sslmode: ${{ needs.deploy-db.outputs.postgres-sslmode }}
 
   deploy-api:
     name: "Deploy API"
+    needs: [resolve-context, lane-config-validate, build-api-docker-image, deploy-db, run-db-migrations]
     uses: ./.github/workflows/deploy-container.yml
-    secrets: inherit
-    needs: [build_api_docker_image, deploy-db, run-db-init]
+    secrets:
+      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      stitch-app-password: ${{ secrets.STITCH_APP_PASSWORD }}
     with:
-      full-image-name: ${{ needs.build_api_docker_image.outputs.digest-image-name }}
-      containerAppName: ${{
-          github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
-          github.event_name == 'schedule' && 'nightly' ||
-          github.event_name == 'push' && github.ref_name ||
-          github.event_name == 'workflow_dispatch' && github.ref_name ||
-          github.sha
-        }}-api
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
+      full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
+      container-app-name: ${{ format('{0}-api', needs.resolve-context.outputs.deployment-name) }}
       environment-variables: >-
         LOG_LEVEL=debug
-        FRONTEND_ORIGIN_URL=${{
-          github.event_name == 'pull_request' &&
-          format('https://witty-mushroom-017a3dc1e-{0}.westus2.1.azurestaticapps.net', github.event.pull_request.number) ||
-          github.event_name == 'push' && github.ref_name == 'main' &&
-          'https://witty-mushroom-017a3dc1e.1.azurestaticapps.net' ||
-          github.event_name == 'push' &&
-          format('https://witty-mushroom-017a3dc1e-{0}.westus2.1.azurestaticapps.net', github.ref_name) ||
-          'http://localhost:3000'
-        }}
-        AUTH_DISABLED=true
-        ENVIRONMENT=${{
-          (github.event_name == 'pull_request' && format('{0}-{1}', 'pr', github.event.pull_request.number)) ||
-          github.ref_name
-        }}
+        FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
+        AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
+        DEPLOYMENT_LANE=${{ needs.resolve-context.outputs.deployment-lane }}
+        DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
+        ENVIRONMENT=${{ needs.resolve-context.outputs.deployment-name }}
+        AUTH_ISSUER=${{ needs.lane-config-validate.outputs.auth-issuer }}
+        AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
+        AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
         POSTGRES_HOST=${{ needs.deploy-db.outputs.postgres-host }}
         POSTGRES_PORT=${{ needs.deploy-db.outputs.postgres-port }}
         POSTGRES_DB=${{ needs.deploy-db.outputs.postgres-db }}
         POSTGRES_USER=${{ needs.deploy-db.outputs.postgres-user }}
-        PGSSLMODE=require
-      inject-stitch-app-password: true
+        PGSSLMODE=${{ needs.deploy-db.outputs.postgres-sslmode }}
       deployment-label: api
+      # Keep staging / dress-rehearsal always-on; development scales to zero.
+      min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
 
   deploy-entity-linkage:
     name: "Deploy entity linkage"
+    needs: [resolve-context, lane-config-validate, build-entity-linkage-docker-image, deploy-api]
     uses: ./.github/workflows/deploy-container.yml
-    secrets: inherit
-    needs: [build_entity_linkage_docker_image, deploy-api]
+    secrets:
+      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      stitch-client-bearer-token: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
     with:
-      full-image-name: ${{ needs.build_entity_linkage_docker_image.outputs.digest-image-name }}
-      containerAppName: ${{
-          github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
-          github.event_name == 'schedule' && 'nightly' ||
-          github.event_name == 'push' && github.ref_name ||
-          github.event_name == 'workflow_dispatch' && github.ref_name ||
-          github.sha
-        }}-entity-linkage
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
+      full-image-name: ${{ needs.build-entity-linkage-docker-image.outputs.digest-image-name }}
+      container-app-name: ${{ format('{0}-entity-linkage', needs.resolve-context.outputs.deployment-name) }}
       environment-variables: >-
         LOG_LEVEL=info
-        AUTH_DISABLED=true
-        STITCH_CLIENT_BEARER_TOKEN=dev-placeholder-token
+        AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
+        DEPLOYMENT_LANE=${{ needs.resolve-context.outputs.deployment-lane }}
+        DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
+        AUTH_ISSUER=${{ needs.lane-config-validate.outputs.auth-issuer }}
+        AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
+        AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
         ENTITY_LINKAGE_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
-        ENTITY_LINKAGE_FRONTEND_ORIGIN_URL=${{
-          github.event_name == 'pull_request' &&
-          format('https://witty-mushroom-017a3dc1e-{0}.westus2.1.azurestaticapps.net', github.event.pull_request.number) ||
-          github.event_name == 'push' && github.ref_name == 'main' &&
-          'https://witty-mushroom-017a3dc1e.1.azurestaticapps.net' ||
-          github.event_name == 'push' &&
-          format('https://witty-mushroom-017a3dc1e-{0}.westus2.1.azurestaticapps.net', github.ref_name) ||
-          'http://localhost:3000'
-        }}
+        ENTITY_LINKAGE_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
       deployment-label: entity-linkage
+      # Keep staging / dress-rehearsal always-on; development scales to zero.
+      min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
 
   deploy-stitch-llm:
     name: "Deploy stitch-llm"
+    needs: [resolve-context, lane-config-validate, build-stitch-llm-docker-image, deploy-api]
     uses: ./.github/workflows/deploy-container.yml
-    secrets: inherit
-    needs: [build_stitch_llm_docker_image, deploy-api]
+    secrets:
+      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      stitch-client-bearer-token: ${{ secrets.STITCH_CLIENT_LLM_BEARER_TOKEN }}
+      stitch-llm-azure-openai-api-key: ${{ secrets.STITCH_LLM_AZURE_OPENAI_API_KEY }}
     with:
-      full-image-name: ${{ needs.build_stitch_llm_docker_image.outputs.digest-image-name }}
-      containerAppName: ${{
-          github.event_name == 'pull_request' && format('{0}{1}','pr', github.event.pull_request.number) ||
-          github.event_name == 'schedule' && 'nightly' ||
-          github.event_name == 'push' && github.ref_name ||
-          github.event_name == 'workflow_dispatch' && github.ref_name ||
-          github.sha
-        }}-stitch-llm
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
+      full-image-name: ${{ needs.build-stitch-llm-docker-image.outputs.digest-image-name }}
+      container-app-name: ${{ format('{0}-stitch-llm', needs.resolve-context.outputs.deployment-name) }}
       environment-variables: >-
         STITCH_LLM_LOG_LEVEL=info
-        AUTH_DISABLED=true
-        STITCH_CLIENT_BEARER_TOKEN=dev-placeholder-token
+        AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
+        DEPLOYMENT_LANE=${{ needs.resolve-context.outputs.deployment-lane }}
+        DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
+        AUTH_ISSUER=${{ needs.lane-config-validate.outputs.auth-issuer }}
+        AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
+        AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
         STITCH_LLM_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
-        STITCH_LLM_FRONTEND_ORIGIN_URL=${{
-          github.event_name == 'pull_request' &&
-          format('https://witty-mushroom-017a3dc1e-{0}.westus2.1.azurestaticapps.net', github.event.pull_request.number) ||
-          github.event_name == 'push' && github.ref_name == 'main' &&
-          'https://witty-mushroom-017a3dc1e.1.azurestaticapps.net' ||
-          github.event_name == 'push' &&
-          format('https://witty-mushroom-017a3dc1e-{0}.westus2.1.azurestaticapps.net', github.ref_name) ||
-          'http://localhost:3000'
-        }}
+        STITCH_LLM_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
+        STITCH_LLM_AZURE_OPENAI_BASE_URL=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-base-url }}
+        STITCH_LLM_AZURE_OPENAI_MODEL=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-model }}
+        STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-timeout-seconds }}
       deployment-label: stitch-llm
+      # Keep staging / dress-rehearsal always-on; development scales to zero.
+      min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
+
+  deploy-etl-gem:
+    name: "Deploy ETL GEM"
+    if: ${{ needs.resolve-context.outputs.deployment-lane != 'development' }}
+    needs: [resolve-context, lane-config-validate, deploy-api]
+    uses: ./.github/workflows/deploy-container.yml
+    secrets:
+      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      stitch-client-bearer-token: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
+      registry-password: ${{ secrets.GHCR_ETL_PULL_TOKEN }}
+    with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
+      full-image-name: ghcr.io/rmi/stitch-etl-poc-etl-gem:${{ vars.ETL_GEM_IMAGE_TAG || 'main' }}
+      container-app-name: ${{ format('{0}-etl-gem', needs.resolve-context.outputs.deployment-name) }}
+      registry-server: ghcr.io
+      registry-username: ${{ needs.lane-config-validate.outputs.ghcr-etl-pull-username }}
+      # Single job at a time + in-memory /status state: keep exactly one replica.
+      min-replicas: "1"
+      max-replicas: "1"
+      environment-variables: >-
+        LOG_LEVEL=info
+        AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
+        DEPLOYMENT_LANE=${{ needs.resolve-context.outputs.deployment-lane }}
+        DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
+        AUTH_ISSUER=${{ needs.lane-config-validate.outputs.auth-issuer }}
+        AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
+        AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
+        API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
+        ETL_GEM_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
+        GEM_FILE_DIR=/mnt/data/gem
+      deployment-label: etl-gem
+      # Mount the lane's Azure Files share; GEM reads its xlsx from the gem/ subdir.
+      storage-name: ${{ needs.lane-config-validate.outputs.etl-storage-name }}
+      storage-mount-path: /mnt/data
+
+  deploy-etl-woodmac:
+    name: "Deploy ETL WoodMac"
+    if: ${{ needs.resolve-context.outputs.deployment-lane != 'development' }}
+    needs: [resolve-context, lane-config-validate, deploy-api]
+    uses: ./.github/workflows/deploy-container.yml
+    secrets:
+      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      stitch-client-bearer-token: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
+      woodmac-api-key: ${{ secrets.WOODMAC_API_KEY }}
+      registry-password: ${{ secrets.GHCR_ETL_PULL_TOKEN }}
+    with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
+      full-image-name: ghcr.io/rmi/stitch-etl-poc-etl-woodmac:${{ vars.ETL_WOODMAC_IMAGE_TAG || 'main' }}
+      container-app-name: ${{ format('{0}-etl-woodmac', needs.resolve-context.outputs.deployment-name) }}
+      registry-server: ghcr.io
+      registry-username: ${{ needs.lane-config-validate.outputs.ghcr-etl-pull-username }}
+      # Single job at a time + in-memory /status state: keep exactly one replica.
+      min-replicas: "1"
+      max-replicas: "1"
+      environment-variables: >-
+        LOG_LEVEL=info
+        AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
+        DEPLOYMENT_LANE=${{ needs.resolve-context.outputs.deployment-lane }}
+        DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
+        AUTH_ISSUER=${{ needs.lane-config-validate.outputs.auth-issuer }}
+        AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
+        AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
+        API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
+        ETL_WOODMAC_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
+        WOODMAC_DATA_DIR=/mnt/data/woodmac
+      deployment-label: etl-woodmac
+      # Mount the lane's Azure Files share; WoodMac caches under the woodmac/ subdir.
+      storage-name: ${{ needs.lane-config-validate.outputs.etl-storage-name }}
+      storage-mount-path: /mnt/data
 
   run-seed:
     name: "Run seed"
-    if: ${{ needs.deploy-db.outputs.database-created == 'true' }}
+    # Seed only runs in development; non-development lanes use the ETL pipelines.
+    if: ${{ needs.resolve-context.outputs.deployment-lane == 'development' && needs.deploy-db.outputs.database-created == 'true' }}
+    needs: [resolve-context, build-seed-docker-image, deploy-db, deploy-api]
     uses: ./.github/workflows/run-seed.yml
-    secrets: inherit
-    needs: [build_seed_docker_image, deploy-db, deploy-api]
+    secrets:
+      stitch-client-bearer-token: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
     with:
-      full-image-name: ${{ needs.build_seed_docker_image.outputs.digest-image-name }}
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
+      full-image-name: ${{ needs.build-seed-docker-image.outputs.digest-image-name }}
       api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
 
   deploy-frontend:
     name: "Deploy frontend"
+    # ETL deploys are skipped in the development lane; gate on no-failure rather
+    # than all-success so the frontend still deploys when they are skipped.
+    if: ${{ !failure() && !cancelled() }}
+    needs: [resolve-context, lane-config-validate, build-frontend, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl-gem, deploy-etl-woodmac]
     uses: ./.github/workflows/azure-static-web-apps.yml
-    secrets: inherit
-    needs: [build-frontend, deploy-api, deploy-entity-linkage, deploy-stitch-llm]
+    secrets:
+      azure-static-web-apps-deploy-token: ${{ secrets.AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN }}
     with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       artifact-name: dist-tgz
-      app-env: ${{
-          github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) ||
-          github.ref_name
-        }}
+      deployment-name: ${{ needs.resolve-context.outputs.deployment-name }}
       api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
       entity-linkage-url: ${{ format('{0}/api/v1', needs.deploy-entity-linkage.outputs.container-app-url) }}
       stitch-llm-url: ${{ format('{0}/api/v1', needs.deploy-stitch-llm.outputs.container-app-url) }}
-      auth0-domain: rmi-spd.us.auth0.com
-      auth0-client-id: TS1V1soQbccAV1sitFFCfUaIlSwHD2S2
-      auth0-audience: https://stitch-api.local
+      etl-gem-url: ${{ needs.deploy-etl-gem.result == 'success' && format('{0}/api/v1', needs.deploy-etl-gem.outputs.container-app-url) || '' }}
+      etl-woodmac-url: ${{ needs.deploy-etl-woodmac.result == 'success' && format('{0}/api/v1', needs.deploy-etl-woodmac.outputs.container-app-url) || '' }}
+      auth0-domain: ${{ needs.lane-config-validate.outputs.auth0-domain }}
+      auth0-client-id: ${{ needs.lane-config-validate.outputs.auth0-client-id }}
+      auth0-audience: ${{ needs.lane-config-validate.outputs.auth0-audience }}
+      production-branch: production
 
   comment-summary:
     if: ${{ always() && github.event_name == 'pull_request' }}
     uses: ./.github/workflows/comment-pr-summary.yml
     secrets: inherit
-    needs: [build_api_docker_image, build_entity_linkage_docker_image, build_stitch_llm_docker_image, build_seed_docker_image, deploy-db, run-db-init, deploy-api, deploy-entity-linkage, deploy-stitch-llm, run-seed, deploy-frontend]
+    needs: [resolve-context, build-api-docker-image, build-entity-linkage-docker-image, build-stitch-llm-docker-image, build-seed-docker-image, deploy-db, run-db-migrations, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl-gem, deploy-etl-woodmac, run-seed, deploy-frontend]

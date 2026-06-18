@@ -1,4 +1,5 @@
 import {
+  getResourceFilterOptions,
   getResource,
   getResources,
   getResourceDetail,
@@ -18,6 +19,11 @@ export const resourceKeys = {
   list: (endpoint = "resources", filters) => [
     ...resourceKeys.lists(endpoint),
     filters,
+  ],
+  filterOptions: (endpoint = "resources", field) => [
+    ...resourceKeys.all(endpoint),
+    "filter-options",
+    field,
   ],
   details: (endpoint = "resources") => [
     ...resourceKeys.all(endpoint),
@@ -76,6 +82,14 @@ export const resourceQueries = {
         sort_by,
         sort_order,
       }),
+    enabled: false,
+    staleTime: DEFAULT_STALE_TIME,
+  }),
+
+  filterOptions: (config, endpoint = "resources", field) => ({
+    queryKey: resourceKeys.filterOptions(endpoint, field),
+    queryFn: (fetcher) =>
+      getResourceFilterOptions(config, fetcher, endpoint, field),
     enabled: false,
     staleTime: DEFAULT_STALE_TIME,
   }),

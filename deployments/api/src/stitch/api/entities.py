@@ -96,6 +96,19 @@ SortableField = Literal[
     "resource_id",
 ]
 
+FilterOptionField = Literal[
+    "name",
+    "name_local",
+    "basin",
+    "state_province",
+    "region",
+    "country",
+    "field_status",
+    "location_type",
+    "production_conventionality",
+    "primary_hydrocarbon_group",
+]
+
 
 class OGFieldFilterParams(BaseModel):
     q: str | None = None
@@ -119,6 +132,16 @@ class OGFieldSortParams(BaseModel):
 
 class OGFieldQueryParams(PaginationParams, OGFieldFilterParams, OGFieldSortParams):
     source: list[OGSISrcKey] = Field(default_factory=lambda: list(OGSI_SOURCE_DEFAULT))
+
+
+class OGFieldFilterOptionsParams(BaseModel):
+    field: FilterOptionField
+    source: list[OGSISrcKey] = Field(default_factory=lambda: list(OGSI_SOURCE_DEFAULT))
+
+
+class OGFieldFilterOptionsResponse(BaseModel):
+    field: FilterOptionField
+    values: list[str]
 
 
 class MergeCandidateStatus(StrEnum):

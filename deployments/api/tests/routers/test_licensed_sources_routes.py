@@ -7,6 +7,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from stitch.auth import TokenClaims
+from stitch.auth.permissions import RESOURCE_READ, SOURCE_READ_GEM
 
 from stitch.api.auth import get_current_user, get_token_claims
 from stitch.api.db.config import UnitOfWork, get_uow
@@ -27,7 +28,16 @@ def _gem_only_claims() -> TokenClaims:
         sub="test|user-1",
         email="test@test.com",
         name="Test User",
-        permissions=frozenset({"resource:read:licensed:gem"}),
+        permissions=frozenset({RESOURCE_READ, SOURCE_READ_GEM}),
+    )
+
+
+def _resource_only_claims() -> TokenClaims:
+    return TokenClaims(
+        sub="test|user-1",
+        email="test@test.com",
+        name="Test User",
+        permissions=frozenset({RESOURCE_READ}),
     )
 
 
@@ -51,6 +61,38 @@ async def gem_only_client(
 
     def override_get_token_claims() -> TokenClaims:
         return _gem_only_claims()
+
+    app.dependency_overrides[get_uow] = override_get_uow
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[get_token_claims] = override_get_token_claims
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test/api/v1",
+    ) as ac:
+        yield ac
+
+
+@pytest.fixture
+async def resource_only_client(
+    integration_session_factory: async_sessionmaker[AsyncSession],
+    test_user: User,
+    test_user_model: UserModel,
+) -> AsyncIterator[AsyncClient]:
+    """Client with resource read but no source read grants."""
+    async with integration_session_factory() as session:
+        session.add(test_user_model)
+        await session.commit()
+
+    async def override_get_uow() -> AsyncIterator[UnitOfWork]:
+        async with UnitOfWork(integration_session_factory) as uow:
+            yield uow
+
+    def override_get_current_user() -> User:
+        return test_user
+
+    def override_get_token_claims() -> TokenClaims:
+        return _resource_only_claims()
 
     app.dependency_overrides[get_uow] = override_get_uow
     app.dependency_overrides[get_current_user] = override_get_current_user
@@ -111,6 +153,30 @@ async def _source_id_for(
 
 
 class TestOilGasFieldsLicensedSources:
+    @pytest.mark.anyio
+    async def test_list_with_no_source_grants_returns_redacted_resource_shell(
+        self,
+        resource_only_client: AsyncClient,
+        integration_session_factory: async_sessionmaker[AsyncSession],
+        test_user: User,
+    ):
+        resource_id = await _seed_resource_with_sources(
+            integration_session_factory,
+            test_user,
+            {"source": "rmi", "name": "RMI Name", "country": "USA"},
+        )
+
+        response = await resource_only_client.get("/oil-gas-fields/")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total_count"] == 1
+        item = data["items"][0]
+        assert item["id"] == resource_id
+        assert item["data"]["name"] is None
+        assert item["data"]["country"] is None
+        assert item["provenance"]["name"] is None
+
     @pytest.mark.anyio
     async def test_list_returns_only_licensed_data(
         self,
@@ -218,6 +284,24 @@ class TestOilGasFieldsLicensedSources:
 
 
 class TestOilGasFieldSourcesLicensedSources:
+    @pytest.mark.anyio
+    async def test_list_with_no_source_grants_returns_403(
+        self,
+        resource_only_client: AsyncClient,
+        integration_session_factory: async_sessionmaker[AsyncSession],
+        test_user: User,
+    ):
+        await _seed_resource_with_sources(
+            integration_session_factory,
+            test_user,
+            {"source": "rmi", "name": "RMI Name", "country": "USA"},
+        )
+
+        response = await resource_only_client.get("/oil-gas-field-sources/")
+
+        assert response.status_code == 403
+        assert "source:read:" in response.json()["detail"]
+
     @pytest.mark.anyio
     async def test_list_drops_unlicensed_rows(
         self,

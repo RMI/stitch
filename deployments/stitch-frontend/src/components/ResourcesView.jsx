@@ -179,9 +179,9 @@ export default function ResourcesView({ className = "", endpoint }) {
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
             Filters
           </p>
-          {resources.length > 0 && (
+          {data && (
             <FilterBar
-              resources={resources}
+              endpoint={endpoint}
               filters={filters}
               onFiltersChange={handleFiltersChange}
             />

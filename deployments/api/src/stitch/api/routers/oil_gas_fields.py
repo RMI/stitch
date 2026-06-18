@@ -1,9 +1,18 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from stitch.auth.permissions import (
+    MERGE_CANDIDATE_CREATE,
+    MERGE_CANDIDATE_READ,
+    MERGE_CANDIDATE_REVIEW,
+    RESOURCE_READ,
+    RESOURCE_WRITE,
+)
 
 from stitch.api.entities import (
+    OGFieldFilterOptionsParams,
+    OGFieldFilterOptionsResponse,
     MergeCandidateCreateRequest,
     MergeCandidateReviewRequest,
     MergeCandidateView,
@@ -20,7 +29,7 @@ from stitch.api.db.errors import (
     ResourceNotFoundError,
     ResourceIntegrityError,
 )
-from stitch.api.auth import Claims, CurrentUser
+from stitch.api.auth import Claims, CurrentUser, require_permissions
 from stitch.api.db.utils import (
     resource_to_view,
     resource_to_detail_view,
@@ -45,7 +54,7 @@ router = APIRouter(
 )
 
 
-@router.get("/")
+@router.get("/", dependencies=[Depends(require_permissions(RESOURCE_READ))])
 async def get_all_resources(
     *,
     uow: UnitOfWorkDep,
@@ -66,14 +75,38 @@ async def get_all_resources(
     )
 
 
-@router.get("/merge-candidates", response_model=list[MergeCandidateView])
+@router.get("/filter-options", response_model=OGFieldFilterOptionsResponse)
+async def get_resource_filter_options(
+    *,
+    uow: UnitOfWorkDep,
+    _user: CurrentUser,
+    claims: Claims,
+    params: Annotated[OGFieldFilterOptionsParams, Query()],
+) -> OGFieldFilterOptionsResponse:
+    values = await resource_actions.filter_options(
+        session=uow.session,
+        params=params,
+        licensed_sources=licensed_sources(claims),
+    )
+    return OGFieldFilterOptionsResponse(field=params.field, values=values)
+
+
+@router.get(
+    "/merge-candidates",
+    response_model=list[MergeCandidateView],
+    dependencies=[Depends(require_permissions(MERGE_CANDIDATE_READ))],
+)
 async def list_merge_candidates(
     *, uow: UnitOfWorkDep, _user: CurrentUser
 ) -> list[MergeCandidateView]:
     return await merge_candidate_actions.list_merge_candidates(session=uow.session)
 
 
-@router.get("/merge-candidates/{id}", response_model=MergeCandidateView)
+@router.get(
+    "/merge-candidates/{id}",
+    response_model=MergeCandidateView,
+    dependencies=[Depends(require_permissions(MERGE_CANDIDATE_READ))],
+)
 async def get_merge_candidate(
     *, uow: UnitOfWorkDep, _user: CurrentUser, id: int
 ) -> MergeCandidateView:
@@ -86,7 +119,11 @@ async def get_merge_candidate(
         raise HTTPException(status_code=404, detail=str(exc))
 
 
-@router.get("/merge-candidates/{id}/preview", response_model=OGFieldMergePreviewView)
+@router.get(
+    "/merge-candidates/{id}/preview",
+    response_model=OGFieldMergePreviewView,
+    dependencies=[Depends(require_permissions(MERGE_CANDIDATE_READ))],
+)
 async def preview_merge_candidate(
     *,
     uow: UnitOfWorkDep,
@@ -112,7 +149,11 @@ async def preview_merge_candidate(
         )
 
 
-@router.post("/merge-candidates", response_model=MergeCandidateView)
+@router.post(
+    "/merge-candidates",
+    response_model=MergeCandidateView,
+    dependencies=[Depends(require_permissions(MERGE_CANDIDATE_CREATE))],
+)
 async def create_merge_candidate(
     *,
     uow: UnitOfWorkDep,
@@ -149,7 +190,11 @@ async def create_merge_candidate(
         )
 
 
-@router.post("/merge-candidates/{id}/approve", response_model=MergeCandidateView)
+@router.post(
+    "/merge-candidates/{id}/approve",
+    response_model=MergeCandidateView,
+    dependencies=[Depends(require_permissions(MERGE_CANDIDATE_REVIEW))],
+)
 async def approve_merge_candidate(
     *,
     uow: UnitOfWorkDep,
@@ -178,7 +223,11 @@ async def approve_merge_candidate(
         )
 
 
-@router.post("/merge-candidates/{id}/deny", response_model=MergeCandidateView)
+@router.post(
+    "/merge-candidates/{id}/deny",
+    response_model=MergeCandidateView,
+    dependencies=[Depends(require_permissions(MERGE_CANDIDATE_REVIEW))],
+)
 async def deny_merge_candidate(
     *,
     uow: UnitOfWorkDep,
@@ -207,7 +256,11 @@ async def deny_merge_candidate(
         )
 
 
-@router.get("/{id}", response_model=OGFieldView)
+@router.get(
+    "/{id}",
+    response_model=OGFieldView,
+    dependencies=[Depends(require_permissions(RESOURCE_READ))],
+)
 async def get_resource(
     *, uow: UnitOfWorkDep, user: CurrentUser, claims: Claims, id: int
 ) -> OGFieldView:
@@ -217,7 +270,11 @@ async def get_resource(
     return resource_to_view(resource=res)
 
 
-@router.get("/{id}/detail", response_model=OGFieldDetailView)
+@router.get(
+    "/{id}/detail",
+    response_model=OGFieldDetailView,
+    dependencies=[Depends(require_permissions(RESOURCE_READ))],
+)
 async def get_resource_detail(
     *, uow: UnitOfWorkDep, user: CurrentUser, claims: Claims, id: int
 ) -> OGFieldDetailView:
@@ -227,7 +284,11 @@ async def get_resource_detail(
     return resource_to_detail_view(resource=res)
 
 
-@router.post("/", response_model=OGFieldResourceView)
+@router.post(
+    "/",
+    response_model=OGFieldResourceView,
+    dependencies=[Depends(require_permissions(RESOURCE_WRITE))],
+)
 async def create_resource(
     *, uow: UnitOfWorkDep, user: CurrentUser, resource_in: OGFieldResource
 ) -> OGFieldResourceView:
