@@ -26,3 +26,7 @@ jobs:
   pattern-scan:
     name: "Check for forbidden patterns"
     uses: ./.github/workflows/admin-forbidden-patterns.yml
+
+  no-plan-file:
+    name: "Check for committed plan files"
+    uses: ./.github/workflows/admin-no-plan-file.yml

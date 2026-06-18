@@ -1,0 +1,33 @@
+---
+on:
+  workflow_call:
+
+jobs:
+  check:
+    name: Check for committed plan files
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Ensure no plan files are tracked
+        shell: bash
+        run: |
+          # Plan files are useful to commit alongside a change set as a record
+          # of intent, but must be removed before merging. This fails if any
+          # matching file is tracked by git on this branch.
+          #
+          # Matches (case-insensitive), at the repo root or any subdirectory:
+          #   PLAN.md, PLAN.<anything>.md  (e.g. PLAN.feature-x.md)
+          found="$(git ls-files | grep -iE '(^|/)PLAN(\.[^/]+)*\.md$' || true)"
+
+          if [ -n "$found" ]; then
+            echo "::error::Found committed plan file(s). Remove them before merging:"
+            while IFS= read -r f; do
+              echo "::error file=$f::Plan file '$f' must not be committed to a merged branch"
+            done <<< "$found"
+            exit 1
+          fi
+
+          echo "No committed plan files found."
