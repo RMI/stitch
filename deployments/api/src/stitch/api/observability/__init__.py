@@ -13,9 +13,13 @@ code (see that module's docstring).
 from .logging_config import configure_logging
 from .query_timing import register_query_timing
 from .request_logging import RequestTimingMiddleware
+from .tracing import configure_tracing, instrument_fastapi, instrument_sqlalchemy
 
 __all__ = [
     "configure_logging",
     "register_query_timing",
     "RequestTimingMiddleware",
+    "configure_tracing",
+    "instrument_fastapi",
+    "instrument_sqlalchemy",
 ]

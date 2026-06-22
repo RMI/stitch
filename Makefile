@@ -1,6 +1,8 @@
 UV ?= uv
 DOCKER_COMPOSE := docker compose -f docker-compose.yml
 DOCKER_COMPOSE_DEV := $(DOCKER_COMPOSE) -f docker-compose.local.yml
+# Adds the OpenTelemetry collector + Jaeger sidecars (the "heavy" stack).
+DOCKER_COMPOSE_OTEL := $(DOCKER_COMPOSE_DEV) -f docker-compose.otel.yml
 PYTEST := $(UV) run pytest
 RUFF := $(UV) run ruff
 TEST_PKG := ./scripts/test-package.py
@@ -261,6 +263,11 @@ dev-docker:
 reboot-docker: clean-docker
 	$(DOCKER_COMPOSE_DEV) --profile full up --build
 
+# Like reboot-docker, but also brings up the OTel collector + Jaeger. Set
+# API_OTEL_TRACES_EXPORTER=otlp to route spans there; Jaeger UI: http://localhost:16686
+reboot-docker-heavy: clean-docker
+	$(DOCKER_COMPOSE_OTEL) --profile full up --build
+
 follow-stack-logs:
 	$(DOCKER_COMPOSE_DEV) --profile full logs -f
 
@@ -295,5 +302,5 @@ follow-stack-logs:
 	frontend-dev frontend-clean \
 	\
 	# Docker
-	clean-docker dev-docker reboot-docker \
+	clean-docker dev-docker reboot-docker reboot-docker-heavy \
 	stack-frontend-dev follow-stack-logs

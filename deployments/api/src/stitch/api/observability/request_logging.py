@@ -8,6 +8,7 @@ aggregated database query count and time.
 
 from uuid import uuid4
 
+from opentelemetry import trace
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -54,6 +55,14 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
         stats_token = db_stats_var.set(stats)
         route_token = route_var.set(route)
         scenario_token = scenario_var.set(scenario)
+
+        # Surface the same context on the active server span (created by the
+        # FastAPI instrumentation). No-op when tracing is disabled — the
+        # current span is then non-recording.
+        span = trace.get_current_span()
+        span.set_attribute("stitch.request_id", request_id)
+        if scenario:
+            span.set_attribute("stitch.scenario", scenario)
 
         start = perf_counter()
         status_code = 500

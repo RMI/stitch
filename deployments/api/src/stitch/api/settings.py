@@ -88,6 +88,16 @@ class Settings(BaseSettings):
     slow_query_ms: float = 200.0
     log_all_queries: bool = False
 
+    # OpenTelemetry tracing. Default exporter "console" logs spans to stdout via
+    # the JSON formatter (no collector/Jaeger needed); "otlp" ships them to the
+    # collector; "none" disables tracing. otel_sample_ratio feeds the root
+    # sampler (1.0 = capture everything); downstream spans honor the upstream
+    # decision via ParentBased.
+    otel_enabled: bool = True
+    otel_traces_exporter: Literal["console", "otlp", "none"] = "console"
+    otel_exporter_otlp_endpoint: str | None = None
+    otel_sample_ratio: float = 1.0
+
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
