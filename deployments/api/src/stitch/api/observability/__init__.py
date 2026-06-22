@@ -1,13 +1,16 @@
-"""Lightweight performance instrumentation for the Stitch API.
+"""Performance instrumentation and tracing for the Stitch API.
 
-Captures per-query and per-request timing and emits it as structured logs to
-stdout, where Azure Container Apps forwards it to Log Analytics for querying.
+Two complementary layers:
 
-The instrumentation is deliberately small: a SQLAlchemy event listener at the
-single engine chokepoint (:mod:`query_timing`) and a request-timing middleware
-(:mod:`request_logging`). All emission flows through :mod:`sinks`, which is the
-seam where OpenTelemetry spans can later be added without touching the timing
-code (see that module's docstring).
+* Structured-log timing — a SQLAlchemy event listener at the single engine
+  chokepoint (:mod:`query_timing`) and a request-timing middleware
+  (:mod:`request_logging`), both emitting through :mod:`sinks` to stdout, where
+  Azure Container Apps forwards it to Log Analytics. Always on, independent of
+  trace sampling.
+* OpenTelemetry tracing (:mod:`tracing`) — FastAPI / SQLAlchemy
+  auto-instrumentation producing spans, exported over OTLP to a collector or
+  logged to stdout (``OTEL_TRACES_EXPORTER``). The request middleware copies the
+  request id / scenario onto the active span so the two layers correlate.
 """
 
 from .logging_config import configure_logging

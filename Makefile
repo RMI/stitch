@@ -263,10 +263,12 @@ dev-docker:
 reboot-docker: clean-docker
 	$(DOCKER_COMPOSE_DEV) --profile full up --build
 
-# Like reboot-docker, but also brings up the OTel collector + Jaeger. Set
-# API_OTEL_TRACES_EXPORTER=otlp to route spans there; Jaeger UI: http://localhost:16686
+# Like reboot-docker, but also brings up the OTel collector + Jaeger and points
+# the API at them (OTLP export). The exporter override is scoped to this target,
+# so the default `console` path (and a collector-free `make reboot-docker`) is
+# never accidentally aimed at an absent collector. Jaeger UI: http://localhost:16686
 reboot-docker-heavy: clean-docker
-	$(DOCKER_COMPOSE_OTEL) --profile full up --build
+	API_OTEL_TRACES_EXPORTER=otlp $(DOCKER_COMPOSE_OTEL) --profile full up --build
 
 follow-stack-logs:
 	$(DOCKER_COMPOSE_DEV) --profile full logs -f
