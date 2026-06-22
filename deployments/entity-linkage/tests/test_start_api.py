@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from contextlib import AbstractAsyncContextManager
 
 import pytest
@@ -7,6 +8,9 @@ from fastapi.testclient import TestClient
 
 from stitch.auth import TokenClaims
 from stitch.auth.permissions import SERVICE_ENTITY_LINKAGE_RUN
+import stitch.entity_linkage.main as main_module
+from stitch.entity_linkage import linkage as linkage_module
+from stitch.entity_linkage.auth import get_request_auth_context, get_token_claims
 from stitch.entity_linkage.entities import (
     FieldCandidate,
     FieldDetailCandidate,
@@ -16,9 +20,7 @@ from stitch.entity_linkage.entities import (
 from stitch.entity_linkage.errors import StitchAPIError
 from stitch.entity_linkage.main import app
 from stitch.entity_linkage.routers import health as health_module
-from stitch.entity_linkage.routers import start as start_module
-from stitch.entity_linkage.auth import get_request_auth_context, get_token_claims
-from stitch.entity_linkage import main as main_module
+from stitch.entity_linkage.routers.start import get_job_manager
 
 
 def make_auth_context(
@@ -29,12 +31,7 @@ def make_auth_context(
     bearer_token: str | None = "integration-token",
 ) -> RequestAuthContext:
     return RequestAuthContext(
-        user=User(
-            id=1,
-            sub=sub,
-            email=email,
-            name=name,
-        ),
+        user=User(id=1, sub=sub, email=email, name=name),
         bearer_token=bearer_token,
     )
 
@@ -84,11 +81,7 @@ class FakeStitchApiClient(AbstractAsyncContextManager["FakeStitchApiClient"]):
         max_pages: int | None = None,
     ) -> tuple[list[FieldCandidate], int]:
         self.collect_calls.append(
-            {
-                "start_page": start_page,
-                "page_size": page_size,
-                "max_pages": max_pages,
-            }
+            {"start_page": start_page, "page_size": page_size, "max_pages": max_pages}
         )
         if self.collect_error is not None:
             raise self.collect_error
@@ -111,6 +104,14 @@ class FakeStitchApiClient(AbstractAsyncContextManager["FakeStitchApiClient"]):
         if self.auth_me_error is not None:
             raise self.auth_me_error
         return self.auth_me_response
+
+
+@pytest.fixture(autouse=True)
+def reset_job_manager():
+    """Each test starts with a clean, isolated job store."""
+    get_job_manager().reset()
+    yield
+    get_job_manager().reset()
 
 
 @pytest.fixture
@@ -144,7 +145,9 @@ def api_client_factory(
             merge_error=merge_error,
         )
         created_clients.append(client)
-        monkeypatch.setattr(start_module, "StitchApiClient", lambda: client)
+        # The job runs run_linkage in the background, which constructs the
+        # client from the linkage module's namespace.
+        monkeypatch.setattr(linkage_module, "StitchApiClient", lambda: client)
         return client
 
     return install, created_clients
@@ -177,6 +180,16 @@ def test_client(
     app.dependency_overrides.clear()
 
 
+def _poll(client: TestClient, job_id: str, *, timeout: float = 5.0) -> dict:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        body = client.get(f"/api/v1/status/{job_id}").json()
+        if body["state"] != "running":
+            return body
+        time.sleep(0.02)
+    raise AssertionError("job did not finish within timeout")
+
+
 def test_post_start_requires_service_permission(
     auth_context: RequestAuthContext,
     monkeypatch: pytest.MonkeyPatch,
@@ -203,7 +216,7 @@ def test_post_start_requires_service_permission(
     assert SERVICE_ENTITY_LINKAGE_RUN in response.json()["detail"]
 
 
-def test_post_start_returns_serialized_response_model(
+def test_post_start_accepts_job_and_status_reports_result(
     test_client: TestClient,
     api_client_factory,
 ) -> None:
@@ -221,20 +234,27 @@ def test_post_start_returns_serialized_response_model(
         },
     )
 
-    response = test_client.post(
+    started = test_client.post(
         "/api/v1/start",
-        json={
-            "apply_merges": False,
-            "page": 3,
-            "page_size": 25,
-            "max_pages": 7,
-        },
+        json={"apply_merges": False, "page": 3, "page_size": 25, "max_pages": 7},
     )
 
-    assert response.status_code == 200
-    assert response.json() == {
-        "initiated_by": "Integration Tester",
+    assert started.status_code == 202
+    body = started.json()
+    assert body["state"] == "running"
+    assert body["initiated_by"] == "Integration Tester"
+    assert body["params"] == {
         "apply_merges": False,
+        "page": 3,
+        "page_size": 25,
+        "max_pages": 7,
+    }
+
+    final = _poll(test_client, body["job_id"])
+    assert final["state"] == "succeeded"
+    assert final["error"] is None
+    assert final["finished_at"] is not None
+    assert final["result"] == {
         "pages_fetched": 2,
         "total_records_fetched": 3,
         "duplicate_name_candidate_count": 2,
@@ -245,17 +265,13 @@ def test_post_start_returns_serialized_response_model(
 
     assert len(created_clients) == 1
     assert fake_client.collect_calls == [
-        {
-            "start_page": 3,
-            "page_size": 25,
-            "max_pages": 7,
-        }
+        {"start_page": 3, "page_size": 25, "max_pages": 7}
     ]
     assert fake_client.detail_calls == [1, 2]
     assert fake_client.merge_calls == []
 
 
-def test_post_start_applies_merges_and_returns_merge_results(
+def test_post_start_applies_merges_and_reports_merge_results(
     test_client: TestClient,
     api_client_factory,
 ) -> None:
@@ -279,21 +295,20 @@ def test_post_start_applies_merges_and_returns_merge_results(
         },
     )
 
-    response = test_client.post(
-        "/api/v1/start",
-        json={"apply_merges": True},
-    )
+    started = test_client.post("/api/v1/start", json={"apply_merges": True})
+    assert started.status_code == 202
 
-    assert response.status_code == 200
-    assert response.json()["match_groups"] == [[10, 11], [20, 21]]
-    assert response.json()["merge_results"] == [
+    final = _poll(test_client, started.json()["job_id"])
+    assert final["state"] == "succeeded"
+    assert final["result"]["match_groups"] == [[10, 11], [20, 21]]
+    assert final["result"]["merge_results"] == [
         {"ids": [10, 11], "response": {"merged_ids": [10, 11], "winner": 10}},
         {"ids": [20, 21], "response": {"merged_ids": [20, 21], "winner": 20}},
     ]
     assert fake_client.merge_calls == [[10, 11], [20, 21]]
 
 
-def test_post_start_returns_empty_matches_when_country_check_does_not_confirm(
+def test_post_start_reports_empty_matches_when_country_check_does_not_confirm(
     test_client: TestClient,
     api_client_factory,
 ) -> None:
@@ -310,19 +325,17 @@ def test_post_start_returns_empty_matches_when_country_check_does_not_confirm(
         },
     )
 
-    response = test_client.post(
-        "/api/v1/start",
-        json={"apply_merges": True},
-    )
+    started = test_client.post("/api/v1/start", json={"apply_merges": True})
+    final = _poll(test_client, started.json()["job_id"])
 
-    assert response.status_code == 200
-    assert response.json()["duplicate_name_candidate_count"] == 2
-    assert response.json()["detail_records_fetched"] == 2
-    assert response.json()["match_groups"] == []
-    assert response.json()["merge_results"] == []
+    assert final["state"] == "succeeded"
+    assert final["result"]["duplicate_name_candidate_count"] == 2
+    assert final["result"]["detail_records_fetched"] == 2
+    assert final["result"]["match_groups"] == []
+    assert final["result"]["merge_results"] == []
 
 
-def test_post_start_translates_stitch_api_error_to_502(
+def test_job_records_failure_when_downstream_errors(
     test_client: TestClient,
     api_client_factory,
 ) -> None:
@@ -333,44 +346,60 @@ def test_post_start_translates_stitch_api_error_to_502(
         ),
     )
 
-    response = test_client.post(
-        "/api/v1/start",
-        json={"apply_merges": False},
-    )
+    started = test_client.post("/api/v1/start", json={"apply_merges": False})
+    assert started.status_code == 202
 
-    assert response.status_code == 502
-    assert response.json() == {
-        "detail": "GET /oil-gas-fields/ failed with status 500: boom",
-    }
+    final = _poll(test_client, started.json()["job_id"])
+    assert final["state"] == "failed"
+    assert final["result"] is None
+    assert "GET /oil-gas-fields/ failed with status 500: boom" in final["error"]
 
 
-def test_post_start_validates_request_body_constraints(
+def test_second_caller_observes_existing_run(
     test_client: TestClient,
     api_client_factory,
 ) -> None:
     install, _ = api_client_factory
     install(
-        items=[],
-        details_by_id={},
+        items=[
+            FieldCandidate(id=1, name="Alpha", country="ignored"),
+            FieldCandidate(id=2, name="alpha", country="ignored"),
+        ],
+        details_by_id={
+            1: FieldDetailCandidate(id=1, name="Alpha", country="US"),
+            2: FieldDetailCandidate(id=2, name="Alpha", country="US"),
+        },
     )
 
+    first = test_client.post("/api/v1/start", json={"apply_merges": False})
+    job_id = first.json()["job_id"]
+    _poll(test_client, job_id)
+
+    # Same params within the reuse window → returns the existing run (200), not
+    # a fresh job. This is the cross-user "request already made" behavior.
+    second = test_client.post("/api/v1/start", json={"apply_merges": False})
+    assert second.status_code == 200
+    assert second.json()["job_id"] == job_id
+
+
+def test_post_start_validates_request_body_constraints(
+    test_client: TestClient,
+) -> None:
     response = test_client.post(
         "/api/v1/start",
-        json={
-            "apply_merges": False,
-            "page": 0,
-            "page_size": 500,
-            "max_pages": 0,
-        },
+        json={"apply_merges": False, "page": 0, "page_size": 500, "max_pages": 0},
     )
 
     assert response.status_code == 422
     detail = response.json()["detail"]
-
     fields = {tuple(item["loc"]) for item in detail}
     assert ("body", "page") in fields
     assert ("body", "page_size") in fields
     assert ("body", "max_pages") in fields
+
+
+def test_status_404_for_unknown_job(test_client: TestClient) -> None:
+    assert test_client.get("/api/v1/status/nope").status_code == 404
 
 
 def test_health_details_reports_ready_when_downstream_auth_probe_succeeds(
