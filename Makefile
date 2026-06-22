@@ -105,9 +105,23 @@ pkg-test-ogsi:
 pkg-test-exact-ogsi:
 	$(MAKE) uv-test-target-exact PKG=stitch-ogsi TEST_PATH=packages/stitch-ogsi
 
-pkg-build: pkg-build-auth pkg-build-client pkg-build-models pkg-build-ogsi
-pkg-test: pkg-test-auth pkg-test-client pkg-test-models pkg-test-ogsi
-pkg-test-exact: pkg-test-exact-auth pkg-test-exact-client pkg-test-exact-models pkg-test-exact-ogsi
+pkg-build-service:
+	$(UV) build --package stitch-service
+pkg-test-service:
+	$(MAKE) uv-test-target PKG=stitch-service TEST_PATH=packages/stitch-service
+pkg-test-exact-service:
+	$(MAKE) uv-test-target-exact PKG=stitch-service TEST_PATH=packages/stitch-service
+
+pkg-build-jobs:
+	$(UV) build --package stitch-jobs
+pkg-test-jobs:
+	$(MAKE) uv-test-target PKG=stitch-jobs TEST_PATH=packages/stitch-jobs
+pkg-test-exact-jobs:
+	$(MAKE) uv-test-target-exact PKG=stitch-jobs TEST_PATH=packages/stitch-jobs
+
+pkg-build: pkg-build-auth pkg-build-client pkg-build-models pkg-build-ogsi pkg-build-service pkg-build-jobs
+pkg-test: pkg-test-auth pkg-test-client pkg-test-models pkg-test-ogsi pkg-test-service pkg-test-jobs
+pkg-test-exact: pkg-test-exact-auth pkg-test-exact-client pkg-test-exact-models pkg-test-exact-ogsi pkg-test-exact-service pkg-test-exact-jobs
 
 # ---------------------------------------------------------------------
 # Deployments
@@ -282,6 +296,8 @@ follow-stack-logs:
 	pkg-build-client pkg-test-client pkg-test-exact-client \
 	pkg-build-models pkg-test-models pkg-test-exact-models \
 	pkg-build-ogsi pkg-test-ogsi pkg-test-exact-ogsi \
+	pkg-build-service pkg-test-service pkg-test-exact-service \
+	pkg-build-jobs pkg-test-jobs pkg-test-exact-jobs \
 	\
 	# API
 	api-build api-test api-test-exact api-dev stack-api-dev \

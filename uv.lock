@@ -9,10 +9,12 @@ members = [
     "stitch-auth",
     "stitch-client",
     "stitch-entity-linkage",
+    "stitch-jobs",
     "stitch-llm",
     "stitch-models",
     "stitch-ogsi",
     "stitch-seed",
+    "stitch-service",
 ]
 
 [[package]]
@@ -1112,8 +1114,10 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "stitch-auth" },
     { name = "stitch-client" },
+    { name = "stitch-jobs" },
     { name = "stitch-models" },
     { name = "stitch-ogsi" },
+    { name = "stitch-service" },
 ]
 
 [package.dev-dependencies]
@@ -1132,8 +1136,10 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.12.0" },
     { name = "stitch-auth", editable = "packages/stitch-auth" },
     { name = "stitch-client", editable = "packages/stitch-client" },
+    { name = "stitch-jobs", editable = "packages/stitch-jobs" },
     { name = "stitch-models", editable = "packages/stitch-models" },
     { name = "stitch-ogsi", editable = "packages/stitch-ogsi" },
+    { name = "stitch-service", editable = "packages/stitch-service" },
 ]
 
 [package.metadata.requires-dev]
@@ -1142,6 +1148,35 @@ dev = [
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "polyfactory", specifier = ">=3.3.0" },
     { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-anyio", specifier = ">=0.0.0" },
+]
+
+[[package]]
+name = "stitch-jobs"
+version = "0.1.0"
+source = { editable = "packages/stitch-jobs" }
+dependencies = [
+    { name = "fastapi", extra = ["standard-no-fastapi-cloud-cli"] },
+    { name = "pydantic" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "httpx" },
+    { name = "pytest" },
+    { name = "pytest-anyio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", extras = ["standard-no-fastapi-cloud-cli"], specifier = ">=0.135.1" },
+    { name = "pydantic", specifier = ">=2.12.5" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-anyio", specifier = ">=0.0.0" },
 ]
 
@@ -1254,6 +1289,31 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-anyio", specifier = ">=0.0.0" },
+]
+
+[[package]]
+name = "stitch-service"
+version = "0.1.0"
+source = { editable = "packages/stitch-service" }
+dependencies = [
+    { name = "fastapi", extra = ["standard-no-fastapi-cloud-cli"] },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "httpx" },
+    { name = "pytest" },
+    { name = "pytest-anyio" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "fastapi", extras = ["standard-no-fastapi-cloud-cli"], specifier = ">=0.135.1" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-anyio", specifier = ">=0.0.0" },
 ]
 

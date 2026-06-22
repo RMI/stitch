@@ -13,8 +13,10 @@ members = [
   "deployments/stitch-llm",
   "packages/stitch-auth",
   "packages/stitch-client",
+  "packages/stitch-jobs",
   "packages/stitch-models",
   "packages/stitch-ogsi",
+  "packages/stitch-service",
 ]
 
 [tool.uv.sources]
