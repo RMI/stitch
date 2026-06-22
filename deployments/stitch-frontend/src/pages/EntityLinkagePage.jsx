@@ -4,6 +4,36 @@ import { useConfig } from "../config/useConfig";
 import StructuredDataView from "../components/StructuredDataView";
 import Button from "../components/Button";
 
+const STATE_STYLES = {
+  running: "border-warning/30 bg-warning-soft text-warning",
+  succeeded: "border-success/25 bg-success-soft text-success-strong",
+  failed: "border-danger/25 bg-danger-soft text-danger",
+};
+
+function StateBadge({ state }) {
+  if (!state) return null;
+
+  const classes = STATE_STYLES[state] ?? "border-line bg-surface text-ink";
+
+  return (
+    <span
+      className={`rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${classes}`}
+    >
+      {state}
+    </span>
+  );
+}
+
+async function parseJsonResponse(response) {
+  const text = await response.text();
+
+  try {
+    return text ? JSON.parse(text) : null;
+  } catch {
+    return { raw: text };
+  }
+}
+
 function formatCount(count, singular, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
@@ -66,10 +96,6 @@ function RunResult({ result }) {
   const matchGroups = getMatchGroups(result);
   const details = getResultDetails(result);
 
-  if (!result) {
-    return <p className="text-sm text-ink-muted">No run has completed yet.</p>;
-  }
-
   return (
     <div className="space-y-5">
       <section>
@@ -98,14 +124,14 @@ export default function EntityLinkagePage() {
   const { getAccessTokenSilently } = useAuth0();
 
   const [applyMerges, setApplyMerges] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
+  const [starting, setStarting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [record, setRecord] = useState(null);
   const [error, setError] = useState(null);
 
   async function handleStart() {
-    setLoading(true);
+    setStarting(true);
     setError(null);
-    setResult(null);
 
     try {
       const token = await getAccessTokenSilently({
@@ -123,33 +149,58 @@ export default function EntityLinkagePage() {
         }),
       });
 
-      const text = await response.text();
-
-      let parsed;
-      try {
-        parsed = text ? JSON.parse(text) : null;
-      } catch {
-        parsed = { raw: text };
-      }
+      const parsed = await parseJsonResponse(response);
 
       if (!response.ok) {
-        setError({
-          status: response.status,
-          body: parsed,
-        });
+        setError({ status: response.status, body: parsed });
         return;
       }
 
-      setResult(parsed);
+      // 202 starts a new run; 200 means an identical run is already active or
+      // recently finished — either way `parsed` is the job record to track.
+      setRecord(parsed);
     } catch (err) {
       setError({
         status: null,
         body: err instanceof Error ? err.message : String(err),
       });
     } finally {
-      setLoading(false);
+      setStarting(false);
     }
   }
+
+  async function handleRefresh() {
+    const jobId = record?.job_id;
+    if (!jobId) return;
+
+    setRefreshing(true);
+    setError(null);
+
+    try {
+      // GET /status/{job_id} is unauthenticated, like the other job services.
+      const response = await fetch(
+        `${config.entityLinkageBaseUrl}/status/${jobId}`,
+      );
+      const parsed = await parseJsonResponse(response);
+
+      if (!response.ok) {
+        setError({ status: response.status, body: parsed });
+        return;
+      }
+
+      setRecord(parsed);
+    } catch (err) {
+      setError({
+        status: null,
+        body: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  const state = record?.state;
+  const isRunning = state === "running";
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -159,7 +210,9 @@ export default function EntityLinkagePage() {
         </p>
         <h1 className="mt-1 text-3xl font-semibold text-ink">Entity Linkage</h1>
         <p className="mt-2 text-sm text-ink-muted">
-          Start an entity-linkage run and review the result.
+          Start an entity-linkage run, then refresh to check its status and
+          review the result. An identical run already in progress is shared
+          rather than started again.
         </p>
       </div>
 
@@ -169,14 +222,26 @@ export default function EntityLinkagePage() {
             type="checkbox"
             checked={applyMerges}
             onChange={(e) => setApplyMerges(e.target.checked)}
+            disabled={isRunning}
             className="accent-primary"
           />
           <span>Initiate merges</span>
         </label>
 
-        <div className="mt-4">
-          <Button onClick={handleStart} disabled={loading} variant="primary">
-            {loading ? "Running…" : "Start run"}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            onClick={handleStart}
+            disabled={starting || isRunning}
+            variant="primary"
+          >
+            {starting ? "Starting…" : "Start run"}
+          </Button>
+          <Button
+            onClick={handleRefresh}
+            disabled={refreshing || !record}
+            variant="secondary"
+          >
+            {refreshing ? "Refreshing…" : "Refresh status"}
           </Button>
         </div>
       </div>
@@ -191,9 +256,30 @@ export default function EntityLinkagePage() {
       ) : null}
 
       <section>
-        <h2 className="mb-2 text-lg font-semibold text-ink">Run result</h2>
+        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-lg font-semibold text-ink">Run status</h2>
+          <StateBadge state={state} />
+        </div>
         <div className="rounded-md border border-line bg-panel p-4">
-          <RunResult result={result} />
+          {!record ? (
+            <p className="text-sm text-ink-muted">
+              No run started yet. Start a run to begin.
+            </p>
+          ) : isRunning ? (
+            <p className="text-sm text-ink-muted">
+              Run in progress — refresh to check for the result.
+            </p>
+          ) : state === "failed" ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-danger">Run failed.</p>
+              <StructuredDataView
+                data={record.error ?? record}
+                label="Entity linkage failure"
+              />
+            </div>
+          ) : (
+            <RunResult result={record.result} />
+          )}
         </div>
       </section>
     </div>
