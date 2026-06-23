@@ -31,7 +31,8 @@ class SingletonPolicy:
     def __init__(self, key: str = "singleton") -> None:
         self._key = key
 
-    def key(self, params: BaseModel) -> str | None:  # noqa: ARG002 - params ignored by design
+    def key(self, params: BaseModel) -> str | None:
+        # params intentionally unused: every request maps to the same key.
         return self._key
 
 
@@ -78,5 +79,6 @@ class CallablePolicy:
 class NoDedupPolicy:
     """Never deduplicate: every request starts a new job."""
 
-    def key(self, params: BaseModel) -> str | None:  # noqa: ARG002
+    def key(self, params: BaseModel) -> str | None:
+        # params intentionally unused: opt every request out of dedup.
         return None

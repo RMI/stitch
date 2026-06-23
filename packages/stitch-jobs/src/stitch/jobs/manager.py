@@ -88,7 +88,9 @@ class JobManager(Generic[P, R]):
         try:
             record.result = await self._run_fn(params)
             record.state = JobState.succeeded
-        except Exception as exc:  # noqa: BLE001 - captured into the record
+        except Exception as exc:
+            # Broad on purpose: any run_fn failure is captured onto the record
+            # (state=failed, error set) rather than crashing the background task.
             logger.exception("job %s failed", record.job_id)
             record.error = str(exc)
             record.state = JobState.failed

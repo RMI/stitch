@@ -41,7 +41,7 @@ def make_job_router(
     to_params = to_params or (lambda request: request)
     resolve_initiated_by = initiated_by or (lambda: None)
 
-    record_model = JobRecord[params_model, result_model]  # type: ignore[valid-type]
+    record_model = JobRecord[params_model, result_model]
 
     router = APIRouter(tags=list(tags) if tags else None)
 
@@ -52,7 +52,7 @@ def make_job_router(
         dependencies=list(dependencies),
     )
     async def start(
-        request: start_request_model,  # type: ignore[valid-type]
+        request: start_request_model,
         response: Response,
         initiated_by_label: Any = Depends(resolve_initiated_by),
     ):
