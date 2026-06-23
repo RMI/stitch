@@ -172,6 +172,103 @@ async def test_recent_completed_run_is_reused_within_window() -> None:
 
 
 @pytest.mark.anyio
+async def test_force_bypasses_an_active_run() -> None:
+    release = asyncio.Event()
+
+    async def run(params: Params) -> Result:
+        await release.wait()
+        return Result(value=1)
+
+    manager: JobManager[Params, Result] = JobManager(run, policy=SingletonPolicy())
+    first, first_created = await manager.start(Params(name="a"))
+    forced, forced_created = await manager.start(Params(name="a"), force=True)
+
+    assert first_created is True
+    assert forced_created is True  # force ignores the active run
+    assert forced.job_id != first.job_id
+
+    release.set()
+    await _wait_until_terminal(manager, first.job_id)
+    await _wait_until_terminal(manager, forced.job_id)
+
+
+@pytest.mark.anyio
+async def test_recent_within_none_reuses_indefinitely() -> None:
+    now = {"t": datetime(2026, 1, 1, tzinfo=UTC)}
+
+    def clock() -> datetime:
+        return now["t"]
+
+    async def run(params: Params) -> Result:
+        return Result(value=1)
+
+    store = InMemoryJobStore(clock=clock, retention=None)
+    manager: JobManager[Params, Result] = JobManager(
+        run,
+        store=store,
+        policy=FingerprintPolicy(),
+        recent_within=None,
+        clock=clock,
+    )
+
+    first, _ = await manager.start(Params(name="a"))
+    await _wait_until_terminal(manager, first.job_id)
+
+    # A year later, the same params still reuse the original run.
+    now["t"] = now["t"] + timedelta(days=365)
+    reused, created = await manager.start(Params(name="a"))
+    assert created is False
+    assert reused.job_id == first.job_id
+
+
+@pytest.mark.anyio
+async def test_failed_runs_are_not_reused_when_reuse_failed_false() -> None:
+    calls = {"n": 0}
+
+    async def run(params: Params) -> Result:
+        calls["n"] += 1
+        raise RuntimeError("boom")
+
+    manager: JobManager[Params, Result] = JobManager(
+        run,
+        policy=FingerprintPolicy(),
+        recent_within=None,
+        reuse_failed=False,
+    )
+
+    first, first_created = await manager.start(Params(name="a"))
+    await _wait_until_terminal(manager, first.job_id)
+    assert first_created is True
+
+    # The failed run is not reused — the next request retries with a new job.
+    second, second_created = await manager.start(Params(name="a"))
+    assert second_created is True
+    assert second.job_id != first.job_id
+    await _wait_until_terminal(manager, second.job_id)
+    assert calls["n"] == 2
+
+
+@pytest.mark.anyio
+async def test_succeeded_runs_reused_even_when_reuse_failed_false() -> None:
+    async def run(params: Params) -> Result:
+        return Result(value=1)
+
+    manager: JobManager[Params, Result] = JobManager(
+        run,
+        policy=FingerprintPolicy(),
+        recent_within=None,
+        reuse_failed=False,
+    )
+
+    first, _ = await manager.start(Params(name="a"))
+    await _wait_until_terminal(manager, first.job_id)
+
+    reused, created = await manager.start(Params(name="a"))
+    assert created is False
+    assert reused.job_id == first.job_id
+
+
+@pytest.mark.anyio
 async def test_terminal_records_evicted_after_retention() -> None:
     now = {"t": datetime(2026, 1, 1, tzinfo=UTC)}
 

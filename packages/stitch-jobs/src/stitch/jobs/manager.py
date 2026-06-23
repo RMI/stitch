@@ -13,6 +13,9 @@ from .uniqueness import SingletonPolicy, UniquenessPolicy
 
 logger = logging.getLogger("stitch.jobs")
 
+#: Terminal states that, by default, an existing run may be reused from.
+_DEFAULT_REUSABLE_TERMINAL = frozenset({JobState.succeeded, JobState.failed})
+
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
@@ -32,6 +35,13 @@ class JobManager(Generic[P, R]):
     still active — or finished within ``recent_within`` — and returns it instead
     of starting a duplicate. That is what lets a second user observe (and reuse
     the results of) a run another user already kicked off.
+
+    Reuse is tunable:
+      - ``recent_within`` — how long after finishing a terminal run stays
+        reusable. ``None`` means forever (no expiry).
+      - ``reuse_failed`` — when ``False``, failed runs are kept/visible but are
+        not reused, so the next request retries (transient failures self-heal).
+      - ``start(force=True)`` — bypass reuse entirely and always launch a new run.
     """
 
     def __init__(
@@ -40,32 +50,40 @@ class JobManager(Generic[P, R]):
         *,
         store: JobStore | None = None,
         policy: UniquenessPolicy | None = None,
-        recent_within: timedelta = timedelta(0),
+        recent_within: timedelta | None = timedelta(0),
+        reuse_failed: bool = True,
         clock: Callable[[], datetime] = _utcnow,
     ) -> None:
         self._run_fn = run_fn
         self._store: JobStore = store or InMemoryJobStore(clock=clock)
         self._policy = policy or SingletonPolicy()
         self._recent_within = recent_within
+        self._reusable_states = frozenset({JobState.running}) | (
+            _DEFAULT_REUSABLE_TERMINAL
+            if reuse_failed
+            else frozenset({JobState.succeeded})
+        )
         self._clock = clock
         self._lock = asyncio.Lock()
         # Hold strong refs so tasks aren't garbage-collected mid-flight.
         self._tasks: set[asyncio.Task[None]] = set()
 
     async def start(
-        self, params: P, *, initiated_by: str | None = None
+        self, params: P, *, initiated_by: str | None = None, force: bool = False
     ) -> tuple[JobRecord[P, R], bool]:
         """Start a run, or join an existing matching one.
 
         Returns ``(record, created)`` where ``created`` is ``False`` when an
         existing active/recent run with the same dedup key was returned instead
-        of launching a new task.
+        of launching a new task. ``force=True`` always launches a new run.
         """
         async with self._lock:
             key = self._policy.key(params)
-            if key is not None:
+            if not force and key is not None:
                 existing = await self._store.find_active_or_recent(
-                    key, recent_within=self._recent_within
+                    key,
+                    recent_within=self._recent_within,
+                    reusable_states=self._reusable_states,
                 )
                 if existing is not None:
                     return existing, False

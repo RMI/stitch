@@ -25,6 +25,7 @@ def make_job_router(
     to_params: Callable[[Any], BaseModel] | None = None,
     dependencies: Sequence[Any] = (),
     initiated_by: Callable[..., Awaitable[str | None] | str | None] | None = None,
+    force_attr: str | None = None,
     tags: Sequence[str] | None = None,
     default_list_limit: int = 20,
 ) -> APIRouter:
@@ -36,6 +37,10 @@ def make_job_router(
     wire request. ``dependencies`` is where the service plugs in its permission
     gate (e.g. ``[Depends(require_permissions(...))]``); ``initiated_by`` is an
     optional dependency returning the caller's display label.
+
+    ``force_attr`` names a boolean field on the request body that, when true,
+    bypasses dedup and forces a fresh run. Keep that field out of ``params`` (via
+    ``to_params``) so it never participates in the dedup key.
     """
     params_model = params_model or start_request_model
     to_params = to_params or (lambda request: request)
@@ -63,7 +68,10 @@ def make_job_router(
         caller observes that run rather than starting a duplicate).
         """
         params = to_params(request)
-        record, created = await manager.start(params, initiated_by=initiated_by_label)
+        force = bool(getattr(request, force_attr)) if force_attr else False
+        record, created = await manager.start(
+            params, initiated_by=initiated_by_label, force=force
+        )
         if not created:
             response.status_code = HTTP_200_OK
         return record

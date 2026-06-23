@@ -27,7 +27,11 @@ class JobStore(Protocol):
         """Return the record for ``job_id``, or ``None`` if unknown."""
 
     async def find_active_or_recent(
-        self, dedup_key: str, *, recent_within: timedelta
+        self,
+        dedup_key: str,
+        *,
+        recent_within: timedelta | None,
+        reusable_states: frozenset[JobState],
     ) -> JobRecord | None:
         """Return a matching job that is running or finished recently."""
 
@@ -78,11 +82,18 @@ class InMemoryJobStore:
         return self._records.get(job_id)
 
     async def find_active_or_recent(
-        self, dedup_key: str, *, recent_within: timedelta
+        self,
+        dedup_key: str,
+        *,
+        recent_within: timedelta | None,
+        reusable_states: frozenset[JobState],
     ) -> JobRecord | None:
-        """Return the newest matching job that is still running, or that
-        finished within ``recent_within``. Newest-first so callers join/observe
-        the most relevant run.
+        """Return the newest matching, reusable job.
+
+        A record matches when its key equals ``dedup_key``, its state is in
+        ``reusable_states``, and it is either still running or finished within
+        ``recent_within`` (``None`` means no age limit — reuse forever).
+        Newest-first so callers join/observe the most relevant run.
         """
         self._evict_expired()
         now = self._clock()
@@ -90,8 +101,10 @@ class InMemoryJobStore:
             record
             for record in self._records.values()
             if record.dedup_key == dedup_key
+            and record.state in reusable_states
             and (
                 record.state == JobState.running
+                or recent_within is None
                 or (
                     record.finished_at is not None
                     and now - record.finished_at <= recent_within
