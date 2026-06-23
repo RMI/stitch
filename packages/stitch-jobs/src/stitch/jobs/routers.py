@@ -68,7 +68,9 @@ def make_job_router(
         caller observes that run rather than starting a duplicate).
         """
         params = to_params(request)
-        force = bool(getattr(request, force_attr)) if force_attr else False
+        # Default to False so a mis-set force_attr degrades to "no force"
+        # rather than raising AttributeError (500).
+        force = bool(getattr(request, force_attr, False)) if force_attr else False
         record, created = await manager.start(
             params, initiated_by=initiated_by_label, force=force
         )
