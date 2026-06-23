@@ -6,29 +6,12 @@
 // `${stitchLlmBaseUrl}/oil-gas-fields`, entity-linkage jobs at
 // `${entityLinkageBaseUrl}`.
 
+import { getErrorDetail } from "./api";
+
+// Build an Error from a failed response, reusing the shared detail parser so
+// job and CRUD paths surface identical messages.
 async function errorFromResponse(response) {
-  let detail = response.statusText || `HTTP error! status: ${response.status}`;
-  try {
-    const text = await response.text();
-    if (text) {
-      try {
-        const body = JSON.parse(text);
-        const parsed = body?.detail;
-        if (typeof parsed === "string" && parsed) {
-          detail = parsed;
-        } else if (parsed != null) {
-          detail = JSON.stringify(parsed, null, 2);
-        } else {
-          detail = text;
-        }
-      } catch {
-        detail = text;
-      }
-    }
-  } catch {
-    // fall back to statusText
-  }
-  const error = new Error(detail);
+  const error = new Error(await getErrorDetail(response));
   error.status = response.status;
   return error;
 }

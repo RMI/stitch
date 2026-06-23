@@ -76,7 +76,10 @@ function formatApiErrorDetail(detail, fallbackStatus) {
   return `HTTP error! status: ${fallbackStatus}`;
 }
 
-async function getErrorDetail(response) {
+// Extract a human-readable error detail from a failed response. Canonical
+// parser shared with the job client (queries/jobs.js) so every path surfaces
+// the same message for a given backend response.
+export async function getErrorDetail(response) {
   const fallback = formatApiErrorDetail(null, response.status);
 
   try {
