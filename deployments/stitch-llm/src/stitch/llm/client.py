@@ -1,16 +1,21 @@
 from __future__ import annotations
 
-from stitch.client import AsyncStitchClient, env_bearer_token_headers_provider
+from stitch.client import AsyncStitchClient
 from stitch.ogsi.model import OGFieldDetailView
 from pydantic import ValidationError
+from stitch.service.auth import AuthMode, build_headers_provider
 
 from stitch.llm.errors import ModelOutputError
 from stitch.llm.settings import Settings, get_settings
 
+# Suggestions run as detached background jobs, so the caller's token is gone by
+# the time they execute — authenticate downstream with machine identity.
+_DOWNSTREAM_AUTH_MODE = AuthMode.machine
+
 
 def validate_downstream_auth_config_at_startup() -> None:
-    headers_provider = env_bearer_token_headers_provider()
-    headers_provider()
+    # Fail fast at startup if the machine token isn't configured.
+    build_headers_provider(_DOWNSTREAM_AUTH_MODE)()
 
 
 class StitchApiClient:
@@ -24,11 +29,10 @@ class StitchApiClient:
             self._client = client
             return
 
-        headers_provider = env_bearer_token_headers_provider()
         self._client = AsyncStitchClient(
             base_url=str(self._settings.api_base_url),
             timeout=30.0,
-            headers_provider=headers_provider,
+            headers_provider=build_headers_provider(_DOWNSTREAM_AUTH_MODE),
         )
 
     async def __aenter__(self) -> "StitchApiClient":

@@ -1,15 +1,10 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel
+from stitch.service.auth import ServiceUser as User
 
-
-class User(BaseModel):
-    id: int = Field(...)
-    sub: str = Field(...)
-    role: str | None = None
-    email: EmailStr
-    name: str
+__all__ = ["Citation", "FieldSuggestionResponse", "User"]
 
 
 class Citation(BaseModel):

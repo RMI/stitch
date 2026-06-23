@@ -1190,8 +1190,10 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "stitch-auth" },
     { name = "stitch-client" },
+    { name = "stitch-jobs" },
     { name = "stitch-models" },
     { name = "stitch-ogsi" },
+    { name = "stitch-service" },
 ]
 
 [package.dev-dependencies]
@@ -1208,8 +1210,10 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.12.0" },
     { name = "stitch-auth", editable = "packages/stitch-auth" },
     { name = "stitch-client", editable = "packages/stitch-client" },
+    { name = "stitch-jobs", editable = "packages/stitch-jobs" },
     { name = "stitch-models", editable = "packages/stitch-models" },
     { name = "stitch-ogsi", editable = "packages/stitch-ogsi" },
+    { name = "stitch-service", editable = "packages/stitch-service" },
 ]
 
 [package.metadata.requires-dev]
