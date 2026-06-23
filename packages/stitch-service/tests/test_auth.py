@@ -137,3 +137,31 @@ def test_request_context_relays_caller_bearer_token() -> None:
 
     assert response.status_code == 200
     assert response.json()["bearer_token"] == "caller-jwt"
+
+
+class _StubValidator:
+    """A TokenValidator that accepts any token as a fixed user (no OIDC)."""
+
+    def validate(self, token: str) -> TokenClaims:
+        return TokenClaims(
+            sub=f"stub|{token}", name="Stub", permissions=frozenset({SOURCE_WRITE})
+        )
+
+
+def test_injected_validator_runs_auth_enabled_without_oidc() -> None:
+    # No OIDC env, no auth-disabled bypass — an injected validator is the only
+    # thing needed, proving OIDC config is decoupled from the dev bypass. If the
+    # two were still coupled, building the default OIDC validator here would fail.
+    auth = ServiceAuth(is_auth_disabled=lambda: False, validator=_StubValidator())
+    # Should not raise (no OIDCSettings construction).
+    auth.validate_auth_config_at_startup()
+    app = build_app(auth)
+
+    with TestClient(app) as client:
+        me = client.get("/me", headers={"Authorization": "Bearer abc"})
+        assert me.status_code == 200
+        assert me.json()["sub"] == "stub|abc"
+        assert (
+            client.post("/guarded", headers={"Authorization": "Bearer abc"}).status_code
+            == 200
+        )

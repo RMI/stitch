@@ -8,7 +8,7 @@ import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import Annotated, Literal, NoReturn
+from typing import Annotated, Literal, NoReturn, Protocol
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -157,6 +157,18 @@ def _permission_exception_handler(exc: InsufficientPermissionsError) -> NoReturn
     raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail=exc.detail)
 
 
+class TokenValidator(Protocol):
+    """Turns a bearer token into claims — the seam ``ServiceAuth`` depends on.
+
+    ``stitch.auth.JWTValidator`` satisfies this. Injecting a custom validator
+    lets a service run with auth *enabled* without OIDC being configured (tests,
+    or a non-OIDC verifier), decoupling "is auth on?" from "is OIDC configured?".
+    """
+
+    def validate(self, token: str) -> TokenClaims:
+        """Return the validated claims, or raise ``AuthError`` on failure."""
+
+
 class ServiceAuth:
     """Inbound auth wiring shared by Stitch services.
 
@@ -168,6 +180,10 @@ class ServiceAuth:
     Config seams:
       - ``is_auth_disabled``: callable read per request; when true, all requests
         resolve to ``dev_claims`` (local-dev bypass).
+      - ``validator``: a :class:`TokenValidator`. Inject one to run auth-enabled
+        without OIDC config; when omitted, one is built lazily from
+        ``oidc_settings_factory`` (the production default). This is what keeps
+        the OIDC-config seam independent of the dev auth-disabled bypass.
       - ``user_factory``: maps validated claims to a user (override to hit a DB).
       - ``oidc_settings_factory`` / ``dev_claims``: rarely overridden.
     """
@@ -176,6 +192,7 @@ class ServiceAuth:
         self,
         *,
         is_auth_disabled: Callable[[], bool],
+        validator: TokenValidator | None = None,
         oidc_settings_factory: Callable[[], OIDCSettings] = OIDCSettings,
         dev_claims: TokenClaims | None = None,
         user_factory: Callable[[TokenClaims], ServiceUser] = _default_user_from_claims,
@@ -185,7 +202,7 @@ class ServiceAuth:
         self._dev_claims = dev_claims if dev_claims is not None else DEFAULT_DEV_CLAIMS
         self._user_factory = user_factory
         self._oidc_settings: OIDCSettings | None = None
-        self._validator: JWTValidator | None = None
+        self._validator: TokenValidator | None = validator
 
         # auto_error=False so a missing header doesn't 403 before our handler
         # runs (and so AUTH_DISABLED can short-circuit).
@@ -291,7 +308,9 @@ class ServiceAuth:
             self._oidc_settings = self._oidc_settings_factory()
         return self._oidc_settings
 
-    def _jwt_validator(self) -> JWTValidator:
+    def _jwt_validator(self) -> TokenValidator:
+        # Use the injected validator if provided; otherwise build the default
+        # OIDC-backed one lazily (this is the only place OIDC settings are read).
         if self._validator is None:
             self._validator = JWTValidator(self.oidc_settings())
         return self._validator
@@ -300,5 +319,6 @@ class ServiceAuth:
         if self._is_auth_disabled():
             logger.warning("Auth is disabled — all requests use dev credentials")
             return
-        # Fail fast if OIDC config is invalid.
-        self.oidc_settings()
+        # Fail fast if the validator can't be built (e.g. OIDC misconfigured).
+        # An injected validator skips OIDC entirely.
+        self._jwt_validator()
