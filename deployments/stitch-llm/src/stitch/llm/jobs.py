@@ -43,6 +43,10 @@ async def run_suggestion(params: FieldSuggestionParams) -> FieldSuggestionRespon
     async with StitchApiClient() as stitch_client:
         detail_view = await stitch_client.get_oil_gas_field_detail(resource_id)
 
+    # Expected behavior: if the field is already populated this raises and the
+    # run is recorded as a failed job (surfaced in the UI as a failed run),
+    # rather than the old synchronous 409. That's intentional — requesting a
+    # suggestion for an already-filled field is a no-op the user can see.
     ensure_field_is_missing(detail_view, field)
 
     input_messages = build_field_suggestion_input(
