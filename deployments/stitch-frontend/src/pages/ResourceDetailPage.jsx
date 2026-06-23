@@ -4,12 +4,11 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useResourceDetail, useSourceDetail } from "../hooks/useResources";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { useConfig } from "../config/useConfig";
-import {
-  createMergeCandidate,
-  createResource,
-  getLLMSuggestionStatus,
-  startLLMSuggestion,
-} from "../queries/api";
+import { createMergeCandidate, createResource } from "../queries/api";
+import { useJobRunner } from "../hooks/useJobRunner";
+import JobTriggerButton from "../components/JobTriggerButton";
+import JobResultList from "../components/JobResultList";
+import LastUpdated from "../components/LastUpdated";
 import SourceMixBar from "../components/SourceMixBar";
 import SectionHeader from "../components/SectionHeader";
 import { FieldCard, FieldGrid } from "../components/FieldCard";
@@ -23,10 +22,6 @@ import {
 } from "../constants/fieldMeta";
 
 const LLM_AUDIT_PRODUCER = "stitch-frontend";
-
-// LLM suggestions run as async jobs; poll their status until terminal.
-const SUGGESTION_POLL_INTERVAL_MS = 1000;
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const OBSERVED_AT_FORMATTER = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
@@ -188,62 +183,62 @@ function AISuggestionPanel({ endpoint, resourceId }) {
   const fetcher = createAuthenticatedFetcher(config, getAccessTokenSilently);
   const [selectedField, setSelectedField] = useState(AI_SUGGESTION_FIELDS[0]);
   const [forceRerun, setForceRerun] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [revealed, setRevealed] = useState(false);
   const [isPersisting, setIsPersisting] = useState(false);
   const [persistState, setPersistState] = useState(null);
+  const [persistError, setPersistError] = useState("");
 
+  const job = useJobRunner({
+    baseUrl: `${config.stitchLlmBaseUrl}/${endpoint}`,
+    fetcher,
+    paramsKey: `${resourceId}:${selectedField}`,
+    matchesParams: (record) =>
+      record.params?.resource_id === resourceId &&
+      record.params?.field === selectedField,
+  });
+
+  // Persist (and the value/citation rendering) act on the latest succeeded run.
+  const result = job.latestSucceeded?.result ?? null;
   const canPersist = result?.value != null;
   const isPersistedCurrentSuggestion =
     result &&
     persistState?.status === "success" &&
     persistState.suggestionKey === getSuggestionSubmissionKey(result);
+  const error = job.error || persistError;
 
-  async function handleGenerateSuggestion() {
-    setIsLoading(true);
-    setError("");
-    setResult(null);
+  function handleFieldChange(event) {
+    setSelectedField(event.target.value);
+    setForceRerun(false);
+    setRevealed(false);
     setPersistState(null);
+    setPersistError("");
+  }
 
-    try {
-      // Start (or join an existing) suggestion job, then poll until it
-      // finishes. A repeat for the same (resource, field) returns the prior
-      // run's result unless "Re-run" is checked.
-      let record = await startLLMSuggestion(
-        config,
-        { resourceId, field: selectedField, force: forceRerun },
-        fetcher,
-        endpoint,
-      );
+  async function handleTrigger() {
+    setPersistState(null);
+    setPersistError("");
 
-      while (record.state === "running") {
-        await sleep(SUGGESTION_POLL_INTERVAL_MS);
-        record = await getLLMSuggestionStatus(
-          config,
-          record.job_id,
-          fetcher,
-          endpoint,
-        );
-      }
-
-      if (record.state === "failed") {
-        setError(record.error || "Suggestion job failed.");
-      } else {
-        setResult(record.result);
-      }
-    } catch (err) {
-      setError(err.message || "Failed to generate suggestion.");
-    } finally {
-      setIsLoading(false);
+    // A prior suggestion exists and we're not forcing a new one → just reveal
+    // it; no LLM call.
+    if (job.hasExisting && !forceRerun && !revealed) {
+      setRevealed(true);
+      return;
     }
+
+    setRevealed(true);
+    await job.start({
+      resource_id: resourceId,
+      field: selectedField,
+      force: forceRerun,
+    });
+    setForceRerun(false);
   }
 
   async function handlePersistSuggestion() {
     if (!result || result.value == null) return;
 
     setIsPersisting(true);
-    setError("");
+    setPersistError("");
 
     const persistIntentId = createPersistIntentId();
     const resourcePayload = buildLLMResourcePayload({
@@ -280,13 +275,13 @@ function AISuggestionPanel({ endpoint, resourceId }) {
           resourceId: createdResource.id,
           suggestionKey,
         });
-        setError(
+        setPersistError(
           `Suggestion saved as resource ${createdResource.id}, but the merge draft was not created.`,
         );
       }
     } catch (err) {
       setPersistState(null);
-      setError(err.message || "Failed to persist suggestion.");
+      setPersistError(err.message || "Failed to persist suggestion.");
     } finally {
       setIsPersisting(false);
     }
@@ -301,11 +296,7 @@ function AISuggestionPanel({ endpoint, resourceId }) {
             <span className="mb-1 block font-medium">Field</span>
             <select
               value={selectedField}
-              onChange={(event) => {
-                setSelectedField(event.target.value);
-                setError("");
-                setResult(null);
-              }}
+              onChange={handleFieldChange}
               className="w-full rounded-md border border-line bg-panel px-3 py-2 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
             >
               {AI_SUGGESTION_FIELDS.map((fieldKey) => (
@@ -315,25 +306,34 @@ function AISuggestionPanel({ endpoint, resourceId }) {
               ))}
             </select>
           </label>
-          <Button
-            onClick={handleGenerateSuggestion}
-            disabled={isLoading}
-            variant="secondary"
-          >
-            {isLoading ? "Generating…" : "Generate suggestion"}
-          </Button>
+          <JobTriggerButton
+            running={job.isRunning}
+            force={forceRerun}
+            hasExisting={job.hasExisting}
+            revealed={revealed}
+            labels={{
+              running: "Generating…",
+              show: "Show suggestion",
+              create: "Generate suggestion",
+              recreate: "Re-generate suggestion",
+            }}
+            onClick={handleTrigger}
+          />
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-ink-muted">
-          <input
-            type="checkbox"
-            checked={forceRerun}
-            onChange={(event) => setForceRerun(event.target.checked)}
-            disabled={isLoading}
-            className="accent-primary"
-          />
-          <span>Re-run (ignore any existing suggestion for this field)</span>
-        </label>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <label className="flex items-center gap-2 text-sm text-ink-muted">
+            <input
+              type="checkbox"
+              checked={forceRerun}
+              onChange={(event) => setForceRerun(event.target.checked)}
+              disabled={job.isRunning}
+              className="accent-primary"
+            />
+            <span>Re-run (ignore any existing suggestion for this field)</span>
+          </label>
+          <LastUpdated at={job.lastUpdatedAt} />
+        </div>
 
         {error && (
           <div className="rounded-md border border-danger/25 bg-danger-soft px-4 py-3 text-sm text-danger">
@@ -341,9 +341,24 @@ function AISuggestionPanel({ endpoint, resourceId }) {
           </div>
         )}
 
-        {result && <SuggestionResult result={result} />}
+        {revealed && (
+          <JobResultList
+            records={job.records}
+            renderResult={(record) =>
+              record.state === "succeeded" ? (
+                <SuggestionResult result={record.result} />
+              ) : record.state === "failed" ? (
+                <p className="text-sm text-danger">
+                  {record.error || "Suggestion job failed."}
+                </p>
+              ) : (
+                <p className="text-sm text-ink-muted">Generating…</p>
+              )
+            }
+          />
+        )}
 
-        {canPersist && (
+        {revealed && canPersist && (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <Button
               onClick={handlePersistSuggestion}

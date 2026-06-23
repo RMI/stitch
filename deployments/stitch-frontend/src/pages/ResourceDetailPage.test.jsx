@@ -6,6 +6,7 @@ import { auth0TestDefaults, renderWithQueryClient } from "../test/utils";
 import ResourceDetailPage from "./ResourceDetailPage";
 import { useResourceDetail, useSourceDetail } from "../hooks/useResources";
 import * as apiModule from "../queries/api";
+import * as jobsModule from "../queries/jobs";
 
 vi.mock("../hooks/useResources");
 
@@ -80,6 +81,9 @@ beforeEach(() => {
     refetch: vi.fn(),
   });
   vi.mocked(useSourceDetail).mockReturnValue(defaultSourceDetailHookReturn);
+  // Default: no prior jobs for the current resource/field (the panel loads
+  // these on mount). Individual tests override to exercise "Show suggestion".
+  vi.spyOn(jobsModule, "listJobs").mockResolvedValue([]);
   vi.stubGlobal("crypto", {
     randomUUID: () => "persist-uuid-123",
   });
@@ -347,7 +351,7 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+    vi.spyOn(jobsModule, "startJob").mockResolvedValue({
       job_id: "job-1",
       state: "succeeded",
       result: {
@@ -389,12 +393,12 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+    vi.spyOn(jobsModule, "startJob").mockResolvedValue({
       job_id: "job-1",
       state: "running",
       result: null,
     });
-    vi.spyOn(apiModule, "getLLMSuggestionStatus").mockResolvedValue({
+    vi.spyOn(jobsModule, "getJobStatus").mockResolvedValue({
       job_id: "job-1",
       state: "succeeded",
       result: {
@@ -420,7 +424,7 @@ describe("ResourceDetailPage", () => {
     expect(
       await screen.findByText("Songliao", {}, { timeout: 3000 }),
     ).toBeInTheDocument();
-    expect(apiModule.getLLMSuggestionStatus).toHaveBeenCalled();
+    expect(jobsModule.getJobStatus).toHaveBeenCalled();
   });
 
   it("renders the failure when the job fails", async () => {
@@ -428,7 +432,7 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+    vi.spyOn(jobsModule, "startJob").mockResolvedValue({
       job_id: "job-1",
       state: "failed",
       result: null,
@@ -451,24 +455,22 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    const startSpy = vi
-      .spyOn(apiModule, "startLLMSuggestion")
-      .mockResolvedValue({
-        job_id: "job-1",
-        state: "succeeded",
-        result: {
-          resource_id: 1,
-          field: "basin",
-          value: "Songliao",
-          citations: [],
-          query_succeeded: true,
-          model: "test-model",
-          rationale: "Supported.",
-          observed_at: "2026-05-13T12:00:00Z",
-          foundry_request: {},
-          foundry_response: {},
-        },
-      });
+    const startSpy = vi.spyOn(jobsModule, "startJob").mockResolvedValue({
+      job_id: "job-1",
+      state: "succeeded",
+      result: {
+        resource_id: 1,
+        field: "basin",
+        value: "Songliao",
+        citations: [],
+        query_succeeded: true,
+        model: "test-model",
+        rationale: "Supported.",
+        observed_at: "2026-05-13T12:00:00Z",
+        foundry_request: {},
+        foundry_response: {},
+      },
+    });
     const user = userEvent.setup();
 
     renderWithQueryClient(<ResourceDetailPage />);
@@ -479,11 +481,49 @@ describe("ResourceDetailPage", () => {
 
     await screen.findByText("Songliao");
     expect(startSpy).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ field: "basin", force: true }),
-      expect.anything(),
+      expect.stringContaining("oil-gas-fields"),
+      expect.objectContaining({ resource_id: 1, field: "basin", force: true }),
       expect.anything(),
     );
+  });
+
+  it("offers 'Show suggestion' for a pre-existing result and reveals it without re-running", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    vi.spyOn(jobsModule, "listJobs").mockResolvedValue([
+      {
+        job_id: "prior-1",
+        state: "succeeded",
+        started_at: "2026-05-13T12:00:00Z",
+        params: { resource_id: 1, field: "basin" },
+        result: {
+          resource_id: 1,
+          field: "basin",
+          value: "Songliao",
+          citations: [],
+          query_succeeded: true,
+          model: "test-model",
+          rationale: "From a prior run.",
+          observed_at: "2026-05-13T12:00:00Z",
+          foundry_request: {},
+          foundry_response: {},
+        },
+      },
+    ]);
+    const startSpy = vi.spyOn(jobsModule, "startJob");
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    const showButton = await screen.findByRole("button", {
+      name: /show suggestion/i,
+    });
+    await user.click(showButton);
+
+    expect(await screen.findByText("Songliao")).toBeInTheDocument();
+    expect(startSpy).not.toHaveBeenCalled();
   });
 
   it("renders a no-answer suggestion state without treating it as an error", async () => {
@@ -491,7 +531,7 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+    vi.spyOn(jobsModule, "startJob").mockResolvedValue({
       job_id: "job-1",
       state: "succeeded",
       result: {
@@ -529,7 +569,7 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+    vi.spyOn(jobsModule, "startJob").mockResolvedValue({
       job_id: "job-1",
       state: "succeeded",
       result: {
@@ -562,7 +602,7 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+    vi.spyOn(jobsModule, "startJob").mockResolvedValue({
       job_id: "job-1",
       state: "succeeded",
       result: {
@@ -663,7 +703,7 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+    vi.spyOn(jobsModule, "startJob").mockResolvedValue({
       job_id: "job-1",
       state: "succeeded",
       result: {
@@ -718,7 +758,7 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+    vi.spyOn(jobsModule, "startJob").mockResolvedValue({
       job_id: "job-1",
       state: "succeeded",
       result: {
@@ -762,7 +802,7 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+    vi.spyOn(jobsModule, "startJob").mockResolvedValue({
       job_id: "job-1",
       state: "succeeded",
       result: {
@@ -801,7 +841,7 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+    vi.spyOn(jobsModule, "startJob").mockResolvedValue({
       job_id: "job-1",
       state: "succeeded",
       result: {

@@ -2,12 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   createMergeCandidate,
   createResource,
-  getLLMSuggestionStatus,
   getResourceFilterOptions,
   getResources,
   getResource,
   reviewMergeCandidate,
-  startLLMSuggestion,
 } from "./api";
 
 describe("API Functions", () => {
@@ -234,84 +232,6 @@ describe("API Functions", () => {
       await expect(getResource(config, 1, mockFetcher)).rejects.toThrow(
         "Failed to fetch",
       );
-    });
-  });
-
-  describe("startLLMSuggestion", () => {
-    it("POSTs resource_id/field/force to the stitch-llm start endpoint", async () => {
-      mockFetcher.mockResolvedValueOnce({
-        ok: true,
-        status: 202,
-        json: async () => ({ job_id: "job-1", state: "running", result: null }),
-      });
-
-      const record = await startLLMSuggestion(
-        config,
-        { resourceId: 42, field: "basin", force: true },
-        mockFetcher,
-        "oil-gas-fields",
-      );
-
-      expect(mockFetcher).toHaveBeenCalledWith(
-        "http://localhost:8002/api/v1/oil-gas-fields/start",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            resource_id: 42,
-            field: "basin",
-            force: true,
-          }),
-        },
-      );
-      expect(record.job_id).toBe("job-1");
-    });
-
-    it("surfaces structured JSON detail and status on failure", async () => {
-      mockFetcher.mockResolvedValueOnce({
-        ok: false,
-        status: 403,
-        text: async () => JSON.stringify({ detail: "missing permission" }),
-      });
-
-      await expect(
-        startLLMSuggestion(
-          config,
-          { resourceId: 42, field: "basin" },
-          mockFetcher,
-          "oil-gas-fields",
-        ),
-      ).rejects.toMatchObject({
-        message: "missing permission",
-        status: 403,
-      });
-    });
-  });
-
-  describe("getLLMSuggestionStatus", () => {
-    it("GETs the status endpoint for a job id", async () => {
-      mockFetcher.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          job_id: "job-1",
-          state: "succeeded",
-          result: { field: "basin", value: "Songliao Basin" },
-        }),
-      });
-
-      const record = await getLLMSuggestionStatus(
-        config,
-        "job-1",
-        mockFetcher,
-        "oil-gas-fields",
-      );
-
-      expect(mockFetcher).toHaveBeenCalledWith(
-        "http://localhost:8002/api/v1/oil-gas-fields/status/job-1",
-        { method: "GET" },
-      );
-      expect(record.result.value).toBe("Songliao Basin");
     });
   });
 
