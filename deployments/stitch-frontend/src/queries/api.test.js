@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
-  createLLMSuggestion,
   createMergeCandidate,
   createResource,
+  getLLMSuggestionStatus,
   getResourceFilterOptions,
   getResources,
   getResource,
   reviewMergeCandidate,
+  startLLMSuggestion,
 } from "./api";
 
 describe("API Functions", () => {
@@ -236,70 +237,81 @@ describe("API Functions", () => {
     });
   });
 
-  describe("createLLMSuggestion", () => {
-    it("calls the stitch-llm GET endpoint with the requested field", async () => {
+  describe("startLLMSuggestion", () => {
+    it("POSTs resource_id/field/force to the stitch-llm start endpoint", async () => {
       mockFetcher.mockResolvedValueOnce({
         ok: true,
-        status: 200,
-        json: async () => ({
-          resource_id: 42,
-          field: "basin",
-          value: "Songliao Basin",
-          citations: [],
-          query_succeeded: true,
-          model: "test-model",
-          observed_at: "2026-05-13T12:00:00Z",
-          foundry_request: {},
-          foundry_response: {},
-        }),
+        status: 202,
+        json: async () => ({ job_id: "job-1", state: "running", result: null }),
       });
 
-      const result = await createLLMSuggestion(
+      const record = await startLLMSuggestion(
         config,
-        42,
-        "basin",
+        { resourceId: 42, field: "basin", force: true },
         mockFetcher,
         "oil-gas-fields",
       );
 
       expect(mockFetcher).toHaveBeenCalledWith(
-        new URL("http://localhost:8002/api/v1/oil-gas-fields/42?field=basin"),
-        { method: "GET" },
+        "http://localhost:8002/api/v1/oil-gas-fields/start",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            resource_id: 42,
+            field: "basin",
+            force: true,
+          }),
+        },
       );
-      expect(result.value).toBe("Songliao Basin");
+      expect(record.job_id).toBe("job-1");
     });
 
     it("surfaces structured JSON detail and status on failure", async () => {
       mockFetcher.mockResolvedValueOnce({
         ok: false,
-        status: 502,
-        text: async () =>
-          JSON.stringify({
-            detail: "LLM upstream returned an invalid response",
-          }),
+        status: 403,
+        text: async () => JSON.stringify({ detail: "missing permission" }),
       });
 
       await expect(
-        createLLMSuggestion(config, 42, "basin", mockFetcher, "oil-gas-fields"),
+        startLLMSuggestion(
+          config,
+          { resourceId: 42, field: "basin" },
+          mockFetcher,
+          "oil-gas-fields",
+        ),
       ).rejects.toMatchObject({
-        message: "LLM upstream returned an invalid response",
-        status: 502,
+        message: "missing permission",
+        status: 403,
       });
     });
+  });
 
-    it("falls back to plain-text error bodies and preserves status", async () => {
+  describe("getLLMSuggestionStatus", () => {
+    it("GETs the status endpoint for a job id", async () => {
       mockFetcher.mockResolvedValueOnce({
-        ok: false,
-        status: 503,
-        text: async () => "Service temporarily unavailable",
+        ok: true,
+        status: 200,
+        json: async () => ({
+          job_id: "job-1",
+          state: "succeeded",
+          result: { field: "basin", value: "Songliao Basin" },
+        }),
       });
 
-      await expect(
-        createLLMSuggestion(config, 42, "basin", mockFetcher, "oil-gas-fields"),
-      ).rejects.toMatchObject({
-        message: "Service temporarily unavailable",
-        status: 503,
-      });
+      const record = await getLLMSuggestionStatus(
+        config,
+        "job-1",
+        mockFetcher,
+        "oil-gas-fields",
+      );
+
+      expect(mockFetcher).toHaveBeenCalledWith(
+        "http://localhost:8002/api/v1/oil-gas-fields/status/job-1",
+        { method: "GET" },
+      );
+      expect(record.result.value).toBe("Songliao Basin");
     });
   });
 

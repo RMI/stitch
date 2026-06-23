@@ -347,22 +347,26 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.spyOn(apiModule, "createLLMSuggestion").mockResolvedValue({
-      resource_id: 1,
-      field: "basin",
-      value: "Songliao",
-      citations: [
-        {
-          url: "https://example.com/daqing",
-          title: "Daqing citation",
-        },
-      ],
-      query_succeeded: true,
-      model: "test-model",
-      rationale: "Public sources place Daqing in the Songliao Basin.",
-      observed_at: "2026-05-13T12:00:00Z",
-      foundry_request: {},
-      foundry_response: {},
+    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+      job_id: "job-1",
+      state: "succeeded",
+      result: {
+        resource_id: 1,
+        field: "basin",
+        value: "Songliao",
+        citations: [
+          {
+            url: "https://example.com/daqing",
+            title: "Daqing citation",
+          },
+        ],
+        query_succeeded: true,
+        model: "test-model",
+        rationale: "Public sources place Daqing in the Songliao Basin.",
+        observed_at: "2026-05-13T12:00:00Z",
+        foundry_request: {},
+        foundry_response: {},
+      },
     });
     const user = userEvent.setup();
 
@@ -380,22 +384,128 @@ describe("ResourceDetailPage", () => {
     ).toHaveAttribute("href", "https://example.com/daqing");
   });
 
+  it("polls the status endpoint until the job finishes, then renders the result", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+      job_id: "job-1",
+      state: "running",
+      result: null,
+    });
+    vi.spyOn(apiModule, "getLLMSuggestionStatus").mockResolvedValue({
+      job_id: "job-1",
+      state: "succeeded",
+      result: {
+        resource_id: 1,
+        field: "basin",
+        value: "Songliao",
+        citations: [],
+        query_succeeded: true,
+        model: "test-model",
+        rationale: "Supported.",
+        observed_at: "2026-05-13T12:00:00Z",
+        foundry_request: {},
+        foundry_response: {},
+      },
+    });
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(
+      screen.getByRole("button", { name: /generate suggestion/i }),
+    );
+
+    expect(
+      await screen.findByText("Songliao", {}, { timeout: 3000 }),
+    ).toBeInTheDocument();
+    expect(apiModule.getLLMSuggestionStatus).toHaveBeenCalled();
+  });
+
+  it("renders the failure when the job fails", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+      job_id: "job-1",
+      state: "failed",
+      result: null,
+      error: "field already populated",
+    });
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(
+      screen.getByRole("button", { name: /generate suggestion/i }),
+    );
+
+    expect(
+      await screen.findByText("field already populated"),
+    ).toBeInTheDocument();
+  });
+
+  it("passes force=true when Re-run is checked", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    const startSpy = vi
+      .spyOn(apiModule, "startLLMSuggestion")
+      .mockResolvedValue({
+        job_id: "job-1",
+        state: "succeeded",
+        result: {
+          resource_id: 1,
+          field: "basin",
+          value: "Songliao",
+          citations: [],
+          query_succeeded: true,
+          model: "test-model",
+          rationale: "Supported.",
+          observed_at: "2026-05-13T12:00:00Z",
+          foundry_request: {},
+          foundry_response: {},
+        },
+      });
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(screen.getByRole("checkbox", { name: /re-run/i }));
+    await user.click(
+      screen.getByRole("button", { name: /generate suggestion/i }),
+    );
+
+    await screen.findByText("Songliao");
+    expect(startSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ field: "basin", force: true }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
   it("renders a no-answer suggestion state without treating it as an error", async () => {
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.spyOn(apiModule, "createLLMSuggestion").mockResolvedValue({
-      resource_id: 1,
-      field: "basin",
-      value: null,
-      citations: [],
-      query_succeeded: true,
-      model: "test-model",
-      rationale: "I could not find a grounded public source for this field.",
-      observed_at: "2026-05-13T12:00:00Z",
-      foundry_request: {},
-      foundry_response: {},
+    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+      job_id: "job-1",
+      state: "succeeded",
+      result: {
+        resource_id: 1,
+        field: "basin",
+        value: null,
+        citations: [],
+        query_succeeded: true,
+        model: "test-model",
+        rationale: "I could not find a grounded public source for this field.",
+        observed_at: "2026-05-13T12:00:00Z",
+        foundry_request: {},
+        foundry_response: {},
+      },
     });
     const user = userEvent.setup();
 
@@ -419,17 +529,21 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.spyOn(apiModule, "createLLMSuggestion").mockResolvedValue({
-      resource_id: 1,
-      field: "basin",
-      value: "Songliao",
-      citations: [],
-      query_succeeded: true,
-      model: "test-model",
-      rationale: "Supported.",
-      observed_at: "2026-05-13T12:00:00Z",
-      foundry_request: {},
-      foundry_response: {},
+    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+      job_id: "job-1",
+      state: "succeeded",
+      result: {
+        resource_id: 1,
+        field: "basin",
+        value: "Songliao",
+        citations: [],
+        query_succeeded: true,
+        model: "test-model",
+        rationale: "Supported.",
+        observed_at: "2026-05-13T12:00:00Z",
+        foundry_request: {},
+        foundry_response: {},
+      },
     });
     const user = userEvent.setup();
 
@@ -448,19 +562,23 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.spyOn(apiModule, "createLLMSuggestion").mockResolvedValue({
-      resource_id: 1,
-      field: "basin",
-      value: "Songliao",
-      citations: [
-        { url: "https://example.com/source", title: "Example Source" },
-      ],
-      query_succeeded: true,
-      model: "test-model",
-      rationale: "Supported.",
-      observed_at: "2026-05-13T12:00:00Z",
-      foundry_request: { request: true },
-      foundry_response: { response: true },
+    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+      job_id: "job-1",
+      state: "succeeded",
+      result: {
+        resource_id: 1,
+        field: "basin",
+        value: "Songliao",
+        citations: [
+          { url: "https://example.com/source", title: "Example Source" },
+        ],
+        query_succeeded: true,
+        model: "test-model",
+        rationale: "Supported.",
+        observed_at: "2026-05-13T12:00:00Z",
+        foundry_request: { request: true },
+        foundry_response: { response: true },
+      },
     });
     const createResourceSpy = vi
       .spyOn(apiModule, "createResource")
@@ -545,17 +663,21 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.spyOn(apiModule, "createLLMSuggestion").mockResolvedValue({
-      resource_id: 1,
-      field: "basin",
-      value: "Songliao",
-      citations: [],
-      query_succeeded: true,
-      model: "test-model",
-      rationale: "Supported.",
-      observed_at: "2026-05-13T12:00:00Z",
-      foundry_request: {},
-      foundry_response: {},
+    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+      job_id: "job-1",
+      state: "succeeded",
+      result: {
+        resource_id: 1,
+        field: "basin",
+        value: "Songliao",
+        citations: [],
+        query_succeeded: true,
+        model: "test-model",
+        rationale: "Supported.",
+        observed_at: "2026-05-13T12:00:00Z",
+        foundry_request: {},
+        foundry_response: {},
+      },
     });
     vi.spyOn(apiModule, "createResource").mockRejectedValue(
       new Error(
@@ -596,17 +718,21 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.spyOn(apiModule, "createLLMSuggestion").mockResolvedValue({
-      resource_id: 1,
-      field: "basin",
-      value: "Songliao",
-      citations: [],
-      query_succeeded: true,
-      model: "test-model",
-      rationale: "Supported.",
-      observed_at: "2026-05-13T12:00:00Z",
-      foundry_request: {},
-      foundry_response: {},
+    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+      job_id: "job-1",
+      state: "succeeded",
+      result: {
+        resource_id: 1,
+        field: "basin",
+        value: "Songliao",
+        citations: [],
+        query_succeeded: true,
+        model: "test-model",
+        rationale: "Supported.",
+        observed_at: "2026-05-13T12:00:00Z",
+        foundry_request: {},
+        foundry_response: {},
+      },
     });
     vi.spyOn(apiModule, "createResource").mockResolvedValue({ id: 123 });
     const createMergeCandidateSpy = vi
@@ -636,17 +762,21 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.spyOn(apiModule, "createLLMSuggestion").mockResolvedValue({
-      resource_id: 1,
-      field: "basin",
-      value: "Songliao",
-      citations: [],
-      query_succeeded: true,
-      model: "test-model",
-      rationale: "Supported.",
-      observed_at: "2026-05-13T12:00:00Z",
-      foundry_request: {},
-      foundry_response: {},
+    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+      job_id: "job-1",
+      state: "succeeded",
+      result: {
+        resource_id: 1,
+        field: "basin",
+        value: "Songliao",
+        citations: [],
+        query_succeeded: true,
+        model: "test-model",
+        rationale: "Supported.",
+        observed_at: "2026-05-13T12:00:00Z",
+        foundry_request: {},
+        foundry_response: {},
+      },
     });
     vi.spyOn(apiModule, "createResource").mockRejectedValue(
       new Error("create failed"),
@@ -671,17 +801,21 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.spyOn(apiModule, "createLLMSuggestion").mockResolvedValue({
-      resource_id: 1,
-      field: "basin",
-      value: "Songliao",
-      citations: [],
-      query_succeeded: true,
-      model: "test-model",
-      rationale: "Supported.",
-      observed_at: "2026-05-13T12:00:00Z",
-      foundry_request: {},
-      foundry_response: {},
+    vi.spyOn(apiModule, "startLLMSuggestion").mockResolvedValue({
+      job_id: "job-1",
+      state: "succeeded",
+      result: {
+        resource_id: 1,
+        field: "basin",
+        value: "Songliao",
+        citations: [],
+        query_succeeded: true,
+        model: "test-model",
+        rationale: "Supported.",
+        observed_at: "2026-05-13T12:00:00Z",
+        foundry_request: {},
+        foundry_response: {},
+      },
     });
     vi.spyOn(apiModule, "createResource").mockResolvedValue({ id: 123 });
     vi.spyOn(apiModule, "createMergeCandidate").mockResolvedValue({

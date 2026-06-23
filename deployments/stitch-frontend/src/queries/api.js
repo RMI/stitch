@@ -65,18 +65,41 @@ export async function getResourceDetail(
   return data;
 }
 
-export async function createLLMSuggestion(
+// LLM suggestions run as async jobs (decoupled from the caller): start one,
+// then poll its status until it leaves the "running" state. The job is tracked
+// per (resource_id, field) with no expiry — a repeat start returns the existing
+// job (200) unless `force` is set.
+export async function startLLMSuggestion(
   config,
-  id,
-  field,
+  { resourceId, field, force = false },
   fetcher,
   endpoint = "resources",
 ) {
-  const url = new URL(`${config.stitchLlmBaseUrl}/${endpoint}/${id}`);
-  url.searchParams.set("field", field);
+  const url = `${config.stitchLlmBaseUrl}/${endpoint}/start`;
   const response = await fetcher(url, {
-    method: "GET",
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ resource_id: resourceId, field, force }),
   });
+
+  if (!response.ok) {
+    const detail = await getErrorDetail(response);
+    const error = new Error(detail);
+    error.status = response.status;
+    throw error;
+  }
+
+  return await response.json();
+}
+
+export async function getLLMSuggestionStatus(
+  config,
+  jobId,
+  fetcher,
+  endpoint = "resources",
+) {
+  const url = `${config.stitchLlmBaseUrl}/${endpoint}/status/${jobId}`;
+  const response = await fetcher(url, { method: "GET" });
 
   if (!response.ok) {
     const detail = await getErrorDetail(response);

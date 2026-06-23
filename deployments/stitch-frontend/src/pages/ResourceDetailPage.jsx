@@ -5,9 +5,10 @@ import { useResourceDetail, useSourceDetail } from "../hooks/useResources";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { useConfig } from "../config/useConfig";
 import {
-  createLLMSuggestion,
   createMergeCandidate,
   createResource,
+  getLLMSuggestionStatus,
+  startLLMSuggestion,
 } from "../queries/api";
 import SourceMixBar from "../components/SourceMixBar";
 import SectionHeader from "../components/SectionHeader";
@@ -22,6 +23,10 @@ import {
 } from "../constants/fieldMeta";
 
 const LLM_AUDIT_PRODUCER = "stitch-frontend";
+
+// LLM suggestions run as async jobs; poll their status until terminal.
+const SUGGESTION_POLL_INTERVAL_MS = 1000;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const OBSERVED_AT_FORMATTER = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
@@ -182,6 +187,7 @@ function AISuggestionPanel({ endpoint, resourceId }) {
   const { getAccessTokenSilently } = useAuth0();
   const fetcher = createAuthenticatedFetcher(config, getAccessTokenSilently);
   const [selectedField, setSelectedField] = useState(AI_SUGGESTION_FIELDS[0]);
+  const [forceRerun, setForceRerun] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -201,14 +207,31 @@ function AISuggestionPanel({ endpoint, resourceId }) {
     setPersistState(null);
 
     try {
-      const suggestion = await createLLMSuggestion(
+      // Start (or join an existing) suggestion job, then poll until it
+      // finishes. A repeat for the same (resource, field) returns the prior
+      // run's result unless "Re-run" is checked.
+      let record = await startLLMSuggestion(
         config,
-        resourceId,
-        selectedField,
+        { resourceId, field: selectedField, force: forceRerun },
         fetcher,
         endpoint,
       );
-      setResult(suggestion);
+
+      while (record.state === "running") {
+        await sleep(SUGGESTION_POLL_INTERVAL_MS);
+        record = await getLLMSuggestionStatus(
+          config,
+          record.job_id,
+          fetcher,
+          endpoint,
+        );
+      }
+
+      if (record.state === "failed") {
+        setError(record.error || "Suggestion job failed.");
+      } else {
+        setResult(record.result);
+      }
     } catch (err) {
       setError(err.message || "Failed to generate suggestion.");
     } finally {
@@ -300,6 +323,17 @@ function AISuggestionPanel({ endpoint, resourceId }) {
             {isLoading ? "Generating…" : "Generate suggestion"}
           </Button>
         </div>
+
+        <label className="flex items-center gap-2 text-sm text-ink-muted">
+          <input
+            type="checkbox"
+            checked={forceRerun}
+            onChange={(event) => setForceRerun(event.target.checked)}
+            disabled={isLoading}
+            className="accent-primary"
+          />
+          <span>Re-run (ignore any existing suggestion for this field)</span>
+        </label>
 
         {error && (
           <div className="rounded-md border border-danger/25 bg-danger-soft px-4 py-3 text-sm text-danger">
