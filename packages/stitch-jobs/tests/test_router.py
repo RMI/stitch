@@ -33,7 +33,7 @@ def build_app(manager: JobManager, **kwargs) -> FastAPI:
     app = FastAPI()
     router = make_job_router(
         manager,
-        start_request_model=StartRequest,
+        params_model=StartRequest,
         result_model=Result,
         **kwargs,
     )
@@ -121,6 +121,30 @@ def test_jobs_listing_returns_recent_runs() -> None:
 
         listed = client.get("/api/v1/jobs").json()
         assert {job["params"]["name"] for job in listed} == {"a", "b"}
+
+
+def test_synthesized_force_field_bypasses_dedup() -> None:
+    async def run(params: StartRequest) -> Result:
+        return Result(value=1)
+
+    # No force_attr wiring — make_job_router adds the `force` field itself.
+    app = build_app(JobManager(run, policy=FingerprintPolicy(), recent_within=None))
+
+    with TestClient(app) as client:
+        first = client.post("/api/v1/start", json={"name": "a"})
+        _poll(client, first.json()["job_id"])
+
+        # Same params, no force → reuses the prior run.
+        reused = client.post("/api/v1/start", json={"name": "a"})
+        assert reused.status_code == 200
+        assert reused.json()["job_id"] == first.json()["job_id"]
+
+        # force=true → a fresh run, and `force` never lands in the dedup params.
+        forced = client.post("/api/v1/start", json={"name": "a", "force": True})
+        assert forced.status_code == 202
+        assert forced.json()["job_id"] != first.json()["job_id"]
+        assert forced.json()["params"] == {"name": "a"}
+        _poll(client, forced.json()["job_id"])
 
 
 def test_find_returns_runs_matching_params() -> None:

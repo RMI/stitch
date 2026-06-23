@@ -1,17 +1,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
 from stitch.auth.permissions import SERVICE_LLM_SUGGEST
 from stitch.jobs import FingerprintPolicy, InMemoryJobStore, JobManager, make_job_router
 
 from stitch.llm.auth import initiated_by, require_permissions
 from stitch.llm.entities import FieldSuggestionResponse
-from stitch.llm.jobs import (
-    AllowedSuggestionField,
-    FieldSuggestionParams,
-    run_suggestion,
-)
+from stitch.llm.jobs import FieldSuggestionParams, run_suggestion
 
 # Suggestions are tracked per (resource_id, field) with no expiry: once a pair
 # has a result it is reused indefinitely (decoupled from the original caller, so
@@ -30,26 +25,9 @@ def get_job_manager() -> JobManager[FieldSuggestionParams, FieldSuggestionRespon
     return _manager
 
 
-class StartSuggestionRequest(BaseModel):
-    resource_id: int
-    field: AllowedSuggestionField
-    force: bool = Field(
-        default=False,
-        description="Re-run even if a suggestion for this (resource, field) exists.",
-    )
-
-
-def _to_params(request: StartSuggestionRequest) -> FieldSuggestionParams:
-    # `force` is intentionally dropped so it never participates in the dedup key.
-    return FieldSuggestionParams(resource_id=request.resource_id, field=request.field)
-
-
 _job_router = make_job_router(
     _manager,
-    start_request_model=StartSuggestionRequest,
     params_model=FieldSuggestionParams,
-    to_params=_to_params,
-    force_attr="force",
     result_model=FieldSuggestionResponse,
     dependencies=[Depends(require_permissions(SERVICE_LLM_SUGGEST))],
     initiated_by=initiated_by,

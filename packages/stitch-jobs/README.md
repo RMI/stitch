@@ -34,11 +34,13 @@ manager = JobManager(
 )
 router = make_job_router(
     manager,
-    start_request_model=StartRequest,
+    params_model=EtlParams,        # request body + dedup params
     result_model=EtlResult,
     dependencies=[Depends(require_permissions(SOURCE_WRITE))],
     initiated_by=current_user_label,
 )
+# /start gains a `force` field automatically (force=True by default); set it to
+# bypass dedup. The router strips `force` before computing the dedup key.
 ```
 
 ## Scope

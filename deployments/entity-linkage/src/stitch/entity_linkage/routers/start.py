@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import timedelta
 
 from fastapi import Depends
-from pydantic import Field
 from stitch.auth.permissions import SERVICE_ENTITY_LINKAGE_RUN
 from stitch.jobs import (
     FingerprintPolicy,
@@ -34,24 +33,9 @@ def get_job_manager() -> JobManager[LinkageParams, LinkageResult]:
     return _manager
 
 
-class StartLinkageRequest(LinkageParams):
-    force: bool = Field(
-        default=False,
-        description="Re-run even if a recent identical run exists.",
-    )
-
-
-def _to_params(request: StartLinkageRequest) -> LinkageParams:
-    # `force` is dropped here so it never participates in the dedup key.
-    return LinkageParams(**request.model_dump(exclude={"force"}))
-
-
 router = make_job_router(
     _manager,
-    start_request_model=StartLinkageRequest,
     params_model=LinkageParams,
-    to_params=_to_params,
-    force_attr="force",
     result_model=LinkageResult,
     dependencies=[Depends(require_permissions(SERVICE_ENTITY_LINKAGE_RUN))],
     initiated_by=initiated_by,
