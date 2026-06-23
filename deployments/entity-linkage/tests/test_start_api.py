@@ -382,6 +382,34 @@ def test_second_caller_observes_existing_run(
     assert second.json()["job_id"] == job_id
 
 
+def test_force_starts_a_new_run(
+    test_client: TestClient,
+    api_client_factory,
+) -> None:
+    install, _ = api_client_factory
+    install(
+        items=[
+            FieldCandidate(id=1, name="Alpha", country="ignored"),
+            FieldCandidate(id=2, name="alpha", country="ignored"),
+        ],
+        details_by_id={
+            1: FieldDetailCandidate(id=1, name="Alpha", country="US"),
+            2: FieldDetailCandidate(id=2, name="Alpha", country="US"),
+        },
+    )
+
+    first = test_client.post("/api/v1/start", json={"apply_merges": False})
+    job_id = first.json()["job_id"]
+    _poll(test_client, job_id)
+
+    forced = test_client.post(
+        "/api/v1/start", json={"apply_merges": False, "force": True}
+    )
+    assert forced.status_code == 202
+    assert forced.json()["job_id"] != job_id
+    _poll(test_client, forced.json()["job_id"])
+
+
 def test_post_start_validates_request_body_constraints(
     test_client: TestClient,
 ) -> None:
