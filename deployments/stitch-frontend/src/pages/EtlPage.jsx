@@ -1,9 +1,17 @@
 import { useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useConfig } from "../config/useConfig";
+import { createAuthenticatedFetcher } from "../auth/api";
+import { useJobRunner } from "../hooks/useJobRunner";
+import JobTriggerButton from "../components/JobTriggerButton";
+import JobResultList from "../components/JobResultList";
+import LastUpdated from "../components/LastUpdated";
 import StructuredDataView from "../components/StructuredDataView";
-import Button from "../components/Button";
 import Input from "../components/Input";
+
+// NOTE: the ETL services aren't on the shared `stitch-jobs` framework yet. This
+// UI targets that contract (POST /start, GET /status/{job_id}, GET /jobs) so it
+// lights up once the backend adopts it.
 
 // Per-ETL run parameters. Empty number/text fields are omitted from the
 // request body so the service falls back to its env-derived defaults.
@@ -43,37 +51,7 @@ const WOODMAC_FIELDS = [
   },
 ];
 
-const STATE_STYLES = {
-  running: "border-warning/30 bg-warning-soft text-warning",
-  succeeded: "border-success/25 bg-success-soft text-success-strong",
-  failed: "border-danger/25 bg-danger-soft text-danger",
-};
-
-function StateBadge({ state }) {
-  if (!state) return null;
-
-  const classes = STATE_STYLES[state] ?? "border-line bg-surface text-ink";
-
-  return (
-    <span
-      className={`rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${classes}`}
-    >
-      {state}
-    </span>
-  );
-}
-
-async function parseJsonResponse(response) {
-  const text = await response.text();
-
-  try {
-    return text ? JSON.parse(text) : null;
-  } catch {
-    return { raw: text };
-  }
-}
-
-function EtlPanel({ title, description, baseUrl, fields, getToken }) {
+function EtlPanel({ title, description, baseUrl, fields, fetcher }) {
   const [values, setValues] = useState(() =>
     Object.fromEntries(
       fields.map((field) => [
@@ -82,17 +60,23 @@ function EtlPanel({ title, description, baseUrl, fields, getToken }) {
       ]),
     ),
   );
-  const [starting, setStarting] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [record, setRecord] = useState(null);
-  const [error, setError] = useState(null);
+  const [forceRerun, setForceRerun] = useState(false);
+  const [revealed, setRevealed] = useState(false);
+
+  // All runs at this service's base URL belong to this pipeline.
+  const job = useJobRunner({
+    baseUrl,
+    fetcher,
+    paramsKey: baseUrl,
+    matchesParams: () => true,
+  });
 
   function setField(key, value) {
     setValues((prev) => ({ ...prev, [key]: value }));
   }
 
   function buildRequestBody() {
-    const body = {};
+    const body = { force: forceRerun };
 
     for (const field of fields) {
       const value = values[field.key];
@@ -107,81 +91,22 @@ function EtlPanel({ title, description, baseUrl, fields, getToken }) {
     return body;
   }
 
-  async function handleStart() {
-    setStarting(true);
-    setError(null);
-
-    try {
-      const token = await getToken();
-
-      const response = await fetch(`${baseUrl}/start`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(buildRequestBody()),
-      });
-
-      const parsed = await parseJsonResponse(response);
-
-      if (response.status === 409) {
-        setError({
-          status: 409,
-          message: "A run is already in progress — refresh status to check.",
-          body: parsed,
-        });
-        return;
-      }
-
-      if (!response.ok) {
-        setError({ status: response.status, body: parsed });
-        return;
-      }
-
-      setRecord(parsed);
-    } catch (err) {
-      setError({
-        status: null,
-        body: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      setStarting(false);
+  async function handleTrigger() {
+    // A recent run exists and we're not forcing → just reveal it.
+    if (job.hasExisting && !forceRerun && !revealed) {
+      setRevealed(true);
+      return;
     }
+    setRevealed(true);
+    await job.start(buildRequestBody());
+    setForceRerun(false);
   }
-
-  async function handleRefresh() {
-    setRefreshing(true);
-    setError(null);
-
-    try {
-      // GET /status is unauthenticated per the ETL OpenAPI spec.
-      const response = await fetch(`${baseUrl}/status`);
-      const parsed = await parseJsonResponse(response);
-
-      if (!response.ok) {
-        setError({ status: response.status, body: parsed });
-        return;
-      }
-
-      setRecord(parsed);
-    } catch (err) {
-      setError({
-        status: null,
-        body: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      setRefreshing(false);
-    }
-  }
-
-  const isRunning = record?.state === "running";
 
   return (
     <section className="rounded-md border border-line bg-panel p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-semibold text-ink">{title}</h2>
-        <StateBadge state={record?.state} />
+        <LastUpdated at={job.lastUpdatedAt} />
       </div>
       <p className="mt-1 text-sm text-ink-muted">{description}</p>
 
@@ -194,6 +119,7 @@ function EtlPanel({ title, description, baseUrl, fields, getToken }) {
                   type="checkbox"
                   checked={values[field.key]}
                   onChange={(e) => setField(field.key, e.target.checked)}
+                  disabled={job.isRunning}
                   className="accent-primary"
                 />
                 <span>{field.label}</span>
@@ -209,6 +135,7 @@ function EtlPanel({ title, description, baseUrl, fields, getToken }) {
                   onChange={(e) => setField(field.key, e.target.value)}
                   placeholder={field.placeholder}
                   min={field.type === "number" ? 1 : undefined}
+                  disabled={job.isRunning}
                   className="w-full"
                 />
               </label>
@@ -220,43 +147,62 @@ function EtlPanel({ title, description, baseUrl, fields, getToken }) {
         )}
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Button
-          onClick={handleStart}
-          disabled={starting || isRunning}
+      <div className="mt-4 flex flex-wrap items-center gap-4">
+        <JobTriggerButton
+          running={job.isRunning}
+          force={forceRerun}
+          hasExisting={job.hasExisting}
+          revealed={revealed}
+          labels={{
+            running: "Running…",
+            show: "Show result",
+            create: "Start run",
+            recreate: "Re-run",
+          }}
+          onClick={handleTrigger}
           variant="primary"
-        >
-          {starting ? "Starting…" : "Start run"}
-        </Button>
-        <Button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          variant="secondary"
-        >
-          {refreshing ? "Refreshing…" : "Refresh status"}
-        </Button>
+        />
+        <label className="flex items-center gap-2 text-sm text-ink-muted">
+          <input
+            type="checkbox"
+            checked={forceRerun}
+            onChange={(e) => setForceRerun(e.target.checked)}
+            disabled={job.isRunning}
+            className="accent-primary"
+          />
+          <span>Re-run (ignore a recent run)</span>
+        </label>
       </div>
 
-      {error ? (
+      {job.error ? (
         <div className="mt-4 rounded-md border border-danger/25 bg-danger-soft p-3 text-sm text-danger">
-          {error.message ? (
-            <p className="mb-2 font-medium">{error.message}</p>
-          ) : null}
-          <StructuredDataView
-            data={{ status: error.status, response: error.body }}
-            label={`${title} error`}
-          />
+          {job.error}
         </div>
       ) : null}
 
       <div className="mt-4 border-t border-line pt-4">
-        <h3 className="mb-2 text-sm font-semibold text-ink">Run status</h3>
-        {record ? (
-          <StructuredDataView data={record} label={`${title} run status`} />
+        <h3 className="mb-2 text-sm font-semibold text-ink">Runs</h3>
+        {revealed && job.records.length ? (
+          <JobResultList
+            records={job.records}
+            renderResult={(record) =>
+              record.state === "succeeded" ? (
+                <StructuredDataView
+                  data={record.result}
+                  label={`${title} run result`}
+                />
+              ) : record.state === "failed" ? (
+                <p className="text-sm text-danger">
+                  {record.error || "Run failed."}
+                </p>
+              ) : (
+                <p className="text-sm text-ink-muted">Running…</p>
+              )
+            }
+          />
         ) : (
           <p className="text-sm text-ink-muted">
-            No run started yet. Start a run or refresh to fetch the latest
-            status.
+            No run started yet. Start a run to begin.
           </p>
         )}
       </div>
@@ -267,11 +213,7 @@ function EtlPanel({ title, description, baseUrl, fields, getToken }) {
 export default function EtlPage() {
   const config = useConfig();
   const { getAccessTokenSilently } = useAuth0();
-
-  const getToken = () =>
-    getAccessTokenSilently({
-      authorizationParams: { audience: config.auth0.audience },
-    });
+  const fetcher = createAuthenticatedFetcher(config, getAccessTokenSilently);
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -281,8 +223,8 @@ export default function EtlPage() {
         </p>
         <h1 className="mt-1 text-3xl font-semibold text-ink">ETL Pipelines</h1>
         <p className="mt-2 text-sm text-ink-muted">
-          Start an ETL run and check its status. Only one run per pipeline may
-          be active at a time.
+          Start an ETL run and watch its status. A recent run for a pipeline is
+          shown rather than started again; use “Re-run” to force a fresh run.
         </p>
       </div>
 
@@ -292,14 +234,14 @@ export default function EtlPage() {
           description="Load GEM oil & gas data from the configured spreadsheet and post it to Stitch."
           baseUrl={config.etlGemBaseUrl}
           fields={GEM_FIELDS}
-          getToken={getToken}
+          fetcher={fetcher}
         />
         <EtlPanel
           title="WoodMac"
           description="Fetch WoodMac query results and post them to Stitch."
           baseUrl={config.etlWoodmacBaseUrl}
           fields={WOODMAC_FIELDS}
-          getToken={getToken}
+          fetcher={fetcher}
         />
       </div>
     </div>
