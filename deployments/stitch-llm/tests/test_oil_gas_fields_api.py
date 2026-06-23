@@ -14,6 +14,7 @@ from stitch.ogsi.model import GemSource, OGFieldDetailView, SourceRecord
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.service.auth import RequestAuthContext
 
+from stitch.llm import auth as auth_module
 from stitch.llm import jobs as jobs_module
 from stitch.llm import main as main_module
 from stitch.llm.auth import get_request_auth_context, get_token_claims
@@ -133,8 +134,11 @@ def reset_job_manager():
 @pytest.fixture
 def test_client(monkeypatch: pytest.MonkeyPatch):
     # Default: auth-disabled, Azure unconfigured (placeholder mode for the job).
+    # Patch auth's settings too, so startup auth validation short-circuits
+    # instead of building OIDCSettings (which has no env config in CI).
     test_settings = _settings(auth_disabled=True)
     monkeypatch.setattr(jobs_module, "get_settings", lambda: test_settings)
+    monkeypatch.setattr(auth_module, "get_settings", lambda: test_settings)
     monkeypatch.setattr(
         main_module, "validate_downstream_auth_config_at_startup", lambda: None
     )
@@ -207,9 +211,9 @@ def _run(client: TestClient, **kwargs) -> dict:
 def test_start_requires_service_permission(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        jobs_module, "get_settings", lambda: _settings(auth_disabled=True)
-    )
+    test_settings = _settings(auth_disabled=True)
+    monkeypatch.setattr(jobs_module, "get_settings", lambda: test_settings)
+    monkeypatch.setattr(auth_module, "get_settings", lambda: test_settings)
     monkeypatch.setattr(
         main_module, "validate_downstream_auth_config_at_startup", lambda: None
     )
