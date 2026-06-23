@@ -191,10 +191,7 @@ function AISuggestionPanel({ endpoint, resourceId }) {
   const job = useJobRunner({
     baseUrl: `${config.stitchLlmBaseUrl}/${endpoint}`,
     fetcher,
-    paramsKey: `${resourceId}:${selectedField}`,
-    matchesParams: (record) =>
-      record.params?.resource_id === resourceId &&
-      record.params?.field === selectedField,
+    lookupBody: { resource_id: resourceId, field: selectedField },
   });
 
   // Persist (and the value/citation rendering) act on the latest succeeded run.

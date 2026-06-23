@@ -133,3 +133,19 @@ class JobManager(Generic[P, R]):
 
     async def list(self, *, limit: int | None = None) -> list[JobRecord[P, R]]:
         return await self._store.list(limit=limit)
+
+    async def list_for_params(
+        self, params: P, *, limit: int | None = None
+    ) -> list[JobRecord[P, R]]:
+        """Return runs whose dedup key matches ``params``, newest first.
+
+        Lets a caller discover the runs for a specific request (e.g. a given
+        resource/field) without scanning the whole job list — the server
+        applies the same uniqueness policy used for dedup, so there is no
+        client/server filter drift. Returns ``[]`` when the policy opts the
+        params out of deduplication (no stable key).
+        """
+        key = self._policy.key(params)
+        if key is None:
+            return []
+        return await self._store.list_by_key(key, limit=limit)

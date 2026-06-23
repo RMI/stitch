@@ -39,7 +39,7 @@ describe("EntityLinkagePage", () => {
     vi.clearAllMocks();
     vi.mocked(useAuth0).mockReturnValue(auth0TestDefaults);
     // Default: no prior runs (loaded on mount).
-    vi.spyOn(jobsModule, "listJobs").mockResolvedValue([]);
+    vi.spyOn(jobsModule, "findJobs").mockResolvedValue([]);
   });
 
   it("starts a run, auto-polls, and renders the completed result", async () => {
@@ -74,7 +74,7 @@ describe("EntityLinkagePage", () => {
   });
 
   it("offers 'Show result' for a recent run and reveals it without re-running", async () => {
-    vi.spyOn(jobsModule, "listJobs").mockResolvedValue([SUCCEEDED_RECORD]);
+    vi.spyOn(jobsModule, "findJobs").mockResolvedValue([SUCCEEDED_RECORD]);
     const startSpy = vi.spyOn(jobsModule, "startJob");
 
     renderWithQueryClient(<EntityLinkagePage />);

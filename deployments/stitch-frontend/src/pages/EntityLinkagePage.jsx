@@ -105,8 +105,7 @@ export default function EntityLinkagePage() {
   const job = useJobRunner({
     baseUrl: config.entityLinkageBaseUrl,
     fetcher,
-    paramsKey: `${applyMerges}`,
-    matchesParams: (record) => record.params?.apply_merges === applyMerges,
+    lookupBody: { apply_merges: applyMerges },
   });
 
   function handleToggleApplyMerges(event) {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getJobStatus, listJobs, startJob } from "./jobs";
+import { findJobs, getJobStatus, listJobs, startJob } from "./jobs";
 
 const BASE = "http://localhost:8002/api/v1/oil-gas-fields";
 
@@ -69,6 +69,27 @@ describe("job client", () => {
 
     expect(fetcher).toHaveBeenCalledWith(`${BASE}/jobs?limit=10`, {
       method: "GET",
+    });
+    expect(records).toHaveLength(1);
+  });
+
+  it("findJobs POSTs the lookup params to /find", async () => {
+    fetcher.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => [{ job_id: "job-1", state: "succeeded" }],
+    });
+
+    const records = await findJobs(
+      BASE,
+      { resource_id: 42, field: "basin" },
+      fetcher,
+    );
+
+    expect(fetcher).toHaveBeenCalledWith(`${BASE}/find`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resource_id: 42, field: "basin" }),
     });
     expect(records).toHaveLength(1);
   });

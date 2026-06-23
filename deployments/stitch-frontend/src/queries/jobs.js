@@ -58,3 +58,16 @@ export async function listJobs(baseUrl, fetcher, { limit = 50 } = {}) {
   if (!response.ok) throw await errorFromResponse(response);
   return await response.json();
 }
+
+// Return the runs matching a request's params (server applies the same dedup
+// policy as /start), newest first. Lets the UI discover/reuse the existing run
+// for exactly these params without fetching-then-filtering the whole job list.
+export async function findJobs(baseUrl, body, fetcher) {
+  const response = await fetcher(`${baseUrl}/find`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw await errorFromResponse(response);
+  return await response.json();
+}

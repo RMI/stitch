@@ -95,4 +95,13 @@ def make_job_router(
         """List recent jobs, newest first — for discovering an in-flight run."""
         return await manager.list(limit=limit)
 
+    @router.post("/find", response_model=list[record_model])
+    async def find(request: start_request_model):
+        """Return the runs matching a request's params (same dedup policy as
+        ``/start``), newest first — so a caller can discover/reuse the existing
+        run for exactly these params without scanning the whole job list.
+        """
+        params = to_params(request)
+        return await manager.list_for_params(params, limit=default_list_limit)
+
     return router

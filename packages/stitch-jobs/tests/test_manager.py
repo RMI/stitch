@@ -11,6 +11,7 @@ from stitch.jobs import (
     InMemoryJobStore,
     JobManager,
     JobState,
+    NoDedupPolicy,
     SingletonPolicy,
 )
 
@@ -266,6 +267,37 @@ async def test_succeeded_runs_reused_even_when_reuse_failed_false() -> None:
     reused, created = await manager.start(Params(name="a"))
     assert created is False
     assert reused.job_id == first.job_id
+
+
+@pytest.mark.anyio
+async def test_list_for_params_returns_only_matching_key_newest_first() -> None:
+    async def run(params: Params) -> Result:
+        return Result(value=1)
+
+    manager: JobManager[Params, Result] = JobManager(
+        run, policy=FingerprintPolicy(), recent_within=None
+    )
+    a, _ = await manager.start(Params(name="a"))
+    await _wait_until_terminal(manager, a.job_id)
+    b, _ = await manager.start(Params(name="b"))
+    await _wait_until_terminal(manager, b.job_id)
+    a2, _ = await manager.start(Params(name="a"), force=True)
+    await _wait_until_terminal(manager, a2.job_id)
+
+    runs = await manager.list_for_params(Params(name="a"))
+    assert [r.job_id for r in runs] == [a2.job_id, a.job_id]  # newest first, no "b"
+
+
+@pytest.mark.anyio
+async def test_list_for_params_empty_when_policy_opts_out() -> None:
+    async def run(params: Params) -> Result:
+        return Result(value=1)
+
+    manager: JobManager[Params, Result] = JobManager(run, policy=NoDedupPolicy())
+    record, _ = await manager.start(Params(name="a"))
+    await _wait_until_terminal(manager, record.job_id)
+
+    assert await manager.list_for_params(Params(name="a")) == []
 
 
 @pytest.mark.anyio

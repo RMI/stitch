@@ -83,7 +83,7 @@ beforeEach(() => {
   vi.mocked(useSourceDetail).mockReturnValue(defaultSourceDetailHookReturn);
   // Default: no prior jobs for the current resource/field (the panel loads
   // these on mount). Individual tests override to exercise "Show suggestion".
-  vi.spyOn(jobsModule, "listJobs").mockResolvedValue([]);
+  vi.spyOn(jobsModule, "findJobs").mockResolvedValue([]);
   vi.stubGlobal("crypto", {
     randomUUID: () => "persist-uuid-123",
   });
@@ -492,7 +492,7 @@ describe("ResourceDetailPage", () => {
       ...defaultHookReturn,
       data: mockDetailView,
     });
-    vi.spyOn(jobsModule, "listJobs").mockResolvedValue([
+    vi.spyOn(jobsModule, "findJobs").mockResolvedValue([
       {
         job_id: "prior-1",
         state: "succeeded",

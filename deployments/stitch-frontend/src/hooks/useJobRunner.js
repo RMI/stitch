@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getJobStatus, listJobs, startJob } from "../queries/jobs";
+import { findJobs, getJobStatus, startJob } from "../queries/jobs";
 
 const POLL_INTERVAL_MS = 1000;
 
@@ -10,15 +10,16 @@ function sortNewestFirst(records) {
   );
 }
 
-// Drives a Stitch job from the UI: loads prior jobs for the current params on
-// mount, starts/auto-polls runs, and tracks the records (newest first). Shared
-// by every job-shaped service (LLM, entity-linkage, ETL).
+// Drives a Stitch job from the UI: loads the prior runs for the current params
+// on mount, starts/auto-polls runs, and tracks the records (newest first).
+// Shared by every job-shaped service (LLM, entity-linkage, ETL).
 //
-// - baseUrl: where the job routes live (POST /start, GET /status, GET /jobs).
+// - baseUrl: where the job routes live (POST /start, POST /find, GET /status).
 // - fetcher: authenticated fetch wrapper (may change each render — captured by ref).
-// - paramsKey: stable string for the current params; reloading keys off it.
-// - matchesParams: predicate used to filter /jobs down to the current params.
-export function useJobRunner({ baseUrl, fetcher, paramsKey, matchesParams }) {
+// - lookupBody: the request params (without `force`) used to look up existing
+//   runs via /find; the server filters by the same dedup policy as /start, so
+//   there's no fetch-everything-then-filter and no client/server filter drift.
+export function useJobRunner({ baseUrl, fetcher, lookupBody }) {
   const [records, setRecords] = useState([]);
   const [isStarting, setIsStarting] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
@@ -28,8 +29,10 @@ export function useJobRunner({ baseUrl, fetcher, paramsKey, matchesParams }) {
   // Stable refs so the load effect doesn't churn on every parent re-render.
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
-  const matchesRef = useRef(matchesParams);
-  matchesRef.current = matchesParams;
+  const lookupRef = useRef(lookupBody);
+  lookupRef.current = lookupBody;
+  // Serialized lookup params double as the effect's reload key.
+  const lookupKey = JSON.stringify(lookupBody ?? null);
   // Bumped whenever params change / on unmount, to cancel stale polls.
   const generationRef = useRef(0);
 
@@ -65,7 +68,7 @@ export function useJobRunner({ baseUrl, fetcher, paramsKey, matchesParams }) {
     [baseUrl, upsert],
   );
 
-  // Load existing jobs for the current params on mount / when params change.
+  // Load the runs for the current params on mount / when params change.
   useEffect(() => {
     generationRef.current += 1;
     const generation = generationRef.current;
@@ -75,15 +78,19 @@ export function useJobRunner({ baseUrl, fetcher, paramsKey, matchesParams }) {
 
     (async () => {
       try {
-        const all = await listJobs(baseUrl, fetcherRef.current);
+        const mine = await findJobs(
+          baseUrl,
+          lookupRef.current ?? {},
+          fetcherRef.current,
+        );
         if (generationRef.current !== generation) return;
-        const mine = sortNewestFirst(all.filter((r) => matchesRef.current(r)));
-        setRecords(mine);
+        const sorted = sortNewestFirst(mine);
+        setRecords(sorted);
         setLastUpdatedAt(Date.now());
-        const running = mine.find((r) => r.state === "running");
+        const running = sorted.find((r) => r.state === "running");
         if (running) poll(running.job_id, generation);
       } catch {
-        // No prior jobs (or list unavailable) — start from a clean slate.
+        // No prior runs (or lookup unavailable) — start from a clean slate.
         if (generationRef.current === generation) setRecords([]);
       }
     })();
@@ -91,7 +98,7 @@ export function useJobRunner({ baseUrl, fetcher, paramsKey, matchesParams }) {
     return () => {
       generationRef.current += 1; // cancel any in-flight poll for this generation
     };
-  }, [baseUrl, paramsKey, poll]);
+  }, [baseUrl, lookupKey, poll]);
 
   const start = useCallback(
     async (body) => {
@@ -114,6 +121,9 @@ export function useJobRunner({ baseUrl, fetcher, paramsKey, matchesParams }) {
     [baseUrl, poll, upsert],
   );
 
+  // Known behavior: `current` is the newest run by start time (which drives the
+  // running/spinner state), while `latestSucceeded` (used for results/persist)
+  // is the newest succeeded run. With force re-runs these can differ briefly.
   const current = records[0] ?? null;
   const latestSucceeded = records.find((r) => r.state === "succeeded") ?? null;
 

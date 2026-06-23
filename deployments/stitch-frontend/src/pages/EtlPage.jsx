@@ -63,13 +63,10 @@ function EtlPanel({ title, description, baseUrl, fields, fetcher }) {
   const [forceRerun, setForceRerun] = useState(false);
   const [revealed, setRevealed] = useState(false);
 
-  // All runs at this service's base URL belong to this pipeline.
-  const job = useJobRunner({
-    baseUrl,
-    fetcher,
-    paramsKey: baseUrl,
-    matchesParams: () => true,
-  });
+  // Look up this pipeline's runs with default params (a stable key, so editing
+  // the tunable fields doesn't refetch on every keystroke). The pipeline is its
+  // own service, so /find returns its runs per the backend's dedup policy.
+  const job = useJobRunner({ baseUrl, fetcher, lookupBody: {} });
 
   function setField(key, value) {
     setValues((prev) => ({ ...prev, [key]: value }));

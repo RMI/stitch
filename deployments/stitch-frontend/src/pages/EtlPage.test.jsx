@@ -29,7 +29,7 @@ describe("EtlPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(useAuth0).mockReturnValue(auth0TestDefaults);
-    vi.spyOn(jobsModule, "listJobs").mockResolvedValue([]);
+    vi.spyOn(jobsModule, "findJobs").mockResolvedValue([]);
   });
 
   it("renders a panel for each ETL pipeline with no manual refresh", () => {
@@ -71,7 +71,7 @@ describe("EtlPage", () => {
   });
 
   it("offers 'Show result' for a recent run and reveals it without re-running", async () => {
-    vi.spyOn(jobsModule, "listJobs").mockImplementation(async (baseUrl) =>
+    vi.spyOn(jobsModule, "findJobs").mockImplementation(async (baseUrl) =>
       baseUrl === GEM_BASE ? [succeededRecord()] : [],
     );
     const startSpy = vi.spyOn(jobsModule, "startJob");

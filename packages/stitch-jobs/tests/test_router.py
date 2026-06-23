@@ -123,6 +123,22 @@ def test_jobs_listing_returns_recent_runs() -> None:
         assert {job["params"]["name"] for job in listed} == {"a", "b"}
 
 
+def test_find_returns_runs_matching_params() -> None:
+    async def run(params: StartRequest) -> Result:
+        return Result(value=len(params.name))
+
+    app = build_app(JobManager(run, policy=FingerprintPolicy(), recent_within=None))
+
+    with TestClient(app) as client:
+        a = client.post("/api/v1/start", json={"name": "a"})
+        _poll(client, a.json()["job_id"])
+        b = client.post("/api/v1/start", json={"name": "b"})
+        _poll(client, b.json()["job_id"])
+
+        found = client.post("/api/v1/find", json={"name": "a"}).json()
+        assert [r["params"]["name"] for r in found] == ["a"]
+
+
 def test_dependencies_gate_start() -> None:
     async def run(params: StartRequest) -> Result:
         return Result(value=1)

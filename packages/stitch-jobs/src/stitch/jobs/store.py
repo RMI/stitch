@@ -38,6 +38,11 @@ class JobStore(Protocol):
     async def list(self, *, limit: int | None = None) -> list[JobRecord]:
         """Return recent records, newest first."""
 
+    async def list_by_key(
+        self, dedup_key: str, *, limit: int | None = None
+    ) -> list[JobRecord]:
+        """Return records with this dedup key, newest first."""
+
     def clear(self) -> None:
         """Drop all records (test affordance)."""
 
@@ -123,6 +128,19 @@ class InMemoryJobStore:
         self._evict_expired()
         records = sorted(
             self._records.values(),
+            key=lambda record: record.started_at,
+            reverse=True,
+        )
+        if limit is not None:
+            records = records[:limit]
+        return records
+
+    async def list_by_key(
+        self, dedup_key: str, *, limit: int | None = None
+    ) -> list[JobRecord]:
+        self._evict_expired()
+        records = sorted(
+            (r for r in self._records.values() if r.dedup_key == dedup_key),
             key=lambda record: record.started_at,
             reverse=True,
         )
