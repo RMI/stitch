@@ -5,12 +5,30 @@ from stitch.auth import SOURCE_WRITE, TokenClaims
 
 from stitch.service.auth import (
     AuthMode,
+    RequestAuthContext,
     ServiceAuth,
+    ServiceUser,
     build_headers_provider,
     machine_token_headers_provider,
     relay_token_headers_provider,
 )
 from stitch.client.auth import STITCH_CLIENT_BEARER_TOKEN_ENV_VAR
+
+
+def test_service_user_label_prefers_name_then_email_then_sub() -> None:
+    assert ServiceUser(sub="s", email="e@example.com", name="Alice").label == "Alice"
+    assert ServiceUser(sub="s", email="e@example.com", name="").label == "e@example.com"
+    assert ServiceUser(sub="s", email="", name="").label == "s"
+
+
+@pytest.mark.anyio
+async def test_initiated_by_returns_user_label() -> None:
+    auth = ServiceAuth(is_auth_disabled=lambda: True)
+    ctx = RequestAuthContext(
+        user=ServiceUser(sub="s", email="e@example.com", name="Alice"),
+        bearer_token=None,
+    )
+    assert await auth.initiated_by(ctx) == "Alice"
 
 
 # --------------------------------------------------------------------------- #

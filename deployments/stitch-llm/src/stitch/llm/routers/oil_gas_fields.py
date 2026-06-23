@@ -5,8 +5,8 @@ from pydantic import BaseModel, Field
 from stitch.auth.permissions import SERVICE_LLM_SUGGEST
 from stitch.jobs import FingerprintPolicy, InMemoryJobStore, JobManager, make_job_router
 
-from stitch.llm.auth import AuthContext, require_permissions
-from stitch.llm.entities import FieldSuggestionResponse, User
+from stitch.llm.auth import initiated_by, require_permissions
+from stitch.llm.entities import FieldSuggestionResponse
 from stitch.llm.jobs import (
     AllowedSuggestionField,
     FieldSuggestionParams,
@@ -42,14 +42,6 @@ class StartSuggestionRequest(BaseModel):
 def _to_params(request: StartSuggestionRequest) -> FieldSuggestionParams:
     # `force` is intentionally dropped so it never participates in the dedup key.
     return FieldSuggestionParams(resource_id=request.resource_id, field=request.field)
-
-
-def _extract_user_label(user: User) -> str:
-    return user.name or user.email or user.sub
-
-
-async def initiated_by(auth_context: AuthContext) -> str:
-    return _extract_user_label(auth_context.user)
 
 
 _job_router = make_job_router(

@@ -16,6 +16,7 @@ get_token_claims = _auth.get_token_claims
 require_permissions = _auth.require_permissions
 get_current_user = _auth.get_current_user
 get_request_auth_context = _auth.get_request_auth_context
+initiated_by = _auth.initiated_by
 
 Claims = _auth.Claims
 CurrentUser = _auth.CurrentUser

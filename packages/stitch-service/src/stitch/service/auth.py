@@ -47,6 +47,11 @@ class ServiceUser(BaseModel):
     name: str
     role: str | None = None
 
+    @property
+    def label(self) -> str:
+        """Human label for attributing actions (e.g. a job's ``initiated_by``)."""
+        return self.name or self.email or self.sub
+
 
 @dataclass(frozen=True, slots=True)
 class RequestAuthContext:
@@ -268,10 +273,15 @@ class ServiceAuth:
 
         AuthContext = Annotated[RequestAuthContext, Depends(get_request_auth_context)]
 
+        async def initiated_by(auth_context: AuthContext) -> str:
+            """Caller label for attributing a job's ``initiated_by``."""
+            return auth_context.user.label
+
         self.get_token_claims = get_token_claims
         self.require_permissions = require_permissions
         self.get_current_user = get_current_user
         self.get_request_auth_context = get_request_auth_context
+        self.initiated_by = initiated_by
         self.Claims = Claims
         self.CurrentUser = CurrentUser
         self.AuthContext = AuthContext

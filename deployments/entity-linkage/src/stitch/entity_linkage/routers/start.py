@@ -12,8 +12,7 @@ from stitch.jobs import (
     make_job_router,
 )
 
-from stitch.entity_linkage.auth import AuthContext, require_permissions
-from stitch.entity_linkage.entities import User
+from stitch.entity_linkage.auth import initiated_by, require_permissions
 from stitch.entity_linkage.linkage import LinkageParams, LinkageResult, run_linkage
 
 # Two requests are "the same" run when all tunable params match. Identical
@@ -45,14 +44,6 @@ class StartLinkageRequest(LinkageParams):
 def _to_params(request: StartLinkageRequest) -> LinkageParams:
     # `force` is dropped here so it never participates in the dedup key.
     return LinkageParams(**request.model_dump(exclude={"force"}))
-
-
-def _extract_user_label(user: User) -> str:
-    return user.name or user.email or user.sub
-
-
-async def initiated_by(auth_context: AuthContext) -> str:
-    return _extract_user_label(auth_context.user)
 
 
 router = make_job_router(

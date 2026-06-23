@@ -9,7 +9,6 @@ from stitch.entity_linkage.entities import (
     FieldCandidate,
     FieldDetailCandidate,
     MatchGroup,
-    User,
 )
 from stitch.entity_linkage.errors import StitchAPIError
 from stitch.entity_linkage.linkage import (
@@ -19,7 +18,6 @@ from stitch.entity_linkage.linkage import (
     _resolve_match_groups,
     run_linkage,
 )
-from stitch.entity_linkage.routers.start import _extract_user_label
 
 
 class FakeStitchApiClient(AbstractAsyncContextManager["FakeStitchApiClient"]):
@@ -91,19 +89,6 @@ class FakeStitchApiClient(AbstractAsyncContextManager["FakeStitchApiClient"]):
 )
 def test_normalize_country(country: str | None, expected: str | None) -> None:
     assert _normalize_country(country) == expected
-
-
-def test_extract_user_label_prefers_name_then_email_then_sub() -> None:
-    assert (
-        _extract_user_label(
-            User(id=1, sub="sub-1", email="a@example.com", name="Alice")
-        )
-        == "Alice"
-    )
-    assert (
-        _extract_user_label(User(id=1, sub="sub-2", email="b@example.com", name=""))
-        == "b@example.com"
-    )
 
 
 def test_group_duplicate_names_uses_casefold_and_strips_whitespace() -> None:
