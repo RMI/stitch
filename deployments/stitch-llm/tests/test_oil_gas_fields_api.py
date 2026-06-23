@@ -347,7 +347,27 @@ def test_job_fails_on_stitch_404(
 
     final = _run(test_client)
     assert final["state"] == "failed"
-    assert "missing" in final["error"]
+    assert "not found" in final["error"]
+    assert "42" in final["error"]
+
+
+def test_job_sanitizes_non_404_downstream_error(
+    test_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stitch_client = FakeStitchApiClient(
+        error=StitchAPIError(
+            "GET /oil-gas-fields/42/detail failed with status 500: secret-internal-trace",
+            status_code=500,
+        )
+    )
+    install_fakes(monkeypatch, stitch_client=stitch_client)
+
+    final = _run(test_client)
+    assert final["state"] == "failed"
+    # The raw downstream text must not leak into the user-facing record.
+    assert "secret-internal-trace" not in final["error"]
+    assert "Failed to fetch resource detail" in final["error"]
 
 
 def test_job_fails_on_missing_azure_config(

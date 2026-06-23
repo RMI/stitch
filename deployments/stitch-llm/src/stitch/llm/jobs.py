@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
 from pydantic import BaseModel
+from starlette.status import HTTP_404_NOT_FOUND
+from stitch.client import StitchAPIError
 
 from stitch.llm.azure_responses import AzureResponsesClient, extract_public_citations
 from stitch.llm.client import StitchApiClient
 from stitch.llm.entities import FieldSuggestionResponse
+from stitch.llm.errors import AzureResponsesError
 from stitch.llm.settings import get_settings
 from stitch.llm.suggestions import (
     AllowedSuggestionField,
@@ -16,6 +20,8 @@ from stitch.llm.suggestions import (
     parse_field_suggestion_response,
     sanitize_and_validate_suggested_value,
 )
+
+logger = logging.getLogger(__name__)
 
 PLACEHOLDER_LLM_VALUE = ":warning: placeholder LLM value"
 PLACEHOLDER_LLM_MODEL = "placeholder-llm"
@@ -40,8 +46,21 @@ async def run_suggestion(params: FieldSuggestionParams) -> FieldSuggestionRespon
     field = params.field
     observed_at = datetime.now(UTC)
 
-    async with StitchApiClient() as stitch_client:
-        detail_view = await stitch_client.get_oil_gas_field_detail(resource_id)
+    try:
+        async with StitchApiClient() as stitch_client:
+            detail_view = await stitch_client.get_oil_gas_field_detail(resource_id)
+    except StitchAPIError as exc:
+        if exc.status_code == HTTP_404_NOT_FOUND:
+            raise StitchAPIError(
+                f"Resource {resource_id} was not found.", status_code=404
+            ) from exc
+        # Don't leak raw downstream response text into the user-facing job
+        # record; log the detail and surface a generic summary (as the old
+        # synchronous endpoint did with its 502).
+        logger.exception("Stitch API request failed for resource %s", resource_id)
+        raise StitchAPIError(
+            "Failed to fetch resource detail from Stitch API."
+        ) from exc
 
     # Expected behavior: if the field is already populated this raises and the
     # run is recorded as a failed job (surfaced in the UI as a failed run),
@@ -79,11 +98,19 @@ async def run_suggestion(params: FieldSuggestionParams) -> FieldSuggestionRespon
             foundry_response={},
         )
 
-    async with AzureResponsesClient() as llm_client:
-        llm_result = await llm_client.generate_field_suggestion(
-            field=field,
-            input_messages=input_messages,
+    try:
+        async with AzureResponsesClient() as llm_client:
+            llm_result = await llm_client.generate_field_suggestion(
+                field=field,
+                input_messages=input_messages,
+            )
+    except AzureResponsesError as exc:
+        # Same rationale: keep raw LLM-transport detail out of the user-facing
+        # record, log the detail, surface a generic summary.
+        logger.exception(
+            "LLM request failed for resource %s field %s", resource_id, field
         )
+        raise AzureResponsesError("The language model request failed.") from exc
     parsed = parse_field_suggestion_response(llm_result.output_text)
     citations = extract_public_citations(llm_result.response_payload)
     if parsed.value is None or not citations:
