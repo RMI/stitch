@@ -15,7 +15,8 @@ LifecycleHook = Callable[[FastAPI], Awaitable[None] | None]
 
 async def _maybe_await(value: Awaitable[None] | None) -> None:
     if inspect.isawaitable(value):
-        await value
+        return await value
+    return None
 
 
 def create_app(

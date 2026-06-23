@@ -20,17 +20,22 @@ class JobStore(Protocol):
     routers.
     """
 
-    async def create(self, record: JobRecord) -> None: ...
+    async def create(self, record: JobRecord) -> None:
+        """Persist a newly started job record."""
 
-    async def get(self, job_id: str) -> JobRecord | None: ...
+    async def get(self, job_id: str) -> JobRecord | None:
+        """Return the record for ``job_id``, or ``None`` if unknown."""
 
     async def find_active_or_recent(
         self, dedup_key: str, *, recent_within: timedelta
-    ) -> JobRecord | None: ...
+    ) -> JobRecord | None:
+        """Return a matching job that is running or finished recently."""
 
-    async def list(self, *, limit: int | None = None) -> list[JobRecord]: ...
+    async def list(self, *, limit: int | None = None) -> list[JobRecord]:
+        """Return recent records, newest first."""
 
-    def clear(self) -> None: ...
+    def clear(self) -> None:
+        """Drop all records (test affordance)."""
 
 
 class InMemoryJobStore:

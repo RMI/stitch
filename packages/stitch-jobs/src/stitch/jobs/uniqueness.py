@@ -17,7 +17,8 @@ class UniquenessPolicy(Protocol):
     entirely (always start a fresh job).
     """
 
-    def key(self, params: BaseModel) -> str | None: ...
+    def key(self, params: BaseModel) -> str | None:
+        """Return the dedup key for ``params``, or ``None`` to skip dedup."""
 
 
 class SingletonPolicy:
