@@ -2,10 +2,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from stitch.client import AsyncStitchClient, env_bearer_token_headers_provider
+from stitch.client import AsyncStitchClient
+from stitch.service.auth import AuthMode, build_headers_provider
 
 from stitch.entity_linkage.entities import FieldCandidate, FieldDetailCandidate
 from stitch.entity_linkage.settings import get_settings
+
+# Entity-linkage does its work in a detached background job, so the caller's
+# token is gone by the time the run executes — it authenticates downstream with
+# its own machine identity (STITCH_CLIENT_BEARER_TOKEN), not on-behalf-of.
+_DOWNSTREAM_AUTH_MODE = AuthMode.machine
 
 
 def _get_api_base_url() -> str:
@@ -16,8 +22,8 @@ def _get_api_base_url() -> str:
 
 
 def validate_downstream_auth_config_at_startup() -> None:
-    headers_provider = env_bearer_token_headers_provider()
-    headers_provider()
+    # Fail fast at startup if the machine token isn't configured.
+    build_headers_provider(_DOWNSTREAM_AUTH_MODE)()
 
 
 class StitchApiClient:
@@ -29,11 +35,10 @@ class StitchApiClient:
             self._client = client
             return
 
-        headers_provider = env_bearer_token_headers_provider()
         self._client = AsyncStitchClient(
             base_url=_get_api_base_url(),
             timeout=30.0,
-            headers_provider=headers_provider,
+            headers_provider=build_headers_provider(_DOWNSTREAM_AUTH_MODE),
         )
 
     async def __aenter__(self) -> "StitchApiClient":

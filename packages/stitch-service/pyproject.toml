@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi[standard-no-fastapi-cloud-cli]>=0.135.1",
+  "stitch-auth",
+  "stitch-client",
 ]
 
 [build-system]
@@ -14,6 +16,10 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-name = "stitch.service"
+
+[tool.uv.sources]
+stitch-auth = { workspace = true }
+stitch-client = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

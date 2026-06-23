@@ -1,10 +1,13 @@
-from dataclasses import dataclass
 from datetime import datetime
 from math import ceil
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field, computed_field
+from pydantic import BaseModel, Field, computed_field
 
+# Identity is shared scaffolding now; re-exported here so existing imports
+# (`from stitch.entity_linkage.entities import User, RequestAuthContext`) keep
+# working.
+from stitch.service.auth import RequestAuthContext, ServiceUser as User
 from stitch.ogsi.model.types import (
     FieldStatus,
     LocationType,
@@ -13,32 +16,25 @@ from stitch.ogsi.model.types import (
     ProductionConventionality,
 )
 
+__all__ = [
+    "FieldCandidate",
+    "FieldDetailCandidate",
+    "MatchGroup",
+    "OGFieldFilterParams",
+    "OGFieldQueryParams",
+    "OGFieldSortParams",
+    "PaginatedResponse",
+    "PaginationParams",
+    "RequestAuthContext",
+    "SortableField",
+    "Timestamped",
+    "User",
+]
+
 
 class Timestamped(BaseModel):
     created: datetime = Field(default_factory=datetime.now)
     updated: datetime = Field(default_factory=datetime.now)
-
-
-class User(BaseModel):
-    id: int = Field(...)
-    sub: str = Field(...)
-    role: str | None = None
-    email: EmailStr
-    name: str
-
-
-@dataclass(frozen=True, slots=True)
-class RequestAuthContext:
-    """
-    Request-scoped auth context for inbound request identity.
-
-    not implemented:
-    - re-enable downstream relay or OBO auth as an explicit client mode
-    - keep user attribution/provenance as separate metadata
-    """
-
-    user: User
-    bearer_token: str | None
 
 
 class FieldCandidate(BaseModel):
