@@ -183,7 +183,9 @@ describe("ResourcesView", () => {
       within(table).getByRole("button", { name: /^country/i }),
     ).toBeInTheDocument();
     expect(
-      within(table).getByRole("button", { name: /^primary hydrocarbon group/i }),
+      within(table).getByRole("button", {
+        name: /^primary hydrocarbon group/i,
+      }),
     ).toBeInTheDocument();
     expect(within(table).getByText("Data source mix")).toBeInTheDocument();
   });
@@ -412,7 +414,10 @@ describe("ResourcesView", () => {
         ENDPOINT,
         "field_status",
       );
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(ENDPOINT, "country");
+      expect(useResourceFilterOptions).toHaveBeenCalledWith(
+        ENDPOINT,
+        "country",
+      );
       expect(useResourceFilterOptions).toHaveBeenCalledWith(
         ENDPOINT,
         "primary_hydrocarbon_group",
