@@ -1,6 +1,10 @@
+import { getCountryName } from "../constants/countries";
+
 // Add entries here to expose new filter dropdowns.
+// `formatValue` (optional) maps the stored value to a display label; the raw
+// value is still what gets sent to the API as the filter.
 export const FILTER_FIELDS = [
-  { key: "country", label: "Country" },
+  { key: "country", label: "Country", formatValue: getCountryName },
   { key: "region", label: "Region" },
   { key: "state_province", label: "State/Province" },
   { key: "basin", label: "Basin" },

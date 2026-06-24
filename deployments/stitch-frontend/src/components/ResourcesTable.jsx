@@ -1,8 +1,10 @@
 import { Link } from "react-router-dom";
 import SourceMixBar from "./SourceMixBar";
 import { getResourceField } from "../utils/resourceDisplay";
+import { getCountryName } from "../constants/countries";
 
 // sortType: "string" | "number", omit sortable (or set false) to disable sorting for a column.
+// format: optional (value) => displayValue applied to the cell's raw value.
 const COLUMNS = [
   {
     label: "Name",
@@ -17,6 +19,7 @@ const COLUMNS = [
     className: "text-ink-muted",
     sortable: true,
     sortType: "string",
+    format: getCountryName,
   },
   {
     label: "State/Province",
@@ -125,7 +128,11 @@ export default function ResourcesTable({ resources, sortConfig, onSort }) {
               className="relative border-b border-line/70 transition-colors hover:bg-surface"
             >
               {COLUMNS.map((col) => {
-                const value = getResourceField(resource, col.key);
+                const rawValue = getResourceField(resource, col.key);
+                const value =
+                  col.format && rawValue != null
+                    ? col.format(rawValue)
+                    : rawValue;
 
                 return (
                   <td key={col.key} className={`px-3 py-2.5 ${col.className}`}>
