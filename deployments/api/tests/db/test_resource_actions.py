@@ -3,7 +3,7 @@
 import pytest
 from fastapi import HTTPException
 from sqlalchemy.dialects import postgresql
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from stitch.api.db import og_field_resource_actions as resource_actions
@@ -212,18 +212,24 @@ class TestResourceQueryAction:
             assert isinstance(item.provenance, dict)
 
     @pytest.mark.anyio
-    async def test_explicit_source_filter_narrows_participating_memberships(
+    async def test_source_param_is_ignored_resources_not_source_gated(
         self,
         seeded_integration_session: AsyncSession,
         test_user: User,
     ):
+        """``params.source`` is ignored: resources are not source-gated.
+
+        The universe is membership-derived (only licensing narrows it), so a
+        ``source=['gem']`` filter does not exclude resources lacking a gem
+        membership, and coalescing still resolves the full-priority winner.
+        """
         included_id = await _create_resource_with_sources(
             seeded_integration_session,
             test_user,
             {"source": "rmi", "name": "RMI Name", "country": "USA"},
             {"source": "gem", "name": "GEM Name", "country": "USA"},
         )
-        await _create_resource_with_sources(
+        only_rmi_id = await _create_resource_with_sources(
             seeded_integration_session,
             test_user,
             {"source": "rmi", "name": "Only RMI", "country": "USA"},
@@ -232,10 +238,14 @@ class TestResourceQueryAction:
         params = _QueryParams(source=["gem"], page=1, page_size=10)
         items, total = await resource_actions.query(seeded_integration_session, params)
 
-        assert total == 1
-        assert [item.id for item in items] == [included_id]
-        assert items[0].data.name == "GEM Name"
-        assert items[0].provenance["name"] == "gem"
+        # Both resources appear -- source is not a resource-level filter.
+        assert total == 2
+        assert {item.id for item in items} == {included_id, only_rmi_id}
+
+        # The rmi+gem resource still coalesces the rmi-priority winner.
+        included = next(item for item in items if item.id == included_id)
+        assert included.data.name == "RMI Name"
+        assert included.provenance["name"] == "rmi"
 
     @pytest.mark.anyio
     async def test_no_redaction_uses_priority_coalesced_scalar_fields(
@@ -516,6 +526,218 @@ class TestResourceQueryAction:
         assert items[0].provenance["name"] == "llm"
 
 
+class TestResourceUniverseAndNarrowing:
+    """Membership-derived universe, source-ignoring, and pivot-narrowing proofs."""
+
+    @pytest.mark.anyio
+    async def test_source_param_ignored_across_multiple_keys(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """``params.source`` never narrows the resource universe, any key(s)."""
+        gem_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "Gem", "country": "USA"},
+        )
+        wm_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "wm", "name": "WM", "country": "USA"},
+        )
+        rmi_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "rmi", "name": "RMI", "country": "USA"},
+        )
+
+        # A source filter naming a key none of them have still returns all three.
+        params = _QueryParams(source=["llm"], page=1, page_size=10)
+        items, total = await resource_actions.query(seeded_integration_session, params)
+        assert total == 3
+        assert {item.id for item in items} == {gem_id, wm_id, rmi_id}
+
+        # An explicit subset is equally ignored.
+        params = _QueryParams(source=["gem"], page=1, page_size=10)
+        _, total = await resource_actions.query(seeded_integration_session, params)
+        assert total == 3
+
+    @pytest.mark.anyio
+    async def test_all_null_source_resource_appears_as_null_shell(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """A resource whose only source has all-null attributes still appears.
+
+        It emits zero coalesced rows but is membership-derived, so it is counted
+        and hydrated as a null-shell.
+        """
+        resource_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem"},
+        )
+
+        params = _QueryParams(page=1, page_size=10)
+        items, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 1
+        assert [item.id for item in items] == [resource_id]
+        assert items[0].data.name is None
+        assert items[0].data.country is None
+        assert items[0].provenance["name"] is None
+
+    @pytest.mark.anyio
+    async def test_filter_by_basin_narrows(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """basin filter proves basin is pivoted and filtered on coalesced values."""
+        permian_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "A", "country": "USA", "basin": "Permian"},
+        )
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "B", "country": "USA", "basin": "Neuquen"},
+        )
+
+        params = _QueryParams(basin="Permian", page=1, page_size=10)
+        items, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 1
+        assert [item.id for item in items] == [permian_id]
+        assert items[0].data.basin == "Permian"
+
+    @pytest.mark.anyio
+    async def test_sort_by_discovery_year_numeric_nulls_last(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """discovery_year sorts numerically (from value_num) with NULLs last."""
+        y2000 = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "C", "country": "USA", "discovery_year": 2000},
+        )
+        y1990 = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "A", "country": "USA", "discovery_year": 1990},
+        )
+        ynull = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "B", "country": "USA"},
+        )
+
+        params = _QueryParams(
+            sort_by="discovery_year", sort_order="asc", page=1, page_size=10
+        )
+        items, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 3
+        assert [item.id for item in items] == [y1990, y2000, ynull]
+        assert [item.data.discovery_year for item in items] == [1990, 2000, None]
+
+    @pytest.mark.anyio
+    async def test_empty_involved_returns_all_active_ordered_by_id(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """sort_by=id, no q/filters: no pivot at all, all active resources by id."""
+        ids = [
+            await _create_resource_with_sources(
+                seeded_integration_session,
+                test_user,
+                {"source": "gem", "name": name, "country": "USA"},
+            )
+            for name in ["Zeta", "Alpha", "Mu"]
+        ]
+
+        params = _QueryParams(sort_by="id", page=1, page_size=10)
+        items, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 3
+        assert [item.id for item in items] == sorted(ids)
+
+    @pytest.mark.anyio
+    async def test_sort_by_id_and_resource_id_honor_sort_order(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """On resources, both id and resource_id are real id-sorts with direction."""
+        ids = [
+            await _create_resource_with_sources(
+                seeded_integration_session,
+                test_user,
+                {"source": "gem", "name": name, "country": "USA"},
+            )
+            for name in ["A", "B", "C"]
+        ]
+        ascending = sorted(ids)
+
+        items, _ = await resource_actions.query(
+            seeded_integration_session,
+            _QueryParams(sort_by="id", sort_order="desc", page_size=10),
+        )
+        assert [i.id for i in items] == list(reversed(ascending))
+
+        items, _ = await resource_actions.query(
+            seeded_integration_session,
+            _QueryParams(sort_by="resource_id", sort_order="asc", page_size=10),
+        )
+        assert [i.id for i in items] == ascending
+
+        items, _ = await resource_actions.query(
+            seeded_integration_session,
+            _QueryParams(sort_by="resource_id", sort_order="desc", page_size=10),
+        )
+        assert [i.id for i in items] == list(reversed(ascending))
+
+    @pytest.mark.anyio
+    async def test_hydration_is_a_single_db_call(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """Phase 2 hydrates every returned id in exactly one DB round-trip."""
+        ids = [
+            await _create_resource_with_sources(
+                seeded_integration_session,
+                test_user,
+                {"source": "gem", "name": name, "country": "USA"},
+            )
+            for name in ["A", "B", "C"]
+        ]
+
+        sync_engine = seeded_integration_session.bind.sync_engine
+        executions = 0
+
+        def _count(conn, cursor, statement, parameters, context, executemany):
+            nonlocal executions
+            executions += 1
+
+        event.listen(sync_engine, "before_cursor_execute", _count)
+        try:
+            items = await resource_actions.hydrate_resource_list(
+                seeded_integration_session, ids
+            )
+        finally:
+            event.remove(sync_engine, "before_cursor_execute", _count)
+
+        assert executions == 1
+        assert [item.id for item in items] == ids
+
+
 class TestResourceFilterOptionsAction:
     """Integration tests for resource_actions.filter_options()."""
 
@@ -623,23 +845,23 @@ class TestResourceFilterOptionsAction:
         assert values == ["USA"]
 
     def test_postgres_distinct_query_orders_by_selected_value_alias(self):
-        params = OGFieldFilterOptionsParams(field="basin")
-        coalesced = resource_actions.build_resource_list_cte(
-            params.source,
-            licensed_sources=frozenset({"gem", "wm", "rmi", "llm"}),
-        )
-        col = resource_actions._resource_list_column(coalesced, params.field)
-        assert col is not None
+        """The rewritten filter_options construction compiles on Postgres.
 
-        value_col = resource_actions.cast(col, resource_actions.String).label("value")
+        Mirrors ``filter_options``: distinct over the coalesced value column for
+        one field, ordered by the selected alias.
+        """
+        params = OGFieldFilterOptionsParams(field="basin")
+        values_cte = resource_actions.build_coalesced_values(
+            licensed_sources=frozenset({"gem", "wm", "rmi", "llm"}),
+            colnames=[params.field],
+        )
+        value_col = getattr(values_cte.c, resource_actions.value_attr_for(params.field))
+        labeled = value_col.label("value")
         stmt = (
-            resource_actions.select(value_col)
-            .where(
-                col.is_not(None),
-                resource_actions.cast(col, resource_actions.String) != "",
-            )
+            resource_actions.select(labeled)
+            .where(value_col.is_not(None), value_col != "")
             .distinct()
-            .order_by(value_col)
+            .order_by(labeled)
         )
 
         sql = str(
@@ -649,10 +871,7 @@ class TestResourceFilterOptionsAction:
             )
         )
 
-        assert (
-            "SELECT DISTINCT CAST(licensed_resource_list.basin AS VARCHAR) AS value"
-            in sql
-        )
+        assert "SELECT DISTINCT coalesced_values.value_text AS value" in sql
         assert "ORDER BY value" in sql
 
     @pytest.mark.anyio
@@ -667,7 +886,7 @@ class TestResourceFilterOptionsAction:
             {"source": "wm", "name": "Hidden Name", "country": "USA"},
         )
 
-        params = _QueryParams(source=["wm"], page=1, page_size=10)
+        params = _QueryParams(page=1, page_size=10)
         items, total = await resource_actions.query(
             seeded_integration_session,
             params,

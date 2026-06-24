@@ -1,11 +1,13 @@
-"""Pure construction of the source-record query/count statements.
+"""Pure construction of the source- and resource-list query/count statements.
 
-A source record's attributes live in the long ``oil_gas_field_source_values``
-table, not as wide columns. These helpers pivot each active-membership record's
-value rows back into a wide, one-row-per-record CTE -- narrowed to only the
-attributes the current query filters or sorts on -- then build the filtered,
-sorted, paginated id-``Select`` the endpoint needs. Construction is pure (no
-session); execution + hydration live in ``og_field_source_actions``.
+Attribute values live in the long ``oil_gas_field_source_values`` table, not as
+wide columns. The *source* path pivots each active-membership record's value rows
+back into a wide, one-row-per-record CTE; the *resource* path first coalesces the
+priority-winning value per ``(resource, colname)`` (``build_coalesced_values``)
+and pivots that. Both narrow the pivot to only the attributes the current query
+filters or sorts on, then build the filtered, sorted, paginated id-``Select`` the
+endpoint needs. Construction is pure (no session); execution + hydration live in
+``og_field_source_actions`` / ``og_field_resource_actions``.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from sqlalchemy import (
     CTE,
     ColumnElement,
     Select,
+    and_,
     asc,
     case,
     desc,
@@ -28,8 +31,11 @@ from sqlalchemy import (
 from stitch.api.db.model import (
     MembershipModel,
     MembershipStatus,
+    OGFieldResourceSourcePriority,
+    OGFieldSourcePriority,
     OilGasFieldSourceModel,
     OilGasFieldSourceValueModel,
+    ResourceModel,
 )
 from stitch.api.db.model.oil_gas_field_source_value import value_attr_for
 from stitch.api.entities import OGSI_SOURCE_DEFAULT, OGFieldQueryParams
@@ -148,11 +154,18 @@ def _require_column(cte: CTE, field_name: str) -> ColumnElement[Any]:
     return col
 
 
-def _build_conditions(
+def _build_field_conditions(
     cte: CTE,
     params: OGFieldQueryParams,
-    licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> list[ColumnElement[bool]]:
+    """Path-agnostic q-ILIKE + exact-match filters over the pivoted columns.
+
+    Shared by the source and resource paths: every condition references a
+    pivoted/header column via ``_require_column`` so a narrowing drift raises
+    rather than silently dropping a filter. Source-membership filters
+    (``source`` / ``licensed_sources``) are appended by the source path's
+    ``_build_conditions``; the resource path does not post-filter by source.
+    """
     conditions: list[ColumnElement[bool]] = []
 
     if params.q:
@@ -166,6 +179,16 @@ def _build_conditions(
         if value is None:
             continue
         conditions.append(_require_column(cte, field_name) == value)
+
+    return conditions
+
+
+def _build_conditions(
+    cte: CTE,
+    params: OGFieldQueryParams,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> list[ColumnElement[bool]]:
+    conditions = _build_field_conditions(cte, params)
 
     sources = list(dict.fromkeys(getattr(params, "source", OGSI_SOURCE_DEFAULT)))
     conditions.append(cte.c.source.in_(sources))
@@ -212,5 +235,199 @@ def construct_sources_count_statement(
     base = base_source_query_statement(params, licensed_sources=licensed_sources)
     stmt = select(base.c.id)
     for cond in _build_conditions(base, params, licensed_sources):
+        stmt = stmt.where(cond)
+    return stmt
+
+
+# --------------------------------------------------------------------------- #
+# Resource path: live coalescing + the two-phase ids -> hydrate flow.
+# --------------------------------------------------------------------------- #
+
+
+def build_coalesced_values(
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+    resource_ids: Collection[int] | None = None,
+    colnames: Collection[str] | None = None,
+) -> CTE:
+    """CTE of the priority-winning value per ``(resource_id, colname)``.
+
+    Columns: ``resource_id, colname, value_text, value_num, value_json,
+    source, source_pk``. Priority is ``COALESCE(per-resource override, default)``;
+    the winner is the ``rn == 1`` row of a ``ROW_NUMBER()`` window ordered by
+    priority then source then source_pk (portable to SQLite, unlike
+    ``DISTINCT ON``). ``licensed_sources`` filters ``active_src`` *before* the
+    window, so an unlicensed higher-priority source falls through to the next
+    licensed one. ``colnames`` narrows the windowed pass to just those fields;
+    ``resource_ids`` narrows it to those resources.
+    """
+    s = OilGasFieldSourceModel
+    v = OilGasFieldSourceValueModel
+    m = MembershipModel
+    r = ResourceModel
+    p = OGFieldSourcePriority
+    o = OGFieldResourceSourcePriority
+
+    priority = func.coalesce(o.priority, p.priority)
+    active_src = (
+        select(
+            r.id.label("resource_id"),
+            m.source.label("source"),
+            m.source_pk.label("source_pk"),
+            priority.label("priority"),
+        )
+        .select_from(m)
+        .join(r, r.id == m.resource_id)
+        .join(p, p.source == m.source)
+        .outerjoin(o, and_(o.resource_id == r.id, o.source == m.source))
+        .where(
+            r.repointed_id.is_(None),
+            m.status == MembershipStatus.ACTIVE,
+        )
+    )
+    if licensed_sources is not None:
+        active_src = active_src.where(
+            m.source.in_(list(dict.fromkeys(licensed_sources)))
+        )
+    if resource_ids is not None:
+        active_src = active_src.where(r.id.in_(list(resource_ids)))
+    # Join the source header on both pk AND source key: membership.source is not
+    # FK-tied to the header's source, so matching only on source_pk could let a
+    # mismatched membership row participate in coalescing.
+    active_src = active_src.join(
+        s, and_(s.id == m.source_pk, s.source == m.source)
+    ).cte("active_src")
+
+    ranked_select = (
+        select(
+            active_src.c.resource_id,
+            active_src.c.source,
+            active_src.c.source_pk,
+            v.colname.label("colname"),
+            v.value_text,
+            v.value_num,
+            v.value_json,
+            func.row_number()
+            .over(
+                partition_by=(active_src.c.resource_id, v.colname),
+                # source_pk is the final tie-break so the winner is deterministic
+                # even when a resource has multiple records of the same source
+                # (same priority + same source key).
+                order_by=(
+                    active_src.c.priority.asc(),
+                    active_src.c.source.asc(),
+                    active_src.c.source_pk.asc(),
+                ),
+            )
+            .label("rn"),
+        )
+        .select_from(active_src)
+        .join(v, v.source_pk == active_src.c.source_pk)
+    )
+    if colnames is not None:
+        ranked_select = ranked_select.where(
+            v.colname.in_(list(dict.fromkeys(colnames)))
+        )
+    ranked = ranked_select.cte("ranked")
+
+    # rn == 1 keeps the single highest-priority row per (resource, colname).
+    return select(ranked).where(ranked.c.rn == 1).cte("coalesced_values")
+
+
+def _resource_universe() -> Select:
+    """Resources that should appear in the list (membership-derived existence).
+
+    ``DISTINCT resource_id`` for non-repointed resources with an ACTIVE
+    membership. NOT gated by ``source`` or licensing: a resource whose only
+    source has all-null attributes (zero coalesced rows) still appears as a
+    null-shell, and an unlicensed resource appears with redacted (NULL) values.
+    """
+    m = MembershipModel
+    r = ResourceModel
+    return (
+        select(r.id.label("id"))
+        .select_from(r)
+        .join(m, m.resource_id == r.id)
+        .where(r.repointed_id.is_(None), m.status == MembershipStatus.ACTIVE)
+        .distinct()
+    )
+
+
+def base_resource_query_statement(
+    params: OGFieldQueryParams,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> CTE:
+    """One row per resource in the universe, narrowed to ``params``.
+
+    The membership-derived universe is LEFT JOINed to a single GROUP BY pivot of
+    the coalesced licensed values over only the participating fields, so the full
+    wide pivot is never computed here. Exposes ``id`` (the resource id) plus each
+    participating field. JSON attributes (owners/operators) are never filterable
+    or sortable -- the closed Literal param types keep them out of the
+    participating set -- so there is no JSON branch (and no ``max(jsonb)``); when
+    no field participates there is no pivot at all.
+    """
+    involved = _participating_columns(params)
+    universe = _resource_universe().cte("resource_universe")
+
+    if not involved:
+        return select(universe.c.id.label("id")).cte("resource_base")
+
+    values_cte = build_coalesced_values(
+        licensed_sources=licensed_sources, colnames=involved
+    )
+    pivot = select(values_cte.c.resource_id.label("resource_id"))
+    for field_name in involved:
+        value_col = getattr(values_cte.c, value_attr_for(field_name))
+        pivot = pivot.add_columns(
+            func.max(case((values_cte.c.colname == field_name, value_col))).label(
+                field_name
+            )
+        )
+    pivot = pivot.group_by(values_cte.c.resource_id).cte("resource_value_pivot")
+
+    stmt = select(universe.c.id.label("id"))
+    for field_name in involved:
+        stmt = stmt.add_columns(pivot.c[field_name])
+    stmt = stmt.select_from(
+        universe.outerjoin(pivot, pivot.c.resource_id == universe.c.id)
+    )
+    return stmt.cte("resource_base")
+
+
+def _build_resource_sort_clauses(cte: CTE, params: OGFieldQueryParams) -> list[Any]:
+    direction = desc if params.sort_order == "desc" else asc
+
+    # On resources, id and resource_id both name the resource id: a real id-sort
+    # honoring direction (not a degrade to the tiebreak as on the source path).
+    if params.sort_by in {"id", "resource_id"}:
+        return [direction(cte.c.id).nulls_last()]
+
+    return [
+        direction(_require_column(cte, params.sort_by)).nulls_last(),
+        asc(cte.c.id),
+    ]
+
+
+def construct_resources_query_statement(
+    params: OGFieldQueryParams,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> Select[tuple[int]]:
+    """Filtered + sorted + paginated id-``Select`` for the resource-list query."""
+    base = base_resource_query_statement(params, licensed_sources=licensed_sources)
+    stmt = select(base.c.id)
+    for cond in _build_field_conditions(base, params):
+        stmt = stmt.where(cond)
+    stmt = stmt.order_by(*_build_resource_sort_clauses(base, params))
+    return stmt.offset(params.offset).limit(params.limit)
+
+
+def construct_resources_count_statement(
+    params: OGFieldQueryParams,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> Select[tuple[int]]:
+    """Filtered (unordered, unpaginated) id-``Select``; caller wraps in count()."""
+    base = base_resource_query_statement(params, licensed_sources=licensed_sources)
+    stmt = select(base.c.id)
+    for cond in _build_field_conditions(base, params):
         stmt = stmt.where(cond)
     return stmt
