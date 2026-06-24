@@ -10,9 +10,9 @@ Relationship to OpenTelemetry:
     to stdout, depending on ``OTEL_TRACES_EXPORTER``. These sinks are kept as
     the lightweight structured-log path and run *independently of trace
     sampling* — so a slow query is still logged even when its trace is dropped.
-    The contextvars in :mod:`context` (request id, route, scenario) are copied
-    onto the active span by the request middleware, so logs and traces
-    correlate.
+    The request middleware copies the request id and scenario onto the active
+    span, so logs and traces correlate (the route is already present as the
+    instrumentation's ``http.route`` attribute).
 """
 
 import logging

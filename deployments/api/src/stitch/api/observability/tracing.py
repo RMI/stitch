@@ -121,7 +121,13 @@ def configure_tracing(settings: "Settings") -> TracerProvider | None:
 
 
 def instrument_fastapi(app: "FastAPI") -> None:
-    """Auto-instrument the FastAPI app (server spans + traceparent extraction)."""
+    """Auto-instrument the FastAPI app (server spans + traceparent extraction).
+
+    URL query strings are intentionally left intact — they're the diagnostic
+    payload for the performance work this serves. When a retained backend makes
+    aggregate PII a concern (cloud), scrub them at the collector's egress
+    (an ``attributes``/``redaction`` processor) rather than blinding local dev.
+    """
     FastAPIInstrumentor.instrument_app(app)
 
 
