@@ -1,0 +1,29 @@
+# Heavy local-dev observability sidecars: an OpenTelemetry Collector and a
+# Jaeger all-in-one. Kept in a separate compose file (not docker-compose.local.yml)
+# so the normal dev path never pulls these images. Layered on via
+# `make reboot-docker-heavy`.
+#
+# Loading this file also overrides the API's exporter to otlp (below), so traces
+# flow to the collector -> Jaeger only when the sidecars are actually present.
+# Jaeger UI: http://localhost:16686.
+services:
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./deployments/otel-collector/config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    profiles: ["full"]
+    depends_on:
+      - jaeger
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"  # Jaeger UI
+    profiles: ["full"]
