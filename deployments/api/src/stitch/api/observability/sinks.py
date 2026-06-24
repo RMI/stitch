@@ -1,19 +1,18 @@
 """Emission seam for instrumentation events.
 
-Today these functions emit structured log records (the JSON formatter in
+These functions emit structured log records (the JSON formatter in
 :mod:`logging_config` flattens the ``event`` dict into the log line). They are
 intentionally the *only* place that decides what happens to a timing event.
 
-OpenTelemetry seam (not built yet, deliberately):
-    When we are ready to explore OTel on Azure, the migration is local to this
-    module. Either:
-      * install ``azure-monitor-opentelemetry`` and rely on the FastAPI /
-        SQLAlchemy auto-instrumentors (in which case these sinks stay as the
-        lightweight log fallback), or
-      * have ``emit_query_event`` / ``emit_request_event`` additionally open a
-        span from the timing data already collected here.
-    The contextvars in :mod:`context` (request id, route, timing) map directly
-    onto span attributes, so no rework of the timing code is required.
+Relationship to OpenTelemetry:
+    Tracing is wired up in :mod:`tracing` via FastAPI / SQLAlchemy
+    auto-instrumentation; spans are exported over OTLP to a collector or logged
+    to stdout, depending on ``OTEL_TRACES_EXPORTER``. These sinks are kept as
+    the lightweight structured-log path and run *independently of trace
+    sampling* — so a slow query is still logged even when its trace is dropped.
+    The request middleware copies the request id and scenario onto the active
+    span, so logs and traces correlate (the route is already present as the
+    instrumentation's ``http.route`` attribute).
 """
 
 import logging
