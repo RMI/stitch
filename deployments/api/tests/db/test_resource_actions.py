@@ -1105,3 +1105,135 @@ class TestResourcePriorityOverride:
         assert (await resource_actions.get(session, overridden)).view.name == "WM Name"
         # The other resource keeps the default ranking.
         assert (await resource_actions.get(session, untouched)).view.name == "GEM Name"
+
+
+class TestResourceDetailCoalescing:
+    """Detail-path (``resource_actions.get``) coalescing behavior.
+
+    Characterizes the per-resource detail contract so it survives the move from
+    the SQL window-function CTE to in-memory coalescing over already-loaded
+    source data. Provenance on the detail path is the ``(value, source,
+    source_pk)`` tuple shape.
+    """
+
+    @pytest.mark.anyio
+    async def test_duplicate_same_source_records_lowest_source_pk_wins(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """Two active records of the same source: the lowest source_pk wins.
+
+        Both rmi records share priority and source key, so the tiebreak is the
+        source_pk; the first-created (lower id) record is the winner.
+        """
+        session = seeded_integration_session
+        rid = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "rmi", "name": "RMI First", "country": "USA"},
+            {"source": "rmi", "name": "RMI Second", "country": "CAN"},
+        )
+
+        result = await resource_actions.get(session, rid)
+
+        assert result.view.name == "RMI First"
+        assert result.view.country == "USA"
+        assert result.provenance["name"][0] == "RMI First"
+        assert result.provenance["name"][1] == "rmi"
+
+    @pytest.mark.anyio
+    async def test_repointed_resource_with_active_membership_is_null_shell(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """A repointed resource coalesces to a null-shell, repointed_to populated.
+
+        Even with an active membership carrying values, a repointed resource
+        contributes no coalesced values; ``repointed_to`` carries its target.
+        """
+        session = seeded_integration_session
+        root_id = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "rmi", "name": "Root", "country": "USA"},
+        )
+        repointed_id = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "gem", "name": "Repointed Name", "country": "CAN"},
+            repointed_to=root_id,
+        )
+
+        result = await resource_actions.get(session, repointed_id)
+
+        assert result.repointed_to == root_id
+        assert result.view.name is None
+        assert result.view.country is None
+        assert result.provenance["name"] is None
+        assert result.provenance["country"] is None
+
+    @pytest.mark.anyio
+    async def test_unlicensed_higher_priority_source_falls_through_in_detail(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """An unlicensed higher-priority source falls through to the next licensed.
+
+        rmi outranks gem by default, but licensing only gem/wm/llm drops rmi, so
+        the gem value wins in the detail view and provenance.
+        """
+        session = seeded_integration_session
+        rid = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "rmi", "name": "RMI Name", "country": "USA"},
+            {"source": "gem", "name": "GEM Name", "country": "CAN"},
+        )
+
+        result = await resource_actions.get(
+            session, rid, licensed_sources=frozenset({"gem", "wm", "llm"})
+        )
+
+        assert result.view.name == "GEM Name"
+        assert result.provenance["name"][1] == "gem"
+
+    @pytest.mark.anyio
+    async def test_json_owners_operators_coalesced_in_detail(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """JSON owners/operators materialize in the detail view with provenance."""
+        session = seeded_integration_session
+        rid = await _create_resource_with_sources(
+            session,
+            test_user,
+            {
+                "source": "rmi",
+                "name": "RMI Name",
+                "country": "USA",
+                "owners": [{"name": "RMI Owner", "stake": 55.0}],
+                "operators": [{"name": "RMI Operator", "stake": 100.0}],
+            },
+            {
+                "source": "gem",
+                "name": "GEM Name",
+                "country": "USA",
+                "owners": [{"name": "GEM Owner", "stake": 45.0}],
+                "operators": [{"name": "GEM Operator", "stake": 100.0}],
+            },
+        )
+
+        result = await resource_actions.get(session, rid)
+
+        assert result.view.owners is not None
+        assert [(o.name, o.stake) for o in result.view.owners] == [("RMI Owner", 55.0)]
+        assert result.provenance["owners"][1] == "rmi"
+        assert result.view.operators is not None
+        assert [(o.name, o.stake) for o in result.view.operators] == [
+            ("RMI Operator", 100.0)
+        ]
+        assert result.provenance["operators"][1] == "rmi"

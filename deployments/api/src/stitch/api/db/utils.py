@@ -3,6 +3,7 @@ from functools import reduce
 from typing import Protocol
 
 from pydantic import TypeAdapter
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from stitch.ogsi.model import (
     OGFieldDetailView,
@@ -13,10 +14,13 @@ from stitch.ogsi.model import (
     OGSISrcKey,
 )
 from stitch.api.coalesce import coalesce_og_field_resource
-from stitch.api.db.coalesce_sql import coalesce_persisted_resource
 from stitch.api.db.errors import ResourceIntegrityError
 
-from .model import ResourceModel
+from .model import (
+    OGFieldResourceSourcePriority,
+    OGFieldSourcePriority,
+    ResourceModel,
+)
 
 
 OG_FIELD_SOURCE_VIEW_ADAPTER = TypeAdapter(OGFieldSourceView)
@@ -61,10 +65,23 @@ async def resource_model_to_entity(
         rep_model = await session.get(ResourceModel, model.repointed_id)
         rep_res = rep_model.as_empty_entity() if rep_model else None
 
-    # Coalesce in SQL (priority-resolved, override-aware) over the long values.
-    view, provenance = await coalesce_persisted_resource(
-        session, model.id, licensed_sources=licensed_sources
+    # Coalesce in Python over the already-loaded (licensed-filtered) src_data,
+    # using this resource's effective, override-aware source priorities.
+    priorities = await _effective_source_priorities(session, model.id)
+    # A repointed resource contributes no values (parity with the SQL CTE's
+    # `repointed_id IS NULL` filter): coalesce over an empty list -> null-shell.
+    coalescing_input = [] if model.repointed_id is not None else src_data
+    # Keep only sources with a priority row (mirrors the SQL inner join on
+    # og_field_source_priority) and sort by source_pk descending so that, under
+    # coalesce_og_field_resource's stable reverse-priority re-sort + last-wins
+    # reduce, the lowest source_pk wins among duplicate same-source records
+    # (matches the SQL `source_pk ASC` final tiebreak).
+    prepared_src_data = sorted(
+        (s for s in coalescing_input if s.source in priorities),
+        key=lambda s: s.id,
+        reverse=True,
     )
+    view, provenance = coalesce_og_field_resource(prepared_src_data, priorities)
 
     return OGFieldResource(
         id=model.id,
@@ -74,6 +91,27 @@ async def resource_model_to_entity(
         view=view,
         provenance=provenance,
     )
+
+
+async def _effective_source_priorities(
+    session: AsyncSession, resource_id: int
+) -> list[OGSISrcKey]:
+    """Source keys for ``resource_id``, best-first, override-aware.
+
+    The same ``COALESCE(per-resource override, default)`` priority expression and
+    ``(priority, source)`` ordering the list path's ``build_coalesced_values``
+    uses -- reading the DB as the authoritative source of priorities and folding
+    in per-resource overrides in one light query.
+    """
+    p, o = OGFieldSourcePriority, OGFieldResourceSourcePriority
+    effective = func.coalesce(o.priority, p.priority)
+    stmt = (
+        select(p.source)
+        .select_from(p)
+        .outerjoin(o, and_(o.source == p.source, o.resource_id == resource_id))
+        .order_by(effective.asc(), p.source.asc())  # ties broken by source name
+    )
+    return list((await session.scalars(stmt)).all())
 
 
 def resource_to_view(resource: OGFieldResource, force_coalesce: bool = False):

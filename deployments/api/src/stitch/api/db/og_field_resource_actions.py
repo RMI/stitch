@@ -89,8 +89,8 @@ async def hydrate_resource_list(
 ) -> list[OGFieldListItemView]:
     """Hydrate resource list items by id in a single coalescing call.
 
-    Multi-resource generalization of ``coalesce_persisted_resource``: one query
-    over the coalescing core for all ``ids``, with winning rows grouped by
+    Multi-resource form of the shared SQL coalescing core: one query over
+    ``build_coalesced_values`` for all ``ids``, with winning rows grouped by
     resource. Emits the *list* provenance shape (``field -> source key``). Ids
     with no winning rows (null-shells) yield all-``None`` data + all-``None``
     provenance. Items are returned in the given (phase-1) order.
