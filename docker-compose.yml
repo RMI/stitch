@@ -16,12 +16,9 @@ services:
       # API connects as the app role (no DDL)
       POSTGRES_USER: stitch_app
       POSTGRES_PASSWORD: ${STITCH_APP_PASSWORD:?STITCH_APP_PASSWORD must be set in .env}
-      # OpenTelemetry. Defaults to "console" (spans logged to stdout); set
-      # API_OTEL_TRACES_EXPORTER=otlp + `make reboot-docker-heavy` to send to Jaeger.
-      OTEL_ENABLED: ${API_OTEL_ENABLED:-true}
-      OTEL_TRACES_EXPORTER: ${API_OTEL_TRACES_EXPORTER:-console}
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${API_OTEL_OTLP_ENDPOINT:-http://otel-collector:4317}
-      OTEL_SAMPLE_RATIO: ${API_OTEL_SAMPLE_RATIO:-1.0}
+      # OpenTelemetry config (OTEL_*) comes from .env via env_file, shared with
+      # every service. `make reboot-docker-heavy` overrides the exporter to otlp
+      # (see docker-compose.otel.yml).
     healthcheck:
       test:
         [

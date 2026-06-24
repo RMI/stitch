@@ -3,9 +3,9 @@
 # so the normal dev path never pulls these images. Layered on via
 # `make reboot-docker-heavy`.
 #
-# To send traces here, set the API's exporter to OTLP:
-#   API_OTEL_TRACES_EXPORTER=otlp
-# Then open the Jaeger UI at http://localhost:16686.
+# Loading this file also overrides the API's exporter to otlp (below), so traces
+# flow to the collector -> Jaeger only when the sidecars are actually present.
+# Jaeger UI: http://localhost:16686.
 services:
 
   otel-collector:
