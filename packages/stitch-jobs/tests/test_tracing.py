@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
@@ -12,6 +11,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
 from pydantic import BaseModel
 
 from stitch.jobs import JobManager, SingletonPolicy
+from stitch.jobs import manager as manager_module
 
 
 class Params(BaseModel):
@@ -22,22 +22,21 @@ class Result(BaseModel):
     value: int
 
 
-# Sets the process-global provider once (the manager's module-level tracer is a
-# proxy that resolves to it). This file sorts last in the package, so the
-# earlier suites run with the default no-op tracer, unaffected.
-@pytest.fixture(scope="module")
-def span_exporter() -> InMemorySpanExporter:
+@pytest.fixture
+def tracing(monkeypatch) -> tuple[TracerProvider, InMemorySpanExporter]:
+    """Local provider + in-memory exporter, with the manager's module-level
+    tracer pointed at it for the duration of the test.
+
+    Monkeypatching ``manager._tracer`` (rather than calling
+    ``trace.set_tracer_provider``) keeps the process-global provider untouched —
+    OTel makes the global set-once, so it can't be restored in teardown — so the
+    suite stays isolated and order-independent.
+    """
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
-    trace.set_tracer_provider(provider)
-    return exporter
-
-
-@pytest.fixture
-def spans(span_exporter: InMemorySpanExporter) -> InMemorySpanExporter:
-    span_exporter.clear()
-    return span_exporter
+    monkeypatch.setattr(manager_module, "_tracer", provider.get_tracer("stitch.jobs"))
+    return provider, exporter
 
 
 async def _wait_terminal(manager: JobManager, job_id: str, *, timeout=2.0):
@@ -51,19 +50,21 @@ async def _wait_terminal(manager: JobManager, job_id: str, *, timeout=2.0):
 
 
 @pytest.mark.anyio
-async def test_job_run_emits_root_span_linked_to_trigger(spans) -> None:
+async def test_job_run_emits_root_span_linked_to_trigger(tracing) -> None:
+    provider, exporter = tracing
+
     async def run(params: Params) -> Result:
         return Result(value=1)
 
     manager: JobManager[Params, Result] = JobManager(run, policy=SingletonPolicy())
 
-    tracer = trace.get_tracer("test")
+    tracer = provider.get_tracer("test")
     with tracer.start_as_current_span("trigger") as trigger:
         trigger_ctx = trigger.get_span_context()
         record, _ = await manager.start(Params(name="a"))
     await _wait_terminal(manager, record.job_id)
 
-    job_spans = [s for s in spans.get_finished_spans() if s.name == "job.run"]
+    job_spans = [s for s in exporter.get_finished_spans() if s.name == "job.run"]
     assert len(job_spans) == 1
     job_span = job_spans[0]
     assert job_span.attributes["stitch.job.id"] == record.job_id
@@ -74,7 +75,9 @@ async def test_job_run_emits_root_span_linked_to_trigger(spans) -> None:
 
 
 @pytest.mark.anyio
-async def test_failed_job_span_has_error_status(spans) -> None:
+async def test_failed_job_span_has_error_status(tracing) -> None:
+    _provider, exporter = tracing
+
     async def run(params: Params) -> Result:
         raise RuntimeError("boom")
 
@@ -82,6 +85,6 @@ async def test_failed_job_span_has_error_status(spans) -> None:
     record, _ = await manager.start(Params(name="a"))
     await _wait_terminal(manager, record.job_id)
 
-    job_span = next(s for s in spans.get_finished_spans() if s.name == "job.run")
+    job_span = next(s for s in exporter.get_finished_spans() if s.name == "job.run")
     assert job_span.status.status_code.name == "ERROR"
     assert job_span.attributes["stitch.job.state"] == "failed"

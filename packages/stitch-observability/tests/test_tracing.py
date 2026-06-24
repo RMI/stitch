@@ -1,5 +1,6 @@
 import logging
 
+from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
@@ -15,8 +16,11 @@ def test_configure_tracing_disabled_returns_none() -> None:
     assert configure_tracing(service_name="svc", enabled=True, exporter="none") is None
 
 
-def test_configure_tracing_builds_provider_with_resource() -> None:
-    # Build directly (not via set_tracer_provider) to avoid mutating global state.
+def test_configure_tracing_builds_provider_with_resource(monkeypatch) -> None:
+    # configure_tracing installs the provider globally via set_tracer_provider;
+    # stub that out so this test exercises only provider construction and leaves
+    # the process-global provider untouched (OTel makes it set-once).
+    monkeypatch.setattr(trace, "set_tracer_provider", lambda _provider: None)
     provider = configure_tracing(
         service_name="stitch-test",
         exporter="console",
