@@ -1,7 +1,8 @@
 """Integration-level checks that the downstream auth modes actually attach the
 expected Authorization header on outgoing requests via AsyncStitchClient."""
 
-from collections.abc import Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
+from contextlib import asynccontextmanager
 
 import httpx
 import pytest
@@ -11,18 +12,24 @@ from stitch.client.auth import STITCH_CLIENT_BEARER_TOKEN_ENV_VAR
 from stitch.service.auth import AuthMode, build_headers_provider
 
 
-def _capturing_client(
+@asynccontextmanager
+async def _capturing_client(
     seen: dict, headers_provider: Callable[[], Mapping[str, str]]
-) -> AsyncStitchClient:
+) -> AsyncIterator[AsyncStitchClient]:
     def handler(request: httpx.Request) -> httpx.Response:
         seen["authorization"] = request.headers.get("Authorization")
         return httpx.Response(200, json={})
 
+    # AsyncStitchClient does not own (or close) an injected client, so close the
+    # raw transport ourselves to avoid leaking it.
     raw = httpx.AsyncClient(
         transport=httpx.MockTransport(handler),
         base_url="http://downstream.test/api/v1",
     )
-    return AsyncStitchClient(client=raw, headers_provider=headers_provider)
+    try:
+        yield AsyncStitchClient(client=raw, headers_provider=headers_provider)
+    finally:
+        await raw.aclose()
 
 
 @pytest.mark.anyio
