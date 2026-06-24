@@ -10,6 +10,7 @@ import logging
 import pytest
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from pydantic import ValidationError
 
 from stitch.api.observability.tracing import LoggingSpanExporter, configure_tracing
 from stitch.api.settings import Settings
@@ -67,9 +68,20 @@ class TestConfigureTracing:
         assert configure_tracing(Settings(otel_traces_exporter="none")) is None
 
     def test_console_exporter_returns_provider(self):
+        # Note: this sets the process-global tracer provider. Benign in the
+        # suite — the app runs uninstrumented under the test env, so no spans
+        # leak into other tests — and OTel's global provider can't be cleanly
+        # reset, so we don't try.
         provider = configure_tracing(Settings(otel_traces_exporter="console"))
         try:
             assert provider is not None
         finally:
             if provider is not None:
                 provider.shutdown()
+
+    @pytest.mark.parametrize("ratio", [-0.1, 1.5])
+    def test_sample_ratio_out_of_range_is_rejected(self, ratio):
+        # TraceIdRatioBased is only defined on [0, 1]; an invalid env value
+        # should fail fast at settings construction, not silently misbehave.
+        with pytest.raises(ValidationError):
+            Settings(otel_sample_ratio=ratio)

@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
 from fastapi import Depends
-from pydantic import AfterValidator, HttpUrl, SecretStr
+from pydantic import AfterValidator, Field, HttpUrl, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -96,7 +96,7 @@ class Settings(BaseSettings):
     otel_enabled: bool = True
     otel_traces_exporter: Literal["console", "otlp", "none"] = "console"
     otel_exporter_otlp_endpoint: str | None = None
-    otel_sample_ratio: float = 1.0
+    otel_sample_ratio: float = Field(1.0, ge=0.0, le=1.0)
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env",
