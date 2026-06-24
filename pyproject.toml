@@ -15,6 +15,7 @@ members = [
   "packages/stitch-client",
   "packages/stitch-jobs",
   "packages/stitch-models",
+  "packages/stitch-observability",
   "packages/stitch-ogsi",
   "packages/stitch-service",
 ]

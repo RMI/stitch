@@ -2,10 +2,11 @@ from functools import lru_cache
 from typing import ClassVar
 
 from pydantic import AnyHttpUrl, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
+from stitch.observability import OTelSettings
 
 
-class Settings(BaseSettings):
+class Settings(OTelSettings):
     log_level: str = Field(default="INFO", alias="ENTITY_LINKAGE_LOG_LEVEL")
     frontend_origin_url: AnyHttpUrl = Field(
         default="http://localhost:3000",
