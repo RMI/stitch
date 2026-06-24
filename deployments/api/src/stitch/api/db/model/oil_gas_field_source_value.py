@@ -163,3 +163,12 @@ class OilGasFieldSourceValueModel(Base):
             value_num=self.value_num,
             value_json=self.value_json,
         )
+
+    @classmethod
+    def value_col_for(cls, colname: str):
+        kind = ATTRIBUTE_KINDS[colname]
+        if kind in _NUM_KINDS:
+            return cls.value_num
+        if kind is ValueKind.JSON:
+            return cls.value_json
+        return cls.value_text
