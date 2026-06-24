@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from stitch.api.observability import register_query_timing
+from stitch.api.observability import instrument_sqlalchemy, register_query_timing
 from stitch.api.settings import get_settings
 
 
@@ -58,6 +58,9 @@ def get_engine() -> AsyncEngine:
         slow_query_ms=settings.slow_query_ms,
         log_all_queries=settings.log_all_queries,
     )
+    # Per-query spans (separate from the aggregate timing listener above).
+    if settings.otel_enabled and settings.otel_traces_exporter != "none":
+        instrument_sqlalchemy(engine.sync_engine)
     return engine
 
 
