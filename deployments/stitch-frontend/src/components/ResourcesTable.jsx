@@ -12,6 +12,13 @@ const COLUMNS = [
     sortType: "string",
   },
   {
+    label: "Country",
+    key: "country",
+    className: "text-ink-muted",
+    sortable: true,
+    sortType: "string",
+  },
+  {
     label: "State/Province",
     key: "state_province",
     className: "text-ink-muted",
@@ -35,6 +42,13 @@ const COLUMNS = [
   {
     label: "Field status",
     key: "field_status",
+    className: "text-ink-muted",
+    sortable: true,
+    sortType: "string",
+  },
+  {
+    label: "Primary hydrocarbon group",
+    key: "primary_hydrocarbon_group",
     className: "text-ink-muted",
     sortable: true,
     sortType: "string",
