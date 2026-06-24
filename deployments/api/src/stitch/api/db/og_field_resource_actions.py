@@ -41,10 +41,10 @@ from .coalesce_sql import PROVENANCE_SUFFIX, build_resource_list_cte
 from .model import (
     MembershipModel,
     MembershipStatus,
-    OilGasFieldSourceModel,
     ResourceModel,
 )
 from .model.oil_gas_field_source_value import JSON_ATTRIBUTE_NAMES
+from .queries import EXACT_MATCH_FIELDS, Q_FIELDS
 from .utils import resource_model_to_entity
 
 
@@ -121,14 +121,14 @@ def _build_final_conditions(
     if params.q:
         q_term = f"%{params.q}%"
         q_conditions: list[ColumnElement[bool]] = []
-        for field_name in OilGasFieldSourceModel._q_fields:
+        for field_name in Q_FIELDS:
             col = getattr(coalesced.c, field_name, None)
             if col is not None:
                 q_conditions.append(col.ilike(q_term))
         if q_conditions:
             conditions.append(or_(*q_conditions))
 
-    for field_name in OilGasFieldSourceModel._exact_match_fields:
+    for field_name in EXACT_MATCH_FIELDS:
         value = getattr(params, field_name, None)
         if value is None:
             continue
