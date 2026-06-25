@@ -7,6 +7,7 @@ from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from stitch.api.db import og_field_resource_actions as resource_actions
+from stitch.api.db import utils
 from stitch.api.db.model import (
     MembershipModel,
     MembershipStatus,
@@ -1326,3 +1327,48 @@ class TestCoalescingEngineParity:
         assert [i.id for i in items] == [rid]
         assert items[0].data.name == detail.view.name
         assert items[0].provenance["name"] == detail.provenance["name"][1]
+
+
+class TestCoalesceResources:
+    """The shared in-memory coalescing core used by detail + list."""
+
+    @pytest.mark.anyio
+    async def test_entry_per_id_with_nullshell_for_empty(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        session = seeded_integration_session
+        rid = await _create_resource_with_sources(
+            session, test_user, {"source": "gem", "name": "G", "country": "USA"}
+        )
+        empty = ResourceModel.create(created_by=test_user)
+        session.add(empty)
+        await session.flush()
+
+        out = await utils.coalesce_resources(session, [rid, empty.id])
+
+        view, prov, src = out[rid]
+        assert view.name == "G"
+        assert prov["name"][1] == "gem"
+        assert {s.source for s in src} == {"gem"}
+
+        empty_view, empty_prov, empty_src = out[empty.id]
+        assert empty_view.name is None
+        assert empty_prov["name"] is None
+        assert empty_src == []
+
+    @pytest.mark.anyio
+    async def test_repointed_id_yields_nullshell(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        session = seeded_integration_session
+        rid = await _create_resource_with_sources(
+            session, test_user, {"source": "gem", "name": "G", "country": "USA"}
+        )
+        out = await utils.coalesce_resources(session, [rid], repointed_ids=[rid])
+        view, prov, _src = out[rid]
+        assert view.name is None
+        assert prov["name"] is None
