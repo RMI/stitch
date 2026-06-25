@@ -68,6 +68,15 @@ PRIMARY_SORT_COL: Final[str] = "id"
 _HEADER_SORT_FIELDS: Final[frozenset[str]] = frozenset({"id", "source", "resource_id"})
 
 
+def _source_header_membership_match(s, m):
+    """Correlate a source header to its membership on BOTH pk and source key.
+
+    ``membership.source`` is not FK-tied to the header's source, so matching on
+    ``source_pk`` alone could let a mismatched membership row participate.
+    """
+    return and_(s.id == m.source_pk, s.source == m.source)
+
+
 def _participating_columns(params: OGFieldQueryParams) -> list[str]:
     """Value attributes the query actually touches -- the columns to pivot.
 
@@ -129,8 +138,7 @@ def base_source_query_statement(
     # row cannot mark the record active.
     active_membership = (
         select(1)
-        .where(m.source_pk == s.id)
-        .where(m.source == s.source)
+        .where(_source_header_membership_match(s, m))
         .where(m.status == MembershipStatus.ACTIVE)
         .exists()
     )
@@ -323,9 +331,9 @@ def build_coalesced_values(
     # Join the source header on both pk AND source key: membership.source is not
     # FK-tied to the header's source, so matching only on source_pk could let a
     # mismatched membership row participate in coalescing.
-    active_src = active_src.join(
-        s, and_(s.id == m.source_pk, s.source == m.source)
-    ).cte("active_src")
+    active_src = active_src.join(s, _source_header_membership_match(s, m)).cte(
+        "active_src"
+    )
 
     ranked_select = (
         select(
