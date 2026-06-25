@@ -705,38 +705,46 @@ class TestResourceUniverseAndNarrowing:
         assert [i.id for i in items] == list(reversed(ascending))
 
     @pytest.mark.anyio
-    async def test_hydration_is_a_single_db_call(
+    async def test_hydration_round_trips_constant_in_page_size(
         self,
         seeded_integration_session: AsyncSession,
         test_user: User,
     ):
-        """Phase 2 hydrates every returned id in exactly one DB round-trip."""
+        """Phase 2 hydration is constant round-trips, independent of id count (no N+1)."""
         ids = [
             await _create_resource_with_sources(
                 seeded_integration_session,
                 test_user,
                 {"source": "gem", "name": name, "country": "USA"},
             )
-            for name in ["A", "B", "C"]
+            for name in ["A", "B", "C", "D"]
         ]
-
         sync_engine = seeded_integration_session.bind.sync_engine
-        executions = 0
 
-        def _count(conn, cursor, statement, parameters, context, executemany):
-            nonlocal executions
-            executions += 1
+        async def _count(hydrate_ids):
+            executions = 0
 
-        event.listen(sync_engine, "before_cursor_execute", _count)
-        try:
-            items = await resource_actions.hydrate_resource_list(
-                seeded_integration_session, ids
-            )
-        finally:
-            event.remove(sync_engine, "before_cursor_execute", _count)
+            def _inc(conn, cursor, statement, parameters, context, executemany):
+                nonlocal executions
+                executions += 1
 
-        assert executions == 1
-        assert [item.id for item in items] == ids
+            event.listen(sync_engine, "before_cursor_execute", _inc)
+            try:
+                items = await resource_actions.hydrate_resource_list(
+                    seeded_integration_session, hydrate_ids
+                )
+            finally:
+                event.remove(sync_engine, "before_cursor_execute", _inc)
+            return executions, items
+
+        one_count, _ = await _count(ids[:1])
+        all_count, all_items = await _count(ids)
+
+        # No N+1: hydrating 4 ids costs the same round-trips as hydrating 1.
+        assert one_count == all_count
+        # And it is a small constant (memberships + sources + selectin values + priorities).
+        assert all_count <= 5
+        assert [item.id for item in all_items] == ids
 
 
 class TestResourceFilterOptionsAction:

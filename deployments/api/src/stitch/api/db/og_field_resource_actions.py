@@ -23,7 +23,6 @@ from stitch.api.db.og_field_source_actions import (
     get_or_create_sources,
 )
 from stitch.ogsi.model import OGFieldListItemView, OGFieldResource
-from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
 
 from .model import (
@@ -31,17 +30,17 @@ from .model import (
     MembershipStatus,
     ResourceModel,
 )
-from .model.oil_gas_field_source_value import (
-    ATTRIBUTE_NAMES,
-    materialize_value,
-    value_attr_for,
-)
+from .model.oil_gas_field_source_value import value_attr_for
 from .queries import (
     build_coalesced_values,
     construct_resources_count_statement,
     construct_resources_query_statement,
 )
-from .utils import resource_model_to_entity
+from .utils import (
+    coalesce_resources,
+    resource_model_to_entity,
+    resource_to_list_item_view,
+)
 
 
 _FILTER_OPTION_FIELDS: frozenset[str] = frozenset(get_args(FilterOptionField))
@@ -87,52 +86,27 @@ async def hydrate_resource_list(
     ids: Sequence[int],
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> list[OGFieldListItemView]:
-    """Hydrate resource list items by id in a single coalescing call.
+    """Hydrate resource list items by id, coalescing in Python.
 
-    Multi-resource form of the shared SQL coalescing core: one query over
-    ``build_coalesced_values`` for all ``ids``, with winning rows grouped by
-    resource. Emits the *list* provenance shape (``field -> source key``). Ids
-    with no winning rows (null-shells) yield all-``None`` data + all-``None``
-    provenance. Items are returned in the given (phase-1) order.
+    Batched: one ``coalesce_resources`` call (constant round-trips, no N+1) over
+    the page's ids -- the same Python coalescer the detail path uses -- then the
+    shared ``resource_to_list_item_view`` projection. Items are returned in the
+    given (phase-1) order; list ids are never repointed (the universe excludes
+    them). Ids with no winning values hydrate as null-shells.
     """
-    values_cte = build_coalesced_values(
-        licensed_sources=licensed_sources, resource_ids=ids
-    )
-    stmt = select(
-        values_cte.c.resource_id,
-        values_cte.c.colname,
-        values_cte.c.value_text,
-        values_cte.c.value_num,
-        values_cte.c.value_json,
-        values_cte.c.source,
-    )
-    rows = (await session.execute(stmt)).mappings().all()
-
-    data_by_id: dict[int, dict[str, object]] = {
-        rid: {k: None for k in ATTRIBUTE_NAMES} for rid in ids
-    }
-    provenance_by_id: dict[int, dict[str, OGSISrcKey | None]] = {
-        rid: {k: None for k in ATTRIBUTE_NAMES} for rid in ids
-    }
-    for row in rows:
-        rid = row["resource_id"]
-        colname = row["colname"]
-        data_by_id[rid][colname] = materialize_value(
-            colname,
-            value_text=row["value_text"],
-            value_num=row["value_num"],
-            value_json=row["value_json"],
-        )
-        provenance_by_id[rid][colname] = row["source"]
-
-    return [
-        OGFieldListItemView(
+    coalesced = await coalesce_resources(session, ids, licensed_sources)
+    items: list[OGFieldListItemView] = []
+    for rid in ids:
+        view, provenance, src_data = coalesced[rid]
+        resource = OGFieldResource(
             id=rid,
-            data=OilGasFieldBase(**data_by_id[rid]),
-            provenance=provenance_by_id[rid],
+            source_data=src_data,
+            view=view,
+            provenance=provenance,
+            constituents=frozenset(),
         )
-        for rid in ids
-    ]
+        items.append(resource_to_list_item_view(resource))
+    return items
 
 
 async def filter_options(
