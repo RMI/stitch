@@ -25,7 +25,21 @@ Jaeger).
 | `script.js` | k6 scenario: weighted mix of read-only GETs with randomized params. |
 | `prometheus.yml` | Prometheus config (remote-write receiver enabled via CLI flag). |
 | `grafana/provisioning/` | Auto-wires the Prometheus datasource (uid `stitch-prom`) and the dashboard provider. |
-| `grafana/dashboards/k6-pr-compare.json` | The comparison dashboard. |
+| `grafana/dashboards/k6-pr-compare.json` | The k6 PR-comparison dashboard. |
+| `grafana/dashboards/api-live-red.json` | Live "stitch API — RED" dashboard (rate/errors/latency of the running API). |
+
+## Two dashboards, two profiles
+
+- **k6 — PR response-time comparison** (`loadtest` profile): compares load-test
+  runs across PRs. Needs `make loadtest-stack` + `make loadtest`.
+- **stitch API — live (RED)** (`full` profile): live request rate / error rate /
+  latency for the *running* API container. Metrics are derived from the API's
+  OpenTelemetry spans by the collector's `spanmetrics` connector
+  (`deployments/otel-collector/config.yaml`) and scraped by Prometheus — no
+  app-side metrics code. Comes up with `make reboot-docker-heavy` (which now
+  starts Prometheus + Grafana too), and populates as the API serves traffic.
+  To see "just the current container", leave `service=stitch-api` and use the
+  short auto-refreshing time range — old data ages out of the window.
 
 ## Usage
 

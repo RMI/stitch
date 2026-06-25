@@ -41,12 +41,13 @@ services:
       - "16686:16686"  # Jaeger UI
     profiles: ["full"]
 
-  # --- Load testing (profile "loadtest") ---------------------------------
-  # k6 streams its metrics to Prometheus via remote-write, tagged
-  # testid=<git-sha>; Grafana reads Prometheus and renders the k6 dashboard so
-  # runs from different PRs can be selected and compared. prom_data/grafana_data
-  # live only in this file (not the DEV chain), so `make clean-docker` does not
-  # wipe historical runs.
+  # --- Prometheus + Grafana (profiles "full" + "loadtest") ---------------
+  # In the "full" profile these come up with `make reboot-docker-heavy` and show
+  # the live "stitch API — RED" dashboard (metrics the collector derives from
+  # the API's spans). In the "loadtest" profile they additionally back the k6
+  # PR-comparison dashboard (k6 remote-writes its run metrics here).
+  # prom_data/grafana_data live only in this file (not the DEV chain), so
+  # `make clean-docker` does not wipe historical runs.
 
   prometheus:
     image: prom/prometheus:latest
@@ -58,7 +59,7 @@ services:
       - prom_data:/prometheus
     ports:
       - "9090:9090"
-    profiles: ["loadtest"]
+    profiles: ["full", "loadtest"]
 
   grafana:
     image: grafana/grafana:latest
@@ -72,7 +73,7 @@ services:
       - grafana_data:/var/lib/grafana
     ports:
       - "3001:3000"   # Grafana UI (3000 is the frontend)
-    profiles: ["loadtest"]
+    profiles: ["full", "loadtest"]
     depends_on:
       - prometheus
 

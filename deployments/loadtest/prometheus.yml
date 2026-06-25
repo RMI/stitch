@@ -11,3 +11,10 @@ scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]
+
+  # RED metrics the OTel collector derives from the API's spans (spanmetrics
+  # connector). Present whenever the collector is up (full profile). If it's
+  # down this target just shows as down — harmless.
+  - job_name: otel-spanmetrics
+    static_configs:
+      - targets: ["otel-collector:8889"]
