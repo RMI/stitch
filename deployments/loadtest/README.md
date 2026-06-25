@@ -70,11 +70,25 @@ Jaeger).
    (Re-running on the same commit reuses its SHA as `testid` and overwrites that
    run — pass `TESTID=<label>` to keep a distinct data point.)
 
+   If a branch has **conflicting migrations** and needs a clean DB, wipe only
+   the database volume (keeps the Grafana/Prometheus history), then bring the
+   stack back up to re-migrate + reseed:
+
+   ```sh
+   make loadtest-reset-db       # down + `docker volume rm <project>_db_data`
+   make loadtest-stack          # fresh DB, this branch's migrations, reseed
+   make loadtest
+   ```
+
 5. **Tear down** (keeps the Prometheus/Grafana history volumes):
 
    ```sh
    make loadtest-down
    ```
+
+> **Never** use `make clean-docker` or `down --volumes` mid-comparison — both
+> drop *all* volumes, including `*_prom_data` / `*_grafana_data`, erasing your
+> run history. Use `make loadtest-reset-db` (DB only) instead.
 
 ## Tuning
 

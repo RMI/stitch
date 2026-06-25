@@ -295,7 +295,19 @@ loadtest:
 # identical dataset. Per-branch flow: switch branch, `make loadtest-rebuild`,
 # then `make loadtest` (tagged with that branch's SHA).
 loadtest-rebuild:
-	$(DOCKER_COMPOSE_OBSERVABILITY) --profile api up -d --build api
+	$(DOCKER_COMPOSE_OBSERVABILITY) --profile full up -d --build api
+
+# Wipe ONLY the database volume so a branch with conflicting migrations can
+# rebuild the DB from scratch, while KEEPING the Grafana/Prometheus comparison
+# history. Stops the stack first with a plain `down` (no --volumes, so the other
+# volumes survive), then removes just the db volume. Follow with
+# `make loadtest-stack` to re-migrate + reseed. Do NOT use `make clean-docker`
+# here — that drops every volume, including your run history.
+DB_VOLUME := $(notdir $(CURDIR))_db_data
+
+loadtest-reset-db:
+	$(DOCKER_COMPOSE_OBSERVABILITY) --profile full --profile loadtest down
+	docker volume rm $(DB_VOLUME)
 
 loadtest-down:
 	$(DOCKER_COMPOSE_OBSERVABILITY) --profile loadtest down
@@ -338,4 +350,4 @@ follow-stack-logs:
 	stack-frontend-dev follow-stack-logs \
 	\
 	# Load testing
-	loadtest-stack loadtest loadtest-rebuild loadtest-down
+	loadtest-stack loadtest loadtest-rebuild loadtest-reset-db loadtest-down
