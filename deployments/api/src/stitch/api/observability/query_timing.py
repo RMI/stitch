@@ -30,6 +30,10 @@ _WHITESPACE = re.compile(r"\s+")
 
 
 def _normalize_statement(statement: str, max_chars: int) -> str:
+    # NB: statements longer than max_chars are truncated to a shared prefix, so
+    # queries that differ only past the cutoff (large IN (...) lists, big CTEs)
+    # collapse into one group in the analyzer. Acceptable tradeoff; documented in
+    # deployments/PERFORMANCE.md so users aren't surprised by merged rows.
     collapsed = _WHITESPACE.sub(" ", statement).strip()
     if len(collapsed) > max_chars:
         return collapsed[:max_chars] + "…"
