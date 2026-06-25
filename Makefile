@@ -1,8 +1,9 @@
 UV ?= uv
 DOCKER_COMPOSE := docker compose -f docker-compose.yml
 DOCKER_COMPOSE_DEV := $(DOCKER_COMPOSE) -f docker-compose.local.yml
-# Adds the OpenTelemetry collector + Jaeger sidecars (the "heavy" stack).
-DOCKER_COMPOSE_OTEL := $(DOCKER_COMPOSE_DEV) -f docker-compose.otel.yml
+# Adds the observability + load-testing sidecars (OTel collector + Jaeger under
+# the "full" profile; Prometheus + Grafana + k6 under the "loadtest" profile).
+DOCKER_COMPOSE_OBSERVABILITY := $(DOCKER_COMPOSE_DEV) -f docker-compose.observability.yml
 PYTEST := $(UV) run pytest
 RUFF := $(UV) run ruff
 TEST_PKG := ./scripts/test-package.py
@@ -268,7 +269,36 @@ reboot-docker: clean-docker
 # (and a collector-free `make reboot-docker`) is never aimed at an absent
 # collector. Jaeger UI: http://localhost:16686
 reboot-docker-heavy: clean-docker
-	$(DOCKER_COMPOSE_OTEL) --profile full up --build
+	$(DOCKER_COMPOSE_OBSERVABILITY) --profile full up --build
+
+# ---------------------------------------------------------------------
+# Load testing (k6 -> Prometheus -> Grafana). See deployments/loadtest.
+# Bring up the app + tracing + Prometheus + Grafana persistently, then drive
+# load with `make loadtest`. Each run is tagged testid=<TESTID> (default: the
+# current short git SHA) so runs from different PRs can be compared in Grafana
+# (http://localhost:3001). prom_data/grafana_data survive `make clean-docker`.
+TESTID ?= $(GIT_SHORT_SHA)
+
+loadtest-stack:
+	$(DOCKER_COMPOSE_OBSERVABILITY) --profile full --profile loadtest up --build -d
+
+loadtest:
+	$(DOCKER_COMPOSE_OBSERVABILITY) --profile loadtest run --rm \
+		-e K6_OUT=experimental-prometheus-rw \
+		-e K6_PROMETHEUS_RW_SERVER_URL=http://prometheus:9090/api/v1/write \
+		-e 'K6_PROMETHEUS_RW_TREND_STATS=p(90),p(95),p(99),avg,min,max,med' \
+		k6 run --tag testid=$(TESTID) /scripts/script.js
+
+# Rebuild ONLY the API (and re-run migrations via its alembic dependency) from
+# the currently checked-out branch, without re-seeding. Keeps the DB + the
+# Prometheus/Grafana history intact, so each branch is load-tested against an
+# identical dataset. Per-branch flow: switch branch, `make loadtest-rebuild`,
+# then `make loadtest` (tagged with that branch's SHA).
+loadtest-rebuild:
+	$(DOCKER_COMPOSE_OBSERVABILITY) --profile api up -d --build api
+
+loadtest-down:
+	$(DOCKER_COMPOSE_OBSERVABILITY) --profile loadtest down
 
 follow-stack-logs:
 	$(DOCKER_COMPOSE_DEV) --profile full logs -f
@@ -305,4 +335,7 @@ follow-stack-logs:
 	\
 	# Docker
 	clean-docker dev-docker reboot-docker reboot-docker-heavy \
-	stack-frontend-dev follow-stack-logs
+	stack-frontend-dev follow-stack-logs \
+	\
+	# Load testing
+	loadtest-stack loadtest loadtest-rebuild loadtest-down

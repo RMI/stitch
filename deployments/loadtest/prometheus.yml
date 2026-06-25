@@ -1,0 +1,13 @@
+# Minimal Prometheus config for local load testing.
+#
+# k6 pushes its metrics in via the remote-write receiver (enabled on the
+# command line with --web.enable-remote-write-receiver), so there is nothing to
+# scrape here beyond Prometheus's own metrics.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

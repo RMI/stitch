@@ -1,0 +1,155 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 0,
+  "title": "k6 — PR response-time comparison",
+  "uid": "k6-pr-compare",
+  "tags": ["k6", "loadtest"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-7d", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "testid",
+        "label": "Test runs (testid)",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "stitch-prom" },
+        "query": { "query": "label_values(k6_http_reqs_total, testid)", "refId": "testid" },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Latency by run (lower is better)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "bargauge",
+      "title": "p95 request duration (s)",
+      "datasource": { "type": "prometheus", "uid": "stitch-prom" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "continuous-GrYlRd" } }, "overrides": [] },
+      "options": { "orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true, "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "stitch-prom" },
+          "expr": "max by (testid) (last_over_time(k6_http_req_duration_p95{testid=~\"$testid\"}[$__range]))",
+          "legendFormat": "{{testid}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "p99 request duration (s)",
+      "datasource": { "type": "prometheus", "uid": "stitch-prom" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "continuous-GrYlRd" } }, "overrides": [] },
+      "options": { "orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true, "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "stitch-prom" },
+          "expr": "max by (testid) (last_over_time(k6_http_req_duration_p99{testid=~\"$testid\"}[$__range]))",
+          "legendFormat": "{{testid}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "avg request duration (s)",
+      "datasource": { "type": "prometheus", "uid": "stitch-prom" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "continuous-GrYlRd" } }, "overrides": [] },
+      "options": { "orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true, "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "stitch-prom" },
+          "expr": "max by (testid) (last_over_time(k6_http_req_duration_avg{testid=~\"$testid\"}[$__range]))",
+          "legendFormat": "{{testid}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Per-endpoint p95 (s) by run",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "p95 by endpoint and run",
+      "datasource": { "type": "prometheus", "uid": "stitch-prom" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "stitch-prom" },
+          "expr": "max by (testid, name) (last_over_time(k6_http_req_duration_p95{testid=~\"$testid\", name!=\"\"}[$__range]))",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true } } }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Throughput & errors",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "bargauge",
+      "title": "Total HTTP requests (run total)",
+      "datasource": { "type": "prometheus", "uid": "stitch-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "continuous-BlPu" } }, "overrides": [] },
+      "options": { "orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true, "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "stitch-prom" },
+          "expr": "sum by (testid) (last_over_time(k6_http_reqs_total{testid=~\"$testid\"}[$__range]))",
+          "legendFormat": "{{testid}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "HTTP failure rate",
+      "datasource": { "type": "prometheus", "uid": "stitch-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "color": { "mode": "continuous-GrYlRd" }, "max": 1 }, "overrides": [] },
+      "options": { "orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true, "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "stitch-prom" },
+          "expr": "max by (testid) (last_over_time(k6_http_req_failed_rate{testid=~\"$testid\"}[$__range]))",
+          "legendFormat": "{{testid}}",
+          "instant": true
+        }
+      ]
+    }
+  ]
+}
