@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 
 from sqlalchemy import (
     ForeignKey,
@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from stitch.api.db.errors import ResourceNotFoundError
 from stitch.ogsi.model import OGFieldSource, OGFieldResource
+from stitch.ogsi.model.types import OGSISrcKey
 
 from .membership import MembershipModel, MembershipStatus
 from .oil_gas_field_source import OilGasFieldSourceModel
@@ -44,22 +45,55 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
             constituents=frozenset(),
         )
 
-    async def get_source_data(self, session: AsyncSession) -> Sequence[OGFieldSource]:
-        stmt = (
-            select(MembershipModel.source_pk)
-            .where(MembershipModel.resource_id == self.id)
+    @classmethod
+    async def source_data_by_resource_id(
+        cls,
+        session: AsyncSession,
+        resource_ids: Collection[int],
+        licensed_sources: Collection[OGSISrcKey] | None = None,
+    ) -> dict[int, list[OGFieldSource]]:
+        """Active source entities for each resource id, grouped by resource.
+
+        One active-membership query + one source-header query (the ``values``
+        relationship is ``selectin``-loaded), then ``as_entity()`` per record.
+        Every requested id gets an entry (empty list when it has no active --
+        or no licensed -- source data). A source shared across resources is
+        attached to each (read-only reuse).
+        """
+        by_id: dict[int, list[OGFieldSource]] = {rid: [] for rid in resource_ids}
+        if not by_id:
+            return by_id
+
+        pair_stmt = (
+            select(MembershipModel.resource_id, MembershipModel.source_pk)
+            .where(MembershipModel.resource_id.in_(by_id.keys()))
             .where(MembershipModel.status == MembershipStatus.ACTIVE)
         )
-        source_pks = (await session.scalars(stmt)).all()
+        pairs = (await session.execute(pair_stmt)).all()
+        if not pairs:
+            return by_id
 
-        if not source_pks:
-            return []
-
-        stmt = select(OilGasFieldSourceModel).where(
+        source_pks = {source_pk for _, source_pk in pairs}
+        src_stmt = select(OilGasFieldSourceModel).where(
             OilGasFieldSourceModel.id.in_(source_pks)
         )
-        sources = (await session.scalars(stmt)).all()
-        return [ofgsm.as_entity() for ofgsm in sources]
+        entity_by_pk = {
+            model.id: model.as_entity()
+            for model in (await session.scalars(src_stmt)).all()
+        }
+
+        for resource_id, source_pk in pairs:
+            entity = entity_by_pk.get(source_pk)
+            if entity is None:
+                continue
+            if licensed_sources is not None and entity.source not in licensed_sources:
+                continue
+            by_id[resource_id].append(entity)
+        return by_id
+
+    async def get_source_data(self, session: AsyncSession) -> Sequence[OGFieldSource]:
+        by_id = await type(self).source_data_by_resource_id(session, [self.id])
+        return by_id[self.id]
 
     async def get_root(self, session: AsyncSession):
         root = await session.scalar(self.__class__._root_select(self.id))

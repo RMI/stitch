@@ -1239,6 +1239,42 @@ class TestResourceDetailCoalescing:
         assert result.provenance["operators"][1] == "rmi"
 
 
+class TestBatchedSourceData:
+    """ResourceModel.source_data_by_resource_id groups + licensed-filters."""
+
+    @pytest.mark.anyio
+    async def test_groups_by_resource_and_filters_licensed(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        session = seeded_integration_session
+        rid_a = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "rmi", "name": "A-RMI"},
+            {"source": "gem", "name": "A-GEM"},
+        )
+        rid_b = await _create_resource_with_sources(
+            session, test_user, {"source": "wm", "name": "B-WM"}
+        )
+        empty = ResourceModel.create(created_by=test_user)
+        session.add(empty)
+        await session.flush()
+
+        by_id = await ResourceModel.source_data_by_resource_id(
+            session, [rid_a, rid_b, empty.id]
+        )
+        assert {s.source for s in by_id[rid_a]} == {"rmi", "gem"}
+        assert {s.source for s in by_id[rid_b]} == {"wm"}
+        assert by_id[empty.id] == []
+
+        licensed = await ResourceModel.source_data_by_resource_id(
+            session, [rid_a], licensed_sources=frozenset({"gem"})
+        )
+        assert {s.source for s in licensed[rid_a]} == {"gem"}
+
+
 class TestCoalescingEngineParity:
     """Phase-1 (SQL) and phase-2/detail (Python) coalescing pick the same winner.
 
