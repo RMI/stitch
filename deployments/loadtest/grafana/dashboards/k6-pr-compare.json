@@ -7,7 +7,7 @@
   "tags": ["k6", "loadtest"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "time": { "from": "now-7d", "to": "now" },
   "templating": {
     "list": [
@@ -27,15 +27,15 @@
   "panels": [
     {
       "type": "row",
-      "title": "Latency by run (lower is better)",
+      "title": "p95 by endpoint, across runs (lower is better)",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
       "collapsed": false,
       "panels": []
     },
     {
       "type": "bargauge",
-      "title": "Worst-endpoint p95 (s)",
-      "description": "The slowest single endpoint's p95 per run (k6 exports pre-computed percentiles per endpoint, which can't be combined into a true all-requests percentile). Bar label shows which endpoint.",
+      "title": "list — p95 (s)",
+      "description": "p95 of the GET /oil-gas-fields/ list+search endpoint, one bar per run.",
       "datasource": { "type": "prometheus", "uid": "stitch-prom" },
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
       "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "continuous-GrYlRd" } }, "overrides": [] },
@@ -44,16 +44,16 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "stitch-prom" },
-          "expr": "topk(1, last_over_time(k6_http_req_duration_p95{testid=~\"$testid\"}[$__range])) by (testid)",
-          "legendFormat": "{{testid}} · {{name}}",
+          "expr": "last_over_time(k6_http_req_duration_p95{name=\"list\", testid=~\"$testid\"}[$__range])",
+          "legendFormat": "{{testid}}",
           "instant": true
         }
       ]
     },
     {
       "type": "bargauge",
-      "title": "Worst-endpoint p99 (s)",
-      "description": "The slowest single endpoint's p99 per run. Bar label shows which endpoint.",
+      "title": "detail — p95 (s)",
+      "description": "p95 of the GET /oil-gas-fields/{id}/detail endpoint, one bar per run.",
       "datasource": { "type": "prometheus", "uid": "stitch-prom" },
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
       "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "continuous-GrYlRd" } }, "overrides": [] },
@@ -62,16 +62,16 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "stitch-prom" },
-          "expr": "topk(1, last_over_time(k6_http_req_duration_p99{testid=~\"$testid\"}[$__range])) by (testid)",
-          "legendFormat": "{{testid}} · {{name}}",
+          "expr": "last_over_time(k6_http_req_duration_p95{name=\"detail\", testid=~\"$testid\"}[$__range])",
+          "legendFormat": "{{testid}}",
           "instant": true
         }
       ]
     },
     {
       "type": "bargauge",
-      "title": "Worst-endpoint avg (s)",
-      "description": "The slowest single endpoint's average per run. Bar label shows which endpoint.",
+      "title": "filter-options — p95 (s)",
+      "description": "p95 of the GET /oil-gas-fields/filter-options endpoint, one bar per run.",
       "datasource": { "type": "prometheus", "uid": "stitch-prom" },
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
       "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "continuous-GrYlRd" } }, "overrides": [] },
@@ -80,24 +80,65 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "stitch-prom" },
-          "expr": "topk(1, last_over_time(k6_http_req_duration_avg{testid=~\"$testid\"}[$__range])) by (testid)",
-          "legendFormat": "{{testid}} · {{name}}",
+          "expr": "last_over_time(k6_http_req_duration_p95{name=\"filter-options\", testid=~\"$testid\"}[$__range])",
+          "legendFormat": "{{testid}}",
           "instant": true
         }
       ]
     },
     {
       "type": "row",
-      "title": "Per-endpoint p95 (s) by run",
+      "title": "Throughput & errors",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
       "collapsed": false,
       "panels": []
     },
     {
-      "type": "table",
-      "title": "p95 by endpoint and run",
+      "type": "bargauge",
+      "title": "Total HTTP requests (run total)",
       "datasource": { "type": "prometheus", "uid": "stitch-prom" },
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 10 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "continuous-BlPu" } }, "overrides": [] },
+      "options": { "orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true, "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "stitch-prom" },
+          "expr": "sum by (testid) (last_over_time(k6_http_reqs_total{testid=~\"$testid\"}[$__range]))",
+          "legendFormat": "{{testid}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "HTTP failure rate",
+      "datasource": { "type": "prometheus", "uid": "stitch-prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "color": { "mode": "continuous-GrYlRd" }, "max": 1 }, "overrides": [] },
+      "options": { "orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true, "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "stitch-prom" },
+          "expr": "max by (testid) (last_over_time(k6_http_req_failed_rate{testid=~\"$testid\"}[$__range]))",
+          "legendFormat": "{{testid}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Per-endpoint p95 — all endpoints, all runs",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "p95 by endpoint and run (s)",
+      "datasource": { "type": "prometheus", "uid": "stitch-prom" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 19 },
       "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
       "options": { "showHeader": true },
       "targets": [
@@ -115,41 +156,43 @@
     },
     {
       "type": "row",
-      "title": "Throughput & errors",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 },
+      "title": "Slowest endpoint per run",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 28 },
       "collapsed": false,
       "panels": []
     },
     {
       "type": "bargauge",
-      "title": "Total HTTP requests (run total)",
+      "title": "Slowest endpoint — p95 (s)",
+      "description": "The single slowest endpoint's p95 per run. Bar label shows which endpoint.",
       "datasource": { "type": "prometheus", "uid": "stitch-prom" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
-      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "continuous-BlPu" } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 29 },
+      "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "continuous-GrYlRd" } }, "overrides": [] },
       "options": { "orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true, "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "stitch-prom" },
-          "expr": "sum by (testid) (last_over_time(k6_http_reqs_total{testid=~\"$testid\"}[$__range]))",
-          "legendFormat": "{{testid}}",
+          "expr": "topk(1, last_over_time(k6_http_req_duration_p95{testid=~\"$testid\", name!=\"setup\"}[$__range])) by (testid)",
+          "legendFormat": "{{testid}} · {{name}}",
           "instant": true
         }
       ]
     },
     {
       "type": "bargauge",
-      "title": "HTTP failure rate",
+      "title": "Slowest endpoint — p99 (s)",
+      "description": "The single slowest endpoint's p99 per run. Bar label shows which endpoint.",
       "datasource": { "type": "prometheus", "uid": "stitch-prom" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
-      "fieldConfig": { "defaults": { "unit": "percentunit", "color": { "mode": "continuous-GrYlRd" }, "max": 1 }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 29 },
+      "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "continuous-GrYlRd" } }, "overrides": [] },
       "options": { "orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true, "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "stitch-prom" },
-          "expr": "max by (testid) (last_over_time(k6_http_req_failed_rate{testid=~\"$testid\"}[$__range]))",
-          "legendFormat": "{{testid}}",
+          "expr": "topk(1, last_over_time(k6_http_req_duration_p99{testid=~\"$testid\", name!=\"setup\"}[$__range])) by (testid)",
+          "legendFormat": "{{testid}} · {{name}}",
           "instant": true
         }
       ]
