@@ -90,6 +90,22 @@ def _participating_columns(params: OGFieldQueryParams) -> list[str]:
     return list(dict.fromkeys(participating))
 
 
+def _add_pivot_columns(stmt, fields, colname_col, value_col_for):
+    """Add one ``max(case(colname == f, value))`` pivot column per field.
+
+    Shared by the source and resource base builders. ``value_col_for(field)``
+    returns the typed value column to pull (off the source value table or the
+    coalesced CTE); ``colname_col`` is the colname column on the same row.
+    """
+    for field_name in fields:
+        stmt = stmt.add_columns(
+            func.max(
+                case((colname_col == field_name, value_col_for(field_name)))
+            ).label(field_name)
+        )
+    return stmt
+
+
 def base_source_query_statement(
     params: OGFieldQueryParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
@@ -129,11 +145,12 @@ def base_source_query_statement(
         stmt = stmt.where(s.source.in_(list(dict.fromkeys(licensed_sources))))
     stmt = stmt.group_by(s.id, s.source)
 
-    for field_name in _participating_columns(params):
-        value_col = getattr(v, value_attr_for(field_name))
-        stmt = stmt.add_columns(
-            func.max(case((v.colname == field_name, value_col))).label(field_name)
-        )
+    stmt = _add_pivot_columns(
+        stmt,
+        _participating_columns(params),
+        v.colname,
+        lambda field_name: getattr(v, value_attr_for(field_name)),
+    )
     return stmt.cte("source_base")
 
 
@@ -375,14 +392,12 @@ def base_resource_query_statement(
     values_cte = build_coalesced_values(
         licensed_sources=licensed_sources, colnames=involved
     )
-    pivot = select(values_cte.c.resource_id.label("resource_id"))
-    for field_name in involved:
-        value_col = getattr(values_cte.c, value_attr_for(field_name))
-        pivot = pivot.add_columns(
-            func.max(case((values_cte.c.colname == field_name, value_col))).label(
-                field_name
-            )
-        )
+    pivot = _add_pivot_columns(
+        select(values_cte.c.resource_id.label("resource_id")),
+        involved,
+        values_cte.c.colname,
+        lambda field_name: getattr(values_cte.c, value_attr_for(field_name)),
+    )
     pivot = pivot.group_by(values_cte.c.resource_id).cte("resource_value_pivot")
 
     stmt = select(universe.c.id.label("id"))
