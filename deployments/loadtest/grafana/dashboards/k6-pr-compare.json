@@ -12,7 +12,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 6,
+  "version": 7,
   "time": {
     "from": "now-7d",
     "to": "now"
@@ -353,115 +353,12 @@
     },
     {
       "type": "row",
-      "title": "Throughput & errors",
+      "title": "Per-endpoint latency stats \u2014 all endpoints, all runs",
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
         "y": 9
-      },
-      "collapsed": false,
-      "panels": []
-    },
-    {
-      "type": "bargauge",
-      "title": "Total HTTP requests (run total)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "stitch-prom"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 10
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "continuous-BlPu"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "orientation": "horizontal",
-        "displayMode": "gradient",
-        "showUnfilled": true,
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "stitch-prom"
-          },
-          "expr": "sum by (testid) (last_over_time(k6_http_reqs_total{testid=~\"$testid\"}[$__range]))",
-          "legendFormat": "{{testid}}",
-          "instant": true
-        }
-      ]
-    },
-    {
-      "type": "bargauge",
-      "title": "HTTP failure rate",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "stitch-prom"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 10
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "color": {
-            "mode": "continuous-GrYlRd"
-          },
-          "max": 1
-        },
-        "overrides": []
-      },
-      "options": {
-        "orientation": "horizontal",
-        "displayMode": "gradient",
-        "showUnfilled": true,
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "stitch-prom"
-          },
-          "expr": "max by (testid) (last_over_time(k6_http_req_failed_rate{testid=~\"$testid\"}[$__range]))",
-          "legendFormat": "{{testid}}",
-          "instant": true
-        }
-      ]
-    },
-    {
-      "type": "row",
-      "title": "Per-endpoint p95 \u2014 all endpoints, all runs",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 18
       },
       "collapsed": false,
       "panels": []
@@ -477,7 +374,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 10
       },
       "fieldConfig": {
         "defaults": {
@@ -608,6 +505,109 @@
               }
             ]
           }
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Throughput & errors",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "bargauge",
+      "title": "Total HTTP requests (run total)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "stitch-prom"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "continuous-BlPu"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "stitch-prom"
+          },
+          "expr": "sum by (testid) (last_over_time(k6_http_reqs_total{testid=~\"$testid\"}[$__range]))",
+          "legendFormat": "{{testid}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "HTTP failure rate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "stitch-prom"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "stitch-prom"
+          },
+          "expr": "max by (testid) (last_over_time(k6_http_req_failed_rate{testid=~\"$testid\"}[$__range]))",
+          "legendFormat": "{{testid}}",
+          "instant": true
         }
       ]
     },
