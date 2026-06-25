@@ -36,7 +36,7 @@ services:
     command: ["alembic", "-c", "deployments/api/alembic.ini", "revision", "--autogenerate", "-m", "baseline"]
     # On-demand only (via `make alembic-autogenerate`). Must NOT be in the
     # `tools`/`full` profiles, or it autogenerates a blank revision on every
-    # `make api-dev` / `reboot-docker` startup.
+    # `make api-dev` / `make reboot-docker` startup.
     profiles: ["alembic-generate"]
     restart: "no"
 
