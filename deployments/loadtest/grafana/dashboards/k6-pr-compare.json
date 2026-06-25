@@ -34,7 +34,8 @@
     },
     {
       "type": "bargauge",
-      "title": "p95 request duration (s)",
+      "title": "Worst-endpoint p95 (s)",
+      "description": "The slowest single endpoint's p95 per run (k6 exports pre-computed percentiles per endpoint, which can't be combined into a true all-requests percentile). Bar label shows which endpoint.",
       "datasource": { "type": "prometheus", "uid": "stitch-prom" },
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
       "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "continuous-GrYlRd" } }, "overrides": [] },
@@ -43,15 +44,16 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "stitch-prom" },
-          "expr": "max by (testid) (last_over_time(k6_http_req_duration_p95{testid=~\"$testid\"}[$__range]))",
-          "legendFormat": "{{testid}}",
+          "expr": "topk(1, last_over_time(k6_http_req_duration_p95{testid=~\"$testid\"}[$__range])) by (testid)",
+          "legendFormat": "{{testid}} · {{name}}",
           "instant": true
         }
       ]
     },
     {
       "type": "bargauge",
-      "title": "p99 request duration (s)",
+      "title": "Worst-endpoint p99 (s)",
+      "description": "The slowest single endpoint's p99 per run. Bar label shows which endpoint.",
       "datasource": { "type": "prometheus", "uid": "stitch-prom" },
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
       "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "continuous-GrYlRd" } }, "overrides": [] },
@@ -60,15 +62,16 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "stitch-prom" },
-          "expr": "max by (testid) (last_over_time(k6_http_req_duration_p99{testid=~\"$testid\"}[$__range]))",
-          "legendFormat": "{{testid}}",
+          "expr": "topk(1, last_over_time(k6_http_req_duration_p99{testid=~\"$testid\"}[$__range])) by (testid)",
+          "legendFormat": "{{testid}} · {{name}}",
           "instant": true
         }
       ]
     },
     {
       "type": "bargauge",
-      "title": "avg request duration (s)",
+      "title": "Worst-endpoint avg (s)",
+      "description": "The slowest single endpoint's average per run. Bar label shows which endpoint.",
       "datasource": { "type": "prometheus", "uid": "stitch-prom" },
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
       "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "continuous-GrYlRd" } }, "overrides": [] },
@@ -77,8 +80,8 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "stitch-prom" },
-          "expr": "max by (testid) (last_over_time(k6_http_req_duration_avg{testid=~\"$testid\"}[$__range]))",
-          "legendFormat": "{{testid}}",
+          "expr": "topk(1, last_over_time(k6_http_req_duration_avg{testid=~\"$testid\"}[$__range])) by (testid)",
+          "legendFormat": "{{testid}} · {{name}}",
           "instant": true
         }
       ]
