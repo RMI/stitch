@@ -1242,8 +1242,9 @@ class TestResourceDetailCoalescing:
 class TestCoalescingEngineParity:
     """Phase-1 (SQL) and phase-2/detail (Python) coalescing pick the same winner.
 
-    Exercises all three tiebreak paths at once: duplicate same-source records,
-    a per-resource priority override, and an unlicensed higher-priority source.
+    Exercises all three tiebreak paths at once: an unlicensed higher-priority
+    source (dropped), a per-resource priority override, and duplicate
+    same-source records (lowest source_pk wins).
     """
 
     @pytest.mark.anyio
@@ -1256,6 +1257,10 @@ class TestCoalescingEngineParity:
         rid = await _create_resource_with_sources(
             session,
             test_user,
+            # rmi has the top DEFAULT priority and would win the (priority=1,
+            # source-ASC) tie against the wm override -- but it is left unlicensed
+            # below, so it must fall through (the unlicensed-fallthrough path).
+            {"source": "rmi", "name": "RMI Name", "country": "MEX"},
             {"source": "wm", "name": "WM First", "country": "USA"},
             {"source": "wm", "name": "WM Second", "country": "CAN"},
             {"source": "gem", "name": "GEM Name", "country": "BRA"},
@@ -1266,10 +1271,11 @@ class TestCoalescingEngineParity:
         )
         await session.flush()
 
+        # rmi unlicensed -> falls through; among licensed sources wm (override)
+        # wins, and the lowest source_pk among the duplicate wm records wins.
         licensed = frozenset({"wm", "gem"})
 
-        # Detail (Python) winner: wm by override, lowest source_pk among the
-        # duplicate wm records.
+        # Detail (Python) winner.
         detail = await resource_actions.get(session, rid, licensed_sources=licensed)
         assert detail.view.name == "WM First"
         assert detail.provenance["name"][1] == "wm"
