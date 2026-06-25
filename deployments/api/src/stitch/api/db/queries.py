@@ -12,7 +12,7 @@ endpoint needs. Construction is pure (no session); execution + hydration live in
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from typing import Any, Final
 
 from sqlalchemy import (
@@ -68,7 +68,7 @@ PRIMARY_SORT_COL: Final[str] = "id"
 _HEADER_SORT_FIELDS: Final[frozenset[str]] = frozenset({"id", "source", "resource_id"})
 
 
-def _source_header_membership_match(s, m):
+def _source_header_membership_match(s, m) -> ColumnElement[bool]:
     """Correlate a source header to its membership on BOTH pk and source key.
 
     ``membership.source`` is not FK-tied to the header's source, so matching on
@@ -99,7 +99,12 @@ def _participating_columns(params: OGFieldQueryParams) -> list[str]:
     return list(dict.fromkeys(participating))
 
 
-def _add_pivot_columns(stmt, fields, colname_col, value_col_for):
+def _add_pivot_columns(
+    stmt: Select,
+    fields: Collection[str],
+    colname_col: ColumnElement[Any],
+    value_col_for: Callable[[str], ColumnElement[Any]],
+) -> Select:
     """Add one ``max(case(colname == f, value))`` pivot column per field.
 
     Shared by the source and resource base builders. ``value_col_for(field)``
@@ -239,7 +244,12 @@ def _build_sort_clauses(cte: CTE, params: OGFieldQueryParams) -> list[Any]:
     return clauses
 
 
-def _id_select(base, conditions, params=None, sort_clauses=None):
+def _id_select(
+    base: CTE,
+    conditions: list[ColumnElement[bool]],
+    params: OGFieldQueryParams | None = None,
+    sort_clauses: list[Any] | None = None,
+) -> Select[tuple[int]]:
     """``select(base.c.id)`` + WHEREs, optionally ordered + paginated.
 
     With ``sort_clauses`` (query path) the result is ordered then sliced by

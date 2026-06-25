@@ -74,6 +74,9 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
             return by_id
 
         source_pks = {source_pk for _, source_pk in pairs}
+        # Headers are looked up by source_pk alone; the phase-1 SQL path double-keys
+        # on (source_pk, source). The two stay equivalent under the write-path
+        # invariant that a membership's source always matches its header's source.
         src_stmt = select(OilGasFieldSourceModel).where(
             OilGasFieldSourceModel.id.in_(source_pks)
         )
