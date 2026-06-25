@@ -231,17 +231,33 @@ def _build_sort_clauses(cte: CTE, params: OGFieldQueryParams) -> list[Any]:
     return clauses
 
 
+def _id_select(base, conditions, params=None, sort_clauses=None):
+    """``select(base.c.id)`` + WHEREs, optionally ordered + paginated.
+
+    With ``sort_clauses`` (query path) the result is ordered then sliced by
+    ``params.offset``/``params.limit``; without it (count path) the filtered,
+    unordered, unpaginated select the caller wraps in ``count()``.
+    """
+    stmt = select(base.c.id)
+    for cond in conditions:
+        stmt = stmt.where(cond)
+    if sort_clauses is not None:
+        stmt = stmt.order_by(*sort_clauses).offset(params.offset).limit(params.limit)
+    return stmt
+
+
 def construct_sources_query_statement(
     params: OGFieldQueryParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> Select[tuple[int]]:
     """Filtered + sorted + paginated id-``Select`` for the source-list query."""
     base = base_source_query_statement(params, licensed_sources=licensed_sources)
-    stmt = select(base.c.id)
-    for cond in _build_conditions(base, params, licensed_sources):
-        stmt = stmt.where(cond)
-    stmt = stmt.order_by(*_build_sort_clauses(base, params))
-    return stmt.offset(params.offset).limit(params.limit)
+    return _id_select(
+        base,
+        _build_conditions(base, params, licensed_sources),
+        params=params,
+        sort_clauses=_build_sort_clauses(base, params),
+    )
 
 
 def construct_sources_count_statement(
@@ -250,10 +266,7 @@ def construct_sources_count_statement(
 ) -> Select[tuple[int]]:
     """Filtered (unordered, unpaginated) id-``Select``; caller wraps in count()."""
     base = base_source_query_statement(params, licensed_sources=licensed_sources)
-    stmt = select(base.c.id)
-    for cond in _build_conditions(base, params, licensed_sources):
-        stmt = stmt.where(cond)
-    return stmt
+    return _id_select(base, _build_conditions(base, params, licensed_sources))
 
 
 # --------------------------------------------------------------------------- #
@@ -429,11 +442,12 @@ def construct_resources_query_statement(
 ) -> Select[tuple[int]]:
     """Filtered + sorted + paginated id-``Select`` for the resource-list query."""
     base = base_resource_query_statement(params, licensed_sources=licensed_sources)
-    stmt = select(base.c.id)
-    for cond in _build_field_conditions(base, params):
-        stmt = stmt.where(cond)
-    stmt = stmt.order_by(*_build_resource_sort_clauses(base, params))
-    return stmt.offset(params.offset).limit(params.limit)
+    return _id_select(
+        base,
+        _build_field_conditions(base, params),
+        params=params,
+        sort_clauses=_build_resource_sort_clauses(base, params),
+    )
 
 
 def construct_resources_count_statement(
@@ -442,7 +456,4 @@ def construct_resources_count_statement(
 ) -> Select[tuple[int]]:
     """Filtered (unordered, unpaginated) id-``Select``; caller wraps in count()."""
     base = base_resource_query_statement(params, licensed_sources=licensed_sources)
-    stmt = select(base.c.id)
-    for cond in _build_field_conditions(base, params):
-        stmt = stmt.where(cond)
-    return stmt
+    return _id_select(base, _build_field_conditions(base, params))
