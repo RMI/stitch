@@ -8,7 +8,11 @@ PORTABLE_BIGINT = (
     .with_variant(sqlite.INTEGER(), "sqlite")
 )
 PORTABLE_JSON = JSON().with_variant(postgresql.JSONB(), "postgresql")
-PORTABLE_FLOAT = Float().with_variant(postgresql.DOUBLE_PRECISION(), "postgresql")
+PORTABLE_FLOAT = (
+    Float()
+    .with_variant(postgresql.DOUBLE_PRECISION(), "postgresql")
+    .with_variant(sqlite.REAL(), "sqlite")
+)
 
 # JSON column where a Python ``None`` binds to SQL NULL (not the JSON ``null``
 # literal). Needed so the long values table's "exactly one column populated"

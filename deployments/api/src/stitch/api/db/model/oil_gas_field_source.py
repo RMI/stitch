@@ -12,11 +12,10 @@ from stitch.api.entities import User
 
 from .common import Base
 from .mixins import TimestampMixin, UserAuditMixin
-from .og_field_query_mixin import OGFieldQueryMixin
 from .oil_gas_field_source_value import ATTRIBUTE_NAMES, OilGasFieldSourceValueModel
 
 
-class OilGasFieldSourceModel(OGFieldQueryMixin, TimestampMixin, UserAuditMixin, Base):
+class OilGasFieldSourceModel(TimestampMixin, UserAuditMixin, Base):
     """Header for a single OG field source record.
 
     Identity + raw payload only; the coalesced attributes live in long form on
