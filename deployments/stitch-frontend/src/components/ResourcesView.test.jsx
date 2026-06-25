@@ -12,13 +12,16 @@ const mockItems = [
     id: 1,
     data: {
       name: "Burgan Field",
+      country: "NOR",
       state_province: "Kuwait",
       region: "Middle East",
       basin: "Arabian",
       field_status: "Producing",
+      primary_hydrocarbon_group: "Oil",
     },
     provenance: {
       name: "gem",
+      country: "gem",
       state_province: "gem",
       region: "wm",
       basin: "wm",
@@ -29,13 +32,16 @@ const mockItems = [
     id: 2,
     data: {
       name: "Ghawar Field",
+      country: "SAU",
       state_province: null,
       region: "Middle East",
       basin: "Arabian",
       field_status: "Producing",
+      primary_hydrocarbon_group: "Oil",
     },
     provenance: {
       name: "gem",
+      country: "gem",
       region: "wm",
       basin: "wm",
       field_status: "gem",
@@ -65,19 +71,20 @@ beforeEach(() => {
     ...defaultHookReturn,
     refetch: vi.fn(),
   });
+  const FILTER_OPTION_VALUES = {
+    region: ["Middle East"],
+    basin: ["Arabian", "Permian"],
+    state_province: ["Kuwait"],
+    field_status: ["Producing"],
+    country: ["NOR", "SAU"],
+    primary_hydrocarbon_group: ["Oil", "Gas"],
+  };
   vi.mocked(useResourceFilterOptions).mockImplementation(
     (_endpoint, field) => ({
       ...defaultHookReturn,
       data: {
         field,
-        values:
-          field === "region"
-            ? ["Middle East"]
-            : field === "basin"
-              ? ["Arabian", "Permian"]
-              : field === "state_province"
-                ? ["Kuwait"]
-                : ["Producing"],
+        values: FILTER_OPTION_VALUES[field] ?? [],
       },
     }),
   );
@@ -172,7 +179,31 @@ describe("ResourcesView", () => {
     expect(
       within(table).getByRole("button", { name: /^field status/i }),
     ).toBeInTheDocument();
+    expect(
+      within(table).getByRole("button", { name: /^country/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(table).getByRole("button", {
+        name: /^primary hydrocarbon group/i,
+      }),
+    ).toBeInTheDocument();
     expect(within(table).getByText("Data source mix")).toBeInTheDocument();
+  });
+
+  it("renders country as a conventional name rather than the alpha-3 code", () => {
+    vi.mocked(useResources).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockResourceData,
+    });
+
+    renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("Norway")).toBeInTheDocument();
+    expect(within(table).getByText("Saudi Arabia")).toBeInTheDocument();
+    // The raw codes should not be shown in the table.
+    expect(within(table).queryByText("NOR")).not.toBeInTheDocument();
+    expect(within(table).queryByText("SAU")).not.toBeInTheDocument();
   });
 
   it("shows filter bar when data is available", () => {
@@ -345,6 +376,23 @@ describe("ResourcesView", () => {
         expect.objectContaining({ sort_by: "basin", sort_order: "desc" }),
       );
     });
+
+    it("sorts by the country column", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: mockResourceData,
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      const table = screen.getByRole("table");
+      fireEvent.click(within(table).getByRole("button", { name: /^country/i }));
+
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({ sort_by: "country", sort_order: "asc" }),
+      );
+    });
   });
 
   describe("filtering", () => {
@@ -365,6 +413,42 @@ describe("ResourcesView", () => {
       expect(useResourceFilterOptions).toHaveBeenCalledWith(
         ENDPOINT,
         "field_status",
+      );
+      expect(useResourceFilterOptions).toHaveBeenCalledWith(
+        ENDPOINT,
+        "country",
+      );
+      expect(useResourceFilterOptions).toHaveBeenCalledWith(
+        ENDPOINT,
+        "primary_hydrocarbon_group",
+      );
+    });
+
+    it("shows country options as conventional names but filters by the code", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: mockResourceData,
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      // Open the Country dropdown (scoped to the filter bar).
+      fireEvent.click(
+        within(screen.getByTestId("filter-bar")).getByRole("button", {
+          name: /^country/i,
+        }),
+      );
+
+      // The option is labelled with the conventional name...
+      const option = screen.getByRole("checkbox", { name: /norway/i });
+      fireEvent.click(option);
+
+      // ...but the value sent to the API is the alpha-3 code.
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({
+          filters: expect.objectContaining({ country: ["NOR"] }),
+        }),
       );
     });
 
