@@ -1237,3 +1237,50 @@ class TestResourceDetailCoalescing:
             ("RMI Operator", 100.0)
         ]
         assert result.provenance["operators"][1] == "rmi"
+
+
+class TestCoalescingEngineParity:
+    """Phase-1 (SQL) and phase-2/detail (Python) coalescing pick the same winner.
+
+    Exercises all three tiebreak paths at once: duplicate same-source records,
+    a per-resource priority override, and an unlicensed higher-priority source.
+    """
+
+    @pytest.mark.anyio
+    async def test_list_and_detail_agree_on_coalesced_winner(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        session = seeded_integration_session
+        rid = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "wm", "name": "WM First", "country": "USA"},
+            {"source": "wm", "name": "WM Second", "country": "CAN"},
+            {"source": "gem", "name": "GEM Name", "country": "BRA"},
+        )
+        # Override: wm becomes top priority for THIS resource only.
+        session.add(
+            OGFieldResourceSourcePriority(resource_id=rid, source="wm", priority=1)
+        )
+        await session.flush()
+
+        licensed = frozenset({"wm", "gem"})
+
+        # Detail (Python) winner: wm by override, lowest source_pk among the
+        # duplicate wm records.
+        detail = await resource_actions.get(session, rid, licensed_sources=licensed)
+        assert detail.view.name == "WM First"
+        assert detail.provenance["name"][1] == "wm"
+
+        # List/phase-1 (SQL): filtering on the detail winner's coalesced name must
+        # return the resource, and the hydrated (phase-2) value + provenance match.
+        params = _QueryParams(name=detail.view.name, page=1, page_size=10)
+        items, total = await resource_actions.query(
+            session, params, licensed_sources=licensed
+        )
+        assert total == 1
+        assert [i.id for i in items] == [rid]
+        assert items[0].data.name == detail.view.name
+        assert items[0].provenance["name"] == detail.provenance["name"][1]
