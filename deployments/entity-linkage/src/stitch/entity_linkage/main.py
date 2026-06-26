@@ -24,6 +24,4 @@ app = create_app(
     routers=[health_router, start_router],
     cors_origins=[str(settings.frontend_origin_url)],
     on_startup=_run_startup,
-    service_name="stitch-entity-linkage",
-    otel=settings,
 )

@@ -8,7 +8,6 @@ dependencies = [
   "fastapi[standard-no-fastapi-cloud-cli]>=0.135.1",
   "stitch-auth",
   "stitch-client",
-  "stitch-observability",
 ]
 
 [build-system]
@@ -21,7 +20,6 @@ module-name = "stitch.service"
 [tool.uv.sources]
 stitch-auth = { workspace = true }
 stitch-client = { workspace = true }
-stitch-observability = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
