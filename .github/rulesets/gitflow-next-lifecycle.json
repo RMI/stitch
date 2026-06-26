@@ -10,7 +10,8 @@
       "exclude": [],
       "include": [
         "refs/heads/next",
-        "refs/heads/hotfix/**"
+        "refs/heads/hotfix/**",
+        "refs/heads/demo/**"
       ]
     }
   },

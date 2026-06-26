@@ -1,6 +1,6 @@
 from collections.abc import Collection, Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from stitch.api.db.config import AsyncSession
 from stitch.api.db.errors import (
@@ -18,6 +18,10 @@ from .model import (
     OilGasFieldSourceModel,
     ResourceModel,
     MembershipModel,
+)
+from .queries import (
+    construct_sources_count_statement,
+    construct_sources_query_statement,
 )
 from .utils import resource_model_to_entity
 
@@ -159,10 +163,23 @@ async def query(
     params: OGFieldQueryParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> tuple[Sequence[OGFieldSource], int]:
-    models = await OilGasFieldSourceModel.query(
-        session, params, licensed_sources=licensed_sources
+    """Filtered/sorted/paginated source records (id-ordered) plus total count."""
+    stmt = construct_sources_query_statement(params, licensed_sources)
+    ids = list((await session.scalars(stmt)).all())
+
+    count_stmt = construct_sources_count_statement(params, licensed_sources)
+    total = (
+        await session.scalar(select(func.count()).select_from(count_stmt.subquery()))
+        or 0
     )
-    total = await OilGasFieldSourceModel.count(
-        session, params, licensed_sources=licensed_sources
-    )
-    return tuple(m.as_entity() for m in models), total
+
+    if not ids:
+        return (), total
+
+    headers = (
+        await session.scalars(
+            select(OilGasFieldSourceModel).where(OilGasFieldSourceModel.id.in_(ids))
+        )
+    ).all()
+    by_id = {h.id: h for h in headers}
+    return tuple(by_id[i].as_entity() for i in ids if i in by_id), total
