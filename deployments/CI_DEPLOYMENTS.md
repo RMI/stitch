@@ -13,12 +13,14 @@ Branch behavior is:
 * any PR not targeting `production` -> `deployment_lane=development`, `deployment_name=pr-<number>`
 * push to `production` -> `deployment_lane=dress-rehearsal`, `deployment_name=production`
 * any PR targeting `production` -> `deployment_lane=staging`, branch-derived `deployment_name`
+* any PR from a `demo/*` branch -> `deployment_lane=staging`, branch-derived `deployment_name` (regardless of whether it targets `main` or `production`)
 
 Examples:
 
 * PR #57 into `main` -> `deployment_name=pr-57`
 * PR from `next` into `production` -> `deployment_name=next`
 * PR from `hotfix/fix-auth` into `production` -> `deployment_name=hotfix-fix-auth`
+* PR from `demo/q3-pitch` into `main` -> `deployment_name=demo-q3-pitch`
 
 It builds Docker images for:
 
