@@ -67,36 +67,11 @@ async def query(
     if not ids:
         return [], total
 
-    items = await hydrate_resource_list(session, ids, licensed_sources)
-    return items, total
-
-
-async def hydrate_resource_list(
-    session: AsyncSession,
-    ids: Sequence[int],
-    licensed_sources: Collection[OGSISrcKey] | None = None,
-) -> list[OGFieldListItemView]:
-    """Hydrate resource list items by id, coalescing in Python.
-
-    Batched: one ``coalesce_resources`` call (constant round-trips, no N+1) over
-    the page's ids -- the same Python coalescer the detail path uses -- then the
-    shared ``resource_to_list_item_view`` projection. Items are returned in the
-    given (phase-1) order; list ids are never repointed (the universe excludes
-    them). Ids with no winning values hydrate as null-shells.
-    """
+    # Phase 2: one batched Python coalesce over the page ids (same coalescer the
+    # detail path uses), then the shared list-item projection, in phase-1 order.
     coalesced = await coalesce_resources(session, ids, licensed_sources)
-    items: list[OGFieldListItemView] = []
-    for rid in ids:
-        view, provenance, src_data = coalesced[rid]
-        resource = OGFieldResource(
-            id=rid,
-            source_data=src_data,
-            view=view,
-            provenance=provenance,
-            constituents=frozenset(),
-        )
-        items.append(resource_to_list_item_view(resource))
-    return items
+    items = [resource_to_list_item_view(coalesced[rid]) for rid in ids]
+    return items, total
 
 
 async def filter_options(

@@ -5,6 +5,8 @@ from collections.abc import Collection, Sequence
 from sqlalchemy import (
     ForeignKey,
     Index,
+    and_,
+    func,
     literal,
     select,
 )
@@ -16,6 +18,8 @@ from stitch.ogsi.model.types import OGSISrcKey
 
 from .membership import MembershipModel, MembershipStatus
 from .oil_gas_field_source import OilGasFieldSourceModel
+from .og_field_source_priority import OGFieldSourcePriority
+from .og_field_resource_source_priority import OGFieldResourceSourcePriority
 
 from stitch.api.entities import User as UserEntity
 from .common import Base
@@ -51,42 +55,49 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
         session: AsyncSession,
         resource_ids: Collection[int],
         licensed_sources: Collection[OGSISrcKey] | None = None,
-    ) -> dict[int, list[OGFieldSource]]:
-        """Active source entities for each resource id, grouped by resource."""
-        by_id: dict[int, list[OGFieldSource]] = {rid: [] for rid in resource_ids}
+    ) -> dict[int, list[tuple[OGFieldSource, int]]]:
+        """Active ``(source entity, effective priority)`` rows per resource id.
+
+        One query mirroring the SQL ``active_src`` CTE: membership -> resource ->
+        priority (+ per-resource override) -> source header, restricted to active
+        memberships of non-repointed resources. ``values`` selectin-loads with the
+        entity. Effective priority is ``COALESCE(override, default)``; licensing is
+        applied in SQL.
+        """
+        by_id: dict[int, list[tuple[OGFieldSource, int]]] = {
+            rid: [] for rid in resource_ids
+        }
         if not by_id:
             return by_id
 
-        pair_stmt = (
-            select(MembershipModel.resource_id, MembershipModel.source_pk)
-            .where(MembershipModel.resource_id.in_(by_id.keys()))
-            .where(MembershipModel.status == MembershipStatus.ACTIVE)
+        m, r, s = MembershipModel, cls, OilGasFieldSourceModel
+        p, o = OGFieldSourcePriority, OGFieldResourceSourcePriority
+        priority = func.coalesce(o.priority, p.priority)
+        stmt = (
+            select(m.resource_id, s, priority.label("priority"))
+            .select_from(m)
+            .join(r, r.id == m.resource_id)
+            .join(p, p.source == m.source)
+            .outerjoin(o, and_(o.resource_id == r.id, o.source == m.source))
+            # dual-key: membership.source is not FK-tied to the header's source,
+            # so matching on source_pk alone could admit a mismatched row.
+            .join(s, and_(s.id == m.source_pk, s.source == m.source))
+            .where(
+                r.repointed_id.is_(None),
+                m.status == MembershipStatus.ACTIVE,
+                m.resource_id.in_(by_id.keys()),
+            )
         )
-        pairs = (await session.execute(pair_stmt)).all()
-        if not pairs:
-            return by_id
+        if licensed_sources is not None:
+            stmt = stmt.where(m.source.in_(list(dict.fromkeys(licensed_sources))))
 
-        source_pks = {source_pk for _, source_pk in pairs}
-        src_stmt = select(OilGasFieldSourceModel).where(
-            OilGasFieldSourceModel.id.in_(source_pks)
-        )
-        entity_by_pk = {
-            model.id: model.as_entity()
-            for model in (await session.scalars(src_stmt)).all()
-        }
-
-        for resource_id, source_pk in pairs:
-            entity = entity_by_pk.get(source_pk)
-            if entity is None:
-                continue
-            if licensed_sources is not None and entity.source not in licensed_sources:
-                continue
-            by_id[resource_id].append(entity)
+        for resource_id, src_model, prio in (await session.execute(stmt)).all():
+            by_id[resource_id].append((src_model.as_entity(), prio))
         return by_id
 
     async def get_source_data(self, session: AsyncSession) -> Sequence[OGFieldSource]:
         by_id = await type(self).source_data_by_resource_id(session, [self.id])
-        return by_id[self.id]
+        return [src for src, _ in by_id[self.id]]
 
     async def get_root(self, session: AsyncSession):
         root = await session.scalar(self.__class__._root_select(self.id))

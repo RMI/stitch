@@ -3,26 +3,19 @@ from functools import reduce
 from typing import Protocol
 
 from pydantic import TypeAdapter
-from sqlalchemy import and_, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from stitch.ogsi.model import (
     OGFieldDetailView,
     OGFieldListItemView,
     OGFieldResource,
-    OGFieldSource,
     OGFieldSourceView,
     OGFieldView,
     OGSISrcKey,
 )
-from stitch.ogsi.model.og_field import OilGasFieldBase
-from stitch.api.coalesce import ProvAttrs, coalesce_og_field_resource
+from stitch.api.coalesce import coalesce_og_field_resource
 from stitch.api.db.errors import ResourceIntegrityError
 
-from .model import (
-    OGFieldResourceSourcePriority,
-    OGFieldSourcePriority,
-    ResourceModel,
-)
+from .model import ResourceModel
 
 
 OG_FIELD_SOURCE_VIEW_ADAPTER = TypeAdapter(OGFieldSourceView)
@@ -51,116 +44,57 @@ async def resource_model_to_entity(
     model: ResourceModel,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> OGFieldResource:
-    repointed = model.repointed_id is not None
-    view, provenance, src_data = (
-        await coalesce_resources(
-            session,
-            [model.id],
-            licensed_sources,
-            repointed_ids=[model.id] if repointed else (),
-        )
-    )[model.id]
+    base = (await coalesce_resources(session, [model.id], licensed_sources))[model.id]
 
     constituent_models = await ResourceModel.get_constituents_by_root_id(
         session, model.id
     )
-    constituents = [
-        cm.as_empty_entity() for cm in constituent_models if cm.id != model.id
-    ]
-    rep_res: OGFieldResource | None = None
-    if repointed:
+    constituents = frozenset(
+        cm.id for cm in constituent_models if cm.id is not None and cm.id != model.id
+    )
+    repointed_to: int | None = None
+    if model.repointed_id is not None:
         rep_model = await session.get(ResourceModel, model.repointed_id)
-        rep_res = rep_model.as_empty_entity() if rep_model else None
+        repointed_to = rep_model.id if rep_model else None
 
-    return OGFieldResource(
-        id=model.id,
-        repointed_to=None if rep_res is None else rep_res.id,
-        constituents=frozenset([cm.id for cm in constituents if cm.id is not None]),
-        source_data=src_data,
-        view=view,
-        provenance=provenance,
+    return base.model_copy(
+        update={"repointed_to": repointed_to, "constituents": constituents}
     )
-
-
-async def _effective_priorities_by_resource_id(
-    session: AsyncSession, resource_ids: Collection[int]
-) -> dict[int, list[OGSISrcKey]]:
-    """Override-aware source priority order per resource, best-first.
-
-    One query: every (resource, source) pair via resources × the priority table,
-    left-joined to the per-resource override, ordered by COALESCE(override,
-    default) then source -- the same expression/ordering ``build_coalesced_values``
-    uses, so the Python winner matches the SQL winner.
-    """
-    by_id: dict[int, list[OGSISrcKey]] = {rid: [] for rid in resource_ids}
-    if not by_id:
-        return by_id
-
-    r = ResourceModel
-    p = OGFieldSourcePriority
-    o = OGFieldResourceSourcePriority
-    effective = func.coalesce(o.priority, p.priority)
-    stmt = (
-        select(r.id, p.source)
-        .select_from(r)
-        .join(p, true())  # cross join: every (resource, source) pair
-        .outerjoin(o, and_(o.resource_id == r.id, o.source == p.source))
-        .where(r.id.in_(by_id.keys()))
-        .order_by(r.id, effective.asc(), p.source.asc())
-    )
-    for resource_id, source in (await session.execute(stmt)).all():
-        by_id[resource_id].append(source)
-    return by_id
-
-
-def _coalesce_view(
-    src_data: Sequence[OGFieldSource],
-    priorities: Sequence[OGSISrcKey],
-    *,
-    repointed: bool,
-) -> tuple[OilGasFieldBase, ProvAttrs]:
-    # A repointed resource contributes no values (parity with the SQL CTE's
-    # `repointed_id IS NULL` filter): coalesce over an empty list -> null-shell.
-    coalescing_input = [] if repointed else src_data
-    # Keep only sources with a priority row (mirrors the SQL inner join on
-    # og_field_source_priority) and sort by source_pk descending so that, under
-    # coalesce_og_field_resource's stable reverse-priority re-sort + last-wins
-    # reduce, the lowest source_pk wins among duplicate same-source records
-    # (matches the SQL `source_pk ASC` final tiebreak).
-    prepared = sorted(
-        (s for s in coalescing_input if s.source in priorities),
-        key=lambda s: s.id,
-        reverse=True,
-    )
-    return coalesce_og_field_resource(prepared, priorities)
 
 
 async def coalesce_resources(
     session: AsyncSession,
     resource_ids: Collection[int],
     licensed_sources: Collection[OGSISrcKey] | None = None,
-    *,
-    repointed_ids: Collection[int] = frozenset(),
-) -> dict[int, tuple[OilGasFieldBase, ProvAttrs, list[OGFieldSource]]]:
-    """Coalesce many resources in Python from batched source data + priorities.
+) -> dict[int, OGFieldResource]:
+    """Coalesce many resources in Python into one entity each.
 
-    The single coalescer behind both the detail and list paths. Returns an entry
-    for every requested id; ids with no active/licensed source data (or listed in
-    ``repointed_ids``) yield a null-shell view + all-``None`` provenance.
+    The single place that builds an ``OGFieldResource`` from coalesced parts,
+    behind both the detail and list paths. Returns an entry for every requested
+    id; ids with no active/licensed source data -- including repointed resources,
+    which ``source_data_by_resource_id`` filters out -- yield a null-shell view +
+    all-``None`` provenance.
     """
-    src_by_id = await ResourceModel.source_data_by_resource_id(
+    rows_by_id = await ResourceModel.source_data_by_resource_id(
         session, resource_ids, licensed_sources
     )
-    prio_by_id = await _effective_priorities_by_resource_id(session, resource_ids)
-    repointed = set(repointed_ids)
 
-    out: dict[int, tuple[OilGasFieldBase, ProvAttrs, list[OGFieldSource]]] = {}
+    out: dict[int, OGFieldResource] = {}
     for rid in resource_ids:
-        src = src_by_id.get(rid, [])
-        view, provenance = _coalesce_view(
-            src, prio_by_id.get(rid, []), repointed=rid in repointed
+        rows = rows_by_id.get(rid, [])
+        # Effective priority order, best-first; built from only the sources
+        # present, so coalesce_og_field_resource's priorities.index never raises.
+        prio_map = {src.source: prio for src, prio in rows}
+        priorities = sorted(prio_map, key=lambda k: (prio_map[k], k))
+        sources = [src for src, _ in rows]
+        view, provenance = coalesce_og_field_resource(sources, priorities)
+        out[rid] = OGFieldResource(
+            id=rid,
+            source_data=sources,
+            view=view,
+            provenance=provenance,
+            constituents=frozenset(),
         )
-        out[rid] = (view, provenance, src)
     return out
 
 

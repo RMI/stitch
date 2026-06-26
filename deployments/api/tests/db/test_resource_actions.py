@@ -677,23 +677,21 @@ class TestResourceUniverseAndNarrowing:
         assert [i.id for i in items] == list(reversed(ascending))
 
     @pytest.mark.anyio
-    async def test_hydration_round_trips_constant_in_page_size(
+    async def test_query_hydration_round_trips_constant_in_page_size(
         self,
         seeded_integration_session: AsyncSession,
         test_user: User,
     ):
-        """Phase 2 hydration is constant round-trips, independent of id count (no N+1)."""
-        ids = [
+        """query hydrates in constant round-trips, independent of page size (no N+1)."""
+        for name in ["A", "B", "C", "D"]:
             await _create_resource_with_sources(
                 seeded_integration_session,
                 test_user,
                 {"source": "gem", "name": name, "country": "USA"},
             )
-            for name in ["A", "B", "C", "D"]
-        ]
         sync_engine = seeded_integration_session.bind.sync_engine
 
-        async def _count(hydrate_ids):
+        async def _count(page_size):
             executions = 0
 
             def _inc(conn, cursor, statement, parameters, context, executemany):
@@ -702,21 +700,22 @@ class TestResourceUniverseAndNarrowing:
 
             event.listen(sync_engine, "before_cursor_execute", _inc)
             try:
-                items = await resource_actions.hydrate_resource_list(
-                    seeded_integration_session, hydrate_ids
+                items, _ = await resource_actions.query(
+                    seeded_integration_session,
+                    _QueryParams(page=1, page_size=page_size),
                 )
             finally:
                 event.remove(sync_engine, "before_cursor_execute", _inc)
             return executions, items
 
-        one_count, _ = await _count(ids[:1])
-        all_count, all_items = await _count(ids)
+        one_count, _ = await _count(1)
+        all_count, all_items = await _count(10)
 
-        # No N+1: hydrating 4 ids costs the same round-trips as hydrating 1.
+        # No N+1: a 4-row page costs the same round-trips as a 1-row page.
         assert one_count == all_count
-        # And it is a small constant (memberships + sources + selectin values + priorities).
+        # Small constant: ids + count + source/priority join + selectin values.
         assert all_count <= 5
-        assert [item.id for item in all_items] == ids
+        assert len(all_items) == 4
 
 
 class TestResourceFilterOptionsAction:
@@ -1251,14 +1250,15 @@ class TestBatchedSourceData:
         by_id = await ResourceModel.source_data_by_resource_id(
             session, [rid_a, rid_b, empty.id]
         )
-        assert {s.source for s in by_id[rid_a]} == {"rmi", "gem"}
-        assert {s.source for s in by_id[rid_b]} == {"wm"}
+        assert {s.source for s, _ in by_id[rid_a]} == {"rmi", "gem"}
+        assert {s.source for s, _ in by_id[rid_b]} == {"wm"}
+        assert all(isinstance(prio, int) for _, prio in by_id[rid_a])
         assert by_id[empty.id] == []
 
         licensed = await ResourceModel.source_data_by_resource_id(
             session, [rid_a], licensed_sources=frozenset({"gem"})
         )
-        assert {s.source for s in licensed[rid_a]} == {"gem"}
+        assert {s.source for s, _ in licensed[rid_a]} == {"gem"}
 
 
 class TestCoalescingEngineParity:
@@ -1333,27 +1333,35 @@ class TestCoalesceResources:
 
         out = await utils.coalesce_resources(session, [rid, empty.id])
 
-        view, prov, src = out[rid]
-        assert view.name == "G"
-        assert prov["name"][1] == "gem"
-        assert {s.source for s in src} == {"gem"}
+        res = out[rid]
+        assert res.view.name == "G"
+        assert res.provenance["name"][1] == "gem"
+        assert {s.source for s in res.source_data} == {"gem"}
 
-        empty_view, empty_prov, empty_src = out[empty.id]
-        assert empty_view.name is None
-        assert empty_prov["name"] is None
-        assert empty_src == []
+        empty_res = out[empty.id]
+        assert empty_res.view.name is None
+        assert empty_res.provenance["name"] is None
+        assert empty_res.source_data == []
 
     @pytest.mark.anyio
-    async def test_repointed_id_yields_nullshell(
+    async def test_repointed_resource_yields_nullshell(
         self,
         seeded_integration_session: AsyncSession,
         test_user: User,
     ):
         session = seeded_integration_session
-        rid = await _create_resource_with_sources(
-            session, test_user, {"source": "gem", "name": "G", "country": "USA"}
+        target = await _create_resource_with_sources(
+            session, test_user, {"source": "wm", "name": "Target"}
         )
-        out = await utils.coalesce_resources(session, [rid], repointed_ids=[rid])
-        view, prov, _src = out[rid]
-        assert view.name is None
-        assert prov["name"] is None
+        rid = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "gem", "name": "G", "country": "USA"},
+            repointed_to=target,
+        )
+        # The source query filters repointed_id IS NULL, so a repointed resource
+        # returns no rows and coalesces to a null-shell.
+        out = await utils.coalesce_resources(session, [rid])
+        res = out[rid]
+        assert res.view.name is None
+        assert res.provenance["name"] is None
