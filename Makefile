@@ -121,16 +121,9 @@ pkg-test-jobs:
 pkg-test-exact-jobs:
 	$(MAKE) uv-test-target-exact PKG=stitch-jobs TEST_PATH=packages/stitch-jobs
 
-pkg-build-observability:
-	$(UV) build --package stitch-observability
-pkg-test-observability:
-	$(MAKE) uv-test-target PKG=stitch-observability TEST_PATH=packages/stitch-observability
-pkg-test-exact-observability:
-	$(MAKE) uv-test-target-exact PKG=stitch-observability TEST_PATH=packages/stitch-observability
-
-pkg-build: pkg-build-auth pkg-build-client pkg-build-models pkg-build-ogsi pkg-build-service pkg-build-jobs pkg-build-observability
-pkg-test: pkg-test-auth pkg-test-client pkg-test-models pkg-test-ogsi pkg-test-service pkg-test-jobs pkg-test-observability
-pkg-test-exact: pkg-test-exact-auth pkg-test-exact-client pkg-test-exact-models pkg-test-exact-ogsi pkg-test-exact-service pkg-test-exact-jobs pkg-test-exact-observability
+pkg-build: pkg-build-auth pkg-build-client pkg-build-models pkg-build-ogsi pkg-build-service pkg-build-jobs
+pkg-test: pkg-test-auth pkg-test-client pkg-test-models pkg-test-ogsi pkg-test-service pkg-test-jobs
+pkg-test-exact: pkg-test-exact-auth pkg-test-exact-client pkg-test-exact-models pkg-test-exact-ogsi pkg-test-exact-service pkg-test-exact-jobs
 
 # ---------------------------------------------------------------------
 # Deployments
@@ -314,7 +307,6 @@ follow-stack-logs:
 	pkg-build-ogsi pkg-test-ogsi pkg-test-exact-ogsi \
 	pkg-build-service pkg-test-service pkg-test-exact-service \
 	pkg-build-jobs pkg-test-jobs pkg-test-exact-jobs \
-	pkg-build-observability pkg-test-observability pkg-test-exact-observability \
 	\
 	# API
 	api-build api-test api-test-exact api-dev stack-api-dev \

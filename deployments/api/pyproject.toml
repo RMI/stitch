@@ -18,7 +18,6 @@ dependencies = [
   "sqlalchemy>=2.0.44",
   "stitch-auth",
   "stitch-models",
-  "stitch-observability",
   "stitch-ogsi",
 ]
 
@@ -48,5 +47,4 @@ addopts = ["-v", "--strict-markers", "--tb=short"]
 [tool.uv.sources]
 stitch-auth = { workspace = true }
 stitch-models = { workspace = true }
-stitch-observability = { workspace = true }
 stitch-ogsi = { workspace = true }

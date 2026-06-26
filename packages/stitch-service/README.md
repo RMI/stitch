@@ -10,10 +10,6 @@ Shared FastAPI scaffolding for Stitch non-core services — the boilerplate that
 - health helpers — `make_basic_health_router(service)` for liveness, plus
   `runtime_block`/`format_started_at`/`uptime_seconds` for assembling a
   service-specific `/health/details`.
-- observability — pass `service_name` + `otel` (an `OTelSettings` from
-  `stitch-observability`) and `create_app` configures OpenTelemetry tracing:
-  FastAPI server spans, outbound httpx `traceparent` propagation, and provider
-  shutdown in the lifespan. Omit them and tracing stays off.
 
 ```python
 from stitch.service import create_app
@@ -31,8 +27,7 @@ app = create_app(
 
 ## Out of scope (for now)
 
-- **Structured-log / query-timing layer** — the API's request-logging and
-  per-query timing sinks hang off its SQLAlchemy engine and stay API-specific;
-  only tracing is shared here.
+- **Observability/logging** — in flight on a separate branch; will hook into the
+  app factory's lifespan later.
 - **Auth** — each service still owns its auth wiring (settings-coupled); a future
   pass may extract a configurable auth provider here.

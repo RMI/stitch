@@ -2,10 +2,9 @@
 
 Provides the app factory, CORS wiring, health helpers, and the auth seam (both
 inbound request validation and the downstream machine / on-behalf-of modes) that
-every service otherwise copies. When passed a ``service_name`` and ``otel``
-settings, ``create_app`` also configures OpenTelemetry tracing via
-``stitch-observability`` (FastAPI server spans + outbound httpx propagation);
-omitting them leaves tracing off.
+every service otherwise copies. Observability is intentionally out of scope for
+now (in flight on a separate branch); the app factory leaves lifecycle hooks
+open so it can be added later.
 """
 
 from .app import create_app

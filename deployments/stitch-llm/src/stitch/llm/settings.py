@@ -8,11 +8,10 @@ from pydantic import (
     SecretStr,
     field_validator,
 )
-from pydantic_settings import SettingsConfigDict
-from stitch.observability import OTelSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings(OTelSettings):
+class Settings(BaseSettings):
     log_level: str = Field(
         default="INFO",
         validation_alias=AliasChoices("LOG_LEVEL", "STITCH_LLM_LOG_LEVEL"),

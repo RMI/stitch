@@ -15,8 +15,7 @@ from pydantic import ValidationError
 from stitch.api.observability.tracing import LoggingSpanExporter, configure_tracing
 from stitch.api.settings import Settings
 
-# Span log records now come from the shared stitch-observability exporter.
-_TRACE_LOGGER = "stitch.observability.trace"
+_TRACE_LOGGER = "stitch.api.observability.trace"
 
 
 @pytest.fixture
