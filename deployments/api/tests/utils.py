@@ -40,6 +40,44 @@ def make_source_record(
     )
 
 
+def make_source_model(
+    *,
+    source: OGSISrcKey,
+    created_by_id: int,
+    source_record: dict[str, Any] | None = None,
+    **attrs: Any,
+):
+    """Build a long-form source header ORM model + its value rows from kwargs.
+
+    Mirrors how the app persists a source record: identity/raw payload on the
+    header, each non-null attribute as a typed row in the long values table.
+    """
+    from stitch.api.db.model import OilGasFieldSourceModel
+    from stitch.api.db.model.oil_gas_field_source_value import (
+        ATTRIBUTE_NAMES,
+        OilGasFieldSourceValueModel,
+    )
+
+    if source_record is None:
+        record_payload = {"source": source, **attrs}
+        source_record = make_source_record(payload=record_payload).model_dump(
+            mode="json"
+        )
+
+    model = OilGasFieldSourceModel(
+        source=source,
+        source_record=source_record,
+        created_by_id=created_by_id,
+        last_updated_by_id=created_by_id,
+    )
+    model.values = [
+        OilGasFieldSourceValueModel.from_attribute(colname, value)
+        for colname, value in attrs.items()
+        if colname in ATTRIBUTE_NAMES and value is not None
+    ]
+    return model
+
+
 def make_source(
     fact: OGFieldBaseFactory,
     managed: bool = True,

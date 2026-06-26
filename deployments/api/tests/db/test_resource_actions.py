@@ -10,7 +10,7 @@ from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db.model import (
     MembershipModel,
     MembershipStatus,
-    OilGasFieldSourceModel,
+    OGFieldResourceSourcePriority,
     ResourceModel,
 )
 from stitch.api.entities import (
@@ -19,7 +19,7 @@ from stitch.api.entities import (
     User,
 )
 from tests.factories import ResourceCreateFactory
-from tests.utils import make_source_record
+from tests.utils import make_source_model
 
 
 _QueryParams = OGFieldQueryParams
@@ -36,16 +36,11 @@ async def _create_resource_with_sources(
     await session.flush()
 
     for row in source_rows:
-        payload = {
-            "source": row["source"],
-            "name": row.get("name"),
-            "country": row.get("country"),
-        }
-        source = OilGasFieldSourceModel(
-            **row,
-            source_record=make_source_record(payload=payload).model_dump(mode="json"),
+        attrs = {k: v for k, v in row.items() if k != "source"}
+        source = make_source_model(
+            source=row["source"],
             created_by_id=user.id,
-            last_updated_by_id=user.id,
+            **attrs,
         )
         session.add(source)
         await session.flush()
@@ -629,8 +624,8 @@ class TestResourceFilterOptionsAction:
 
     def test_postgres_distinct_query_orders_by_selected_value_alias(self):
         params = OGFieldFilterOptionsParams(field="basin")
-        coalesced = resource_actions._build_licensed_resource_list_cte(
-            params,
+        coalesced = resource_actions.build_resource_list_cte(
+            params.source,
             licensed_sources=frozenset({"gem", "wm", "rmi", "llm"}),
         )
         col = resource_actions._resource_list_column(coalesced, params.field)
@@ -825,3 +820,69 @@ class TestResourceFilterOptionsAction:
 
         assert total == 1
         assert [item.id for item in items] == [root_id]
+
+
+class TestResourcePriorityOverride:
+    """A per-resource override re-ranks sources, flipping the coalesced winner."""
+
+    async def _seed(self, session, user) -> int:
+        # Default priority: gem(2) outranks wm(3), so gem wins by default.
+        return await _create_resource_with_sources(
+            session,
+            user,
+            {"source": "gem", "name": "GEM Name", "country": "USA"},
+            {"source": "wm", "name": "WM Name", "country": "CAN"},
+        )
+
+    @pytest.mark.anyio
+    async def test_override_flips_winner_in_detail_and_list(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        session = seeded_integration_session
+        rid = await self._seed(session, test_user)
+
+        # Default: gem wins.
+        before = await resource_actions.get(session, rid)
+        assert before.view.name == "GEM Name"
+        assert before.provenance["name"][1] == "gem"
+
+        # Override wm to top priority for THIS resource only.
+        session.add(
+            OGFieldResourceSourcePriority(resource_id=rid, source="wm", priority=1)
+        )
+        await session.flush()
+
+        # Detail path reflects the override (value + provenance).
+        after = await resource_actions.get(session, rid)
+        assert after.view.name == "WM Name"
+        assert after.view.country == "CAN"
+        assert after.provenance["name"][1] == "wm"
+
+        # List path reflects it too.
+        items, _ = await resource_actions.query(session, _QueryParams())
+        item = next(i for i in items if i.id == rid)
+        assert item.data.name == "WM Name"
+        assert item.provenance["name"] == "wm"
+
+    @pytest.mark.anyio
+    async def test_override_is_scoped_to_its_resource(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        session = seeded_integration_session
+        overridden = await self._seed(session, test_user)
+        untouched = await self._seed(session, test_user)
+
+        session.add(
+            OGFieldResourceSourcePriority(
+                resource_id=overridden, source="wm", priority=1
+            )
+        )
+        await session.flush()
+
+        assert (await resource_actions.get(session, overridden)).view.name == "WM Name"
+        # The other resource keeps the default ranking.
+        assert (await resource_actions.get(session, untouched)).view.name == "GEM Name"

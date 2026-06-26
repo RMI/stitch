@@ -259,6 +259,12 @@ ROUTES — top 3 by total
   requests are being rejected before any DB work — usually unauthenticated load
   (see the auth note in Step 2).
 
+> **Statement truncation.** Query statements are normalized and truncated to a
+> fixed prefix (2000 chars) before logging, so queries that differ only past the
+> cutoff — large `IN (...)` lists, big CTEs — collapse into a single row in the
+> `QUERIES` report. If a row's `count` looks suspiciously high or its statement
+> ends in `…`, it may be several distinct queries merged together.
+
 ---
 
 ## Comparing variants (data volume / params)

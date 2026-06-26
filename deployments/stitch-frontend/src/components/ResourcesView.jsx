@@ -12,10 +12,12 @@ import { useConfig } from "../config/useConfig";
 
 const COLUMN_LABELS = {
   name: "Name",
+  country: "Country",
   state_province: "State/Province",
   region: "Region",
   basin: "Basin",
   field_status: "Field status",
+  primary_hydrocarbon_group: "Primary hydrocarbon group",
 };
 
 function getSortLabel(sortConfig) {
