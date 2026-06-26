@@ -57,7 +57,7 @@ jobs:
               esac
               ;;
             pull_request)
-              if [ "$BASE_REF" = "production" ]; then
+              if [ "$BASE_REF" = "production" ] || [ "${HEAD_REF#demo/}" != "$HEAD_REF" ]; then
                 deployment_lane="staging"
                 deployment_name="$(normalize_name "$HEAD_REF")"
               else
