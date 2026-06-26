@@ -50,10 +50,7 @@ async def query(
     """Query coalesced resource list items, restricted to licensed sources.
 
     Two-phase: a narrowed id-query (+ count) over the participating fields, then
-    a single batched hydration of the returned page by id. ``params.source`` is
-    ignored -- the resource universe is membership-derived and only narrowed by
-    ``licensed_sources`` (source-membership existence is not a resource-level
-    filter).
+    a single batched hydration of the returned page by id.
     """
     if params.sort_by == "source":
         raise HTTPException(

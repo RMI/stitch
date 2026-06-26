@@ -52,14 +52,7 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
         resource_ids: Collection[int],
         licensed_sources: Collection[OGSISrcKey] | None = None,
     ) -> dict[int, list[OGFieldSource]]:
-        """Active source entities for each resource id, grouped by resource.
-
-        One active-membership query + one source-header query (the ``values``
-        relationship is ``selectin``-loaded), then ``as_entity()`` per record.
-        Every requested id gets an entry (empty list when it has no active --
-        or no licensed -- source data). A source shared across resources is
-        attached to each (read-only reuse).
-        """
+        """Active source entities for each resource id, grouped by resource."""
         by_id: dict[int, list[OGFieldSource]] = {rid: [] for rid in resource_ids}
         if not by_id:
             return by_id
@@ -74,9 +67,6 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
             return by_id
 
         source_pks = {source_pk for _, source_pk in pairs}
-        # Headers are looked up by source_pk alone; the phase-1 SQL path double-keys
-        # on (source_pk, source). The two stay equivalent under the write-path
-        # invariant that a membership's source always matches its header's source.
         src_stmt = select(OilGasFieldSourceModel).where(
             OilGasFieldSourceModel.id.in_(source_pks)
         )
