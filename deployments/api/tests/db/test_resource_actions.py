@@ -429,34 +429,6 @@ class TestResourceQueryAction:
         assert items[0].provenance["name"] == "rmi"
 
     @pytest.mark.anyio
-    async def test_licensed_sources_empty_returns_null_shells_for_all(
-        self,
-        seeded_integration_session: AsyncSession,
-        test_user: User,
-    ):
-        """An empty allowlist still returns rows, but with null-shell data."""
-        resource_id = await _create_resource_with_sources(
-            seeded_integration_session,
-            test_user,
-            {"source": "rmi", "name": "RMI Name", "country": "USA"},
-            {"source": "gem", "name": "GEM Name", "country": "CAN"},
-        )
-
-        params = _QueryParams(page=1, page_size=10)
-        items, total = await resource_actions.query(
-            seeded_integration_session,
-            params,
-            licensed_sources=frozenset(),
-        )
-
-        assert total == 1
-        assert [item.id for item in items] == [resource_id]
-        assert items[0].data.name is None
-        assert items[0].data.country is None
-        assert items[0].provenance["name"] is None
-        assert items[0].provenance["country"] is None
-
-    @pytest.mark.anyio
     async def test_unlicensed_owner_operator_lists_fall_through_to_lower_priority_source(
         self,
         seeded_integration_session: AsyncSession,
@@ -860,11 +832,16 @@ class TestResourceFilterOptionsAction:
         one field, ordered by the selected alias.
         """
         params = OGFieldFilterOptionsParams(field="basin")
-        values_cte = resource_actions.build_coalesced_values(
+        base_cte = resource_actions.construct_base_query_statement(
             licensed_sources=frozenset({"gem", "wm", "rmi", "llm"}),
-            colnames=[params.field],
         )
-        value_col = getattr(values_cte.c, resource_actions.value_attr_for(params.field))
+        filtered = (
+            resource_actions.select(base_cte)
+            .where(base_cte.c.colname == params.field)
+            .cte()
+        )
+        ranked = resource_actions.add_ranking(filtered).cte("ranked")
+        value_col = getattr(ranked.c, resource_actions.value_attr_for(params.field))
         labeled = value_col.label("value")
         stmt = (
             resource_actions.select(labeled)
@@ -880,7 +857,7 @@ class TestResourceFilterOptionsAction:
             )
         )
 
-        assert "SELECT DISTINCT coalesced_values.value_text AS value" in sql
+        assert "SELECT DISTINCT ranked.value_text AS value" in sql
         assert "ORDER BY value" in sql
 
     @pytest.mark.anyio

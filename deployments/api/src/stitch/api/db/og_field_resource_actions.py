@@ -31,11 +31,7 @@ from .model import (
     ResourceModel,
 )
 from .model.oil_gas_field_source_value import value_attr_for
-from .queries import (
-    build_coalesced_values,
-    construct_resources_count_statement,
-    construct_resources_query_statement,
-)
+from .queries import base_resource_query, construct_base_query_statement, add_ranking
 from .utils import (
     coalesce_resources,
     resource_model_to_entity,
@@ -65,14 +61,11 @@ async def query(
             detail="sort_by=source is not supported for resource list queries.",
         )
 
-    ids_stmt = construct_resources_query_statement(params, licensed_sources)
+    ids_stmt = base_resource_query(params, licensed_sources)
+    count_stmt = select(func.count()).select_from(ids_stmt.subquery())
+    total = (await session.scalar(count_stmt)) or 0
+    ids_stmt = ids_stmt.limit(params.limit).offset(params.offset)
     ids = list((await session.scalars(ids_stmt)).all())
-
-    count_stmt = construct_resources_count_statement(params, licensed_sources)
-    total = (
-        await session.scalar(select(func.count()).select_from(count_stmt.subquery()))
-        or 0
-    )
 
     if not ids:
         return [], total
@@ -126,10 +119,10 @@ async def filter_options(
             detail=f"field={params.field} is not supported for resource filter options.",
         )
 
-    values_cte = build_coalesced_values(
-        licensed_sources=licensed_sources, colnames=[params.field]
-    )
-    value_col = getattr(values_cte.c, value_attr_for(params.field))
+    base_cte = construct_base_query_statement(licensed_sources)
+    filtered = select(base_cte).where(base_cte.c.colname == params.field).cte()
+    ranked = add_ranking(filtered).cte("ranked")
+    value_col = getattr(ranked.c, value_attr_for(params.field))
     labeled = value_col.label("value")
     stmt = (
         select(labeled)
