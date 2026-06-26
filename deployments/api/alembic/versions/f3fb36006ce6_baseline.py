@@ -1,21 +1,30 @@
 """baseline
 
-Revision ID: 6de2b873bacb
+Revision ID: f3fb36006ce6
 Revises:
-Create Date: 2026-06-04 12:35:31.176312
+Create Date: 2026-06-17 19:08:25.103926
 """
 
 from __future__ import annotations
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
+import stitch.api.db.model.types
 
 # revision identifiers, used by Alembic.
-revision = "6de2b873bacb"
+revision = "f3fb36006ce6"
 down_revision = None
 branch_labels = None
 depends_on = None
+
+DEFAULT_PRIORITIES = [
+    {"source": "rmi", "priority": 1},
+    {"source": "gem", "priority": 2},
+    {"source": "wm", "priority": 3},
+    {"source": "llm", "priority": 4},
+]
 
 
 def upgrade() -> None:
@@ -33,12 +42,7 @@ def upgrade() -> None:
             sa.column("source", sa.String),
             sa.column("priority", sa.Integer),
         ),
-        [
-            {"source": "rmi", "priority": 1},
-            {"source": "wm", "priority": 2},
-            {"source": "gem", "priority": 3},
-            {"source": "llm", "priority": 4},
-        ],
+        DEFAULT_PRIORITIES,
     )
     op.create_table(
         "users",
@@ -112,57 +116,8 @@ def upgrade() -> None:
             sa.Enum("gem", "wm", "rmi", "llm", native_enum=False),
             nullable=False,
         ),
-        sa.Column("owners", sa.JSON(), nullable=True),
-        sa.Column("operators", sa.JSON(), nullable=True),
-        sa.Column("source_record", sa.JSON(), nullable=False),
-        sa.Column("name", sa.String(), nullable=True),
-        sa.Column("country", sa.String(), nullable=True),
-        sa.Column("name_local", sa.String(), nullable=True),
-        sa.Column("state_province", sa.String(), nullable=True),
-        sa.Column("region", sa.String(), nullable=True),
-        sa.Column("basin", sa.String(), nullable=True),
-        sa.Column("reservoir_formation", sa.String(), nullable=True),
-        sa.Column("latitude", sa.Float(), nullable=True),
-        sa.Column("longitude", sa.Float(), nullable=True),
-        sa.Column("discovery_year", sa.Integer(), nullable=True),
-        sa.Column("production_start_year", sa.Integer(), nullable=True),
-        sa.Column("fid_year", sa.Integer(), nullable=True),
         sa.Column(
-            "location_type",
-            sa.Enum("Onshore", "Offshore", "Unknown", native_enum=False),
-            nullable=True,
-        ),
-        sa.Column(
-            "production_conventionality",
-            sa.Enum(
-                "Conventional", "Unconventional", "Mixed", "Unknown", native_enum=False
-            ),
-            nullable=True,
-        ),
-        sa.Column(
-            "primary_hydrocarbon_group",
-            sa.Enum(
-                "Ultra-Light Oil",
-                "Light Oil",
-                "Medium Oil",
-                "Heavy Oil",
-                "Extra-Heavy Oil",
-                "Dry Gas",
-                "Wet Gas",
-                "Acid Gas",
-                "Condensate",
-                "Mixed",
-                "Unknown",
-                native_enum=False,
-            ),
-            nullable=True,
-        ),
-        sa.Column(
-            "field_status",
-            sa.Enum(
-                "Producing", "Non-Producing", "Abandoned", "Planned", native_enum=False
-            ),
-            nullable=True,
+            "source_record", stitch.api.db.model.types.StitchJson(), nullable=False
         ),
         sa.Column(
             "created",
@@ -310,6 +265,83 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_table(
+        "og_field_resource_source_priority",
+        sa.Column(
+            "resource_id",
+            sa.BigInteger()
+            .with_variant(sa.BIGINT(), "postgresql")
+            .with_variant(sa.INTEGER(), "sqlite"),
+            nullable=False,
+        ),
+        sa.Column("source", sa.String(length=10), nullable=False),
+        sa.Column("priority", sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["resource_id"], ["og_field_resources.id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["source"],
+            ["og_field_source_priority.source"],
+        ),
+        sa.PrimaryKeyConstraint("resource_id", "source"),
+    )
+    op.create_table(
+        "oil_gas_field_source_values",
+        sa.Column(
+            "id",
+            sa.BigInteger()
+            .with_variant(sa.BIGINT(), "postgresql")
+            .with_variant(sa.INTEGER(), "sqlite"),
+            autoincrement=True,
+            nullable=False,
+        ),
+        sa.Column(
+            "source_pk",
+            sa.BigInteger()
+            .with_variant(sa.BIGINT(), "postgresql")
+            .with_variant(sa.INTEGER(), "sqlite"),
+            nullable=False,
+        ),
+        sa.Column("colname", sa.String(length=50), nullable=False),
+        sa.Column("value_text", sa.String(), nullable=True),
+        sa.Column(
+            "value_num",
+            sa.Float().with_variant(sa.DOUBLE_PRECISION(), "postgresql"),
+            nullable=True,
+        ),
+        sa.Column(
+            "value_json",
+            sa.JSON(none_as_null=True).with_variant(
+                postgresql.JSONB(none_as_null=True, astext_type=sa.Text()), "postgresql"
+            ),
+            nullable=True,
+        ),
+        sa.CheckConstraint(
+            "colname IN ('name', 'country', 'name_local', 'state_province', 'region', 'basin', 'reservoir_formation', 'location_type', 'production_conventionality', 'primary_hydrocarbon_group', 'field_status', 'latitude', 'longitude', 'discovery_year', 'production_start_year', 'fid_year', 'owners', 'operators')",
+            name="ck_source_value_colname",
+        ),
+        sa.CheckConstraint(
+            "(CASE WHEN value_text IS NOT NULL THEN 1 ELSE 0 END + CASE WHEN value_num IS NOT NULL THEN 1 ELSE 0 END + CASE WHEN value_json IS NOT NULL THEN 1 ELSE 0 END) = 1",
+            name="ck_source_value_exactly_one",
+        ),
+        sa.ForeignKeyConstraint(
+            ["source_pk"], ["oil_gas_field_sources.id"], ondelete="CASCADE"
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("source_pk", "colname", name="uq_source_value_colname"),
+    )
+    op.create_index(
+        "ix_source_value_colname_num",
+        "oil_gas_field_source_values",
+        ["colname", "value_num"],
+        unique=False,
+    )
+    op.create_index(
+        "ix_source_value_colname_text",
+        "oil_gas_field_source_values",
+        ["colname", "value_text"],
+        unique=False,
+    )
+    op.create_table(
         "merge_candidate_items",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column(
@@ -341,6 +373,11 @@ def upgrade() -> None:
         ),
     )
     # ### end Alembic commands ###
+    #
+    # NOTE: substring search (ILIKE '%term%') currently relies on standard text
+    # matching backed by the (colname, value_text) B-tree index -- no trigram
+    # acceleration, to avoid requiring the pg_trgm extension. See the deferred
+    # follow-up for adding a pg_trgm GIN index if substring search gets slow.
 
 
 def downgrade() -> None:

@@ -1,16 +1,20 @@
-"""Integration tests for OGFieldQueryMixin query helpers against OilGasFieldSourceModel."""
+"""Integration tests for the source-list query path via og_field_source_actions.query."""
 
 import pytest
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from stitch.api.db.model import OilGasFieldSourceModel
+from stitch.api.db import og_field_source_actions as source_actions
+from stitch.api.db.model import (
+    MembershipModel,
+    MembershipStatus,
+    ResourceModel,
+)
 from stitch.api.entities import (
     OGFieldQueryParams,
     OGFieldSortParams,
     User,
 )
-from tests.utils import make_source_record
+from tests.utils import make_source_model
 
 
 @pytest.fixture
@@ -18,23 +22,12 @@ async def seeded_sources(
     seeded_integration_session: AsyncSession,
     test_user: User,
 ):
-    """Seed 8 diverse source rows for query testing."""
+    """Seed 8 diverse source rows (each with an active membership) for query testing."""
     session = seeded_integration_session
     uid = test_user.id
 
     def with_record(source: str, **kwargs):
-        payload = {
-            "source": source,
-            "name": kwargs.get("name"),
-            "country": kwargs.get("country"),
-        }
-        return OilGasFieldSourceModel(
-            source=source,
-            source_record=make_source_record(payload=payload).model_dump(mode="json"),
-            created_by_id=uid,
-            last_updated_by_id=uid,
-            **kwargs,
-        )
+        return make_source_model(source=source, created_by_id=uid, **kwargs)
 
     sources = [
         with_record(
@@ -103,22 +96,31 @@ async def seeded_sources(
     ]
     session.add_all(sources)
     await session.flush()
+
+    # Each source needs an active membership to be visible to the source-list query.
+    resource = ResourceModel.create(created_by=test_user)
+    session.add(resource)
+    await session.flush()
+    session.add_all(
+        MembershipModel.create(
+            created_by=test_user,
+            resource_id=resource.id,
+            source=src.source,
+            source_pk=src.id,
+            status=MembershipStatus.ACTIVE,
+        )
+        for src in sources
+    )
+    await session.flush()
     return sources
 
 
-async def _execute(session: AsyncSession, **overrides):
-    """Helper: build and execute a query using the mixin's building blocks directly."""
+async def _execute(session: AsyncSession, *, licensed_sources=None, **overrides):
+    """Run the long-aware source-list query and return coalesced entities + total."""
     params = OGFieldQueryParams(**overrides)
-    M = OilGasFieldSourceModel
-
-    base = select(M).distinct()
-    for cond in M._build_conditions(params):
-        base = base.where(cond)
-    base = base.order_by(*M._create_sort_clauses(params))
-
-    total = await session.scalar(select(func.count()).select_from(base.subquery())) or 0
-    stmt = M._apply_pagination(base, params)
-    rows = (await session.scalars(stmt)).all()
+    rows, total = await source_actions.query(
+        session, params, licensed_sources=licensed_sources
+    )
     return rows, total
 
 
@@ -267,3 +269,161 @@ class TestBaseQuerySortAndPagination:
         """OGFieldSortParams with invalid sort_by raises ValidationError."""
         with pytest.raises(Exception):
             OGFieldSortParams(sort_by="owners")
+
+
+class TestSourceFilter:
+    """`source` is a source-path filter (resources cannot filter by source)."""
+
+    @pytest.mark.anyio
+    async def test_single_source(self, seeded_integration_session, seeded_sources):
+        """source=['gem'] returns only the 4 gem rows."""
+        rows, total = await _execute(seeded_integration_session, source=["gem"])
+        assert total == 4
+        assert {r.source for r in rows} == {"gem"}
+
+    @pytest.mark.anyio
+    async def test_multiple_sources(self, seeded_integration_session, seeded_sources):
+        """source=['gem','wm'] returns the 4 gem + 2 wm rows."""
+        rows, total = await _execute(
+            seeded_integration_session, source=["gem", "wm"], page_size=200
+        )
+        assert total == 6
+        assert {r.source for r in rows} == {"gem", "wm"}
+
+
+class TestLicensedSourcesGating:
+    """licensed_sources hides rows whose source is not licensed."""
+
+    @pytest.mark.anyio
+    async def test_licensing_hides_unlicensed_rows(
+        self, seeded_integration_session, seeded_sources
+    ):
+        """Only gem rows survive even though params.source defaults to all four."""
+        rows, total = await _execute(
+            seeded_integration_session,
+            licensed_sources=["gem"],
+            page_size=200,
+        )
+        assert total == 4
+        assert {r.source for r in rows} == {"gem"}
+        assert "Ghawar" not in {r.name for r in rows}  # wm row is hidden
+
+
+class TestNarrowingProofs:
+    """The narrowed pivot really materializes the fields it filters/sorts on."""
+
+    @pytest.mark.anyio
+    async def test_filter_by_basin(self, seeded_integration_session, seeded_sources):
+        """basin=Permian proves basin is pivoted (two Permian rows)."""
+        rows, total = await _execute(seeded_integration_session, basin="Permian")
+        assert total == 2
+        assert {r.name for r in rows} == {"Permian Basin", "Permian Delaware"}
+
+    @pytest.mark.anyio
+    async def test_sort_by_discovery_year_nulls_last(
+        self, seeded_integration_session, seeded_sources
+    ):
+        """discovery_year sorts numerically (from value_num) with NULLs last."""
+        rows, total = await _execute(
+            seeded_integration_session,
+            sort_by="discovery_year",
+            sort_order="asc",
+            page_size=200,
+        )
+        assert total == 8
+        years = [r.discovery_year for r in rows]
+        assert years == [1920, 1948, 1959, 1968, 2000, None, None, None]
+
+    @pytest.mark.anyio
+    async def test_empty_involved_orders_by_id(
+        self, seeded_integration_session, seeded_sources
+    ):
+        """sort_by=id, no q/filters: zero value columns, all active rows by id."""
+        rows, total = await _execute(
+            seeded_integration_session, sort_by="id", page_size=200
+        )
+        assert total == 8
+        ids = [r.id for r in rows]
+        assert ids == sorted(ids)
+
+
+@pytest.fixture
+async def tiebreak_sources(
+    seeded_integration_session: AsyncSession,
+    test_user: User,
+):
+    """Six gem rows with duplicate (2000) and NULL discovery years + memberships."""
+    session = seeded_integration_session
+    years = [2000, 2000, None, 1990, None, 2000]
+    sources = [
+        make_source_model(
+            source="gem",
+            created_by_id=test_user.id,
+            name=f"S{i}",
+            discovery_year=year,
+        )
+        for i, year in enumerate(years)
+    ]
+    session.add_all(sources)
+    await session.flush()
+
+    resource = ResourceModel.create(created_by=test_user)
+    session.add(resource)
+    await session.flush()
+    session.add_all(
+        MembershipModel.create(
+            created_by=test_user,
+            resource_id=resource.id,
+            source=src.source,
+            source_pk=src.id,
+            status=MembershipStatus.ACTIVE,
+        )
+        for src in sources
+    )
+    await session.flush()
+    return sources, years
+
+
+class TestDeterministicTiebreak:
+    """Equal/NULL sort values fall back to a deterministic asc(id) tiebreak."""
+
+    @pytest.mark.anyio
+    async def test_duplicate_and_null_sort_values(
+        self, seeded_integration_session, tiebreak_sources
+    ):
+        sources, years = tiebreak_sources
+        rows, total = await _execute(
+            seeded_integration_session,
+            sort_by="discovery_year",
+            sort_order="asc",
+            page_size=200,
+        )
+        assert total == len(sources)
+
+        # Expected: non-NULL years asc, NULLs last, ties broken by ascending id.
+        id_year = list(zip((s.id for s in sources), years))
+        expected_ids = [
+            id_
+            for id_, _ in sorted(
+                id_year, key=lambda iy: (iy[1] is None, iy[1] or 0, iy[0])
+            )
+        ]
+        assert [r.id for r in rows] == expected_ids
+
+
+class TestSortBySource:
+    """The source path allows sort_by=source (the resource path forbids it)."""
+
+    @pytest.mark.anyio
+    async def test_sort_by_source_orders_by_source(
+        self, seeded_integration_session, seeded_sources
+    ):
+        # sort_by=source is outside the SortableField Literal, so bypass
+        # validation via assignment (pydantic does not re-validate on set).
+        params = OGFieldQueryParams(page_size=200)
+        params.sort_by = "source"
+        params.sort_order = "asc"
+        rows, total = await source_actions.query(seeded_integration_session, params)
+        assert total == 8
+        sources_in_order = [r.source for r in rows]
+        assert sources_in_order == sorted(sources_in_order)
