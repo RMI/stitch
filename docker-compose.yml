@@ -18,7 +18,7 @@ services:
       POSTGRES_PASSWORD: ${STITCH_APP_PASSWORD:?STITCH_APP_PASSWORD must be set in .env}
       # OpenTelemetry config (OTEL_*) comes from .env via env_file, shared with
       # every service. `make reboot-docker-heavy` overrides the exporter to otlp
-      # (see docker-compose.otel.yml).
+      # (see docker-compose.observability.yml).
     healthcheck:
       test:
         [
