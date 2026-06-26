@@ -42,11 +42,11 @@ def coalesce_og_field_resource(
         }
         return {**acc, **update_}
 
-    # sort in  reverse priority order so latter models override
+    # sort in  reverse priority order so latter models override, id tiebreaker
     ordered_sources = sorted(
         source_data,
         reverse=True,
-        key=lambda src: priorities.index(src.source),
+        key=lambda src: (priorities.index(src.source), src.id),
     )
 
     provenanced_attrs = reduce(

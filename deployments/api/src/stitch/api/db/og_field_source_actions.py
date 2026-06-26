@@ -20,8 +20,7 @@ from .model import (
     MembershipModel,
 )
 from .queries import (
-    construct_sources_count_statement,
-    construct_sources_query_statement,
+    base_source_query,
 )
 from .utils import resource_model_to_entity
 
@@ -164,14 +163,11 @@ async def query(
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> tuple[Sequence[OGFieldSource], int]:
     """Filtered/sorted/paginated source records (id-ordered) plus total count."""
-    stmt = construct_sources_query_statement(params, licensed_sources)
+    stmt = base_source_query(params, licensed_sources)
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = (await session.scalar(count_stmt)) or 0
+    stmt = stmt.limit(params.limit).offset(params.offset)
     ids = list((await session.scalars(stmt)).all())
-
-    count_stmt = construct_sources_count_statement(params, licensed_sources)
-    total = (
-        await session.scalar(select(func.count()).select_from(count_stmt.subquery()))
-        or 0
-    )
 
     if not ids:
         return (), total
