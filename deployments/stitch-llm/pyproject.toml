@@ -13,6 +13,7 @@ dependencies = [
   "stitch-client",
   "stitch-jobs",
   "stitch-models",
+  "stitch-observability",
   "stitch-ogsi",
   "stitch-service",
 ]
@@ -46,5 +47,6 @@ stitch-auth = { workspace = true }
 stitch-client = { workspace = true }
 stitch-jobs = { workspace = true }
 stitch-models = { workspace = true }
+stitch-observability = { workspace = true }
 stitch-ogsi = { workspace = true }
 stitch-service = { workspace = true }
