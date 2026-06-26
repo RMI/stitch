@@ -14,10 +14,13 @@ def _utcnow() -> datetime:
 class JobStore(Protocol):
     """Persistence seam for job records.
 
-    The in-memory implementation below is sufficient for a single replica. A
-    DB-backed store (surviving restarts and shared across replicas) can be
-    dropped in later behind this same interface without touching the manager or
-    routers.
+    The in-memory implementation below is sufficient for a single replica, where
+    the manager mutating a ``JobRecord`` in place *is* the persistence (the store
+    holds the same object). A DB-backed store (surviving restarts, shared across
+    replicas) fits behind this same read interface, but would additionally need
+    the manager to write state transitions back through the store — adding that
+    write-back hook is part of the agreed DB-persistence follow-up, not this
+    in-memory layer.
     """
 
     async def create(self, record: JobRecord) -> None:

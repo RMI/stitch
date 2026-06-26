@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi[standard-no-fastapi-cloud-cli]>=0.135.1",
+  "opentelemetry-api>=1.30.0",
   "pydantic>=2.12.5",
 ]
 
@@ -28,4 +29,5 @@ dev = [
   "pytest>=9.0.2",
   "pytest-anyio>=0.0.0",
   "httpx>=0.28.0",
+  "opentelemetry-sdk>=1.30.0",
 ]

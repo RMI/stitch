@@ -7,11 +7,19 @@ from datetime import UTC, datetime, timedelta
 from typing import Generic
 from uuid import uuid4
 
+from opentelemetry import context as otel_context
+from opentelemetry import trace
+from opentelemetry.trace import Link, SpanContext, SpanKind, Status, StatusCode
+
 from .models import P, R, JobRecord, JobState
 from .store import InMemoryJobStore, JobStore
 from .uniqueness import SingletonPolicy, UniquenessPolicy
 
 logger = logging.getLogger("stitch.jobs")
+
+# No-op when no provider is configured (tracing disabled), so jobs behave
+# identically whether or not the host service has tracing on.
+_tracer = trace.get_tracer("stitch.jobs")
 
 #: Terminal states that, by default, an existing run may be reused from.
 _DEFAULT_REUSABLE_TERMINAL = frozenset({JobState.succeeded, JobState.failed})
@@ -97,23 +105,46 @@ class JobManager(Generic[P, R]):
                 started_at=self._clock(),
             )
             await self._store.create(record)
-            task = asyncio.create_task(self._run(record, params))
+            # Capture the triggering request's span so the (detached) job run can
+            # link back to it without nesting under an already-finished request.
+            trigger = trace.get_current_span().get_span_context()
+            task = asyncio.create_task(self._run(record, params, trigger))
             self._tasks.add(task)
             task.add_done_callback(self._tasks.discard)
             return record, True
 
-    async def _run(self, record: JobRecord[P, R], params: P) -> None:
-        try:
-            record.result = await self._run_fn(params)
-            record.state = JobState.succeeded
-        except Exception as exc:
-            # Broad on purpose: any run_fn failure is captured onto the record
-            # (state=failed, error set) rather than crashing the background task.
-            logger.exception("job %s failed", record.job_id)
-            record.error = str(exc)
-            record.state = JobState.failed
-        finally:
-            record.finished_at = self._clock()
+    async def _run(
+        self, record: JobRecord[P, R], params: P, trigger: SpanContext | None = None
+    ) -> None:
+        links = [Link(trigger)] if trigger is not None and trigger.is_valid else None
+        # New root span (empty parent context) so a reused/decoupled job isn't
+        # buried under one caller's request; the link makes it navigable from the
+        # trigger. No-op span when tracing is disabled.
+        with _tracer.start_as_current_span(
+            "job.run",
+            context=otel_context.Context(),
+            kind=SpanKind.INTERNAL,
+            links=links,
+        ) as span:
+            span.set_attribute("stitch.job.id", record.job_id)
+            if record.dedup_key is not None:
+                span.set_attribute("stitch.job.dedup_key", record.dedup_key)
+            if record.initiated_by is not None:
+                span.set_attribute("stitch.job.initiated_by", record.initiated_by)
+            try:
+                record.result = await self._run_fn(params)
+                record.state = JobState.succeeded
+            except Exception as exc:
+                # Broad on purpose: any run_fn failure is captured onto the record
+                # (state=failed, error set) rather than crashing the background task.
+                logger.exception("job %s failed", record.job_id)
+                record.error = str(exc)
+                record.state = JobState.failed
+                span.set_status(Status(StatusCode.ERROR, str(exc)))
+                span.record_exception(exc)
+            finally:
+                record.finished_at = self._clock()
+                span.set_attribute("stitch.job.state", record.state.value)
 
     def reset(self) -> None:
         """Cancel in-flight tasks and drop all run state.
