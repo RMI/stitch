@@ -219,7 +219,6 @@ jobs:
         # IngestionEndpoint=...") which break the deploy action's whitespace-delimited
         # KEY=VALUE env var assembly — bash treats semicolons as command separators.
         # Set it in a dedicated step where we control shell quoting via az CLI directly.
-        if: ${{ secrets.applicationinsights-connection-string != '' }}
         shell: bash
         env:
           AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
