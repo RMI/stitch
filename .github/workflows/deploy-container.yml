@@ -153,7 +153,6 @@ jobs:
           STITCH_CLIENT_BEARER_TOKEN: ${{ secrets.stitch-client-bearer-token }}
           STITCH_LLM_AZURE_OPENAI_API_KEY: ${{ secrets.stitch-llm-azure-openai-api-key }}
           WOODMAC_API_KEY: ${{ secrets.woodmac-api-key }}
-          APPLICATIONINSIGHTS_CONNECTION_STRING: ${{ secrets.applicationinsights-connection-string }}
         run: |
           set -euo pipefail
           envvars='${{ inputs.environment-variables }}'
@@ -168,9 +167,6 @@ jobs:
           fi
           if [ -n "${WOODMAC_API_KEY:-}" ]; then
             envvars="$envvars WOODMAC_API_KEY=${WOODMAC_API_KEY}"
-          fi
-          if [ -n "${APPLICATIONINSIGHTS_CONNECTION_STRING:-}" ]; then
-            envvars="$envvars APPLICATIONINSIGHTS_CONNECTION_STRING=${APPLICATIONINSIGHTS_CONNECTION_STRING}"
           fi
           echo "environment-variables<<EOF" >> "$GITHUB_OUTPUT"
           echo "$envvars" >> "$GITHUB_OUTPUT"
@@ -192,6 +188,25 @@ jobs:
           registryUrl: ${{ inputs.registry-server }}
           registryUsername: ${{ inputs.registry-username }}
           registryPassword: ${{ secrets.registry-password }}
+
+      - name: Set Application Insights connection string
+        # The connection string contains semicolons (e.g. "InstrumentationKey=...;
+        # IngestionEndpoint=...") which break the deploy action's whitespace-delimited
+        # KEY=VALUE env var assembly — bash treats semicolons as command separators.
+        # Set it in a dedicated step where we control shell quoting via az CLI directly.
+        if: ${{ secrets.applicationinsights-connection-string != '' }}
+        shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          APPLICATIONINSIGHTS_CONNECTION_STRING: ${{ secrets.applicationinsights-connection-string }}
+        run: |
+          set -euo pipefail
+          if [ -n "${APPLICATIONINSIGHTS_CONNECTION_STRING:-}" ]; then
+            az containerapp update \
+              --name "${{ inputs.container-app-name }}" \
+              --resource-group "${AZURE_RESOURCE_GROUP}" \
+              --set-env-vars "APPLICATIONINSIGHTS_CONNECTION_STRING=${APPLICATIONINSIGHTS_CONNECTION_STRING}"
+          fi
 
       - name: Pin replica scaling
         # `az containerapp up` (the deploy action) does not reliably preserve
