@@ -75,6 +75,8 @@ on:
         required: false
       registry-password:
         required: false
+      applicationinsights-connection-string:
+        required: false
     outputs:
       container-app-url:
         description: "HTTPS URL of the deployed Azure Container App"
@@ -151,6 +153,7 @@ jobs:
           STITCH_CLIENT_BEARER_TOKEN: ${{ secrets.stitch-client-bearer-token }}
           STITCH_LLM_AZURE_OPENAI_API_KEY: ${{ secrets.stitch-llm-azure-openai-api-key }}
           WOODMAC_API_KEY: ${{ secrets.woodmac-api-key }}
+          APPLICATIONINSIGHTS_CONNECTION_STRING: ${{ secrets.applicationinsights-connection-string }}
         run: |
           set -euo pipefail
           envvars='${{ inputs.environment-variables }}'
@@ -165,6 +168,9 @@ jobs:
           fi
           if [ -n "${WOODMAC_API_KEY:-}" ]; then
             envvars="$envvars WOODMAC_API_KEY=${WOODMAC_API_KEY}"
+          fi
+          if [ -n "${APPLICATIONINSIGHTS_CONNECTION_STRING:-}" ]; then
+            envvars="$envvars APPLICATIONINSIGHTS_CONNECTION_STRING=${APPLICATIONINSIGHTS_CONNECTION_STRING}"
           fi
           echo "environment-variables<<EOF" >> "$GITHUB_OUTPUT"
           echo "$envvars" >> "$GITHUB_OUTPUT"
