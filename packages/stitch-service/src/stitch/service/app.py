@@ -62,6 +62,7 @@ def create_app(
             enabled=otel.otel_enabled,
             exporter=otel.otel_traces_exporter,
             otlp_endpoint=otel.otel_exporter_otlp_endpoint,
+            otlp_protocol=otel.otel_exporter_otlp_protocol,
             sample_ratio=otel.otel_sample_ratio,
             version=version,
             environment=environment,

@@ -91,6 +91,7 @@ def configure_tracing(
     enabled: bool = True,
     exporter: str = "console",
     otlp_endpoint: str | None = None,
+    otlp_protocol: str = "grpc",
     sample_ratio: float = 1.0,
     version: str = "unknown",
     environment: str = "unknown",
@@ -114,11 +115,22 @@ def configure_tracing(
     provider = TracerProvider(resource=resource, sampler=sampler)
 
     if exporter == "otlp":
-        # endpoint=None lets the exporter fall back to OTEL_EXPORTER_OTLP_ENDPOINT
-        # / the localhost default.
-        provider.add_span_processor(
-            BatchSpanProcessor(OTLPSpanExporter(endpoint=otlp_endpoint))
-        )
+        if otlp_protocol == "http":
+            # HTTP OTLP — used in Azure where the collector sits behind an HTTPS
+            # Container Apps ingress. Caller passes the full URL including path,
+            # e.g. https://{collector-fqdn}/v1/traces.
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+                OTLPSpanExporter as OTLPHttpSpanExporter,
+            )
+
+            span_exporter: SpanExporter = OTLPHttpSpanExporter(
+                endpoint=otlp_endpoint
+            )
+        else:
+            # gRPC OTLP (default) — endpoint=None falls back to
+            # OTEL_EXPORTER_OTLP_ENDPOINT / localhost default.
+            span_exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
+        provider.add_span_processor(BatchSpanProcessor(span_exporter))
     else:  # "console" — log spans to stdout, no sidecar required.
         provider.add_span_processor(SimpleSpanProcessor(LoggingSpanExporter()))
 
