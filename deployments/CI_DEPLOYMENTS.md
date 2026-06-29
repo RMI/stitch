@@ -160,6 +160,21 @@ reset on the next pipeline run. Instead, `deploy-container.yml` takes optional
 ETL jobs pass `min-replicas: "1"` and `max-replicas: "1"`, so the pin is
 self-healing — no manual Portal step needed, and it survives every redeploy.
 
+#### Container CPU / memory sizing (wired in CI)
+
+Like replica scaling, per-app CPU and memory are reasserted after deploy rather
+than left to the action's defaults (~0.5 vCPU / 1 GiB). `deploy-container.yml`
+takes optional `cpu` / `memory` inputs and folds them into the same post-deploy
+`az containerapp update` that pins replicas. `entity-linkage` and `etl-woodmac`
+are unoptimized and need more memory, so both pass `cpu: "2.0"` /
+`memory: "4.0Gi"`.
+
+On the default **Consumption** workload profile, CPU and memory are not
+independent — only fixed pairs are valid, with memory (Gi) = 2× vCPU. So **4.0Gi
+is only reachable at 2.0 vCPU**; there is no "low CPU + 4 GiB" option without
+moving the environment to a Dedicated workload profile. The inputs must be set
+together (the deploy validates one-without-the-other and fails fast).
+
 #### Keeping staging / dress-rehearsal awake (scale-to-zero policy)
 
 By default a Container App scales to zero (`min-replicas: 0`) when idle, so the

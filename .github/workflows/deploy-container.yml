@@ -48,6 +48,16 @@ on:
         required: false
         default: ""
         type: string
+      cpu:
+        description: "Optional. vCPU allocation to reassert after deploy (e.g. '2.0'). Must be set together with memory. On the Consumption profile only fixed pairs are valid (memory Gi = 2x cpu)."
+        required: false
+        default: ""
+        type: string
+      memory:
+        description: "Optional. Memory allocation to reassert after deploy (e.g. '4.0Gi'). Must be set together with cpu."
+        required: false
+        default: ""
+        type: string
       storage-name:
         description: "Optional. Name of an Azure Files storage already registered on the Container Apps environment. When set, it is mounted into the app after deploy."
         required: false
@@ -108,6 +118,8 @@ jobs:
           REGISTRY_PASSWORD: ${{ secrets.registry-password }}
           STORAGE_NAME: ${{ inputs.storage-name }}
           MOUNT_PATH: ${{ inputs.storage-mount-path }}
+          CPU: ${{ inputs.cpu }}
+          MEMORY: ${{ inputs.memory }}
         run: |
           set -euo pipefail
           : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
@@ -133,6 +145,19 @@ jobs:
           fi
           if [ -n "${MOUNT_PATH:-}" ] && [ -z "${STORAGE_NAME:-}" ]; then
             echo "::error::storage-mount-path is set but storage-name is empty (check the lane's ETL_STORAGE_NAME variable)" >&2
+            exit 1
+          fi
+
+          # Container Apps requires cpu and memory to be set together, and on the
+          # Consumption profile only fixed pairs are valid (memory Gi = 2x cpu, so
+          # 4.0Gi pairs with 2.0). Fail fast on one-without-the-other rather than
+          # letting `az containerapp update` reject it later.
+          if [ -n "${CPU:-}" ] && [ -z "${MEMORY:-}" ]; then
+            echo "::error::cpu is set but memory is empty (Container Apps requires both together)" >&2
+            exit 1
+          fi
+          if [ -n "${MEMORY:-}" ] && [ -z "${CPU:-}" ]; then
+            echo "::error::memory is set but cpu is empty (Container Apps requires both together)" >&2
             exit 1
           fi
 
@@ -208,21 +233,26 @@ jobs:
               --set-env-vars "APPLICATIONINSIGHTS_CONNECTION_STRING=${APPLICATIONINSIGHTS_CONNECTION_STRING}"
           fi
 
-      - name: Pin replica scaling
+      - name: Reassert resources and replica scaling
         # `az containerapp up` (the deploy action) does not reliably preserve
-        # scale settings, so reassert them after every deploy when requested.
-        # Single-job apps (the ETLs) pass min=max=1 to avoid multiple replicas.
-        if: ${{ inputs.min-replicas != '' || inputs.max-replicas != '' }}
+        # resource (cpu/memory) or scale settings, so reassert them after every
+        # deploy when requested. Single-job apps (the ETLs) pass min=max=1 to
+        # avoid multiple replicas; memory-heavy apps pass cpu/memory.
+        if: ${{ inputs.min-replicas != '' || inputs.max-replicas != '' || inputs.cpu != '' || inputs.memory != '' }}
         shell: bash
         env:
           AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
           MIN_REPLICAS: ${{ inputs.min-replicas }}
           MAX_REPLICAS: ${{ inputs.max-replicas }}
+          CPU: ${{ inputs.cpu }}
+          MEMORY: ${{ inputs.memory }}
         run: |
           set -euo pipefail
           args=()
           [ -n "${MIN_REPLICAS}" ] && args+=(--min-replicas "${MIN_REPLICAS}")
           [ -n "${MAX_REPLICAS}" ] && args+=(--max-replicas "${MAX_REPLICAS}")
+          [ -n "${CPU}" ] && args+=(--cpu "${CPU}")
+          [ -n "${MEMORY}" ] && args+=(--memory "${MEMORY}")
           az containerapp update \
             --name "${{ inputs.container-app-name }}" \
             --resource-group "${AZURE_RESOURCE_GROUP}" \

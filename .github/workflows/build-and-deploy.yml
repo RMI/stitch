@@ -341,6 +341,10 @@ jobs:
       deployment-label: entity-linkage
       # Keep staging / dress-rehearsal always-on; development scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
+      # Unoptimized service; needs more than the default ~0.5 vCPU / 1 GiB.
+      # 4 GiB on the Consumption profile is only valid paired with 2.0 vCPU.
+      cpu: "2.0"
+      memory: "4.0Gi"
 
   deploy-stitch-llm:
     name: "Deploy stitch-llm"
@@ -433,6 +437,10 @@ jobs:
       # Single job at a time + in-memory /status state: keep exactly one replica.
       min-replicas: "1"
       max-replicas: "1"
+      # Unoptimized ETL; needs more than the default ~0.5 vCPU / 1 GiB.
+      # 4 GiB on the Consumption profile is only valid paired with 2.0 vCPU.
+      cpu: "2.0"
+      memory: "4.0Gi"
       environment-variables: >-
         LOG_LEVEL=info
         AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
