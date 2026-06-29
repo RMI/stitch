@@ -1,0 +1,32 @@
+# OpenTelemetry Collector config for Azure deployments.
+#
+# Receives OTLP from services (gRPC 4317, HTTP 4318), batches, and forwards
+# to Azure Monitor via the azuremonitor exporter. The connection string is
+# injected at runtime via APPLICATIONINSIGHTS_CONNECTION_STRING; it is never
+# baked into the image.
+#
+# The debug exporter emits a span summary to stdout, visible in Container Apps
+# log streams and useful when traces are not appearing in Application Insights.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  azuremonitor:
+    connection_string: ${APPLICATIONINSIGHTS_CONNECTION_STRING}
+  debug:
+    verbosity: normal
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [azuremonitor, debug]
