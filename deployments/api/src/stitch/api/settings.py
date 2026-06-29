@@ -96,6 +96,7 @@ class Settings(BaseSettings):
     otel_enabled: bool = True
     otel_traces_exporter: Literal["console", "otlp", "none"] = "console"
     otel_exporter_otlp_endpoint: str | None = None
+    otel_exporter_otlp_protocol: Literal["grpc", "http"] = "grpc"
     otel_sample_ratio: float = Field(1.0, ge=0.0, le=1.0)
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
