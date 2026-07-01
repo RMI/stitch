@@ -21,11 +21,12 @@
 Before significant changes:
 
 1. Understand the existing implementation.
-2. Explain the proposed approach.
-3. Identify meaningful tradeoffs.
-4. Ask clarifying questions when requirements are ambiguous.
-5. Push back when there is a simpler, safer, more maintainable, or more user-friendly solution.
-6. Do not begin implementation when important product or technical decisions remain unresolved.
+2. Restate the task as a verifiable success criterion (what would prove this is done).
+3. Explain the proposed approach.
+4. Identify meaningful tradeoffs.
+5. Ask clarifying questions when requirements are ambiguous.
+6. Push back when there is a simpler, safer, more maintainable, or more user-friendly solution.
+7. Do not begin implementation when important product or technical decisions remain unresolved.
 
 ## AI-Agent Guardrails
 
