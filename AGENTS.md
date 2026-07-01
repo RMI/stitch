@@ -44,7 +44,7 @@ Before significant changes:
 * Use descriptive names.
 * Handle errors explicitly.
 * Do not silently ignore errors, exceptions, or failed promises.
-* Remove dead code when it is safe to do so.
+* Remove any dead code that your change orphaned. Do not delete pre-existing dead code, surface it in the summary instead.
 * Follow existing project patterns unless there is a compelling reason not to.
 * Optimize for future maintainers reading the code.
 
