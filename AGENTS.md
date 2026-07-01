@@ -98,7 +98,7 @@ Before adding or upgrading a dependency:
 * Optimize for first-time users.
 * When technical concepts must be exposed, explain them in user-focused language.
 * Prefer progressive disclosure: show only what most users need and reveal advanced details on demand.
-* Favor sensible defaults over requiring configuration.
+* Use sensible, discoverable defaults; reveal advanced configuration only when needed.
 
 ## Currentness
 
