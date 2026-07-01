@@ -13,7 +13,6 @@ from stitch.ogsi.model import (
     OGSISrcKey,
 )
 from stitch.api.coalesce import coalesce_og_field_resource
-from stitch.api.db.coalesce_sql import coalesce_persisted_resource
 from stitch.api.db.errors import ResourceIntegrityError
 
 from .model import ResourceModel
@@ -45,35 +44,58 @@ async def resource_model_to_entity(
     model: ResourceModel,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> OGFieldResource:
-    src_data = await model.get_source_data(session)
-    # Write paths must pass licensed_sources=None: the returned entity
-    # feeds back into resource construction and must not be redacted.
-    if licensed_sources is not None:
-        src_data = [s for s in src_data if s.source in licensed_sources]
+    base = (await coalesce_resources(session, [model.id], licensed_sources))[model.id]
+
     constituent_models = await ResourceModel.get_constituents_by_root_id(
         session, model.id
     )
-    constituents = [
-        cm.as_empty_entity() for cm in constituent_models if cm.id != model.id
-    ]
-    rep_res: OGFieldResource | None = None
+    constituents = frozenset(
+        cm.id for cm in constituent_models if cm.id is not None and cm.id != model.id
+    )
+    repointed_to: int | None = None
     if model.repointed_id is not None:
         rep_model = await session.get(ResourceModel, model.repointed_id)
-        rep_res = rep_model.as_empty_entity() if rep_model else None
+        repointed_to = rep_model.id if rep_model else None
 
-    # Coalesce in SQL (priority-resolved, override-aware) over the long values.
-    view, provenance = await coalesce_persisted_resource(
-        session, model.id, licensed_sources=licensed_sources
+    return base.model_copy(
+        update={"repointed_to": repointed_to, "constituents": constituents}
     )
 
-    return OGFieldResource(
-        id=model.id,
-        repointed_to=None if rep_res is None else rep_res.id,
-        constituents=frozenset([cm.id for cm in constituents if cm.id is not None]),
-        source_data=src_data,
-        view=view,
-        provenance=provenance,
+
+async def coalesce_resources(
+    session: AsyncSession,
+    resource_ids: Collection[int],
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> dict[int, OGFieldResource]:
+    """Coalesce many resources in Python into one entity each.
+
+    The single place that builds an ``OGFieldResource`` from coalesced parts,
+    behind both the detail and list paths. Returns an entry for every requested
+    id; ids with no active/licensed source data -- including repointed resources,
+    which ``source_data_by_resource_id`` filters out -- yield a null-shell view +
+    all-``None`` provenance.
+    """
+    rows_by_id = await ResourceModel.source_data_by_resource_id(
+        session, resource_ids, licensed_sources
     )
+
+    out: dict[int, OGFieldResource] = {}
+    for rid in resource_ids:
+        rows = rows_by_id.get(rid, [])
+        # Effective priority order, best-first; built from only the sources
+        # present, so coalesce_og_field_resource's priorities.index never raises.
+        prio_map = {src.source: prio for src, prio in rows}
+        priorities = sorted(prio_map, key=lambda k: (prio_map[k], k))
+        sources = [src for src, _ in rows]
+        view, provenance = coalesce_og_field_resource(sources, priorities)
+        out[rid] = OGFieldResource(
+            id=rid,
+            source_data=sources,
+            view=view,
+            provenance=provenance,
+            constituents=frozenset(),
+        )
+    return out
 
 
 def resource_to_view(resource: OGFieldResource, force_coalesce: bool = False):
