@@ -1,4 +1,4 @@
-# Global Claude Code Instructions
+# Stitch AI Agent Instructions
 
 ## Operating Principles
 
