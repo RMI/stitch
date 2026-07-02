@@ -60,7 +60,7 @@ export default function FilterDropdown({ label, options, selected, onChange }) {
             <p className="px-3 py-2 text-sm text-ink-muted">No options</p>
           ) : (
             <ul className="max-h-60 overflow-y-auto py-1" role="listbox">
-              {options.map(({ value, count }) => (
+              {options.map(({ value, label, count }) => (
                 <li key={value}>
                   <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-surface">
                     <input
@@ -69,7 +69,9 @@ export default function FilterDropdown({ label, options, selected, onChange }) {
                       onChange={() => toggleValue(value)}
                       className="accent-primary"
                     />
-                    <span className="flex-1 text-sm text-ink">{value}</span>
+                    <span className="flex-1 text-sm text-ink">
+                      {label ?? value}
+                    </span>
                     {count != null && (
                       <span className="text-xs text-ink-muted">{count}</span>
                     )}

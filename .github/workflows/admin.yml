@@ -15,7 +15,7 @@ on:
 
 name: Admin Checks
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ github.event_action }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ github.event.action }}
   cancel-in-progress: true
 
 jobs:
@@ -26,3 +26,7 @@ jobs:
   pattern-scan:
     name: "Check for forbidden patterns"
     uses: ./.github/workflows/admin-forbidden-patterns.yml
+
+  no-plan-file:
+    name: "Check for committed plan files"
+    uses: ./.github/workflows/admin-no-plan-file.yml

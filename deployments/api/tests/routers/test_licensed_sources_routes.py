@@ -20,7 +20,7 @@ from stitch.api.db.model import (
 )
 from stitch.api.entities import User
 from stitch.api.main import app
-from tests.utils import make_source_record
+from tests.utils import make_source_model, make_source_record
 
 
 def _gem_only_claims() -> TokenClaims:
@@ -115,11 +115,12 @@ async def _seed_resource_with_sources(
         session.add(resource)
         await session.flush()
         for row in source_rows:
-            source = OilGasFieldSourceModel(
-                **row,
-                source_record=make_source_record(payload=row).model_dump(mode="json"),
+            attrs = {k: v for k, v in row.items() if k != "source"}
+            source = make_source_model(
+                source=row["source"],
                 created_by_id=user.id,
-                last_updated_by_id=user.id,
+                source_record=make_source_record(payload=row).model_dump(mode="json"),
+                **attrs,
             )
             session.add(source)
             await session.flush()

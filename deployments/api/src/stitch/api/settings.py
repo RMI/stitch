@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
 from fastapi import Depends
-from pydantic import AfterValidator, HttpUrl, SecretStr
+from pydantic import AfterValidator, Field, HttpUrl, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -80,6 +80,23 @@ class Settings(BaseSettings):
     build_id: str | None = None
     git_sha: str | None = None
     build_time: str | None = None
+
+    # Observability: queries slower than this (ms) are logged individually;
+    # set log_all_queries=True (or slow_query_ms=0) to log every query in dev.
+    log_level: str = "INFO"
+    log_format: Literal["json", "plain"] = "json"
+    slow_query_ms: float = 200.0
+    log_all_queries: bool = False
+
+    # OpenTelemetry tracing. Default exporter "console" logs spans to stdout via
+    # the JSON formatter (no collector/Jaeger needed); "otlp" ships them to the
+    # collector; "none" disables tracing. otel_sample_ratio feeds the root
+    # sampler (1.0 = capture everything); downstream spans honor the upstream
+    # decision via ParentBased.
+    otel_enabled: bool = True
+    otel_traces_exporter: Literal["console", "otlp", "none"] = "console"
+    otel_exporter_otlp_endpoint: str | None = None
+    otel_sample_ratio: float = Field(1.0, ge=0.0, le=1.0)
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env",
