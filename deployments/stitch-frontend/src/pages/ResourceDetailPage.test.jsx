@@ -4,7 +4,11 @@ import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { auth0TestDefaults, renderWithQueryClient } from "../test/utils";
 import ResourceDetailPage from "./ResourceDetailPage";
-import { useResourceDetail, useSourceDetail } from "../hooks/useResources";
+import {
+  useResourceDetail,
+  useSourceDetail,
+  useFieldSourceValues,
+} from "../hooks/useResources";
 import * as apiModule from "../queries/api";
 
 vi.mock("../hooks/useResources");
@@ -80,6 +84,11 @@ beforeEach(() => {
     refetch: vi.fn(),
   });
   vi.mocked(useSourceDetail).mockReturnValue(defaultSourceDetailHookReturn);
+  vi.mocked(useFieldSourceValues).mockReturnValue({
+    data: [],
+    isLoading: false,
+    isError: false,
+  });
   vi.stubGlobal("crypto", {
     randomUUID: () => "persist-uuid-123",
   });

@@ -87,6 +87,19 @@ function useSourceDetailReal(
   });
 }
 
+function useFieldSourceValuesReal(
+  endpoint = "oil-gas-fields",
+  id,
+  field,
+  enabled = false,
+) {
+  const config = useConfig();
+  return useAuthenticatedQuery({
+    ...resourceQueries.fieldSources(config, endpoint, id, field),
+    enabled: enabled && Boolean(field) && Number.isFinite(id),
+  });
+}
+
 function useMergeCandidatesReal(endpoint = "oil-gas-fields", enabled = false) {
   const config = useConfig();
   return useAuthenticatedQuery({
@@ -287,6 +300,21 @@ function useSourceDetailMock(
   });
 }
 
+function useFieldSourceValuesMock(
+  endpoint = "oil-gas-fields",
+  id,
+  field,
+  enabled = false,
+) {
+  // Mock mode has no backend; the panel degrades to an empty state, matching
+  // useSourceDetailMock. Real behavior is exercised against the API.
+  return useQuery({
+    queryKey: resourceKeys.fieldSources(endpoint, id, field),
+    queryFn: () => Promise.resolve([]),
+    enabled: enabled && Boolean(field),
+  });
+}
+
 function useMergeCandidatesMock(endpoint = "oil-gas-fields", enabled = false) {
   return useQuery({
     queryKey: resourceKeys.mergeCandidates(endpoint),
@@ -343,6 +371,9 @@ export const useResourceDetail = USE_MOCK_DATA
 export const useSourceDetail = USE_MOCK_DATA
   ? useSourceDetailMock
   : useSourceDetailReal;
+export const useFieldSourceValues = USE_MOCK_DATA
+  ? useFieldSourceValuesMock
+  : useFieldSourceValuesReal;
 export const useMergeCandidates = USE_MOCK_DATA
   ? useMergeCandidatesMock
   : useMergeCandidatesReal;

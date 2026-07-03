@@ -41,53 +41,6 @@ export function deriveProvenance(resource) {
   return provenance;
 }
 
-/**
- * All source values competing for a single field, best-first.
- *
- * Reads the per-field values already present on the detail view's `source_data`
- * (no extra request). The winner is the record whose source matches
- * `provenance[fieldKey]` and whose value equals the coalesced `data[fieldKey]`.
- * Losers follow, ordered by the effective per-resource `source_priority`
- * (lower = higher priority), tie-broken by source row id.
- *
- * Returns `[]` when nothing has a value for the field (empty-handling), so the
- * caller can leave the field non-interactive.
- */
-export function getFieldSources(detailView, fieldKey) {
-  const records = detailView?.source_data;
-  if (!Array.isArray(records)) return [];
-
-  const winnerSource = detailView.provenance?.[fieldKey] ?? null;
-  const winnerValue = detailView.data?.[fieldKey];
-  const priority = detailView.source_priority ?? {};
-  // Fallback rank keeps ordering stable when a source is absent from the map.
-  const rankOf = (source) =>
-    Object.prototype.hasOwnProperty.call(priority, source)
-      ? priority[source]
-      : Number.MAX_SAFE_INTEGER;
-
-  const rows = [];
-  for (const record of records) {
-    const value = record?.[fieldKey];
-    if (value === null || value === undefined || value === "") continue;
-    rows.push({
-      id: record.id ?? null,
-      source: record.source,
-      value,
-      isWinner: record.source === winnerSource && value === winnerValue,
-    });
-  }
-
-  rows.sort((a, b) => {
-    if (a.isWinner !== b.isWinner) return a.isWinner ? -1 : 1;
-    const rankDiff = rankOf(a.source) - rankOf(b.source);
-    if (rankDiff !== 0) return rankDiff;
-    return (a.id ?? 0) - (b.id ?? 0);
-  });
-
-  return rows;
-}
-
 export function normalizeResourceListItem(resource) {
   if (!resource || resource.data) {
     return resource;

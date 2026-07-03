@@ -21,6 +21,7 @@ from .types import (
 __all__ = [
     "OGFieldSource",
     "OGFieldSourceView",
+    "OGFieldSourceValueView",
     "OGFieldResource",
     "OGFieldResourceView",
     "OGFieldView",
@@ -103,9 +104,6 @@ class OGFieldListItemView(BaseModel):
 
 class OGFieldDetailView(OGFieldListItemView):
     source_data: list[OGFieldSourceView] = Field(default_factory=list)
-    # Effective per-resource source priority (COALESCE(override, default)); lower
-    # int = higher priority. Lets the client order competing source values.
-    source_priority: dict[OGSISrcKey, int] = Field(default_factory=dict)
 
     @field_validator("source_data", mode="before")
     @classmethod
@@ -118,14 +116,26 @@ class OGFieldDetailView(OGFieldListItemView):
         return normalized
 
 
+class OGFieldSourceValueView(BaseModel):
+    """One source's value for a single field, with its effective priority.
+
+    Returned by the per-field source-values endpoint. ``priority`` is the
+    effective per-resource ranking (lower = higher priority); the winning value
+    is the lowest-priority entry (ties broken by ``id``). When priority becomes
+    resource/field-scoped, only that resolution changes -- this shape is stable.
+    """
+
+    source: OGSISrcKey
+    id: int
+    value: Any
+    priority: int
+
+
 class OGFieldResource(Resource[int, OGFieldSource]):
     provenance: dict[str, tuple[Any, OGSISrcKey, int] | None] = Field(
         default_factory=dict
     )
     view: OilGasFieldBase | None = None
-    # Effective per-resource source priority (COALESCE(override, default)); lower
-    # int = higher priority. Empty for unmanaged/null-shell resources.
-    source_priority: dict[OGSISrcKey, int] = Field(default_factory=dict)
 
 
 class OGFieldResourceView(Resource[int, OGFieldSourceView]):

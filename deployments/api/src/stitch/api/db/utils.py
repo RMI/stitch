@@ -93,7 +93,6 @@ async def coalesce_resources(
             source_data=sources,
             view=view,
             provenance=provenance,
-            source_priority=prio_map,
             constituents=frozenset(),
         )
     return out
@@ -150,5 +149,4 @@ def resource_to_detail_view(
             OG_FIELD_SOURCE_VIEW_ADAPTER.validate_python(source)
             for source in resource.source_data
         ],
-        source_priority=resource.source_priority,
     )

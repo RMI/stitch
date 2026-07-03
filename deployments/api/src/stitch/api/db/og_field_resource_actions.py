@@ -22,7 +22,11 @@ from stitch.api.db.og_field_source_actions import (
     attach_sources_to_resource,
     get_or_create_sources,
 )
-from stitch.ogsi.model import OGFieldListItemView, OGFieldResource
+from stitch.ogsi.model import (
+    OGFieldListItemView,
+    OGFieldResource,
+    OGFieldSourceValueView,
+)
 from stitch.ogsi.model.types import OGSISrcKey
 
 from .model import (
@@ -30,7 +34,7 @@ from .model import (
     MembershipStatus,
     ResourceModel,
 )
-from .model.oil_gas_field_source_value import value_attr_for
+from .model.oil_gas_field_source_value import ATTRIBUTE_NAMES, value_attr_for
 from .queries import base_resource_query, construct_base_query_statement, add_ranking
 from .utils import (
     coalesce_resources,
@@ -125,6 +129,45 @@ async def get(
     return await resource_model_to_entity(
         session, model, licensed_sources=licensed_sources
     )
+
+
+async def field_source_values(
+    session: AsyncSession,
+    id: int,
+    field: str,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> list[OGFieldSourceValueView]:
+    """Every source's value for one field of a resource, best-priority first.
+
+    Returns only sources that carry a value for ``field`` (empty/null omitted),
+    each with its effective per-resource priority. The first entry is the
+    coalesced winner. Licensing is applied. Priority is source-scoped today; the
+    contract is unchanged when it becomes resource/field-scoped.
+    """
+    if field not in ATTRIBUTE_NAMES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"field={field} is not a known resource field.",
+        )
+    if await session.get(ResourceModel, id) is None:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND, detail=f"No Resource with id `{id}` found."
+        )
+
+    by_id = await ResourceModel.source_data_by_resource_id(
+        session, [id], licensed_sources
+    )
+    values = [
+        OGFieldSourceValueView(
+            source=src.source, id=src.id, value=value, priority=priority
+        )
+        for src, priority in by_id.get(id, [])
+        if src.id is not None
+        and (value := getattr(src, field)) is not None
+        and value != ""
+    ]
+    values.sort(key=lambda v: (v.priority, v.id))
+    return values
 
 
 async def create(

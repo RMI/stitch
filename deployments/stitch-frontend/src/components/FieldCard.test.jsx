@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FieldCard, FieldGrid } from "./FieldCard";
@@ -83,80 +83,47 @@ describe("FieldCard", () => {
   });
 });
 
-describe("FieldCard sources panel", () => {
-  const sources = [
-    { id: 20, source: "wm", value: "Foo Basin", isWinner: true },
-    { id: 10, source: "gem", value: "Bar Basin", isWinner: false },
-  ];
-
-  it("is not interactive when no sources are provided", () => {
+describe("FieldCard expandable behavior", () => {
+  it("renders a plain box (no button) when not expandable", () => {
     render(<FieldCard label="Basin" value="Foo Basin" source="wm" />);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
-    expect(screen.queryByText("All sources")).not.toBeInTheDocument();
   });
 
-  it("is not interactive when sources is empty", () => {
-    render(<FieldCard label="Basin" value="Foo Basin" source="wm" sources={[]} />);
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
-  });
-
-  it("reveals the All sources panel on click and hides it again", async () => {
-    const user = userEvent.setup();
-    render(
-      <FieldCard label="Basin" value="Foo Basin" source="wm" sources={sources} />,
+  it("renders a toggle button reflecting isOpen when expandable", () => {
+    const { rerender } = render(
+      <FieldCard label="Basin" value="Foo Basin" expandable isOpen={false} />,
     );
-
     const toggle = screen.getByRole("button");
     expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByText("All sources")).not.toBeInTheDocument();
 
-    await user.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByText("All sources")).toBeInTheDocument();
-    expect(screen.getByText('"Foo Basin"')).toBeInTheDocument();
-    expect(screen.getByText('"Bar Basin"')).toBeInTheDocument();
-
-    await user.click(toggle);
-    expect(screen.queryByText("All sources")).not.toBeInTheDocument();
+    rerender(<FieldCard label="Basin" value="Foo Basin" expandable isOpen />);
+    expect(screen.getByRole("button")).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("highlights the coalesced winner's row", async () => {
+  it("calls onToggle when the value button is clicked", async () => {
     const user = userEvent.setup();
+    const onToggle = vi.fn();
     render(
-      <FieldCard label="Basin" value="Foo Basin" source="wm" sources={sources} />,
+      <FieldCard label="Basin" value="Foo Basin" expandable onToggle={onToggle} />,
     );
     await user.click(screen.getByRole("button"));
-
-    const winnerRow = screen.getByText('"Foo Basin"').closest(".border-l-4");
-    const loserRow = screen.getByText('"Bar Basin"').closest(".border-l-4");
-    expect(winnerRow).toHaveClass("bg-surface");
-    expect(loserRow).toHaveClass("bg-panel");
+    expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
-  it("orders rows winner-first (priority order)", async () => {
-    const user = userEvent.setup();
-    render(
-      <FieldCard label="Basin" value="Foo Basin" source="wm" sources={sources} />,
+  it("renders children only when expandable and open", () => {
+    const { rerender } = render(
+      <FieldCard label="Basin" value="Foo Basin" expandable isOpen={false}>
+        <div>panel body</div>
+      </FieldCard>,
     );
-    await user.click(screen.getByRole("button"));
-    const values = screen
-      .getAllByText(/^".*"$/)
-      .map((el) => el.textContent);
-    expect(values).toEqual(['"Foo Basin"', '"Bar Basin"']);
-  });
+    expect(screen.queryByText("panel body")).not.toBeInTheDocument();
 
-  it("shows the source label and row id beneath each value", async () => {
-    const user = userEvent.setup();
-    render(
-      <FieldCard label="Basin" value="Foo Basin" source="wm" sources={sources} />,
+    rerender(
+      <FieldCard label="Basin" value="Foo Basin" expandable isOpen>
+        <div>panel body</div>
+      </FieldCard>,
     );
-    await user.click(screen.getByRole("button"));
-    expect(
-      screen.getByText(`${SOURCE_LABELS.wm} · #20`),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(`${SOURCE_LABELS.gem} · #10`),
-    ).toBeInTheDocument();
+    expect(screen.getByText("panel body")).toBeInTheDocument();
   });
 });
 

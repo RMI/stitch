@@ -12,7 +12,7 @@ import {
 import SourceMixBar from "../components/SourceMixBar";
 import SectionHeader from "../components/SectionHeader";
 import { FieldCard, FieldGrid } from "../components/FieldCard";
-import { getFieldSources } from "../utils/resourceDisplay";
+import ResourceFieldCard from "../components/ResourceFieldCard";
 import { SOURCE_LABELS } from "../constants/sourceMeta";
 import Button from "../components/Button";
 import {
@@ -579,12 +579,14 @@ export default function ResourceDetailPage() {
             <SectionHeader title="Identity and location" />
             <FieldGrid>
               {IDENTITY_FIELDS.map((key) => (
-                <FieldCard
+                <ResourceFieldCard
                   key={key}
+                  endpoint={endpoint}
+                  resourceId={numericId}
+                  fieldKey={key}
                   label={FIELD_META[key].label}
                   value={detailView.data[key]}
                   source={detailView.provenance[key]}
-                  sources={getFieldSources(detailView, key)}
                 />
               ))}
             </FieldGrid>
@@ -601,12 +603,14 @@ export default function ResourceDetailPage() {
             <SectionHeader title="Production and geology" />
             <FieldGrid>
               {PRODUCTION_FIELDS.map((key) => (
-                <FieldCard
+                <ResourceFieldCard
                   key={key}
+                  endpoint={endpoint}
+                  resourceId={numericId}
+                  fieldKey={key}
                   label={FIELD_META[key].label}
                   value={detailView.data[key]}
                   source={detailView.provenance[key]}
-                  sources={getFieldSources(detailView, key)}
                 />
               ))}
             </FieldGrid>
