@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { FieldCard, FieldGrid } from "./FieldCard";
 import {
   SOURCE_COLORS,
@@ -79,6 +80,78 @@ describe("FieldCard", () => {
   it("does not render source copy when source is omitted", () => {
     render(<FieldCard label="Country" value="Kuwait" />);
     expect(screen.queryByText(/^Source:/)).not.toBeInTheDocument();
+  });
+});
+
+describe("FieldCard sources panel", () => {
+  const sources = [
+    { id: 20, source: "wm", value: "Foo Basin", isWinner: true },
+    { id: 10, source: "gem", value: "Bar Basin", isWinner: false },
+  ];
+
+  it("is not interactive when no sources are provided", () => {
+    render(<FieldCard label="Basin" value="Foo Basin" source="wm" />);
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.queryByText("All sources")).not.toBeInTheDocument();
+  });
+
+  it("is not interactive when sources is empty", () => {
+    render(<FieldCard label="Basin" value="Foo Basin" source="wm" sources={[]} />);
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("reveals the All sources panel on click and hides it again", async () => {
+    const user = userEvent.setup();
+    render(
+      <FieldCard label="Basin" value="Foo Basin" source="wm" sources={sources} />,
+    );
+
+    const toggle = screen.getByRole("button");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("All sources")).not.toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("All sources")).toBeInTheDocument();
+    expect(screen.getByText('"Foo Basin"')).toBeInTheDocument();
+    expect(screen.getByText('"Bar Basin"')).toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(screen.queryByText("All sources")).not.toBeInTheDocument();
+  });
+
+  it("marks the coalesced winner", async () => {
+    const user = userEvent.setup();
+    render(
+      <FieldCard label="Basin" value="Foo Basin" source="wm" sources={sources} />,
+    );
+    await user.click(screen.getByRole("button"));
+    expect(screen.getByText("Winner")).toBeInTheDocument();
+  });
+
+  it("orders rows winner-first (priority order)", async () => {
+    const user = userEvent.setup();
+    render(
+      <FieldCard label="Basin" value="Foo Basin" source="wm" sources={sources} />,
+    );
+    await user.click(screen.getByRole("button"));
+    const labels = screen
+      .getAllByText(/Database:$/)
+      .map((el) => el.textContent);
+    expect(labels).toEqual([
+      `${SOURCE_LABELS.wm}:`,
+      `${SOURCE_LABELS.gem}:`,
+    ]);
+  });
+
+  it("shows the source row id for each value", async () => {
+    const user = userEvent.setup();
+    render(
+      <FieldCard label="Basin" value="Foo Basin" source="wm" sources={sources} />,
+    );
+    await user.click(screen.getByRole("button"));
+    expect(screen.getByText("#20")).toBeInTheDocument();
+    expect(screen.getByText("#10")).toBeInTheDocument();
   });
 });
 

@@ -12,6 +12,7 @@ import {
 import SourceMixBar from "../components/SourceMixBar";
 import SectionHeader from "../components/SectionHeader";
 import { FieldCard, FieldGrid } from "../components/FieldCard";
+import { getFieldSources } from "../utils/resourceDisplay";
 import { SOURCE_LABELS } from "../constants/sourceMeta";
 import Button from "../components/Button";
 import {
@@ -583,6 +584,7 @@ export default function ResourceDetailPage() {
                   label={FIELD_META[key].label}
                   value={detailView.data[key]}
                   source={detailView.provenance[key]}
+                  sources={getFieldSources(detailView, key)}
                 />
               ))}
             </FieldGrid>
@@ -604,6 +606,7 @@ export default function ResourceDetailPage() {
                   label={FIELD_META[key].label}
                   value={detailView.data[key]}
                   source={detailView.provenance[key]}
+                  sources={getFieldSources(detailView, key)}
                 />
               ))}
             </FieldGrid>
