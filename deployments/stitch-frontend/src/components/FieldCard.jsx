@@ -9,26 +9,18 @@ import {
 function SourceValueRow({ source, value, id, isWinner }) {
   const barColor = SOURCE_COLORS[source] ?? DEFAULT_FIELD_COLOR;
   const sourceLabel = SOURCE_LABELS[source] ?? UNKNOWN_SOURCE_LABEL;
+  const meta =
+    id !== null && id !== undefined ? `${sourceLabel} · #${id}` : sourceLabel;
 
   return (
     <div
-      className={`flex items-baseline gap-2 rounded-md border border-line border-l-4 px-2.5 py-1.5 text-sm ${
-        isWinner ? "bg-surface text-ink" : "bg-panel text-ink-muted"
+      className={`rounded-md border border-line border-l-4 px-2.5 py-1.5 ${
+        isWinner ? "bg-surface" : "bg-panel"
       }`}
       style={{ borderLeftColor: barColor }}
     >
-      <span className="shrink-0 font-medium text-ink">{sourceLabel}:</span>
-      <span className="min-w-0 break-words">"{String(value)}"</span>
-      <span className="ml-auto flex shrink-0 items-baseline gap-2">
-        {isWinner && (
-          <span className="rounded bg-ink/5 px-1.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-ink-muted">
-            Winner
-          </span>
-        )}
-        {id !== null && id !== undefined && (
-          <span className="text-xs text-ink-muted">#{id}</span>
-        )}
-      </span>
+      <div className="break-words text-sm text-ink">"{String(value)}"</div>
+      <div className="mt-0.5 text-xs text-ink-muted">{meta}</div>
     </div>
   );
 }

@@ -120,13 +120,17 @@ describe("FieldCard sources panel", () => {
     expect(screen.queryByText("All sources")).not.toBeInTheDocument();
   });
 
-  it("marks the coalesced winner", async () => {
+  it("highlights the coalesced winner's row", async () => {
     const user = userEvent.setup();
     render(
       <FieldCard label="Basin" value="Foo Basin" source="wm" sources={sources} />,
     );
     await user.click(screen.getByRole("button"));
-    expect(screen.getByText("Winner")).toBeInTheDocument();
+
+    const winnerRow = screen.getByText('"Foo Basin"').closest(".border-l-4");
+    const loserRow = screen.getByText('"Bar Basin"').closest(".border-l-4");
+    expect(winnerRow).toHaveClass("bg-surface");
+    expect(loserRow).toHaveClass("bg-panel");
   });
 
   it("orders rows winner-first (priority order)", async () => {
@@ -135,23 +139,24 @@ describe("FieldCard sources panel", () => {
       <FieldCard label="Basin" value="Foo Basin" source="wm" sources={sources} />,
     );
     await user.click(screen.getByRole("button"));
-    const labels = screen
-      .getAllByText(/Database:$/)
+    const values = screen
+      .getAllByText(/^".*"$/)
       .map((el) => el.textContent);
-    expect(labels).toEqual([
-      `${SOURCE_LABELS.wm}:`,
-      `${SOURCE_LABELS.gem}:`,
-    ]);
+    expect(values).toEqual(['"Foo Basin"', '"Bar Basin"']);
   });
 
-  it("shows the source row id for each value", async () => {
+  it("shows the source label and row id beneath each value", async () => {
     const user = userEvent.setup();
     render(
       <FieldCard label="Basin" value="Foo Basin" source="wm" sources={sources} />,
     );
     await user.click(screen.getByRole("button"));
-    expect(screen.getByText("#20")).toBeInTheDocument();
-    expect(screen.getByText("#10")).toBeInTheDocument();
+    expect(
+      screen.getByText(`${SOURCE_LABELS.wm} · #20`),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(`${SOURCE_LABELS.gem} · #10`),
+    ).toBeInTheDocument();
   });
 });
 
