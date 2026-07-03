@@ -1051,6 +1051,8 @@ class TestResourcePriorityOverride:
         before = await resource_actions.get(session, rid)
         assert before.view.name == "GEM Name"
         assert before.provenance["name"][1] == "gem"
+        # Effective priority exposed for the client (gem(2) outranks wm(3)).
+        assert before.source_priority == {"gem": 2, "wm": 3}
 
         # Override wm to top priority for THIS resource only.
         session.add(
@@ -1063,6 +1065,13 @@ class TestResourcePriorityOverride:
         assert after.view.name == "WM Name"
         assert after.view.country == "CAN"
         assert after.provenance["name"][1] == "wm"
+        # The override re-ranks wm above gem in the exposed priority...
+        assert after.source_priority == {"gem": 2, "wm": 1}
+        # ...and the detail view surfaces that same effective priority.
+        assert utils.resource_to_detail_view(after).source_priority == {
+            "gem": 2,
+            "wm": 1,
+        }
 
         # List path reflects it too.
         items, _ = await resource_actions.query(session, _QueryParams())

@@ -103,6 +103,9 @@ class OGFieldListItemView(BaseModel):
 
 class OGFieldDetailView(OGFieldListItemView):
     source_data: list[OGFieldSourceView] = Field(default_factory=list)
+    # Effective per-resource source priority (COALESCE(override, default)); lower
+    # int = higher priority. Lets the client order competing source values.
+    source_priority: dict[OGSISrcKey, int] = Field(default_factory=dict)
 
     @field_validator("source_data", mode="before")
     @classmethod
@@ -120,6 +123,9 @@ class OGFieldResource(Resource[int, OGFieldSource]):
         default_factory=dict
     )
     view: OilGasFieldBase | None = None
+    # Effective per-resource source priority (COALESCE(override, default)); lower
+    # int = higher priority. Empty for unmanaged/null-shell resources.
+    source_priority: dict[OGSISrcKey, int] = Field(default_factory=dict)
 
 
 class OGFieldResourceView(Resource[int, OGFieldSourceView]):
