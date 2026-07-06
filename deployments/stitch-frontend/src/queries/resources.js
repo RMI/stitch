@@ -106,7 +106,7 @@ export const resourceQueries = {
     enabled: false,
   }),
 
-  fieldSources: (config, endpoint = "resources", id, field) => ({
+  fieldSources: (config, endpoint = "oil-gas-fields", id, field) => ({
     queryKey: resourceKeys.fieldSources(endpoint, id, field),
     queryFn: (fetcher) =>
       getFieldSourceValues(config, id, field, fetcher, endpoint),
