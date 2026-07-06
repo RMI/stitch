@@ -13,6 +13,8 @@ function SourceValueRow({ source, value, id, isWinner }) {
   const sourceLabel = SOURCE_LABELS[source] ?? UNKNOWN_SOURCE_LABEL;
   const meta =
     id !== null && id !== undefined ? `${sourceLabel} · #${id}` : sourceLabel;
+  // Quote strings to set text values apart; render numbers/booleans bare.
+  const display = typeof value === "string" ? `"${value}"` : String(value);
 
   return (
     <div
@@ -21,7 +23,7 @@ function SourceValueRow({ source, value, id, isWinner }) {
       }`}
       style={{ borderLeftColor: barColor }}
     >
-      <div className="break-words text-sm text-ink">"{String(value)}"</div>
+      <div className="break-words text-sm text-ink">{display}</div>
       <div className="mt-0.5 text-xs text-ink-muted">{meta}</div>
     </div>
   );

@@ -307,11 +307,12 @@ function useFieldSourceValuesMock(
   enabled = false,
 ) {
   // Mock mode has no backend; the panel degrades to an empty state, matching
-  // useSourceDetailMock. Real behavior is exercised against the API.
+  // useSourceDetailMock. Real behavior is exercised against the API. Guard `id`
+  // the same way the real hook does so the query key stays stable.
   return useQuery({
     queryKey: resourceKeys.fieldSources(endpoint, id, field),
     queryFn: () => Promise.resolve([]),
-    enabled: enabled && Boolean(field),
+    enabled: enabled && Boolean(field) && Number.isFinite(id),
   });
 }
 
