@@ -10,12 +10,16 @@ import logging
 import pytest
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.trace import SpanKind
+from opentelemetry.trace.status import StatusCode
 from pydantic import ValidationError
 
 from stitch.api.observability.tracing import LoggingSpanExporter, configure_tracing
 from stitch.api.settings import Settings
 
-_TRACE_LOGGER = "stitch.api.observability.trace"
+# The exporter now lives in the shared stitch-observability package and logs
+# under its own logger name; the API shim re-exports it unchanged.
+_TRACE_LOGGER = "stitch.observability.trace"
 
 
 @pytest.fixture
@@ -41,12 +45,12 @@ class TestLoggingSpanExporter:
         assert len(events) == 1
         event = events[0]
         assert event["span_name"] == "my-span"
-        assert event["kind"] == "INTERNAL"
+        assert event["kind"] == SpanKind.INTERNAL.name
         assert len(event["trace_id"]) == 32
         assert len(event["span_id"]) == 16
         assert event["parent_span_id"] is None
         assert event["duration_ms"] is not None
-        assert event["status"] == "UNSET"
+        assert event["status"] == StatusCode.UNSET.name
         assert event["attributes"]["stitch.request_id"] == "abc123"
 
     def test_child_span_records_parent_and_shares_trace(self, logging_tracer, caplog):
@@ -67,11 +71,14 @@ class TestConfigureTracing:
     def test_returns_none_when_exporter_is_none(self):
         assert configure_tracing(Settings(otel_traces_exporter="none")) is None
 
-    def test_console_exporter_returns_provider(self):
-        # Note: this sets the process-global tracer provider. Benign in the
-        # suite — the app runs uninstrumented under the test env, so no spans
-        # leak into other tests — and OTel's global provider can't be cleanly
-        # reset, so we don't try.
+    def test_console_exporter_returns_provider(self, monkeypatch):
+        # Stub set_tracer_provider so this exercises only provider construction
+        # and leaves the process-global provider untouched (OTel makes it
+        # set-once and won't cleanly reset). The shim delegates to the package,
+        # so the call to patch lives there.
+        import stitch.observability.tracing as pkg_tracing
+
+        monkeypatch.setattr(pkg_tracing.trace, "set_tracer_provider", lambda _p: None)
         provider = configure_tracing(Settings(otel_traces_exporter="console"))
         try:
             assert provider is not None

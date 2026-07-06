@@ -12,6 +12,7 @@ dependencies = [
   "stitch-auth",
   "stitch-client",
   "stitch-models",
+  "stitch-observability",
   "stitch-ogsi",
 ]
 
@@ -42,4 +43,5 @@ addopts = ["-v", "--strict-markers", "--tb=short"]
 stitch-auth = { workspace = true }
 stitch-client = { workspace = true }
 stitch-models = { workspace = true }
+stitch-observability = { workspace = true }
 stitch-ogsi = { workspace = true }

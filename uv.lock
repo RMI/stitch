@@ -16,6 +16,7 @@ members = [
     "stitch-entity-linkage",
     "stitch-llm",
     "stitch-models",
+    "stitch-observability",
     "stitch-ogsi",
     "stitch-seed",
 ]
@@ -686,6 +687,22 @@ wheels = [
 ]
 
 [[package]]
+name = "opentelemetry-instrumentation-httpx"
+version = "0.63b1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-instrumentation" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "opentelemetry-util-http" },
+    { name = "wrapt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/02/27/c2b4335bca030e893acbe5ff2b4f434868773bf94508be7e6bf5af981b24/opentelemetry_instrumentation_httpx-0.63b1.tar.gz", hash = "sha256:f41ec82f25c3abcdada621052db3e5fd648e3b43d55eec4b9c0c5d3ecb7b4ff4", size = 23557, upload-time = "2026-05-21T16:36:34.583Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ba/b8/f536780996195c3b9f2354998554671e05a7a262df8c043f63fe9e5a6f0b/opentelemetry_instrumentation_httpx-0.63b1-py3-none-any.whl", hash = "sha256:14df6e99d81be9a8cd238f6639b6fa52404c4d3ce219058fcb5dc8c0f2211f86", size = 16336, upload-time = "2026-05-21T16:35:32.221Z" },
+]
+
+[[package]]
 name = "opentelemetry-instrumentation-sqlalchemy"
 version = "0.63b1"
 source = { registry = "https://pypi.org/simple" }
@@ -1251,6 +1268,7 @@ dependencies = [
     { name = "sqlalchemy" },
     { name = "stitch-auth" },
     { name = "stitch-models" },
+    { name = "stitch-observability" },
     { name = "stitch-ogsi" },
 ]
 
@@ -1277,6 +1295,7 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0.44" },
     { name = "stitch-auth", editable = "packages/stitch-auth" },
     { name = "stitch-models", editable = "packages/stitch-models" },
+    { name = "stitch-observability", editable = "packages/stitch-observability" },
     { name = "stitch-ogsi", editable = "packages/stitch-ogsi" },
 ]
 
@@ -1356,6 +1375,7 @@ dependencies = [
     { name = "stitch-auth" },
     { name = "stitch-client" },
     { name = "stitch-models" },
+    { name = "stitch-observability" },
     { name = "stitch-ogsi" },
 ]
 
@@ -1376,6 +1396,7 @@ requires-dist = [
     { name = "stitch-auth", editable = "packages/stitch-auth" },
     { name = "stitch-client", editable = "packages/stitch-client" },
     { name = "stitch-models", editable = "packages/stitch-models" },
+    { name = "stitch-observability", editable = "packages/stitch-observability" },
     { name = "stitch-ogsi", editable = "packages/stitch-ogsi" },
 ]
 
@@ -1399,6 +1420,7 @@ dependencies = [
     { name = "stitch-auth" },
     { name = "stitch-client" },
     { name = "stitch-models" },
+    { name = "stitch-observability" },
     { name = "stitch-ogsi" },
 ]
 
@@ -1417,6 +1439,7 @@ requires-dist = [
     { name = "stitch-auth", editable = "packages/stitch-auth" },
     { name = "stitch-client", editable = "packages/stitch-client" },
     { name = "stitch-models", editable = "packages/stitch-models" },
+    { name = "stitch-observability", editable = "packages/stitch-observability" },
     { name = "stitch-ogsi", editable = "packages/stitch-ogsi" },
 ]
 
@@ -1442,6 +1465,37 @@ dev = [
 
 [package.metadata]
 requires-dist = [{ name = "pydantic", specifier = ">=2.12.5" }]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=9.0.2" }]
+
+[[package]]
+name = "stitch-observability"
+version = "0.1.0"
+source = { editable = "packages/stitch-observability" }
+dependencies = [
+    { name = "opentelemetry-exporter-otlp-proto-grpc" },
+    { name = "opentelemetry-instrumentation-fastapi" },
+    { name = "opentelemetry-instrumentation-httpx" },
+    { name = "opentelemetry-instrumentation-sqlalchemy" },
+    { name = "opentelemetry-sdk" },
+    { name = "pydantic-settings" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.30.0" },
+    { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.51b0" },
+    { name = "opentelemetry-instrumentation-httpx", specifier = ">=0.51b0" },
+    { name = "opentelemetry-instrumentation-sqlalchemy", specifier = ">=0.51b0" },
+    { name = "opentelemetry-sdk", specifier = ">=1.30.0" },
+    { name = "pydantic-settings", specifier = ">=2.11.0" },
+]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=9.0.2" }]

@@ -23,6 +23,11 @@ base_router.include_router(ogfield_resource_router)
 base_router.include_router(ogfield_source_router)
 
 
+# Assigned below once settings are loaded; declared here so `lifespan` (which
+# reads it) can't NameError if an import between here and the assignment fails.
+_tracer_provider = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.started_at = datetime.now(UTC)

@@ -59,6 +59,8 @@ def get_engine() -> AsyncEngine:
         log_all_queries=settings.log_all_queries,
     )
     # Per-query spans (separate from the aggregate timing listener above).
+    # get_engine is @lru_cache'd, so this instruments the engine once per
+    # process — SQLAlchemyInstrumentor is not safely re-entrant per engine.
     if settings.otel_enabled and settings.otel_traces_exporter != "none":
         instrument_sqlalchemy(engine.sync_engine)
     return engine
