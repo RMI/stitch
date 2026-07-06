@@ -104,7 +104,12 @@ describe("FieldCard expandable behavior", () => {
     const user = userEvent.setup();
     const onToggle = vi.fn();
     render(
-      <FieldCard label="Basin" value="Foo Basin" expandable onToggle={onToggle} />,
+      <FieldCard
+        label="Basin"
+        value="Foo Basin"
+        expandable
+        onToggle={onToggle}
+      />,
     );
     await user.click(screen.getByRole("button"));
     expect(onToggle).toHaveBeenCalledTimes(1);

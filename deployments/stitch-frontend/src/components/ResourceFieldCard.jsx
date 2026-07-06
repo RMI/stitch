@@ -34,9 +34,7 @@ function FieldSourcesPanel({ isLoading, isError, sources }) {
       <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
         All sources
       </p>
-      {isLoading && (
-        <p className="text-sm text-ink-muted">Loading sources…</p>
-      )}
+      {isLoading && <p className="text-sm text-ink-muted">Loading sources…</p>}
       {isError && (
         <p className="text-sm text-danger">Failed to load source values.</p>
       )}

@@ -117,6 +117,8 @@ describe("ResourceFieldCard", () => {
     });
     renderCard();
     await user.click(screen.getByRole("button"));
-    expect(screen.getByText("Failed to load source values.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Failed to load source values."),
+    ).toBeInTheDocument();
   });
 });

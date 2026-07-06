@@ -1154,7 +1154,9 @@ class TestFieldSourceValues:
         session = seeded_integration_session
         rid = await self._seed(session, test_user)
 
-        rows = await resource_actions.field_source_values(session, rid, "state_province")
+        rows = await resource_actions.field_source_values(
+            session, rid, "state_province"
+        )
 
         assert rows == []
 
