@@ -34,7 +34,7 @@ export const resourceKeys = {
     ...resourceKeys.details(endpoint),
     id,
   ],
-  fieldSources: (endpoint = "resources", id, field) => [
+  fieldSources: (endpoint = "oil-gas-fields", id, field) => [
     ...resourceKeys.detail(endpoint, id),
     "field-sources",
     field,
