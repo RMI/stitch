@@ -40,6 +40,7 @@ def configure_tracing(settings: "Settings") -> "TracerProvider | None":
         enabled=settings.otel_enabled,
         exporter=settings.otel_traces_exporter,
         otlp_endpoint=settings.otel_exporter_otlp_endpoint,
+        otlp_protocol=settings.otel_exporter_otlp_protocol,
         sample_ratio=settings.otel_sample_ratio,
         version=settings.app_version or "unknown",
         environment=settings.environment_name,

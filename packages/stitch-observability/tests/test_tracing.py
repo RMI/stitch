@@ -34,6 +34,20 @@ def test_configure_tracing_builds_provider_with_resource(monkeypatch) -> None:
     assert attrs["deployment.environment"] == "test"
 
 
+def test_configure_tracing_otlp_http_builds_provider(monkeypatch) -> None:
+    # Exercises the http-protocol branch (Azure export path): the http exporter
+    # is imported lazily, so this also guards against the dependency going
+    # missing. Stub set_tracer_provider to leave the process-global untouched.
+    monkeypatch.setattr(trace, "set_tracer_provider", lambda _provider: None)
+    provider = configure_tracing(
+        service_name="svc",
+        exporter="otlp",
+        otlp_protocol="http",
+        otlp_endpoint="https://collector.example/v1/traces",
+    )
+    assert isinstance(provider, TracerProvider)
+
+
 def test_logging_span_exporter_emits_one_record_per_span(caplog) -> None:
     # A local provider + the exporter under test; never touches the global.
     exporter = LoggingSpanExporter()

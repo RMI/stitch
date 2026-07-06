@@ -45,6 +45,7 @@ _tracer_provider = configure_tracing(
     enabled=settings.otel_enabled,
     exporter=settings.otel_traces_exporter,
     otlp_endpoint=settings.otel_exporter_otlp_endpoint,
+    otlp_protocol=settings.otel_exporter_otlp_protocol,
     sample_ratio=settings.otel_sample_ratio,
 )
 
