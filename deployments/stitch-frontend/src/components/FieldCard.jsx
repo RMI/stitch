@@ -68,7 +68,8 @@ export function FieldCard({
         <button
           type="button"
           aria-expanded={isOpen}
-          aria-controls={panelId}
+          // Only reference the panel while it is mounted (rendered on open).
+          aria-controls={isOpen ? panelId : undefined}
           onClick={onToggle}
           className={`${boxClasses} transition-colors hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-1`}
           style={{ borderLeftColor: borderColor }}
