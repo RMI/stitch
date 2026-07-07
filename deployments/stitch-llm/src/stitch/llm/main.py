@@ -3,9 +3,11 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, FastAPI
 from stitch.observability import (
+    configure_logging,
     configure_tracing,
     instrument_fastapi,
     instrument_httpx,
+    resource_attributes_from_env,
     shutdown_tracing,
 )
 
@@ -39,6 +41,14 @@ async def lifespan(app: FastAPI):
 
 
 settings = get_settings()
+
+# Structured JSON logs on the root logger, stamped with the same deployment
+# metadata (deployment.name / lane / service.version) that the tracing SDK puts
+# on spans, so logs and traces are comparable across deployments/PRs.
+configure_logging(
+    level=settings.log_level,
+    resource_attributes=resource_attributes_from_env(),
+)
 
 _tracer_provider = configure_tracing(
     service_name="stitch-llm",
