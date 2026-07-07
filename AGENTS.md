@@ -33,7 +33,7 @@ Before significant changes:
 * Do not make unrelated changes.
 * Do not perform broad refactors unless requested.
 * Do not replace working implementations with speculative rewrites.
-* Do not create new abstractions until there is a demonstrated need.
+* Do not create new abstractions until there explicit instruction.
 * Do not introduce new architecture unless explicitly justified.
 * Do not modify formatting in unrelated files.
 
