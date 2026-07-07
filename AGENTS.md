@@ -78,7 +78,7 @@ Before adding or upgrading a dependency:
 * Do not commit unless explicitly asked.
 * Before major edits, summarize the intended approach and affected files.
 * After changes, provide a concise summary of what changed and why.
-* Never rewrite history, force-push, or delete branches unless explicitly instructed.
+* Never rewrite history, push, or delete branches unless explicitly instructed.
 
 ## Security
 
