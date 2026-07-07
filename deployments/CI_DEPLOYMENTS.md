@@ -70,31 +70,6 @@ CORS: the ETL app allows exactly one browser origin, set at deploy time via
 missing value shows up as a browser CORS ("No 'Access-Control-Allow-Origin'
 header") failure, not a server error.
 
-#### Cutover from the two-app topology (one-time)
-
-The ETL wiring was consolidated from two apps (`etl-gem`, `etl-woodmac`, two
-images) to one (`etl`, one image). To migrate a lane safely:
-
-1. Merge the consolidation to `stitch-etl-poc` `main` first, so
-   `ghcr.io/rmi/stitch-etl-poc:main` is published before this repo references it.
-2. On the lane's GitHub Environment, add `ETL_IMAGE_TAG` (`main`) and delete the
-   old `ETL_GEM_IMAGE_TAG` / `ETL_WOODMAC_IMAGE_TAG` variables.
-3. Deploy this repo; confirm the new `<name>-etl` app is healthy
-   (`GET …/api/v1/etl/health/details`) and that GEM and WoodMac runs work from
-   the frontend.
-4. Delete the now-orphaned old apps (they pin `min=max=1`, so they keep billing
-   until removed):
-   ```bash
-   az containerapp delete -g <AZURE_RESOURCE_GROUP> -n <name>-etl-gem --yes
-   az containerapp delete -g <AZURE_RESOURCE_GROUP> -n <name>-etl-woodmac --yes
-   ```
-   Do this in `staging` (its `deployment-name`) and for `production` /
-   `dress-rehearsal`.
-5. Any open PR-into-`production` environment created before this change may
-   still have `-etl-gem` / `-etl-woodmac` apps; the collapsed
-   `close-ci-environment` job won't remove them, so delete them by hand with the
-   commands above.
-
 #### ETL durable storage (Azure Files — wired in CI; storage prerequisites manual)
 
 The ETL app mounts a persistent **SMB Azure Files** share so its data survives
@@ -228,6 +203,31 @@ pins `min = max = 1` and only deploys on non-`development` lanes.
 This only affects the Container Apps. The frontend is an Azure Static Web App
 (always served, no hibernation), and the PostgreSQL flexible server's
 pause behavior, if any, is a separate server-level setting not managed here.
+
+#### Cutover from the two-app topology (one-time)
+
+The ETL wiring was consolidated from two apps (`etl-gem`, `etl-woodmac`, two
+images) to one (`etl`, one image). To migrate a lane safely:
+
+1. Merge the consolidation to `stitch-etl-poc` `main` first, so
+   `ghcr.io/rmi/stitch-etl-poc:main` is published before this repo references it.
+2. On the lane's GitHub Environment, add `ETL_IMAGE_TAG` (`main`) and delete the
+   old `ETL_GEM_IMAGE_TAG` / `ETL_WOODMAC_IMAGE_TAG` variables.
+3. Deploy this repo; confirm the new `<name>-etl` app is healthy
+   (`GET …/api/v1/etl/health/details`) and that GEM and WoodMac runs work from
+   the frontend.
+4. Delete the now-orphaned old apps (they pin `min=max=1`, so they keep billing
+   until removed):
+   ```bash
+   az containerapp delete -g <AZURE_RESOURCE_GROUP> -n <name>-etl-gem --yes
+   az containerapp delete -g <AZURE_RESOURCE_GROUP> -n <name>-etl-woodmac --yes
+   ```
+   Do this in `staging` (its `deployment-name`) and for `production` /
+   `dress-rehearsal`.
+5. Any open PR-into-`production` environment created before this change may
+   still have `-etl-gem` / `-etl-woodmac` apps; the collapsed
+   `close-ci-environment` job won't remove them, so delete them by hand with the
+   commands above.
 
 Reusable workflows now select lane-specific configuration from GitHub
 Environments and are expected to fail loudly when required values are absent.
