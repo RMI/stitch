@@ -91,7 +91,6 @@ Before adding or upgrading a dependency:
 ## User Experience
 
 * Prefer user-facing clarity and reduce cognitive load where possible.
-* Reduce cognitive load where possible.
 * Use plain language rather than technical jargon.
 * Favor interfaces that are easy for first-time users to understand.
 * Explain technical concepts in terms of user goals and outcomes.
