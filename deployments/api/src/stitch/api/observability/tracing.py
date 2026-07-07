@@ -41,6 +41,8 @@ def configure_tracing(settings: "Settings") -> "TracerProvider | None":
         exporter=settings.otel_traces_exporter,
         otlp_endpoint=settings.otel_exporter_otlp_endpoint,
         sample_ratio=settings.otel_sample_ratio,
-        version=settings.app_version or "unknown",
+        # None (not "unknown") when unset, so an env-provided service.version
+        # via OTEL_RESOURCE_ATTRIBUTES isn't clobbered by a placeholder.
+        version=settings.app_version,
         environment=settings.environment_name,
     )

@@ -13,13 +13,14 @@ Two complementary layers:
   request id / scenario onto the active span so the two layers correlate.
 """
 
-from .logging_config import configure_logging
+from .logging_config import configure_logging, resource_attributes_from_env
 from .query_timing import register_query_timing
 from .request_logging import RequestTimingMiddleware
 from .tracing import configure_tracing, instrument_fastapi, instrument_sqlalchemy
 
 __all__ = [
     "configure_logging",
+    "resource_attributes_from_env",
     "register_query_timing",
     "RequestTimingMiddleware",
     "configure_tracing",

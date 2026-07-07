@@ -8,7 +8,12 @@ from starlette.status import HTTP_503_SERVICE_UNAVAILABLE
 from .middleware import register_middlewares
 from .db.config import dispose_engine
 from .auth import validate_auth_config_at_startup
-from .observability import configure_logging, configure_tracing, instrument_fastapi
+from .observability import (
+    configure_logging,
+    configure_tracing,
+    instrument_fastapi,
+    resource_attributes_from_env,
+)
 from .settings import get_settings
 
 from .routers.auth import router as auth_router
@@ -43,7 +48,15 @@ async def lifespan(app: FastAPI):
 
 settings = get_settings()
 
-configure_logging(level=settings.log_level, log_format=settings.log_format)
+configure_logging(
+    level=settings.log_level,
+    log_format=settings.log_format,
+    # Stamp the same deployment metadata (deployment.name / lane / service.version)
+    # onto every log record that the tracing SDK stamps on spans, so logs and
+    # traces are comparable across deployments/PRs. Sourced from the shared
+    # OTEL_RESOURCE_ATTRIBUTES / OTEL_SERVICE_NAME env.
+    resource_attributes=resource_attributes_from_env(),
+)
 _tracer_provider = configure_tracing(settings)
 
 app = FastAPI(lifespan=lifespan)

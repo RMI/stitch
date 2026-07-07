@@ -34,6 +34,29 @@ def test_configure_tracing_builds_provider_with_resource(monkeypatch) -> None:
     assert attrs["deployment.environment"] == "test"
 
 
+def test_configure_tracing_omits_missing_keys_so_env_wins(monkeypatch) -> None:
+    # With version/environment unset they are omitted, so env-provided
+    # OTEL_RESOURCE_ATTRIBUTES survive Resource.create()'s merge — this is the
+    # deployment-tagging path (deployment.name set once in CI, stamped on spans).
+    monkeypatch.setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.name=pr-7")
+    monkeypatch.setattr(trace, "set_tracer_provider", lambda _provider: None)
+    provider = configure_tracing(service_name="svc", exporter="console")
+    attrs = provider.resource.attributes
+    assert attrs["service.name"] == "svc"
+    assert attrs["deployment.name"] == "pr-7"
+    assert "service.version" not in attrs
+
+
+def test_configure_tracing_merges_extra_resource_attributes(monkeypatch) -> None:
+    monkeypatch.setattr(trace, "set_tracer_provider", lambda _provider: None)
+    provider = configure_tracing(
+        service_name="svc",
+        exporter="console",
+        extra_resource_attributes={"deployment.lane": "development"},
+    )
+    assert provider.resource.attributes["deployment.lane"] == "development"
+
+
 def test_logging_span_exporter_emits_one_record_per_span(caplog) -> None:
     # A local provider + the exporter under test; never touches the global.
     exporter = LoggingSpanExporter()
@@ -49,6 +72,9 @@ def test_logging_span_exporter_emits_one_record_per_span(caplog) -> None:
     assert len(records) == 1
     assert records[0].event["span_name"] == "unit-span"
     assert "trace_id" in records[0].event
+    # Resource attributes are emitted so the stdout span stream carries the same
+    # deployment tags as the OTLP path.
+    assert "resource" in records[0].event
 
 
 def test_logging_span_exporter_truncates_long_attributes(caplog) -> None:

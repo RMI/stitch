@@ -30,7 +30,7 @@ from opentelemetry.sdk.trace.export import (
 from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from fastapi import FastAPI
     from opentelemetry.sdk.trace import ReadableSpan
@@ -93,6 +93,12 @@ class LoggingSpanExporter(SpanExporter):
                         "duration_ms": duration_ms,
                         "status": span.status.status_code.name,
                         "attributes": _truncate_attributes(dict(span.attributes or {})),
+                        # Resource attributes (service.name, deployment.name, ...)
+                        # so the stdout span stream carries the same deployment
+                        # tags as the OTLP path, groupable across deployments/PRs.
+                        "resource": dict(span.resource.attributes)
+                        if span.resource is not None
+                        else {},
                     }
                 },
             )
@@ -109,8 +115,9 @@ def configure_tracing(
     exporter: str = "console",
     otlp_endpoint: str | None = None,
     sample_ratio: float = 1.0,
-    version: str = "unknown",
-    environment: str = "unknown",
+    version: str | None = None,
+    environment: str | None = None,
+    extra_resource_attributes: "Mapping[str, str] | None" = None,
 ) -> TracerProvider | None:
     """Install the global tracer provider, or return ``None`` if disabled.
 
@@ -120,13 +127,20 @@ def configure_tracing(
     if not enabled or exporter == "none":
         return None
 
-    resource = Resource.create(
-        {
-            "service.name": service_name,
-            "service.version": version or "unknown",
-            "deployment.environment": environment,
-        }
-    )
+    # Only include keys we actually have a value for. Anything omitted is
+    # supplied by the OTEL_RESOURCE_ATTRIBUTES / OTEL_SERVICE_NAME env vars,
+    # which Resource.create() merges automatically — that is how deployment
+    # metadata (deployment.name, deployment.lane, ...) gets stamped on every
+    # span without per-service code. Passing an explicit value here would
+    # override the env, so we must NOT pass placeholder "unknown"s.
+    attributes: dict[str, str] = {"service.name": service_name}
+    if version:
+        attributes["service.version"] = version
+    if environment:
+        attributes["deployment.environment"] = environment
+    if extra_resource_attributes:
+        attributes.update(extra_resource_attributes)
+    resource = Resource.create(attributes)
     sampler = ParentBased(root=TraceIdRatioBased(sample_ratio))
     provider = TracerProvider(resource=resource, sampler=sampler)
 
