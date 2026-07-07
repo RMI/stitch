@@ -35,51 +35,80 @@ It then handles deployments for:
 * the API Container App, assuming an existing Container Apps environment
 * the entity-linkage Container App in the same environment
 * the stitch-llm Container App in the same environment
-* the ETL Container Apps (`etl-gem`, `etl-woodmac`) in the same environment,
-  on non-`development` lanes only (see below)
+* the ETL Container App (`etl`) in the same environment, on non-`development`
+  lanes only (see below)
 
 ### ETL pipelines (temporary POC wiring)
 
-The `etl-gem` and `etl-woodmac` Container Apps are deployed from pre-built images
-published by the separate `stitch-etl-poc` repository
-(`ghcr.io/rmi/stitch-etl-poc-etl-{gem,woodmac}`). This pipeline does **not** build
-them; it only deploys the tag named by the `ETL_GEM_IMAGE_TAG` /
-`ETL_WOODMAC_IMAGE_TAG` variables (defaulting to `main`).
+The single `etl` Container App is deployed from a pre-built image published by
+the separate `stitch-etl-poc` repository (`ghcr.io/rmi/stitch-etl-poc`). This
+pipeline does **not** build it; it only deploys the tag named by the
+`ETL_IMAGE_TAG` variable (defaulting to `main`). The one app serves both
+datasets under `/api/v1/etl/gem/*` and `/api/v1/etl/wm/*`.
+
+Because it validates every dataset's config at startup (fail-fast), the app
+**requires `WOODMAC_API_KEY` to boot at all** — even for GEM-only runs. The
+`deploy-etl` job therefore always passes it.
 
 Seed and ETL are mutually exclusive per lane:
 
-* `development`: `seed` builds and runs; ETL deploys are skipped.
-* `staging` / `dress-rehearsal`: ETL deploys run; `seed` is skipped.
+* `development`: `seed` builds and runs; ETL deploy is skipped.
+* `staging` / `dress-rehearsal`: ETL deploys; `seed` is skipped.
 
-Because the ETL images live in another repo's GHCR, the Container App needs
+Because the ETL image lives in another repo's GHCR, the Container App needs
 stored pull credentials. The ephemeral `GITHUB_TOKEN` cannot be used (it expires
 and the app re-pulls on every restart), so a long-lived classic PAT with
 `read:packages` is required — GHCR does not support fine-grained tokens. These
 are supplied to `deploy-container.yml` via the `registry-server` /
 `registry-username` inputs and the `registry-password` secret. The frontend
-receives each ETL Container App URL (empty when not deployed) and renders the ETL
-control page.
+receives the single ETL Container App URL (empty when not deployed) and renders
+the ETL control page.
 
-CORS: each ETL app allows exactly one browser origin, set at deploy time via
-`ETL_GEM_FRONTEND_ORIGIN_URL` / `ETL_WOODMAC_FRONTEND_ORIGIN_URL` (sourced from
-the lane's computed `frontend-origin-url`). Unset, they default to
-`http://localhost:3000`, so a missing value shows up as a browser CORS
-("No 'Access-Control-Allow-Origin' header") failure, not a server error.
+CORS: the ETL app allows exactly one browser origin, set at deploy time via
+`ETL_FRONTEND_ORIGIN_URL` (sourced from the lane's computed
+`frontend-origin-url`). Unset, it defaults to `http://localhost:3000`, so a
+missing value shows up as a browser CORS ("No 'Access-Control-Allow-Origin'
+header") failure, not a server error.
+
+#### Cutover from the two-app topology (one-time)
+
+The ETL wiring was consolidated from two apps (`etl-gem`, `etl-woodmac`, two
+images) to one (`etl`, one image). To migrate a lane safely:
+
+1. Merge the consolidation to `stitch-etl-poc` `main` first, so
+   `ghcr.io/rmi/stitch-etl-poc:main` is published before this repo references it.
+2. On the lane's GitHub Environment, add `ETL_IMAGE_TAG` (`main`) and delete the
+   old `ETL_GEM_IMAGE_TAG` / `ETL_WOODMAC_IMAGE_TAG` variables.
+3. Deploy this repo; confirm the new `<name>-etl` app is healthy
+   (`GET …/api/v1/etl/health/details`) and that GEM and WoodMac runs work from
+   the frontend.
+4. Delete the now-orphaned old apps (they pin `min=max=1`, so they keep billing
+   until removed):
+   ```bash
+   az containerapp delete -g <AZURE_RESOURCE_GROUP> -n <name>-etl-gem --yes
+   az containerapp delete -g <AZURE_RESOURCE_GROUP> -n <name>-etl-woodmac --yes
+   ```
+   Do this in `staging` (its `deployment-name`) and for `production` /
+   `dress-rehearsal`.
+5. Any open PR-into-`production` environment created before this change may
+   still have `-etl-gem` / `-etl-woodmac` apps; the collapsed
+   `close-ci-environment` job won't remove them, so delete them by hand with the
+   commands above.
 
 #### ETL durable storage (Azure Files — wired in CI; storage prerequisites manual)
 
-The ETL apps mount a persistent **SMB Azure Files** share so their data survives
-restarts/revisions: `etl-gem` reads its reference spreadsheet from
-`GEM_FILE_DIR=/mnt/data/gem` and `etl-woodmac` keeps its cache at
-`WOODMAC_DATA_DIR=/mnt/data/woodmac`. One share per lane is mounted into both apps
-at `/mnt/data`, with each app using its own subfolder (`gem/`, `woodmac/`).
+The ETL app mounts a persistent **SMB Azure Files** share so its data survives
+restarts/revisions: the `etl` app reads its GEM reference spreadsheet from
+`GEM_FILE_DIR=/mnt/data/gem` and keeps the WoodMac cache at
+`WOODMAC_DATA_DIR=/mnt/data/woodmac`. One share per lane is mounted into the app
+at `/mnt/data`, with each dataset using its own subfolder (`gem/`, `woodmac/`).
 
 The **per-app mount is applied automatically by the pipeline** —
 `azure/container-apps-deploy-action@v1` can't mount volumes, so
 `deploy-container.yml` takes optional `storage-name` / `storage-mount-path` inputs
 and, after the deploy, reads the app spec (`az containerapp show`), injects the
 volume + volumeMount with `jq`, and re-applies it (`az containerapp update
---yaml`). The ETL jobs pass `storage-name` (from the lane's `ETL_STORAGE_NAME`
+--yaml`). The `deploy-etl` job passes `storage-name` (from the lane's `ETL_STORAGE_NAME`
 variable, routed via `lane-config-validate` because env-scoped variables aren't
 visible to reusable-workflow callers) and `storage-mount-path: /mnt/data`. Because
 it runs every deploy, **do not configure the mount by hand in the Portal** — the
@@ -147,9 +176,10 @@ See the Microsoft docs for the full Portal walkthrough:
 
 #### ETL replica pinning (wired in CI)
 
-The ETL apps must run a **single replica**: they hold job state in memory (the
-`/status` endpoint) and run one job at a time, so a second replica would fragment
-status responses and (once the share is mounted) create a concurrent writer.
+The ETL app must run a **single replica**: it holds per-dataset job state in
+memory (the `/status` endpoints) and runs one job per dataset at a time, so a
+second replica would fragment status responses and (once the share is mounted)
+create a concurrent writer.
 
 This is **enforced on every deploy**, not as a one-time manual setting. The
 `azure/container-apps-deploy-action@v1` step (`az containerapp up`) does not
@@ -157,7 +187,7 @@ reliably preserve scale settings, so a value set by hand in the Portal can be
 reset on the next pipeline run. Instead, `deploy-container.yml` takes optional
 `min-replicas` / `max-replicas` inputs and, when either is set, runs a post-deploy
 `az containerapp update --min-replicas … --max-replicas …` to reassert them. The
-ETL jobs pass `min-replicas: "1"` and `max-replicas: "1"`, so the pin is
+`deploy-etl` job passes `min-replicas: "1"` and `max-replicas: "1"`, so the pin is
 self-healing — no manual Portal step needed, and it survives every redeploy.
 
 #### Container CPU / memory sizing (wired in CI)
@@ -165,7 +195,7 @@ self-healing — no manual Portal step needed, and it survives every redeploy.
 Like replica scaling, per-app CPU and memory are reasserted after deploy rather
 than left to the action's defaults (~0.5 vCPU / 1 GiB). `deploy-container.yml`
 takes optional `cpu` / `memory` inputs and folds them into the same post-deploy
-`az containerapp update` that pins replicas. `entity-linkage` and `etl-woodmac`
+`az containerapp update` that pins replicas. `entity-linkage` and the `etl` app
 are unoptimized and need more memory, so both pass `cpu: "2.0"` /
 `memory: "4.0Gi"`.
 
@@ -192,8 +222,8 @@ min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development'
 So on `staging` / `dress-rehearsal` they reassert `min-replicas: 1` (always one
 warm replica, `max` left at the default so they can still scale out), and on
 `development` the input is empty, the post-deploy step is skipped, and they keep
-the default scale-to-zero. The ETL apps are always-on on those lanes too, since
-they pin `min = max = 1` and only deploy on non-`development` lanes.
+the default scale-to-zero. The ETL app is always-on on those lanes too, since it
+pins `min = max = 1` and only deploys on non-`development` lanes.
 
 This only affects the Container Apps. The frontend is an Azure Static Web App
 (always served, no hibernation), and the PostgreSQL flexible server's
@@ -294,15 +324,13 @@ named:
 * `STITCH_LLM_AZURE_OPENAI_MODEL` (example: `gpt-5.1-chat`)
 * `STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS` (example: `30`)
 * `GHCR_ETL_PULL_USERNAME` (example: `your-github-username`) — registry username
-  for pulling the ETL images; not sensitive, so it is a variable. Only needed on
+  for pulling the ETL image; not sensitive, so it is a variable. Only needed on
   `staging` / `dress-rehearsal`.
 * `ETL_STORAGE_NAME` (example: `etl-staging`) — the Azure Files env-storage name
-  registered on the Container Apps environment; mounted into both ETL apps at
+  registered on the Container Apps environment; mounted into the `etl` app at
   `/mnt/data`. Only needed on `staging` / `dress-rehearsal` (see ETL durable
   storage above).
-* `ETL_GEM_IMAGE_TAG` (example: `main`) — optional; ETL GEM image tag to deploy,
-  defaults to `main`. Only used on `staging` / `dress-rehearsal`.
-* `ETL_WOODMAC_IMAGE_TAG` (example: `main`) — optional; ETL WoodMac image tag to
+* `ETL_IMAGE_TAG` (example: `main`) — optional; consolidated ETL image tag to
   deploy, defaults to `main`. Only used on `staging` / `dress-rehearsal`.
   * NOTE: `FRONTEND_PREVIEW_URL_TEMPLATE` must contain the literal `{name}` placeholder.
 For `dress-rehearsal`, the workflow uses `FRONTEND_PRODUCTION_URL` directly. For pull requests, it replaces `{name}` with the raw PR number so PR #106 resolves to `https://witty-mushroom-017a3dc1e-106.westus2.1.azurestaticapps.net`. For other preview deployments, it replaces `{name}` with `deployment_name`.
@@ -316,10 +344,11 @@ For `dress-rehearsal`, the workflow uses `FRONTEND_PRODUCTION_URL` directly. For
 * `STITCH_CLIENT_LLM_BEARER_TOKEN`
 * `STITCH_LLM_AZURE_OPENAI_API_KEY`
 * `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
-* `WOODMAC_API_KEY` — WoodMac API key for the `etl-woodmac` Container App. Only
-  needed on `staging` / `dress-rehearsal`.
+* `WOODMAC_API_KEY` — WoodMac API key for the `etl` Container App. Required for
+  the app to boot (it validates every dataset at startup), so it must be set
+  even though GEM does not use it. Only needed on `staging` / `dress-rehearsal`.
 * `GHCR_ETL_PULL_TOKEN` — classic PAT with `read:packages` used to pull the ETL
-  images from the `stitch-etl-poc` GHCR. Only needed on `staging` /
+  image from the `stitch-etl-poc` GHCR. Only needed on `staging` /
   `dress-rehearsal`.
 
 Current validation behavior:
