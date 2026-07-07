@@ -251,3 +251,20 @@ def setup_fastapi_tracing(
         if instrument_outbound_httpx:
             instrument_httpx()
     return provider
+
+
+def setup_sqlalchemy_tracing(engine: "Engine", *, settings: "OTelSettings") -> bool:
+    """Instrument a SQLAlchemy engine for per-query spans, if tracing is enabled.
+
+    The engine-seam companion to :func:`setup_fastapi_tracing`. Unlike that
+    helper it does **not** call :func:`configure_tracing` — the global provider is
+    installed once at app startup, whereas engines are created lazily (often
+    after startup, e.g. a cached ``get_engine``) and only need instrumenting.
+    Guarded on the shared ``OTEL_*`` settings so a tracing-disabled service does
+    not pay the per-query span-wrapping cost. Pass ``async_engine.sync_engine``
+    for an ``AsyncEngine``. Returns whether the engine was instrumented.
+    """
+    if not settings.otel_enabled or settings.otel_traces_exporter == "none":
+        return False
+    instrument_sqlalchemy(engine)
+    return True

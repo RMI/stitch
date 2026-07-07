@@ -15,6 +15,7 @@ from stitch.observability import (
     configure_tracing as _configure_tracing,
     instrument_fastapi,
     instrument_sqlalchemy,
+    setup_sqlalchemy_tracing,
 )
 
 if TYPE_CHECKING:
@@ -30,6 +31,7 @@ __all__ = [
     "configure_tracing",
     "instrument_fastapi",
     "instrument_sqlalchemy",
+    "setup_sqlalchemy_tracing",
 ]
 
 

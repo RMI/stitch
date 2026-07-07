@@ -11,6 +11,7 @@ from stitch.observability import (
     OTelSettings,
     configure_tracing,
     setup_fastapi_tracing,
+    setup_sqlalchemy_tracing,
 )
 from stitch.observability import tracing as pkg_tracing
 from stitch.observability.tracing import LoggingSpanExporter
@@ -101,6 +102,35 @@ def test_setup_fastapi_tracing_can_skip_outbound_httpx(monkeypatch) -> None:
         instrument_outbound_httpx=False,
     )
     assert calls == ["fastapi"]
+
+
+def test_setup_sqlalchemy_tracing_noop_when_disabled(monkeypatch) -> None:
+    calls: list[object] = []
+    monkeypatch.setattr(pkg_tracing, "instrument_sqlalchemy", lambda e: calls.append(e))
+    assert (
+        setup_sqlalchemy_tracing(
+            object(), settings=OTelSettings(otel_traces_exporter="none")
+        )
+        is False
+    )
+    assert (
+        setup_sqlalchemy_tracing(object(), settings=OTelSettings(otel_enabled=False))
+        is False
+    )
+    assert calls == []
+
+
+def test_setup_sqlalchemy_tracing_instruments_when_enabled(monkeypatch) -> None:
+    calls: list[object] = []
+    monkeypatch.setattr(pkg_tracing, "instrument_sqlalchemy", lambda e: calls.append(e))
+    engine = object()
+    assert (
+        setup_sqlalchemy_tracing(
+            engine, settings=OTelSettings(otel_traces_exporter="console")
+        )
+        is True
+    )
+    assert calls == [engine]
 
 
 def test_logging_span_exporter_emits_one_record_per_span(caplog) -> None:

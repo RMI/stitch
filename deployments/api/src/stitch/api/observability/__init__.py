@@ -16,7 +16,12 @@ Two complementary layers:
 from .logging_config import configure_logging, resource_attributes_from_env
 from .query_timing import register_query_timing
 from .request_logging import RequestTimingMiddleware
-from .tracing import configure_tracing, instrument_fastapi, instrument_sqlalchemy
+from .tracing import (
+    configure_tracing,
+    instrument_fastapi,
+    instrument_sqlalchemy,
+    setup_sqlalchemy_tracing,
+)
 
 __all__ = [
     "configure_logging",
@@ -26,4 +31,5 @@ __all__ = [
     "configure_tracing",
     "instrument_fastapi",
     "instrument_sqlalchemy",
+    "setup_sqlalchemy_tracing",
 ]

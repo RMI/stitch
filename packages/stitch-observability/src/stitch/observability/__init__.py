@@ -21,6 +21,7 @@ from .tracing import (
     instrument_httpx,
     instrument_sqlalchemy,
     setup_fastapi_tracing,
+    setup_sqlalchemy_tracing,
     shutdown_tracing,
 )
 
@@ -37,5 +38,6 @@ __all__ = [
     "instrument_sqlalchemy",
     "resource_attributes_from_env",
     "setup_fastapi_tracing",
+    "setup_sqlalchemy_tracing",
     "shutdown_tracing",
 ]
