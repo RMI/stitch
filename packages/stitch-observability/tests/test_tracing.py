@@ -7,7 +7,12 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
 
-from stitch.observability import OTelSettings, configure_tracing
+from stitch.observability import (
+    OTelSettings,
+    configure_tracing,
+    setup_fastapi_tracing,
+)
+from stitch.observability import tracing as pkg_tracing
 from stitch.observability.tracing import LoggingSpanExporter
 
 
@@ -55,6 +60,47 @@ def test_configure_tracing_merges_extra_resource_attributes(monkeypatch) -> None
         extra_resource_attributes={"deployment.lane": "development"},
     )
     assert provider.resource.attributes["deployment.lane"] == "development"
+
+
+def test_setup_fastapi_tracing_disabled_skips_instrumentation(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(pkg_tracing, "instrument_fastapi", lambda _app: calls.append("fastapi"))
+    monkeypatch.setattr(pkg_tracing, "instrument_httpx", lambda: calls.append("httpx"))
+    provider = setup_fastapi_tracing(
+        object(),
+        service_name="svc",
+        settings=OTelSettings(otel_traces_exporter="none"),
+    )
+    assert provider is None
+    assert calls == []
+
+
+def test_setup_fastapi_tracing_instruments_app_and_httpx(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(pkg_tracing.trace, "set_tracer_provider", lambda _p: None)
+    monkeypatch.setattr(pkg_tracing, "instrument_fastapi", lambda _app: calls.append("fastapi"))
+    monkeypatch.setattr(pkg_tracing, "instrument_httpx", lambda: calls.append("httpx"))
+    provider = setup_fastapi_tracing(
+        object(),
+        service_name="svc",
+        settings=OTelSettings(otel_traces_exporter="console"),
+    )
+    assert provider is not None
+    assert calls == ["fastapi", "httpx"]
+
+
+def test_setup_fastapi_tracing_can_skip_outbound_httpx(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(pkg_tracing.trace, "set_tracer_provider", lambda _p: None)
+    monkeypatch.setattr(pkg_tracing, "instrument_fastapi", lambda _app: calls.append("fastapi"))
+    monkeypatch.setattr(pkg_tracing, "instrument_httpx", lambda: calls.append("httpx"))
+    setup_fastapi_tracing(
+        object(),
+        service_name="svc",
+        settings=OTelSettings(otel_traces_exporter="console"),
+        instrument_outbound_httpx=False,
+    )
+    assert calls == ["fastapi"]
 
 
 def test_logging_span_exporter_emits_one_record_per_span(caplog) -> None:

@@ -20,6 +20,7 @@ from .tracing import (
     instrument_fastapi,
     instrument_httpx,
     instrument_sqlalchemy,
+    setup_fastapi_tracing,
     shutdown_tracing,
 )
 
@@ -35,5 +36,6 @@ __all__ = [
     "instrument_httpx",
     "instrument_sqlalchemy",
     "resource_attributes_from_env",
+    "setup_fastapi_tracing",
     "shutdown_tracing",
 ]

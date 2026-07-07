@@ -20,6 +20,10 @@ class Settings(OTelSettings):
         alias="ENTITY_LINKAGE_API_BASE_URL",
     )
 
+    # NB: no env_prefix here. The OTEL_* fields inherited from OTelSettings
+    # resolve by their bare env names (OTEL_TRACES_EXPORTER, ...); a prefix would
+    # silently stop them — and the test suite's OTEL_TRACES_EXPORTER=none guard —
+    # from being read. Scope any future prefix to individual fields instead.
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

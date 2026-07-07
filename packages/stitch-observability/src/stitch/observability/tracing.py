@@ -36,6 +36,8 @@ if TYPE_CHECKING:
     from opentelemetry.sdk.trace import ReadableSpan
     from sqlalchemy.engine import Engine
 
+    from .settings import OTelSettings
+
 _span_logger = logging.getLogger("stitch.observability.trace")
 
 # Cap the length of any single string span attribute before it is logged. Long
@@ -173,6 +175,12 @@ def instrument_fastapi(app: "FastAPI") -> None:
     hook, where middleware-stack timing makes it ineffective. Imported lazily so
     the instrumentor's optional ``fastapi`` dependency is only required by
     services that actually call this.
+
+    URL query strings are intentionally left intact on server spans — they are
+    the diagnostic payload for the performance work this serves. When a retained
+    cloud backend makes aggregate PII a concern, scrub them at the collector's
+    egress (an ``attributes``/``redaction`` processor) rather than blinding local
+    dev.
     """
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
@@ -202,3 +210,44 @@ def instrument_sqlalchemy(engine: "Engine") -> None:
     from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
     SQLAlchemyInstrumentor().instrument(engine=engine)
+
+
+def setup_fastapi_tracing(
+    app: "FastAPI",
+    *,
+    service_name: str,
+    settings: "OTelSettings",
+    instrument_outbound_httpx: bool = True,
+    version: str | None = None,
+    environment: str | None = None,
+    extra_resource_attributes: "Mapping[str, str] | None" = None,
+) -> "TracerProvider | None":
+    """Configure tracing and instrument a FastAPI app, in one ordered step.
+
+    Collapses the per-service wiring — :func:`configure_tracing` (reading the
+    shared ``OTEL_*`` settings) then :func:`instrument_fastapi` (+ optional
+    :func:`instrument_httpx`) — so the ordering lives in one place instead of
+    being replicated (and drifting) across services. Call it *after* the app and
+    its middleware are constructed but before it serves requests.
+
+    Returns the provider (``None`` when tracing is disabled); the caller keeps it
+    and calls :func:`shutdown_tracing` on shutdown. ``instrument_outbound_httpx``
+    propagates the W3C ``traceparent`` on outbound httpx calls so downstream
+    services continue the same trace — leave it on for any service that makes
+    downstream HTTP calls.
+    """
+    provider = configure_tracing(
+        service_name=service_name,
+        enabled=settings.otel_enabled,
+        exporter=settings.otel_traces_exporter,
+        otlp_endpoint=settings.otel_exporter_otlp_endpoint,
+        sample_ratio=settings.otel_sample_ratio,
+        version=version,
+        environment=environment,
+        extra_resource_attributes=extra_resource_attributes,
+    )
+    if provider is not None:
+        instrument_fastapi(app)
+        if instrument_outbound_httpx:
+            instrument_httpx()
+    return provider
