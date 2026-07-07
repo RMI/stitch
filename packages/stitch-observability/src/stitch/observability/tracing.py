@@ -40,22 +40,41 @@ if TYPE_CHECKING:
 
 _span_logger = logging.getLogger("stitch.observability.trace")
 
-# Cap the length of any single string span attribute before it is logged. Long
-# values — notably SQLAlchemy's ``db.statement`` (big IN (...) lists, wide CTEs)
-# — would otherwise dump untruncated to stdout / Log Analytics. Mirrors the
-# 2000-char cap in the API's query_timing._normalize_statement.
+# Bound attribute values before they are logged. Long strings — notably
+# SQLAlchemy's ``db.statement`` (big IN (...) lists, wide CTEs) — and large array
+# attributes would otherwise dump untruncated to stdout / Log Analytics. The
+# per-string cap mirrors query_timing._normalize_statement's 2000-char limit.
 _MAX_ATTR_CHARS = 2000
+_MAX_ATTR_ITEMS = 100
+
+
+def _truncate_str(value: str) -> str:
+    if len(value) > _MAX_ATTR_CHARS:
+        return value[:_MAX_ATTR_CHARS] + "…"
+    return value
+
+
+def _truncate_value(value: object) -> object:
+    """Bound a single attribute value: cap long strings, and cap both the length
+    and the per-element size of sequence (array) attributes. Scalars (bool / int
+    / float) pass through unchanged."""
+    if isinstance(value, str):
+        return _truncate_str(value)
+    if isinstance(value, (list, tuple)):
+        capped: list = [
+            _truncate_str(item) if isinstance(item, str) else item
+            for item in value[:_MAX_ATTR_ITEMS]
+        ]
+        if len(value) > _MAX_ATTR_ITEMS:
+            capped.append(f"…(+{len(value) - _MAX_ATTR_ITEMS} more)")
+        return capped
+    return value
 
 
 def _truncate_attributes(attributes: dict) -> dict:
-    """Cap over-long string attribute values so a span log record stays bounded."""
-    result: dict = {}
-    for key, value in attributes.items():
-        if isinstance(value, str) and len(value) > _MAX_ATTR_CHARS:
-            result[key] = value[:_MAX_ATTR_CHARS] + "…"
-        else:
-            result[key] = value
-    return result
+    """Bound over-long attribute values (strings and array attributes) so a span
+    log record stays bounded."""
+    return {key: _truncate_value(value) for key, value in attributes.items()}
 
 
 def get_tracer(name: str) -> trace.Tracer:

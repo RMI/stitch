@@ -172,6 +172,31 @@ def test_logging_span_exporter_truncates_long_attributes(caplog) -> None:
     assert len(logged) == 2000 + 1  # 2000-char cap + the ellipsis
 
 
+def test_logging_span_exporter_truncates_sequence_attributes(caplog) -> None:
+    # OTel array attributes bypass a str-only cap; each element's length and the
+    # element count are both bounded so a list attribute can't dump unbounded.
+    exporter = LoggingSpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = provider.get_tracer("test")
+
+    long_value = "x" * 5000
+    with caplog.at_level(logging.INFO, logger="stitch.observability.trace"):
+        with tracer.start_as_current_span("seq-span") as span:
+            span.set_attribute("tags", (long_value, "short"))
+            span.set_attribute("many", tuple(str(i) for i in range(150)))
+
+    attrs = [
+        r for r in caplog.records if r.name == "stitch.observability.trace"
+    ][0].event["attributes"]
+    tags = attrs["tags"]
+    assert tags[0].endswith("…") and len(tags[0]) == 2000 + 1
+    assert tags[1] == "short"
+    many = attrs["many"]
+    assert len(many) == 100 + 1  # 100 items + the "(+N more)" marker
+    assert many[-1].startswith("…")
+
+
 def test_otel_settings_defaults_and_bounds() -> None:
     s = OTelSettings()
     assert s.otel_enabled is True
