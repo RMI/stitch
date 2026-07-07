@@ -1,6 +1,7 @@
 import logging
 
 from opentelemetry import trace
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
@@ -195,6 +196,24 @@ def test_logging_span_exporter_truncates_sequence_attributes(caplog) -> None:
     many = attrs["many"]
     assert len(many) == 100 + 1  # 100 items + the "(+N more)" marker
     assert many[-1].startswith("…")
+
+
+def test_logging_span_exporter_truncates_resource_attributes(caplog) -> None:
+    # Resource attributes (from OTEL_RESOURCE_ATTRIBUTES, unbounded by design) are
+    # bounded on the log record just like span attributes.
+    exporter = LoggingSpanExporter()
+    provider = TracerProvider(resource=Resource.create({"deployment.name": "x" * 5000}))
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = provider.get_tracer("test")
+
+    with caplog.at_level(logging.INFO, logger="stitch.observability.trace"):
+        with tracer.start_as_current_span("s"):
+            pass
+
+    records = [r for r in caplog.records if r.name == "stitch.observability.trace"]
+    logged = records[0].event["resource"]["deployment.name"]
+    assert logged.endswith("…")
+    assert len(logged) == 2000 + 1
 
 
 def test_otel_settings_defaults_and_bounds() -> None:

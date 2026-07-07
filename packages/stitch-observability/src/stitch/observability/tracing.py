@@ -91,6 +91,21 @@ class LoggingSpanExporter(SpanExporter):
     / ``duration_ms`` sit alongside request / query events on the same stream.
     """
 
+    def __init__(self) -> None:
+        # Resource attributes are process-invariant (one Resource per provider),
+        # so the truncated dict is cached per Resource identity rather than
+        # rebuilt for every span on the synchronous console export path.
+        self._resource_cache: dict[int, dict] = {}
+
+    def _resource_attributes(self, resource: "Resource | None") -> dict:
+        if resource is None:
+            return {}
+        cached = self._resource_cache.get(id(resource))
+        if cached is None:
+            cached = _truncate_attributes(dict(resource.attributes))
+            self._resource_cache[id(resource)] = cached
+        return cached
+
     def export(self, spans: "Sequence[ReadableSpan]") -> SpanExportResult:
         for span in spans:
             ctx = span.get_span_context()
@@ -117,9 +132,8 @@ class LoggingSpanExporter(SpanExporter):
                         # Resource attributes (service.name, deployment.name, ...)
                         # so the stdout span stream carries the same deployment
                         # tags as the OTLP path, groupable across deployments/PRs.
-                        "resource": dict(span.resource.attributes)
-                        if span.resource is not None
-                        else {},
+                        # Truncated + cached per Resource (see _resource_attributes).
+                        "resource": self._resource_attributes(span.resource),
                     }
                 },
             )
