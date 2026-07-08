@@ -2,7 +2,8 @@
 
 See it live: 
 
-* DEV: https://witty-mushroom-017a3dc1e.1.azurestaticapps.net/
+* DRESS-REHEARSAL (PROD-ish): https://brave-cliff-09493391e.7.azurestaticapps.net/
+* DEV (`main`): https://witty-mushroom-017a3dc1e.1.azurestaticapps.net/
 
 Stitch is a platform that integrates diverse oil & gas asset datasets, applies AI-driven enrichment with human review, and delivers curated, trustworthy data.
 
