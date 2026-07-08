@@ -120,7 +120,7 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 for i in $(seq 200); do
   curl -s -o /dev/null \
     -H "Authorization: Bearer $TOKEN" \
-    -H 'X-Perf-Scenario: vol=8k' \
+    -H 'X-Stitch-Perf-Scenario: vol=8k' \
     "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=50"
 done
 ```
@@ -137,7 +137,7 @@ For concurrency/throughput numbers, use a load tool if you have one installed
 ```bash
 hey -n 500 -c 20 \
   -H "Authorization: Bearer $TOKEN" \
-  -H "X-Perf-Scenario: vol=8k" \
+  -H "X-Stitch-Perf-Scenario: vol=8k" \
   "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=50"
 ```
 
@@ -270,7 +270,7 @@ ROUTES — top 3 by total
 ## Comparing variants (data volume / params)
 
 To see how the *same* query behaves under different conditions, **tag each batch
-of traffic** with an `X-Perf-Scenario: <label>` request header. The label is
+of traffic** with an `X-Stitch-Perf-Scenario: <label>` request header. The label is
 recorded on every request *and* query event it triggers, so a single log
 captures all variants and the analyzer compares them with `--group-by scenario`.
 No log slicing, no separate files.
@@ -299,7 +299,7 @@ rows, so you can build up a volume ladder on a live stack.
 
    ```bash
    for i in $(seq 200); do
-     curl -s -o /dev/null -H 'X-Perf-Scenario: vol=1k' \
+     curl -s -o /dev/null -H 'X-Stitch-Perf-Scenario: vol=1k' \
        "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=50"
    done
    ```
@@ -316,7 +316,7 @@ rows, so you can build up a volume ladder on a live stack.
 
    ```bash
    for i in $(seq 200); do
-     curl -s -o /dev/null -H 'X-Perf-Scenario: vol=50k' \
+     curl -s -o /dev/null -H 'X-Stitch-Perf-Scenario: vol=50k' \
        "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=50"
    done
    ```
@@ -354,7 +354,7 @@ own label — the param values are a natural label:
 ```bash
 for ps in 50 500; do
   for i in $(seq 200); do
-    curl -s -o /dev/null -H "X-Perf-Scenario: page_size=$ps" \
+    curl -s -o /dev/null -H "X-Stitch-Perf-Scenario: page_size=$ps" \
       "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=$ps"
   done
 done
@@ -366,7 +366,7 @@ The `--group-by scenario` view breaks each query/route down by label, so
 `page_size=50` and `page_size=500` sit side by side even though they hit the
 same route template.
 
-> The `X-Perf-Scenario` label is opaque to the server (truncated to 80 chars)
+> The `X-Stitch-Perf-Scenario` label is opaque to the server (truncated to 80 chars)
 > and recorded only when sent, so it's safe to leave the feature in place — it
 > costs nothing on untagged production traffic.
 

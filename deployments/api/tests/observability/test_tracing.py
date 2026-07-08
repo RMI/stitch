@@ -79,7 +79,11 @@ class TestConfigureTracing:
         import stitch.observability.tracing as pkg_tracing
 
         monkeypatch.setattr(pkg_tracing.trace, "set_tracer_provider", lambda _p: None)
-        provider = configure_tracing(Settings(otel_traces_exporter="console"))
+        # Set both fields explicitly so the test controls its inputs rather than
+        # inheriting otel_enabled from the ambient .env (which may disable it).
+        provider = configure_tracing(
+            Settings(otel_enabled=True, otel_traces_exporter="console")
+        )
         try:
             assert provider is not None
         finally:

@@ -30,8 +30,11 @@ if TYPE_CHECKING:
 
 _request_logger = logging.getLogger("stitch.observability.request")
 
-_REQUEST_ID_HEADER = "X-Request-ID"
-_SCENARIO_HEADER = "X-Perf-Scenario"
+# Headers we invent are namespaced ``X-Stitch-*`` so their provenance is clear
+# and they can't collide with standard/proxy headers. ``X-Request-ID`` is left
+# unprefixed on purpose — it's a de-facto standard many tools already propagate.
+REQUEST_ID_HEADER = "X-Request-ID"
+SCENARIO_HEADER = "X-Stitch-Perf-Scenario"
 _SCENARIO_MAX_CHARS = 80
 
 # Per-request context, set before the request is handled so downstream code
@@ -39,8 +42,8 @@ _SCENARIO_MAX_CHARS = 80
 # state lives with the service that owns it.
 request_id_var: ContextVar[str | None] = ContextVar("stitch_request_id", default=None)
 route_var: ContextVar[str | None] = ContextVar("stitch_route", default=None)
-# Optional caller-supplied experiment label (from the X-Perf-Scenario header),
-# so a batch of traffic can be tagged and compared across variants.
+# Optional caller-supplied experiment label (from the scenario header), so a
+# batch of traffic can be tagged and compared across variants.
 scenario_var: ContextVar[str | None] = ContextVar("stitch_scenario", default=None)
 
 
@@ -85,7 +88,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         # Route matching uses scope path/method, available pre-dispatch, so
         # events emitted during the request can carry the route too.
         route = _route_template(request)
-        scenario = request.headers.get(_SCENARIO_HEADER)
+        scenario = request.headers.get(SCENARIO_HEADER)
         if scenario:
             scenario = scenario[:_SCENARIO_MAX_CHARS]
 
@@ -107,7 +110,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
             status_code = response.status_code
-            response.headers[_REQUEST_ID_HEADER] = request_id
+            response.headers[REQUEST_ID_HEADER] = request_id
             return response
         finally:
             event = {

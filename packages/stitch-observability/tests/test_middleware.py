@@ -45,7 +45,7 @@ def test_emits_summary_and_sets_request_id_header(caplog) -> None:
 def test_scenario_header_is_captured_and_truncated(caplog) -> None:
     client = TestClient(_make_app())
     with caplog.at_level(logging.INFO, logger="stitch.observability.request"):
-        client.get("/things/1", headers={"X-Perf-Scenario": "x" * 200})
+        client.get("/things/1", headers={"X-Stitch-Perf-Scenario": "x" * 200})
 
     assert len(_request_events(caplog)[-1]["scenario"]) == 80
 
