@@ -3,15 +3,21 @@
 import pytest
 from fastapi import HTTPException
 from sqlalchemy.dialects import postgresql
-from sqlalchemy import event, select
+from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from stitch.api.db import og_field_resource_actions as resource_actions
+from stitch.api.db.errors import (
+    InvalidActionError,
+    ResourceIntegrityError,
+    ResourceNotFoundError,
+)
 from stitch.api.db import utils
 from stitch.api.db.model import (
     MembershipModel,
     MembershipStatus,
     OGFieldResourceSourcePriority,
+    OilGasFieldSourceModel,
     ResourceModel,
 )
 from stitch.api.entities import (
@@ -57,6 +63,46 @@ async def _create_resource_with_sources(
 
     await session.flush()
     return resource.id
+
+
+async def _source_pks_by_key(
+    session: AsyncSession, resource_id: int
+) -> dict[str, list[int]]:
+    """Active source-record ids per source key for a resource, source_pk-ascending."""
+    rows = (
+        await session.execute(
+            select(MembershipModel.source, MembershipModel.source_pk)
+            .where(MembershipModel.resource_id == resource_id)
+            .order_by(MembershipModel.source_pk)
+        )
+    ).all()
+    out: dict[str, list[int]] = {}
+    for source, pk in rows:
+        out.setdefault(source, []).append(pk)
+    return out
+
+
+async def _set_field_priority(
+    session: AsyncSession,
+    user: User,
+    resource_id: int,
+    colname: str,
+    ordered_source_pks: list[int],
+) -> None:
+    """Write a best-first per-field override snapshot (mirrors the write action)."""
+    for index, source_pk in enumerate(ordered_source_pks):
+        src = await session.get(OilGasFieldSourceModel, source_pk)
+        session.add(
+            OGFieldResourceSourcePriority.create(
+                created_by=user,
+                resource_id=resource_id,
+                source=src.source,
+                source_pk=source_pk,
+                colname=colname,
+                priority=index,
+            )
+        )
+    await session.flush()
 
 
 class TestCreateResourceActionIntegration:
@@ -1027,7 +1073,7 @@ class TestResourceFilterOptionsAction:
 
 
 class TestResourcePriorityOverride:
-    """A per-resource override re-ranks sources, flipping the coalesced winner."""
+    """A per-field override re-ranks a field's records, flipping its winner."""
 
     async def _seed(self, session, user) -> int:
         # Default priority: gem(2) outranks wm(3), so gem wins by default.
@@ -1052,11 +1098,11 @@ class TestResourcePriorityOverride:
         assert before.view.name == "GEM Name"
         assert before.provenance["name"][1] == "gem"
 
-        # Override wm to top priority for THIS resource only.
-        session.add(
-            OGFieldResourceSourcePriority(resource_id=rid, source="wm", priority=1)
-        )
-        await session.flush()
+        # Override the name AND country fields to put wm's record first.
+        pks = await _source_pks_by_key(session, rid)
+        order = [pks["wm"][0], pks["gem"][0]]
+        await _set_field_priority(session, test_user, rid, "name", order)
+        await _set_field_priority(session, test_user, rid, "country", order)
 
         # Detail path reflects the override (value + provenance).
         after = await resource_actions.get(session, rid)
@@ -1071,6 +1117,26 @@ class TestResourcePriorityOverride:
         assert item.provenance["name"] == "wm"
 
     @pytest.mark.anyio
+    async def test_override_is_scoped_to_one_field(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        session = seeded_integration_session
+        rid = await self._seed(session, test_user)
+
+        # Override only `name`; `country` must keep the default (gem) winner.
+        pks = await _source_pks_by_key(session, rid)
+        await _set_field_priority(
+            session, test_user, rid, "name", [pks["wm"][0], pks["gem"][0]]
+        )
+
+        after = await resource_actions.get(session, rid)
+        assert after.view.name == "WM Name"
+        assert after.view.country == "USA"
+        assert after.provenance["country"][1] == "gem"
+
+    @pytest.mark.anyio
     async def test_override_is_scoped_to_its_resource(
         self,
         seeded_integration_session: AsyncSession,
@@ -1080,12 +1146,10 @@ class TestResourcePriorityOverride:
         overridden = await self._seed(session, test_user)
         untouched = await self._seed(session, test_user)
 
-        session.add(
-            OGFieldResourceSourcePriority(
-                resource_id=overridden, source="wm", priority=1
-            )
+        pks = await _source_pks_by_key(session, overridden)
+        await _set_field_priority(
+            session, test_user, overridden, "name", [pks["wm"][0], pks["gem"][0]]
         )
-        await session.flush()
 
         assert (await resource_actions.get(session, overridden)).view.name == "WM Name"
         # The other resource keeps the default ranking.
@@ -1132,10 +1196,11 @@ class TestFieldSourceValues:
     ):
         session = seeded_integration_session
         rid = await self._seed(session, test_user)
-        session.add(
-            OGFieldResourceSourcePriority(resource_id=rid, source="wm", priority=1)
+        # llm has no basin, so the basin override covers only gem + wm.
+        pks = await _source_pks_by_key(session, rid)
+        await _set_field_priority(
+            session, test_user, rid, "basin", [pks["wm"][0], pks["gem"][0]]
         )
-        await session.flush()
 
         rows = await resource_actions.field_source_values(session, rid, "basin")
 
@@ -1199,6 +1264,163 @@ class TestFieldSourceValues:
                 seeded_integration_session, 9_999_999, "name"
             )
         assert exc.value.status_code == 404
+
+
+class TestSetFieldSourcePriority:
+    """Persisting a per-field, per-record priority snapshot."""
+
+    async def _seed(self, session, user) -> int:
+        # Default: gem(2) < wm(3) for basin; llm has no basin.
+        return await _create_resource_with_sources(
+            session,
+            user,
+            {"source": "gem", "name": "GEM Name", "country": "USA", "basin": "Alpha"},
+            {"source": "wm", "name": "WM Name", "country": "CAN", "basin": "Beta"},
+            {"source": "llm", "name": "LLM Name", "country": "GBR"},
+        )
+
+    async def _override_count(self, session, rid: int) -> int:
+        return await session.scalar(
+            select(func.count())
+            .select_from(OGFieldResourceSourcePriority)
+            .where(OGFieldResourceSourcePriority.resource_id == rid)
+        )
+
+    @pytest.mark.anyio
+    async def test_reorder_persists_and_flips_winner(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid = await self._seed(session, test_user)
+        pks = await _source_pks_by_key(session, rid)
+
+        rows = await resource_actions.set_field_source_priority(
+            session, test_user, rid, "basin", [pks["wm"][0], pks["gem"][0]]
+        )
+
+        assert [(r.source, r.value) for r in rows] == [("wm", "Beta"), ("gem", "Alpha")]
+        # Only basin's two records were written (llm has no basin).
+        assert await self._override_count(session, rid) == 2
+        # Detail coalescing reflects the new winner.
+        detail = await resource_actions.get(session, rid)
+        assert detail.view.basin == "Beta"
+
+    @pytest.mark.anyio
+    async def test_reorder_to_current_order_is_a_noop(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid = await self._seed(session, test_user)
+        pks = await _source_pks_by_key(session, rid)
+
+        # gem(2) already beats wm(3) by default; submitting that order writes nothing.
+        rows = await resource_actions.set_field_source_priority(
+            session, test_user, rid, "basin", [pks["gem"][0], pks["wm"][0]]
+        )
+
+        assert [(r.source, r.value) for r in rows] == [("gem", "Alpha"), ("wm", "Beta")]
+        assert await self._override_count(session, rid) == 0
+
+    @pytest.mark.anyio
+    async def test_incomplete_snapshot_is_rejected(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid = await self._seed(session, test_user)
+        pks = await _source_pks_by_key(session, rid)
+
+        with pytest.raises(InvalidActionError):
+            await resource_actions.set_field_source_priority(
+                session, test_user, rid, "basin", [pks["wm"][0]]
+            )
+
+    @pytest.mark.anyio
+    async def test_extra_source_without_value_is_rejected(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid = await self._seed(session, test_user)
+        pks = await _source_pks_by_key(session, rid)
+
+        # llm has no basin value, so it is not eligible for the basin ordering.
+        with pytest.raises(InvalidActionError):
+            await resource_actions.set_field_source_priority(
+                session,
+                test_user,
+                rid,
+                "basin",
+                [pks["wm"][0], pks["gem"][0], pks["llm"][0]],
+            )
+
+    @pytest.mark.anyio
+    async def test_duplicate_source_is_rejected(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid = await self._seed(session, test_user)
+        pks = await _source_pks_by_key(session, rid)
+
+        with pytest.raises(InvalidActionError):
+            await resource_actions.set_field_source_priority(
+                session, test_user, rid, "basin", [pks["wm"][0], pks["wm"][0]]
+            )
+
+    @pytest.mark.anyio
+    async def test_unknown_field_is_422(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid = await self._seed(session, test_user)
+
+        with pytest.raises(HTTPException) as exc:
+            await resource_actions.set_field_source_priority(
+                session, test_user, rid, "not_a_field", [1]
+            )
+        assert exc.value.status_code == 422
+
+    @pytest.mark.anyio
+    async def test_missing_resource_is_not_found(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        with pytest.raises(ResourceNotFoundError):
+            await resource_actions.set_field_source_priority(
+                seeded_integration_session, test_user, 9_999_999, "basin", [1]
+            )
+
+    @pytest.mark.anyio
+    async def test_repointed_resource_is_rejected(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid = await self._seed(session, test_user)
+        pks = await _source_pks_by_key(session, rid)
+        resource = await session.get(ResourceModel, rid)
+        resource.repointed_id = rid
+        await session.flush()
+
+        with pytest.raises(ResourceIntegrityError):
+            await resource_actions.set_field_source_priority(
+                session, test_user, rid, "basin", [pks["wm"][0], pks["gem"][0]]
+            )
+
+    @pytest.mark.anyio
+    async def test_resave_replaces_prior_snapshot(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid = await self._seed(session, test_user)
+        pks = await _source_pks_by_key(session, rid)
+
+        await resource_actions.set_field_source_priority(
+            session, test_user, rid, "basin", [pks["wm"][0], pks["gem"][0]]
+        )
+        # Re-save the reverse order; still exactly two rows (replaced, not appended).
+        rows = await resource_actions.set_field_source_priority(
+            session, test_user, rid, "basin", [pks["gem"][0], pks["wm"][0]]
+        )
+
+        assert [r.source for r in rows] == ["gem", "wm"]
+        assert await self._override_count(session, rid) == 2
 
 
 class TestResourceDetailCoalescing:
@@ -1374,8 +1596,8 @@ class TestCoalescingEngineParity:
     """Phase-1 (SQL) and phase-2/detail (Python) coalescing pick the same winner.
 
     Exercises all three tiebreak paths at once: an unlicensed higher-priority
-    source (dropped), a per-resource priority override, and duplicate
-    same-source records (lowest source_pk wins).
+    source (dropped), a per-field priority override, and duplicate same-source
+    records (the override ranks the individual records).
     """
 
     @pytest.mark.anyio
@@ -1388,22 +1610,26 @@ class TestCoalescingEngineParity:
         rid = await _create_resource_with_sources(
             session,
             test_user,
-            # rmi has the top DEFAULT priority and would win the (priority=1,
-            # source-ASC) tie against the wm override -- but it is left unlicensed
-            # below, so it must fall through (the unlicensed-fallthrough path).
+            # rmi has the top DEFAULT priority, but is left unlicensed below, so it
+            # must fall through (the unlicensed-fallthrough path).
             {"source": "rmi", "name": "RMI Name", "country": "MEX"},
             {"source": "wm", "name": "WM First", "country": "USA"},
             {"source": "wm", "name": "WM Second", "country": "CAN"},
             {"source": "gem", "name": "GEM Name", "country": "BRA"},
         )
-        # Override: wm becomes top priority for THIS resource only.
-        session.add(
-            OGFieldResourceSourcePriority(resource_id=rid, source="wm", priority=1)
+        # Override `name` to rank the wm records first (WM First ahead of the
+        # duplicate WM Second), then gem.
+        pks = await _source_pks_by_key(session, rid)
+        await _set_field_priority(
+            session,
+            test_user,
+            rid,
+            "name",
+            [pks["wm"][0], pks["wm"][1], pks["gem"][0]],
         )
-        await session.flush()
 
-        # rmi unlicensed -> falls through; among licensed sources wm (override)
-        # wins, and the lowest source_pk among the duplicate wm records wins.
+        # rmi unlicensed -> falls through; among licensed sources the overridden
+        # WM First record wins for `name`.
         licensed = frozenset({"wm", "gem"})
 
         # Detail (Python) winner.

@@ -154,6 +154,16 @@ class MergeCandidateCreateRequest(BaseModel):
     resource_ids: list[int] = Field(..., min_length=2)
 
 
+class SetFieldPriorityRequest(BaseModel):
+    """Best-first source-record ids for one field's priority ordering.
+
+    A complete snapshot: must list exactly the records that currently carry a
+    value for the field. Index 0 wins.
+    """
+
+    ordered_source_pks: list[int] = Field(..., min_length=1)
+
+
 class MergeCandidateReviewRequest(BaseModel):
     review_notes: str | None = None
 

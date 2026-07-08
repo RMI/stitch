@@ -6,7 +6,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.factories import ResourceCreateFactory, SourceFactory
-from stitch.api.db.model import ResourceModel
+from tests.utils import make_source_model
+from stitch.api.db.model import (
+    MembershipModel,
+    MembershipStatus,
+    ResourceModel,
+)
+from stitch.api.entities import User
 
 
 class TestResourcesIntegration:
@@ -93,6 +99,63 @@ class TestResourcesIntegration:
         rmi_sources = [src for src in sources if src.source == "rmi"]
         assert len(rmi_sources) == 1
         assert rmi_sources[0].name == "Persisted Resource"
+
+    @pytest.mark.anyio
+    async def test_set_field_priority_reorders_and_flips_winner(
+        self,
+        integration_client: AsyncClient,
+        integration_session_factory: async_sessionmaker[AsyncSession],
+        test_user: User,
+    ):
+        """PUT .../sources/priority persists a reorder and flips the winner."""
+        async with integration_session_factory() as session:
+            resource = ResourceModel.create(created_by=test_user)
+            session.add(resource)
+            await session.flush()
+            pks: dict[str, int] = {}
+            for src_key, basin in [("gem", "Alpha"), ("wm", "Beta")]:
+                model = make_source_model(
+                    source=src_key,
+                    created_by_id=test_user.id,
+                    name=f"{src_key} name",
+                    country="USA",
+                    basin=basin,
+                )
+                session.add(model)
+                await session.flush()
+                session.add(
+                    MembershipModel.create(
+                        created_by=test_user,
+                        resource_id=resource.id,
+                        source=src_key,
+                        source_pk=model.id,
+                        status=MembershipStatus.ACTIVE,
+                    )
+                )
+                pks[src_key] = model.id
+            rid = resource.id
+            await session.commit()
+
+        # Default: gem(2) beats wm(3).
+        before = await integration_client.get(
+            f"/oil-gas-fields/{rid}/fields/basin/sources"
+        )
+        assert [r["source"] for r in before.json()] == ["gem", "wm"]
+
+        # Promote wm above gem for basin.
+        response = await integration_client.put(
+            f"/oil-gas-fields/{rid}/fields/basin/sources/priority",
+            json={"ordered_source_pks": [pks["wm"], pks["gem"]]},
+        )
+        assert response.status_code == 200
+        assert [(r["source"], r["value"]) for r in response.json()] == [
+            ("wm", "Beta"),
+            ("gem", "Alpha"),
+        ]
+
+        # Coalesced detail reflects the new winner.
+        detail = await integration_client.get(f"/oil-gas-fields/{rid}")
+        assert detail.json()["basin"] == "Beta"
 
     @pytest.mark.anyio
     async def test_create_with_minimal_data(

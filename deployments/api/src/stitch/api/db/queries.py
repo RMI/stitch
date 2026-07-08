@@ -98,13 +98,17 @@ def construct_base_query_statement(
     p = OGFieldSourcePriority
     o = OGFieldResourceSourcePriority
 
-    priority = func.coalesce(o.priority, p.priority)
+    # Two separate columns, not a collapsed COALESCE: ranking needs the tier bit
+    # (overridden vs not) which a single number can't carry. The override is keyed
+    # to the *value's* (source_pk, colname) grain, so a record only outranks for
+    # the specific fields it was pinned on.
     active_src = (
         select(
             r.id.label("resource_id"),
             m.source.label("source"),
             m.source_pk.label("source_pk"),
-            priority.label("priority"),
+            o.priority.label("override_priority"),
+            p.priority.label("default_priority"),
             v.colname.label("colname"),
             v.value_text,
             v.value_num,
@@ -114,7 +118,14 @@ def construct_base_query_statement(
         .join(p, p.source == m.source)
         .join(s, and_(s.id == m.source_pk, s.source == m.source))
         .join(v, v.source_pk == m.source_pk)
-        .outerjoin(o, and_(o.resource_id == r.id, o.source == m.source))
+        .outerjoin(
+            o,
+            and_(
+                o.resource_id == r.id,
+                o.source_pk == m.source_pk,
+                o.colname == v.colname,
+            ),
+        )
         .where(
             r.repointed_id.is_(None),
             m.status == MembershipStatus.ACTIVE,
@@ -162,7 +173,10 @@ def add_ranking(base_cte: CTE) -> Select[tuple[Any, ...]]:
             .over(
                 partition_by=(cols.resource_id, cols.colname),
                 order_by=(
-                    cols.priority.asc(),
+                    # Overridden records first (NULLS LAST is the tier split);
+                    # then global default; source/source_pk are stable tiebreaks.
+                    cols.override_priority.asc().nulls_last(),
+                    cols.default_priority.asc(),
                     cols.source.asc(),
                     cols.source_pk.asc(),
                 ),

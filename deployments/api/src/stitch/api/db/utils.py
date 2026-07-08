@@ -78,16 +78,22 @@ async def coalesce_resources(
     rows_by_id = await ResourceModel.source_data_by_resource_id(
         session, resource_ids, licensed_sources
     )
+    overrides_by_id = await ResourceModel.field_overrides_by_resource_id(
+        session, resource_ids
+    )
 
     out: dict[int, OGFieldResource] = {}
     for rid in resource_ids:
         rows = rows_by_id.get(rid, [])
-        # Effective priority order, best-first; built from only the sources
-        # present, so coalesce_og_field_resource's priorities.index never raises.
+        # Default priority order, best-first; built from only the sources present,
+        # so coalesce_og_field_resource's priorities.index never raises. Per-field
+        # overrides are applied inside the coalescer on top of this default order.
         prio_map = {src.source: prio for src, prio in rows}
         priorities = sorted(prio_map, key=lambda k: (prio_map[k], k))
         sources = [src for src, _ in rows]
-        view, provenance = coalesce_og_field_resource(sources, priorities)
+        view, provenance = coalesce_og_field_resource(
+            sources, priorities, field_overrides=overrides_by_id.get(rid)
+        )
         out[rid] = OGFieldResource(
             id=rid,
             source_data=sources,
