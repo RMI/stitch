@@ -1,7 +1,7 @@
 """Emission seam for the API's query-timing events.
 
-Emits a structured log record (the JSON formatter in :mod:`logging_config`
-flattens the ``event`` dict into the log line), intentionally the *only* place
+Emits a structured log record (the shared ``stitch.observability`` JSON
+formatter flattens the ``event`` dict into the log line), intentionally the *only* place
 that decides what happens to a query event. Per-request summaries are emitted by
 the shared ``RequestContextMiddleware`` (which the API's ``RequestTimingMiddleware``
 extends with the DB aggregates), not here.
