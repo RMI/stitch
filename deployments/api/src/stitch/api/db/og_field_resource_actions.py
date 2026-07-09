@@ -1,19 +1,8 @@
-import json
 from collections.abc import Collection, Sequence
-from typing import Any, get_args
+from typing import get_args
 
 from fastapi import HTTPException
-from sqlalchemy import (
-    ColumnElement,
-    String,
-    asc,
-    cast,
-    desc,
-    func,
-    or_,
-    select,
-)
-from sqlalchemy.engine import RowMapping
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.status import HTTP_404_NOT_FOUND
@@ -33,19 +22,25 @@ from stitch.api.db.og_field_source_actions import (
     attach_sources_to_resource,
     get_or_create_sources,
 )
-from stitch.ogsi.model import OGFieldListItemView, OGFieldResource
-from stitch.ogsi.model.og_field import OilGasFieldBase
+from stitch.ogsi.model import (
+    OGFieldListItemView,
+    OGFieldResource,
+    OGFieldSourceValueView,
+)
 from stitch.ogsi.model.types import OGSISrcKey
 
-from .coalesce_sql import PROVENANCE_SUFFIX, build_resource_list_cte
 from .model import (
     MembershipModel,
     MembershipStatus,
     ResourceModel,
 )
-from .model.oil_gas_field_source_value import JSON_ATTRIBUTE_NAMES
-from .queries import EXACT_MATCH_FIELDS, Q_FIELDS
-from .utils import resource_model_to_entity
+from .model.oil_gas_field_source_value import ATTRIBUTE_NAMES, value_attr_for
+from .queries import base_resource_query, construct_base_query_statement, add_ranking
+from .utils import (
+    coalesce_resources,
+    resource_model_to_entity,
+    resource_to_list_item_view,
+)
 
 
 _FILTER_OPTION_FIELDS: frozenset[str] = frozenset(get_args(FilterOptionField))
@@ -56,29 +51,31 @@ async def query(
     params: OGFieldQueryParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> tuple[list[OGFieldListItemView], int]:
-    """Query coalesced resource list items, restricted to licensed sources."""
+    """Query coalesced resource list items, restricted to licensed sources.
+
+    Two-phase: a narrowed id-query (+ count) over the participating fields, then
+    a single batched hydration of the returned page by id.
+    """
     if params.sort_by == "source":
         raise HTTPException(
             status_code=422,
             detail="sort_by=source is not supported for resource list queries.",
         )
 
-    coalesced = build_resource_list_cte(params.source, licensed_sources)
-    filtered = select(coalesced)
-    for condition in _build_final_conditions(coalesced, params):
-        filtered = filtered.where(condition)
+    ids_stmt = base_resource_query(params, licensed_sources)
+    count_stmt = select(func.count()).select_from(ids_stmt.subquery())
+    total = (await session.scalar(count_stmt)) or 0
+    ids_stmt = ids_stmt.limit(params.limit).offset(params.offset)
+    ids = list((await session.scalars(ids_stmt)).all())
 
-    total_stmt = select(func.count()).select_from(filtered.subquery())
-    total = await session.scalar(total_stmt) or 0
+    if not ids:
+        return [], total
 
-    page_stmt = (
-        filtered.order_by(*_build_sort_clauses(coalesced, params))
-        .offset(params.offset)
-        .limit(params.limit)
-    )
-    rows = (await session.execute(page_stmt)).mappings().all()
-
-    return [_list_item_from_row(row) for row in rows], total
+    # Phase 2: one batched Python coalesce over the page ids (same coalescer the
+    # detail path uses), then the shared list-item projection, in phase-1 order.
+    coalesced = await coalesce_resources(session, ids, licensed_sources)
+    items = [resource_to_list_item_view(coalesced[rid]) for rid in ids]
+    return items, total
 
 
 async def filter_options(
@@ -86,96 +83,31 @@ async def filter_options(
     params: OGFieldFilterOptionsParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> list[str]:
-    """Return distinct coalesced resource values for one filterable field."""
+    """Return distinct coalesced resource values for one filterable field.
+
+    Reads the shared coalescing core narrowed to the single field, so values are
+    priority/override-coalesced and licensed before being deduped and sorted.
+    ``params.source`` is ignored (see ``query``).
+    """
     if params.field not in _FILTER_OPTION_FIELDS:
         raise HTTPException(
             status_code=422,
             detail=f"field={params.field} is not supported for resource filter options.",
         )
 
-    coalesced = build_resource_list_cte(params.source, licensed_sources)
-    col = _resource_list_column(coalesced, params.field)
-    if col is None:
-        raise HTTPException(
-            status_code=422,
-            detail=f"field={params.field} is not supported for resource filter options.",
-        )
-
-    value_col = cast(col, String).label("value")
+    base_cte = construct_base_query_statement(licensed_sources)
+    filtered = select(base_cte).where(base_cte.c.colname == params.field).cte()
+    ranked = add_ranking(filtered).cte("ranked")
+    value_col = getattr(ranked.c, value_attr_for(params.field))
+    labeled = value_col.label("value")
     stmt = (
-        select(value_col)
-        .where(col.is_not(None), cast(col, String) != "")
+        select(labeled)
+        .where(value_col.is_not(None), value_col != "")
         .distinct()
-        .order_by(value_col)
+        .order_by(labeled)
     )
     values = await session.scalars(stmt)
     return list(values.all())
-
-
-def _build_final_conditions(
-    coalesced,
-    params: OGFieldQueryParams,
-) -> list[ColumnElement[bool]]:
-    conditions: list[ColumnElement[bool]] = []
-
-    if params.q:
-        q_term = f"%{params.q}%"
-        q_conditions: list[ColumnElement[bool]] = []
-        for field_name in Q_FIELDS:
-            col = getattr(coalesced.c, field_name, None)
-            if col is not None:
-                q_conditions.append(col.ilike(q_term))
-        if q_conditions:
-            conditions.append(or_(*q_conditions))
-
-    for field_name in EXACT_MATCH_FIELDS:
-        value = getattr(params, field_name, None)
-        if value is None:
-            continue
-        col = _resource_list_column(coalesced, field_name)
-        if col is not None:
-            conditions.append(col == value)
-
-    return conditions
-
-
-def _build_sort_clauses(coalesced, params: OGFieldQueryParams) -> list[Any]:
-    sort_col = _resource_list_column(coalesced, params.sort_by)
-    clauses: list[Any] = []
-    if sort_col is not None:
-        direction = desc if params.sort_order == "desc" else asc
-        clauses.append(direction(sort_col).nulls_last())
-    if params.sort_by not in {"id", "resource_id"}:
-        clauses.append(asc(coalesced.c.id))
-    return clauses
-
-
-def _resource_list_column(coalesced, field_name: str):
-    if field_name == "resource_id":
-        return coalesced.c.id
-    return getattr(coalesced.c, field_name, None)
-
-
-def _row_field_value(row: RowMapping, field_name: str):
-    """Read a coalesced field, deserializing JSON-typed fields emitted as text."""
-    value = row.get(field_name)
-    if field_name in JSON_ATTRIBUTE_NAMES and isinstance(value, str):
-        return json.loads(value)
-    return value
-
-
-def _list_item_from_row(row: RowMapping) -> OGFieldListItemView:
-    data = OilGasFieldBase(
-        **{
-            field_name: _row_field_value(row, field_name)
-            for field_name in OilGasFieldBase.model_fields
-        }
-    )
-    provenance: dict[str, OGSISrcKey | None] = {
-        field_name: row.get(f"{field_name}{PROVENANCE_SUFFIX}")
-        for field_name in OilGasFieldBase.model_fields
-    }
-    return OGFieldListItemView(id=row["id"], data=data, provenance=provenance)
 
 
 async def get(
@@ -197,6 +129,45 @@ async def get(
     return await resource_model_to_entity(
         session, model, licensed_sources=licensed_sources
     )
+
+
+async def field_source_values(
+    session: AsyncSession,
+    id: int,
+    field: str,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> list[OGFieldSourceValueView]:
+    """Every source's value for one field of a resource, best-priority first.
+
+    Returns only sources that carry a value for ``field`` (empty/null omitted),
+    each with its effective per-resource priority. The first entry is the
+    coalesced winner. Licensing is applied. Priority is source-scoped today; the
+    contract is unchanged when it becomes resource/field-scoped.
+    """
+    if field not in ATTRIBUTE_NAMES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"field={field} is not a known resource field.",
+        )
+    if await session.get(ResourceModel, id) is None:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND, detail=f"No Resource with id `{id}` found."
+        )
+
+    by_id = await ResourceModel.source_data_by_resource_id(
+        session, [id], licensed_sources
+    )
+    values = [
+        OGFieldSourceValueView(
+            source=src.source, id=src.id, value=value, priority=priority
+        )
+        for src, priority in by_id.get(id, [])
+        if src.id is not None
+        and (value := getattr(src, field)) is not None
+        and value != ""
+    ]
+    values.sort(key=lambda v: (v.priority, v.id))
+    return values
 
 
 async def create(
