@@ -21,6 +21,7 @@ from .types import (
 __all__ = [
     "OGFieldSource",
     "OGFieldSourceView",
+    "OGFieldSourceValueView",
     "OGFieldResource",
     "OGFieldResourceView",
     "OGFieldView",
@@ -113,6 +114,22 @@ class OGFieldDetailView(OGFieldListItemView):
         for item in value:
             normalized.append(OG_FIELD_SOURCE_VIEW_ADAPTER.validate_python(item))
         return normalized
+
+
+class OGFieldSourceValueView(BaseModel):
+    """One source's value for a single field, with its effective priority.
+
+    Returned by the per-field source-values endpoint. ``priority`` is the
+    effective per-resource ranking (lower ``priority`` value = higher priority);
+    the winning value is the entry with the lowest ``priority`` value (ties
+    broken by ``id``). When priority becomes resource/field-scoped, only that
+    resolution changes -- this shape is stable.
+    """
+
+    source: OGSISrcKey
+    id: int
+    value: Any
+    priority: int
 
 
 class OGFieldResource(Resource[int, OGFieldSource]):
