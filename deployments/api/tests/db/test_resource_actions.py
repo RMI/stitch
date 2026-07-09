@@ -1092,6 +1092,115 @@ class TestResourcePriorityOverride:
         assert (await resource_actions.get(session, untouched)).view.name == "GEM Name"
 
 
+class TestFieldSourceValues:
+    """Per-field source-value listing, best-priority first."""
+
+    async def _seed(self, session, user) -> int:
+        # gem(2) outranks wm(3) by default; llm has no state_province.
+        return await _create_resource_with_sources(
+            session,
+            user,
+            {"source": "gem", "name": "GEM Name", "country": "USA", "basin": "Alpha"},
+            {"source": "wm", "name": "WM Name", "country": "CAN", "basin": "Beta"},
+            {"source": "llm", "name": "LLM Name", "country": "GBR"},
+        )
+
+    @pytest.mark.anyio
+    async def test_lists_values_sorted_by_priority_with_winner_first(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        session = seeded_integration_session
+        rid = await self._seed(session, test_user)
+
+        rows = await resource_actions.field_source_values(session, rid, "name")
+
+        # gem(2) < wm(3) < llm(4): winner (gem) first, then in priority order.
+        assert [(r.source, r.value) for r in rows] == [
+            ("gem", "GEM Name"),
+            ("wm", "WM Name"),
+            ("llm", "LLM Name"),
+        ]
+        assert [r.priority for r in rows] == sorted(r.priority for r in rows)
+
+    @pytest.mark.anyio
+    async def test_override_reorders_field_values(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        session = seeded_integration_session
+        rid = await self._seed(session, test_user)
+        session.add(
+            OGFieldResourceSourcePriority(resource_id=rid, source="wm", priority=1)
+        )
+        await session.flush()
+
+        rows = await resource_actions.field_source_values(session, rid, "basin")
+
+        # wm promoted above gem; llm has no basin so it is omitted.
+        assert [(r.source, r.value) for r in rows] == [
+            ("wm", "Beta"),
+            ("gem", "Alpha"),
+        ]
+
+    @pytest.mark.anyio
+    async def test_omits_sources_without_a_value(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        session = seeded_integration_session
+        rid = await self._seed(session, test_user)
+
+        rows = await resource_actions.field_source_values(
+            session, rid, "state_province"
+        )
+
+        assert rows == []
+
+    @pytest.mark.anyio
+    async def test_unlicensed_sources_are_excluded(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        session = seeded_integration_session
+        rid = await self._seed(session, test_user)
+
+        rows = await resource_actions.field_source_values(
+            session, rid, "name", licensed_sources=["gem"]
+        )
+
+        assert [r.source for r in rows] == ["gem"]
+
+    @pytest.mark.anyio
+    async def test_unknown_field_is_rejected(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        session = seeded_integration_session
+        rid = await self._seed(session, test_user)
+
+        with pytest.raises(HTTPException) as exc:
+            await resource_actions.field_source_values(session, rid, "not_a_field")
+        assert exc.value.status_code == 422
+
+    @pytest.mark.anyio
+    async def test_missing_resource_is_404(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await resource_actions.field_source_values(
+                seeded_integration_session, 9_999_999, "name"
+            )
+        assert exc.value.status_code == 404
+
+
 class TestResourceDetailCoalescing:
     """Detail-path (``resource_actions.get``) coalescing behavior.
 

@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { FieldCard, FieldGrid } from "./FieldCard";
 import {
   SOURCE_COLORS,
@@ -79,6 +80,55 @@ describe("FieldCard", () => {
   it("does not render source copy when source is omitted", () => {
     render(<FieldCard label="Country" value="Kuwait" />);
     expect(screen.queryByText(/^Source:/)).not.toBeInTheDocument();
+  });
+});
+
+describe("FieldCard expandable behavior", () => {
+  it("renders a plain box (no button) when not expandable", () => {
+    render(<FieldCard label="Basin" value="Foo Basin" source="wm" />);
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("renders a toggle button reflecting isOpen when expandable", () => {
+    const { rerender } = render(
+      <FieldCard label="Basin" value="Foo Basin" expandable isOpen={false} />,
+    );
+    const toggle = screen.getByRole("button");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    rerender(<FieldCard label="Basin" value="Foo Basin" expandable isOpen />);
+    expect(screen.getByRole("button")).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("calls onToggle when the value button is clicked", async () => {
+    const user = userEvent.setup();
+    const onToggle = vi.fn();
+    render(
+      <FieldCard
+        label="Basin"
+        value="Foo Basin"
+        expandable
+        onToggle={onToggle}
+      />,
+    );
+    await user.click(screen.getByRole("button"));
+    expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders children only when expandable and open", () => {
+    const { rerender } = render(
+      <FieldCard label="Basin" value="Foo Basin" expandable isOpen={false}>
+        <div>panel body</div>
+      </FieldCard>,
+    );
+    expect(screen.queryByText("panel body")).not.toBeInTheDocument();
+
+    rerender(
+      <FieldCard label="Basin" value="Foo Basin" expandable isOpen>
+        <div>panel body</div>
+      </FieldCard>,
+    );
+    expect(screen.getByText("panel body")).toBeInTheDocument();
   });
 });
 

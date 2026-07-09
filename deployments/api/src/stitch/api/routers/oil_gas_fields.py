@@ -41,6 +41,7 @@ from stitch.ogsi.model import (
     OGFieldListItemView,
     OGFieldResource,
     OGFieldResourceView,
+    OGFieldSourceValueView,
     OGFieldView,
 )
 
@@ -282,6 +283,27 @@ async def get_resource_detail(
         session=uow.session, id=id, licensed_sources=licensed_sources(claims)
     )
     return resource_to_detail_view(resource=res)
+
+
+@router.get(
+    "/{id}/fields/{field}/sources",
+    response_model=list[OGFieldSourceValueView],
+    dependencies=[Depends(require_permissions(RESOURCE_READ))],
+)
+async def get_field_source_values(
+    *,
+    uow: UnitOfWorkDep,
+    user: CurrentUser,
+    claims: Claims,
+    id: int,
+    field: str,
+) -> list[OGFieldSourceValueView]:
+    return await resource_actions.field_source_values(
+        session=uow.session,
+        id=id,
+        field=field,
+        licensed_sources=licensed_sources(claims),
+    )
 
 
 @router.post(
