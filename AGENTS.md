@@ -89,6 +89,7 @@ these before touching query, coalescing, or permissions code:
 `stitch-api` is the intended central broker / control plane — it owns auth, the domain model,
 and the canonical data. `entity-linkage`, `stitch-llm`, and the ETL app are supporting
 capabilities.
+Note that the ETL processes are defined in a separate repo, but inherit interfaces that are defined here. the `seed` deployment provides a public approximation.
 
 ## Gotchas
 
