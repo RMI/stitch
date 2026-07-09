@@ -5,15 +5,15 @@ from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 from starlette.status import HTTP_503_SERVICE_UNAVAILABLE
+from stitch.observability import (
+    configure_logging,
+    resource_attributes_from_env,
+    setup_fastapi_tracing,
+    shutdown_tracing,
+)
 from .middleware import register_middlewares
 from .db.config import dispose_engine
 from .auth import validate_auth_config_at_startup
-from .observability import (
-    configure_logging,
-    configure_tracing,
-    instrument_fastapi,
-    resource_attributes_from_env,
-)
 from .settings import get_settings
 
 from .routers.auth import router as auth_router
@@ -41,9 +41,9 @@ async def lifespan(app: FastAPI):
     app.state.auth_config_validated = True
     yield
     await dispose_engine()
-    if _tracer_provider is not None:
-        # Flush any buffered spans (BatchSpanProcessor) before exit.
-        _tracer_provider.shutdown()
+    # Flush any buffered spans (BatchSpanProcessor) before exit; no-op if tracing
+    # is disabled (provider is None).
+    shutdown_tracing(_tracer_provider)
 
 
 settings = get_settings()
@@ -57,14 +57,23 @@ configure_logging(
     # OTEL_RESOURCE_ATTRIBUTES / OTEL_SERVICE_NAME env.
     resource_attributes=resource_attributes_from_env(),
 )
-_tracer_provider = configure_tracing(settings)
-
 app = FastAPI(lifespan=lifespan)
 
 register_middlewares(application=app, settings=settings)
 
-if _tracer_provider is not None:
-    instrument_fastapi(app)
+# Configure tracing and instrument server spans, after the app + middleware are
+# built. instrument_outbound_httpx is off: the API is the terminal service and
+# makes no downstream httpx calls. version/environment are stamped as resource
+# attributes; SQLAlchemy per-query spans are instrumented separately in
+# db/config.py, since the engine is created lazily.
+_tracer_provider = setup_fastapi_tracing(
+    app,
+    service_name="stitch-api",
+    settings=settings,
+    instrument_outbound_httpx=False,
+    version=settings.app_version,
+    environment=settings.environment_name,
+)
 
 app.include_router(base_router)
 

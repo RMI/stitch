@@ -10,7 +10,9 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from stitch.api.observability import register_query_timing, setup_sqlalchemy_tracing
+from stitch.observability import setup_sqlalchemy_tracing
+
+from stitch.api.observability import register_query_timing
 from stitch.api.settings import get_settings
 
 
