@@ -95,35 +95,46 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         id_token = request_id_var.set(request_id)
         route_token = route_var.set(route)
         scenario_token = scenario_var.set(scenario)
-        state = self.on_request_start(request)
-
-        # Surface the same context on the active server span (created by the
-        # FastAPI instrumentation). No-op when tracing is disabled — the current
-        # span is then non-recording.
-        span = trace.get_current_span()
-        span.set_attribute("stitch.request_id", request_id)
-        if scenario:
-            span.set_attribute("stitch.scenario", scenario)
-
-        start = perf_counter()
-        status_code = 500
+        # Everything past the .set()s runs inside this try so the resets in its
+        # finally always fire — a raising hook (on_request_start /
+        # request_log_fields / on_request_finish) can never leave request context
+        # set and leak it into the next request handled on this task.
         try:
-            response = await call_next(request)
-            status_code = response.status_code
-            response.headers[REQUEST_ID_HEADER] = request_id
-            return response
+            state = self.on_request_start(request)
+
+            # Surface the same context on the active server span (created by the
+            # FastAPI instrumentation). No-op when tracing is disabled — the
+            # current span is then non-recording.
+            span = trace.get_current_span()
+            span.set_attribute("stitch.request_id", request_id)
+            if scenario:
+                span.set_attribute("stitch.scenario", scenario)
+
+            start = perf_counter()
+            status_code = 500
+            try:
+                response = await call_next(request)
+                status_code = response.status_code
+                response.headers[REQUEST_ID_HEADER] = request_id
+                return response
+            finally:
+                # on_request_finish is the teardown paired with on_request_start;
+                # run it even if building/emitting the summary raises, so subclass
+                # state (e.g. the API's db_stats contextvar) is always released.
+                try:
+                    event = {
+                        "request_id": request_id,
+                        "method": request.method,
+                        "route": route,
+                        "status_code": status_code,
+                        "duration_ms": round((perf_counter() - start) * 1000.0, 2),
+                        "scenario": scenario,
+                    }
+                    event.update(self.request_log_fields(state))
+                    _request_logger.info("request", extra={"event": event})
+                finally:
+                    self.on_request_finish(state)
         finally:
-            event = {
-                "request_id": request_id,
-                "method": request.method,
-                "route": route,
-                "status_code": status_code,
-                "duration_ms": round((perf_counter() - start) * 1000.0, 2),
-                "scenario": scenario,
-            }
-            event.update(self.request_log_fields(state))
-            _request_logger.info("request", extra={"event": event})
-            self.on_request_finish(state)
             request_id_var.reset(id_token)
             route_var.reset(route_token)
             scenario_var.reset(scenario_token)

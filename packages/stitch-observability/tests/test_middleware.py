@@ -1,5 +1,6 @@
 import logging
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -79,6 +80,31 @@ def test_context_vars_reset_after_request() -> None:
     # request they read their defaults.
     client = TestClient(_make_app())
     client.get("/things/1")
+    assert mw.request_id_var.get() is None
+    assert mw.route_var.get() is None
+    assert mw.scenario_var.get() is None
+
+
+@pytest.mark.parametrize("raising_hook", ["on_request_start", "request_log_fields"])
+def test_context_vars_reset_when_a_hook_raises(raising_hook) -> None:
+    # A raising subclass hook must not leak request context: the resets live in
+    # an outer finally so request_id/route/scenario return to their defaults even
+    # when the hook blows up mid-request.
+    class Boom(RequestContextMiddleware):
+        def on_request_start(self, request):
+            if raising_hook == "on_request_start":
+                raise RuntimeError("boom")
+            return None
+
+        def request_log_fields(self, state):
+            if raising_hook == "request_log_fields":
+                raise RuntimeError("boom")
+            return {}
+
+    client = TestClient(_make_app(Boom))
+    with pytest.raises(RuntimeError, match="boom"):
+        client.get("/things/1")
+
     assert mw.request_id_var.get() is None
     assert mw.route_var.get() is None
     assert mw.scenario_var.get() is None
