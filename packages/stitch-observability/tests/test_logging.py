@@ -70,3 +70,13 @@ def test_json_formatter_flattens_event_dict() -> None:
     payload = json.loads(JsonFormatter().format(record))
     assert payload["duration_ms"] == 12.5
     assert payload["route"] == "/x"
+
+
+def test_json_formatter_event_does_not_clobber_core_keys() -> None:
+    # A stray event key colliding with a core field (ts/level/logger/msg) must
+    # not overwrite it — the core keys define the log schema.
+    record = _record(event={"level": "SPOOFED", "msg": "spoofed", "route": "/x"})
+    payload = json.loads(JsonFormatter().format(record))
+    assert payload["level"] == "INFO"
+    assert payload["msg"] == "hello"
+    assert payload["route"] == "/x"

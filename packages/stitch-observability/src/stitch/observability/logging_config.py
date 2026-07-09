@@ -46,7 +46,12 @@ class JsonFormatter(logging.Formatter):
 
         event = getattr(record, "event", None)
         if isinstance(event, dict):
-            payload.update(event)
+            # Flatten the event fields to the top level, but never let them
+            # overwrite the core keys above (ts/level/logger/msg) — those define
+            # the log schema.
+            for key, value in event.items():
+                if key not in payload:
+                    payload[key] = value
 
         # Pick up any other ad-hoc ``extra`` fields (incl. the resource
         # attributes stamped by ResourceAttributesFilter) without clobbering

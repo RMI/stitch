@@ -22,8 +22,14 @@ Two structured log streams, distinguished by the `logger` field:
 
 | Logger | Emitted | Key fields |
 |---|---|---|
-| `stitch.api.observability.request` | once per HTTP request (always) | `route`, `method`, `status_code`, `duration_ms`, `db_query_count`, `db_time_ms`, `request_id` |
+| `stitch.observability.request` | once per HTTP request (always) | `route`, `method`, `status_code`, `duration_ms`, `db_query_count`, `db_time_ms`, `request_id` |
 | `stitch.api.observability.query` | once per query above the slow threshold | `statement` (parameterized SQL, **no bound values**), `duration_ms`, `rowcount`, `route`, `request_id` |
+
+> The request summary is emitted by the shared `stitch.observability`
+> middleware, so it logs under `stitch.observability.request` (the API's
+> `db_query_count` / `db_time_ms` are grafted on by its subclass). The query
+> stream stays API-specific under `stitch.api.observability.query`. Filter on the
+> `observability` substring to capture both.
 
 `db_query_count` on a request is the N+1 detector; the `query` stream tells you
 *which* statement is expensive.
@@ -201,7 +207,7 @@ az monitor log-analytics query \
     | where ContainerName_s == "api"
     | where TimeGenerated > ago(1h)
     | extend p = parse_json(Log_s)
-    | where tostring(p.logger) startswith "stitch.api.observability"
+    | where tostring(p.logger) contains "observability"
     | project line = Log_s' \
   -o tsv > /tmp/prod-events.jsonl
 ```
