@@ -19,7 +19,7 @@ Pointers: [`HACKING.md`](./HACKING.md) (setup & day-to-day workflow) ·
 - Ambiguous or inconsistent? Stop and ask, or name the options, rather than guessing.
 - Fix root causes; never weaken a test or mute an error to reach green.
 - Show evidence (test output, the commands you ran) — don't just assert success.
-- Architectural changes need discussion and maintainer sign-off *before* a PR
+- Architectural changes need discussion and maintainer sign-off _before_ a PR
   (`CONTRIBUTING.md`) — raise them rather than building them.
 
 ## Repository layout
@@ -36,7 +36,7 @@ plus one npm frontend. Python code uses the shared `stitch.*` namespace across e
   plus non-Python `db`, `stitch-frontend` (React + Vite), and `otel-collector`.
 
 When you change a shared package, its consumers see it immediately (no reinstall) —
-but run that package's tests *and* its consumers' tests. See [`ARCHITECTURE.md`](./ARCHITECTURE.md)
+but run that package's tests _and_ its consumers' tests. See [`ARCHITECTURE.md`](./ARCHITECTURE.md)
 for the high-level map.
 
 ## Common commands
@@ -64,9 +64,9 @@ check drift with `make alembic-check` (CI runs `check-alembic`).
 The core domain logic is spread across several files and only makes sense together. Read
 these before touching query, coalescing, or permissions code:
 
-- **Sources vs. resources.** Each dataset contributes typed *source* records
+- **Sources vs. resources.** Each dataset contributes typed _source_ records
   (`GemSource`, `WoodMacSource`, `RMISource`, `LLMSource` in `packages/stitch-ogsi/.../model/`).
-  A *resource* (`OGFieldResource`) is a curated field assembled from the sources linked to it.
+  A _resource_ (`OGFieldResource`) is a curated field assembled from the sources linked to it.
   The four canonical source keys (`OGSISrcKey`) are `gem`, `wm`, `rmi`, `llm`.
 - **Coalescing is per-request, not precomputed.** A resource's presented value for each field
   is chosen from its sources by priority. The in-memory coalescer is
@@ -75,7 +75,7 @@ these before touching query, coalescing, or permissions code:
   (`og_field_source_priority`, `og_field_resource_source_priority`). Query-side assembly
   lives in `deployments/api/src/stitch/api/db/queries.py`.
 - **Licensing drives what a user sees.** A user's `licensed_sources` (set per request) filters
-  which source values coalesce into a resource — which is *why* coalescing can't be
+  which source values coalesce into a resource — which is _why_ coalescing can't be
   precomputed to one row per resource. Get the licensing/null-shell behavior right: read the
   existing query and permissions code rather than assuming, and confirm intent with the user
   before changing it. FK constraints guarantee no resource exists without a source and every
@@ -89,11 +89,7 @@ these before touching query, coalescing, or permissions code:
 
 `stitch-api` is the intended central broker / control plane — it owns auth, the domain model,
 and the canonical data. `entity-linkage`, `stitch-llm`, and the ETL app are supporting
-capabilities. **This project prefers code/library boundaries over network boundaries**: don't
-reach for a new authenticated FastAPI deployment per capability. Any worker that writes
-canonical data must go through the shared domain code in `stitch-ogsi`/`stitch-models` so the
-source/coalescing/licensing invariants hold. Architectural changes need discussion and
-maintainer sign-off *before* a PR (see `CONTRIBUTING.md`) — raise them rather than building them.
+capabilities.
 
 ## Gotchas
 
@@ -106,7 +102,6 @@ maintainer sign-off *before* a PR (see `CONTRIBUTING.md`) — raise them rather 
 - **The frontend is configured at runtime**, not at build time, via
   `deployments/stitch-frontend/public/config.json` (API/entity-linkage/LLM/ETL URLs, Auth0).
   CI injects these per deploy lane.
-- **Verify `gh auth status`** before any GitHub CLI work; auth lapses are a recurring snag here.
 
 ## CI gates that will fail a PR
 
@@ -121,12 +116,11 @@ maintainer sign-off *before* a PR (see `CONTRIBUTING.md`) — raise them rather 
 
 ## Conventions
 
-- **Keep changes minimal and focused**; one concern per PR (`CONTRIBUTING.md`). The
-  `code-simplifier` skill is used regularly to cut duplication.
-- **Keep the public REST API stable.** If an internal refactor would change endpoints or
+- **Keep changes minimal and focused**; one concern per PR (`CONTRIBUTING.md`).
+- **Keep the public REST API as stable as possible.** If an internal refactor would change endpoints or
   query params, map internally instead of changing the public surface.
 - Plans, specs, and reviews are kept under the **gitignored** `.agents/docs/` — scratch only,
   never committed.
 - Git: don't commit or push unless asked; never rewrite history or force-push. **Merge commits
   only** — no squash, no rebase merges (`CONTRIBUTING.md`). Conventional Commit messages; link
-  JIRA issues as `STIT-#<number>` in PR titles. A `jira` skill is available.
+  JIRA issues as `STIT-#<number>` in PR titles.
