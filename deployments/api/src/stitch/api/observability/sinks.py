@@ -7,11 +7,13 @@ the shared ``RequestContextMiddleware`` (which the API's ``RequestTimingMiddlewa
 extends with the DB aggregates), not here.
 
 Relationship to OpenTelemetry:
-    Tracing is wired up in :mod:`tracing` via FastAPI / SQLAlchemy
-    auto-instrumentation; spans are exported over OTLP to a collector or logged
-    to stdout, depending on ``OTEL_TRACES_EXPORTER``. This sink is the
-    lightweight structured-log path and runs *independently of trace sampling* —
-    so a slow query is still logged even when its trace is dropped.
+    Tracing is wired up via the shared ``stitch.observability`` package
+    (``setup_fastapi_tracing`` in :mod:`stitch.api.main`, ``setup_sqlalchemy_tracing``
+    in :mod:`stitch.api.db.config`), which auto-instruments FastAPI / SQLAlchemy;
+    spans are exported over OTLP to a collector or logged to stdout, depending on
+    ``OTEL_TRACES_EXPORTER``. This sink is the lightweight structured-log path and
+    runs *independently of trace sampling* — so a slow query is still logged even
+    when its trace is dropped.
 """
 
 import logging

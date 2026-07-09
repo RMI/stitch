@@ -33,8 +33,9 @@ if provider is not None:
 - Exporter modes: `console` (spans → structured stdout logs, no sidecar),
   `otlp` (→ collector/Jaeger), `none` (disabled).
 
-Each Stitch service calls `configure_tracing` at startup (before the app is
-built), then `instrument_fastapi(app)` + the relevant `instrument_*` after the
-app is constructed, and `shutdown_tracing(provider)` on exit. The API also wraps
-this behind a thin `stitch.api.observability.tracing` shim that preserves its
-historical surface.
+Each Stitch service wires this up at startup with `setup_fastapi_tracing(app, ...)`
+— a convenience that calls `configure_tracing` then `instrument_fastapi(app)`
+(+ optional `instrument_httpx()`) in the right order — after the app and its
+middleware are constructed, and `shutdown_tracing(provider)` on exit. SQLAlchemy
+engines are instrumented separately via `setup_sqlalchemy_tracing(engine, ...)`,
+since they're created lazily (often after startup).
