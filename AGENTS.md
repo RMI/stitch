@@ -11,8 +11,7 @@ Pointers: [`HACKING.md`](./HACKING.md) (setup & day-to-day workflow) ·
 
 ## How to work here
 
-- Read the surrounding code and conventions first; verify against the codebase rather than
-  inferring.
+- Read the surrounding code and conventions first; verify against the codebase rather than inferring.
 - Make the smallest reversible change; touch only what the task requires.
 - No speculative abstractions, architecture, or dependencies — a dependency is fine when
   justified (say why, and prefer the standard library or an existing one).
