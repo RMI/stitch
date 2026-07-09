@@ -119,8 +119,9 @@ capabilities.
 - **Keep changes minimal and focused**; one concern per PR (`CONTRIBUTING.md`).
 - **Keep the public REST API as stable as possible.** If an internal refactor would change endpoints or
   query params, map internally instead of changing the public surface.
-- Plans, specs, and reviews are kept under the **gitignored** `.agents/docs/` — scratch only,
-  never committed.
+- Plans, specs, and reviews are kept under `.agents/docs/` — scratch only; never `git add`
+  them. (Locally excluded via `.git/info/exclude`, not a committed `.gitignore` rule, so the
+  ignore isn't guaranteed in a fresh clone.)
 - Git: don't commit or push unless asked; never rewrite history or force-push. **Merge commits
   only** — no squash, no rebase merges (`CONTRIBUTING.md`). Conventional Commit messages; link
   JIRA issues as `STIT-#<number>` in PR titles.
