@@ -10,8 +10,13 @@ from stitch.observability import (
 
 def _record(**extra) -> logging.LogRecord:
     record = logging.LogRecord(
-        name="test", level=logging.INFO, pathname=__file__, lineno=1,
-        msg="hello", args=(), exc_info=None,
+        name="test",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="hello",
+        args=(),
+        exc_info=None,
     )
     for key, value in extra.items():
         setattr(record, key, value)

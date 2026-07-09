@@ -66,7 +66,9 @@ def test_configure_tracing_merges_extra_resource_attributes(monkeypatch) -> None
 
 def test_setup_fastapi_tracing_disabled_skips_instrumentation(monkeypatch) -> None:
     calls: list[str] = []
-    monkeypatch.setattr(pkg_tracing, "instrument_fastapi", lambda _app: calls.append("fastapi"))
+    monkeypatch.setattr(
+        pkg_tracing, "instrument_fastapi", lambda _app: calls.append("fastapi")
+    )
     monkeypatch.setattr(pkg_tracing, "instrument_httpx", lambda: calls.append("httpx"))
     provider = setup_fastapi_tracing(
         object(),
@@ -80,7 +82,9 @@ def test_setup_fastapi_tracing_disabled_skips_instrumentation(monkeypatch) -> No
 def test_setup_fastapi_tracing_instruments_app_and_httpx(monkeypatch) -> None:
     calls: list[str] = []
     monkeypatch.setattr(pkg_tracing.trace, "set_tracer_provider", lambda _p: None)
-    monkeypatch.setattr(pkg_tracing, "instrument_fastapi", lambda _app: calls.append("fastapi"))
+    monkeypatch.setattr(
+        pkg_tracing, "instrument_fastapi", lambda _app: calls.append("fastapi")
+    )
     monkeypatch.setattr(pkg_tracing, "instrument_httpx", lambda: calls.append("httpx"))
     provider = setup_fastapi_tracing(
         object(),
@@ -94,7 +98,9 @@ def test_setup_fastapi_tracing_instruments_app_and_httpx(monkeypatch) -> None:
 def test_setup_fastapi_tracing_can_skip_outbound_httpx(monkeypatch) -> None:
     calls: list[str] = []
     monkeypatch.setattr(pkg_tracing.trace, "set_tracer_provider", lambda _p: None)
-    monkeypatch.setattr(pkg_tracing, "instrument_fastapi", lambda _app: calls.append("fastapi"))
+    monkeypatch.setattr(
+        pkg_tracing, "instrument_fastapi", lambda _app: calls.append("fastapi")
+    )
     monkeypatch.setattr(pkg_tracing, "instrument_httpx", lambda: calls.append("httpx"))
     setup_fastapi_tracing(
         object(),
@@ -187,9 +193,9 @@ def test_logging_span_exporter_truncates_sequence_attributes(caplog) -> None:
             span.set_attribute("tags", (long_value, "short"))
             span.set_attribute("many", tuple(str(i) for i in range(150)))
 
-    attrs = [
-        r for r in caplog.records if r.name == "stitch.observability.trace"
-    ][0].event["attributes"]
+    attrs = [r for r in caplog.records if r.name == "stitch.observability.trace"][
+        0
+    ].event["attributes"]
     tags = attrs["tags"]
     assert tags[0].endswith("…") and len(tags[0]) == 2000 + 1
     assert tags[1] == "short"
