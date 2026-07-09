@@ -1,109 +1,132 @@
-# Stitch AI Agent Instructions
+# Stitch — Agent Guidance
 
-## Operating Principles
+Stitch integrates diverse oil & gas asset datasets, applies AI-driven enrichment with human
+review, and delivers curated, trustworthy data. This file captures the things that aren't
+obvious from reading one file.
 
-* Prefer clarity over flexibility.
-* Prefer simple interfaces over powerful interfaces.
-* Prefer root-cause fixes over symptom-level fixes.
-* Preserve existing behavior unless the task explicitly requires changing it.
-* Minimize exposure of implementation details.
-* Prefer small, safe, reversible changes.
-* Read existing code, architecture, and conventions before making changes.
-* Verify assumptions against the codebase rather than inferring them.
-* Understand the problem before proposing solutions.
-* When uncertain, state the uncertainty and choose the least risky path.
-* Favor maintainability and clarity over short-term cleverness.
-* Favor sensible defaults over requiring configuration.
+Pointers: [`HACKING.md`](./HACKING.md) (setup & day-to-day workflow) ·
+[`ARCHITECTURE.md`](./ARCHITECTURE.md) · [`CONTRIBUTING.md`](./CONTRIBUTING.md) ·
+[`deployments/CI_DEPLOYMENTS.md`](./deployments/CI_DEPLOYMENTS.md) (deploy pipeline) ·
+[`deployments/PERFORMANCE.md`](./deployments/PERFORMANCE.md) (query-layer performance).
 
+## How to work here
 
-## Working Style
+- Read the surrounding code and conventions first; verify against the codebase rather than
+  inferring.
+- Make the smallest reversible change; touch only what the task requires.
+- No speculative abstractions, architecture, or dependencies — a dependency is fine when
+  justified (say why, and prefer the standard library or an existing one).
+- Ambiguous or inconsistent? Stop and ask, or name the options, rather than guessing.
+- Fix root causes; never weaken a test or mute an error to reach green.
+- Show evidence (test output, the commands you ran) — don't just assert success.
+- Architectural changes need discussion and maintainer sign-off *before* a PR
+  (`CONTRIBUTING.md`) — raise them rather than building them.
 
-Before significant changes:
+## Repository layout
 
-1. Understand the existing implementation.
-2. Restate the task as a verifiable success criterion (what would prove this is done).
-3. Explain the proposed approach.
-4. Identify meaningful tradeoffs.
-5. Ask clarifying questions when requirements are ambiguous.
-6. Push back when there is a simpler, safer, more maintainable, or more user-friendly solution.
-7. Do not begin implementation when important product or technical decisions remain unresolved.
+Monorepo managed as a **uv workspace** (`[tool.uv.workspace]` in the root `pyproject.toml`),
+plus one npm frontend. Python code uses the shared `stitch.*` namespace across every package.
 
-## AI-Agent Guardrails
+- `packages/` — shared, versioned libraries. Dependency direction flows one way:
+  `stitch-models` (generic `Source`/`Resource`/`SourceView` base types) → `stitch-ogsi`
+  (the oil & gas domain model: `OGFieldSource`, `OGFieldResource`, source keys) →
+  `stitch-client` (async HTTP client) and `stitch-auth` (JWT/Auth0 validation, permissions).
+- `deployments/` — deployable apps, each a workspace member depending on `packages/`:
+  `api` (the FastAPI service, `stitch-api`), `entity-linkage`, `stitch-llm`, `seed`,
+  plus non-Python `db`, `stitch-frontend` (React + Vite), and `otel-collector`.
 
-* Do not make unrelated changes.
-* Do not perform broad refactors unless requested.
-* Do not replace working implementations with speculative rewrites.
-* Do not create new abstractions until there is a demonstrated need.
-* Do not introduce new architecture unless explicitly justified.
-* Do not modify formatting in unrelated files.
+When you change a shared package, its consumers see it immediately (no reinstall) —
+but run that package's tests *and* its consumers' tests. See [`ARCHITECTURE.md`](./ARCHITECTURE.md)
+for the high-level map.
 
-## Code Quality
+## Common commands
 
-* Prefer boring, readable code over clever code.
-* Keep changes minimal and cohesive.
-* Use descriptive names.
-* Handle errors explicitly.
-* Do not silently ignore errors, exceptions, or failed promises.
-* Remove any dead code that your change orphaned. Do not delete pre-existing dead code, surface it in the summary instead.
-* Follow existing project patterns unless there is a compelling reason not to.
-* Optimize for future maintainers reading the code.
+Run from the repo root. The `Makefile` is the source of truth; a few high-value targets:
 
-For new files or files touched during implementation:
+- `make check` — the pre-push gate: `lint` + `test` + `format-check` + `lock-check`. Run before pushing.
+- `make lint` / `make test` / `make format` / `make format-check` / `make lock-check` — individual gates (Python via ruff, frontend via eslint/prettier/vitest).
+- `make api-dev` / `make frontend-dev` / `make dev-docker` — the three dev entrypoints (see `HACKING.md` for which to pick).
+- `make uv-sync-dev` — sync the whole workspace (`uv sync --group dev --all-packages`).
+- `make clean` — remove build artifacts, caches, and dev docker volumes.
 
-* Run available linters and formatters before committing.
-* Resolve warnings that are directly related to the change.
-* Do not ignore failing checks without explanation.
+Single-package / single-test loops (the aggregate `make test` runs everything and is slow — see
+`HACKING.md` for tight loops):
 
-## Dependency Policy
+- `make api-test`, `make entity-linkage-test`, `make stitch-llm-test`, `make seed-test`, `make frontend-test`, `make pkg-test-<name>` — per-target suites.
+- One file or test: `uv run --package <pkg> pytest <path>[::test_name] -x`, e.g.
+  `uv run --package stitch-api pytest deployments/api/tests/db/test_query.py -x`.
 
-Before adding or upgrading a dependency:
+Alembic migrations live in `deployments/api/alembic/`. Generate with `make alembic-autogenerate`,
+check drift with `make alembic-check` (CI runs `check-alembic`).
 
-1. Check whether it is actively maintained.
-2. Prefer mature, widely adopted, well-documented libraries.
-3. Use the latest stable version unless compatibility requires otherwise.
-4. Avoid deprecated, abandoned, or niche packages.
-5. Check project runtime, framework, lockfile, and package manager compatibility.
-6. Explain dependency choices briefly.
-7. Do not introduce a dependency when the standard library or an existing dependency is sufficient.
+## Architecture: the source → resource model
 
-## Testing
+The core domain logic is spread across several files and only makes sense together. Read
+these before touching query, coalescing, or permissions code:
 
-* Test changes proportionally to their risk.
-* Prefer existing test patterns and frameworks.
-* Add tests when introducing new behavior or fixing bugs where practical.
-* Do not claim something works without verification.
+- **Sources vs. resources.** Each dataset contributes typed *source* records
+  (`GemSource`, `WoodMacSource`, `RMISource`, `LLMSource` in `packages/stitch-ogsi/.../model/`).
+  A *resource* (`OGFieldResource`) is a curated field assembled from the sources linked to it.
+  The four canonical source keys (`OGSISrcKey`) are `gem`, `wm`, `rmi`, `llm`.
+- **Coalescing is per-request, not precomputed.** A resource's presented value for each field
+  is chosen from its sources by priority. The in-memory coalescer is
+  `deployments/api/src/stitch/api/coalesce.py`; its default order is
+  `SRC_PRIORITY = (rmi, gem, wm, llm)`, overridable by the DB priority tables
+  (`og_field_source_priority`, `og_field_resource_source_priority`). Query-side assembly
+  lives in `deployments/api/src/stitch/api/db/queries.py`.
+- **Licensing drives what a user sees.** A user's `licensed_sources` (set per request) filters
+  which source values coalesce into a resource — which is *why* coalescing can't be
+  precomputed to one row per resource. Get the licensing/null-shell behavior right: read the
+  existing query and permissions code rather than assuming, and confirm intent with the user
+  before changing it. FK constraints guarantee no resource exists without a source and every
+  user has at least one source permission, so don't add defensive null-handling for cases the
+  schema forbids.
+- The persistence model is EAV-style (see `deployments/api/src/stitch/api/db/model/`:
+  `resource.py`, `membership.py`, `oil_gas_field_source*.py`, the `*_priority.py` tables) with
+  a human-review flow via `merge_candidate.py`.
 
-## Git Workflow
+## Supporting services & deployment direction
 
-* Do not commit unless explicitly asked.
-* Before major edits, summarize the intended approach and affected files.
-* After changes, provide a concise summary of what changed and why.
-* Never rewrite history, force-push, or delete branches unless explicitly instructed.
+`stitch-api` is the intended central broker / control plane — it owns auth, the domain model,
+and the canonical data. `entity-linkage`, `stitch-llm`, and the ETL app are supporting
+capabilities. **This project prefers code/library boundaries over network boundaries**: don't
+reach for a new authenticated FastAPI deployment per capability. Any worker that writes
+canonical data must go through the shared domain code in `stitch-ogsi`/`stitch-models` so the
+source/coalescing/licensing invariants hold. Architectural changes need discussion and
+maintainer sign-off *before* a PR (see `CONTRIBUTING.md`) — raise them rather than building them.
 
-## Security
+## Gotchas
 
-* Never expose secrets or credentials.
-* Treat `.env*`, tokens, keys, and production configuration as sensitive.
-* Validate external inputs.
-* Prefer parameterized queries and framework-native escaping.
-* Call out security-sensitive changes explicitly.
+- **Tests run on in-memory SQLite; production is Postgres.** DB code must be portable across
+  both. In practice: prefer `Float` over `Numeric`, portable JSON columns, a refreshable
+  regular TABLE over a Postgres materialized view, and portable winner-selection
+  (`ROW_NUMBER()`). The API `conftest.py` skips creating tables marked
+  `info={"is_view": True}` — anything that must exist in the SQLite test DB must not carry
+  that marker.
+- **The frontend is configured at runtime**, not at build time, via
+  `deployments/stitch-frontend/public/config.json` (API/entity-linkage/LLM/ETL URLs, Auth0).
+  CI injects these per deploy lane.
+- **Verify `gh auth status`** before any GitHub CLI work; auth lapses are a recurring snag here.
 
-## User Experience
+## CI gates that will fail a PR
 
-* Prefer user-facing clarity and reduce cognitive load where possible.
-* Reduce cognitive load where possible.
-* Use plain language rather than technical jargon.
-* Favor interfaces that are easy for first-time users to understand.
-* Explain technical concepts in terms of user goals and outcomes.
-* Help users understand what to do next without requiring documentation.
-* Optimize for first-time users.
-* When technical concepts must be exposed, explain them in user-focused language.
-* Prefer progressive disclosure: show only what most users need and reveal advanced details on demand.
-* Use sensible, discoverable defaults; reveal advanced configuration only when needed.
+- A **forbidden-patterns** scan (`.github/workflows/admin-forbidden-patterns.yml`) blocks
+  lint/type escape-hatch comments and debug leftovers across the codebase — suppression
+  comments for ruff, Pyright, Pylint, ESLint, and the TypeScript compiler, plus stray
+  debug/trace statements left in JS or Python. Fix the root cause instead of suppressing;
+  read the workflow for the exact pattern list. (This file describes the patterns rather than
+  quoting them so it doesn't trip its own scan — the scan reads `.md` files too.)
+- A **no-plan-file** check (`.github/workflows/admin-no-plan-file.yml`) fails if any
+  `PLAN`-prefixed markdown file is tracked by git.
 
-## Currentness
+## Conventions
 
-For packages, APIs, frameworks, cloud services, security topics, and operational procedures:
-
-* Verify current documentation rather than relying solely on memory.
-* Prefer official documentation, release notes, maintainers, and primary sources.
+- **Keep changes minimal and focused**; one concern per PR (`CONTRIBUTING.md`). The
+  `code-simplifier` skill is used regularly to cut duplication.
+- **Keep the public REST API stable.** If an internal refactor would change endpoints or
+  query params, map internally instead of changing the public surface.
+- Plans, specs, and reviews are kept under the **gitignored** `.agents/docs/` — scratch only,
+  never committed.
+- Git: don't commit or push unless asked; never rewrite history or force-push. **Merge commits
+  only** — no squash, no rebase merges (`CONTRIBUTING.md`). Conventional Commit messages; link
+  JIRA issues as `STIT-#<number>` in PR titles. A `jira` skill is available.
