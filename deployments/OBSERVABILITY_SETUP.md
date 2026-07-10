@@ -1,20 +1,24 @@
 # Observability setup — Grafana + managed Prometheus (one-time, by hand)
 
 This is the **one-time** cloud setup behind the per-PR load-test dashboards. The
-repo commits the dashboards and the CI job; the shared, long-lived resources
-below are provisioned by hand (no IaC in this repo) and recorded here so the
-setup is reproducible.
+repo commits the dashboards, the k6 image, and the CI job; the shared,
+long-lived resources below are provisioned by hand (no IaC in this repo) and
+recorded here so the setup is reproducible. Each step has a **Portal** and a
+**CLI** track — do whichever you prefer.
 
-You only run this once per Azure environment. Day-to-day, the
-[`run-perf.yml`](.github/workflows/run-perf.yml) CI job publishes to what you
+You run this once per Azure environment. Day-to-day, the
+[`run-perf.yml`](../.github/workflows/run-perf.yml) CI job publishes to what you
 provision here, and you read the results in Grafana (see
-[`PERFORMANCE.md`](PERFORMANCE.md)).
+[`PERFORMANCE.md`](PERFORMANCE.md)). To try the whole thing locally first — same
+dashboards, no Azure — see the "Local stack" section in
+[`loadtest/README.md`](loadtest/README.md) (`make reboot-docker-heavy` +
+`make loadtest`).
 
 ## What you're building
 
 ```
 k6 (GitHub runner) ──remote-write (Entra token)──► Azure Monitor Workspace
-                                                     (managed Prometheus)
+  seed.dist.js + script.js                          (managed Prometheus)
                                                           ▲ PromQL
 Application Insights ◄── (already exists, traces) ── Azure Managed Grafana
                                                      ├ datasource: Prometheus (uid: stitch-prometheus)
@@ -25,7 +29,7 @@ Already in place (prereqs — do not recreate): the resource group
 (`AZURE_RESOURCE_GROUP`), the Container Apps environment
 (`AZURE_CONTAINER_APP_ENVIRONMENT`), Application Insights
 (`APPLICATIONINSIGHTS_CONNECTION_STRING`), and the CI OIDC service principal
-(`AZURE_CLIENT_ID`). Set the shell vars below before running the commands:
+(`AZURE_CLIENT_ID`). For the CLI track, set:
 
 ```bash
 RG="<AZURE_RESOURCE_GROUP>"
@@ -33,92 +37,92 @@ LOC="<region, e.g. eastus>"
 CI_PRINCIPAL="<AZURE_CLIENT_ID>"          # the OIDC app the CD pipeline logs in as
 ```
 
+---
+
 ## 1. Azure Monitor Workspace (managed Prometheus)
 
+**Portal:** Create a resource → search **"Azure Monitor Workspace"** → Create.
+Pick the same subscription / resource group / region as the Container Apps
+environment; name it `stitch-prometheus`. After it deploys, open it and note its
+**Metrics ingestion endpoint** and **Query endpoint** (Overview blade).
+
+**CLI:**
 ```bash
 az monitor account create --name stitch-prometheus -g "$RG" -l "$LOC"
 AMW_ID=$(az monitor account show --name stitch-prometheus -g "$RG" --query id -o tsv)
+az monitor account show --name stitch-prometheus -g "$RG" \
+  --query "{ingest:metrics.prometheusQueryEndpoint, id:id}"
 ```
-
-Note its **metrics ingestion endpoint** and **query endpoint** from
-`az monitor account show --name stitch-prometheus -g "$RG"` — you'll need the
-ingestion endpoint for step 2 and the query endpoint is used by Grafana in
-step 3.
 
 ## 2. Remote-write ingestion (the fiddly part)
 
-k6 must push its metrics into the workspace via Prometheus remote-write,
-authenticated with an **Entra token** for resource `https://monitor.azure.com`
-(the CI job already mints this with `az account get-access-token`).
+k6 pushes metrics via Prometheus remote-write, authenticated with an **Entra
+token** for resource `https://monitor.azure.com` (the CI job mints this with
+`az account get-access-token`; no static secret). Standalone (non-AKS)
+remote-write to an Azure Monitor Workspace goes through a **Data Collection
+Endpoint (DCE) + Data Collection Rule (DCR)**, and the exact URL shape is
+version-dependent — follow current Microsoft docs for *"send Prometheus
+remote-write to Azure Monitor Workspace"*, then:
 
-The exact remote-write ingestion path for a standalone (non-AKS) writer on
-Azure Monitor Workspace is **version-dependent** — it goes through a Data
-Collection Endpoint (DCE) + Data Collection Rule (DCR), and the URL shape has
-changed across API versions. Follow current Microsoft docs for "send Prometheus
-remote-write to Azure Monitor Workspace", then:
+**Portal:**
+1. Create a **Data Collection Endpoint** in the same region.
+2. Create a **Data Collection Rule** that sends to the `stitch-prometheus`
+   workspace, associated with that DCE.
+3. IAM (on the DCR) → Add role assignment → **Monitoring Metrics Publisher** →
+   assign to the CI service principal (`AZURE_CLIENT_ID`).
+4. Copy the DCE's remote-write ingestion URL (ends in `/api/v1/write`).
 
-1. Create the DCE + DCR targeting `stitch-prometheus`.
-2. Grant the **CI principal** the **Monitoring Metrics Publisher** role on the
-   DCR (so the runner's token can ingest):
-   ```bash
-   az role assignment create \
-     --assignee "$CI_PRINCIPAL" \
-     --role "Monitoring Metrics Publisher" \
-     --scope "<DCR resource id>"
-   ```
-3. Capture the full remote-write URL (the `.../api/v1/write` ingestion URL) — it
-   becomes `LOADTEST_PROMETHEUS_RW_URL` in step 4.
+**CLI:** (create DCE/DCR per current docs, then:)
+```bash
+az role assignment create \
+  --assignee "$CI_PRINCIPAL" \
+  --role "Monitoring Metrics Publisher" \
+  --scope "<DCR resource id>"
+```
 
-> **If this proves fiddly, use the fallback** — it is fully self-contained and
-> guaranteed to work with k6 remote-write + Grafana. Stand up a small Prometheus
-> as its own Container App in the existing environment:
+Capture the ingestion URL — it becomes `LOADTEST_PROMETHEUS_RW_URL` in step 4.
+
+> **Fallback if remote-write proves fiddly** — fully self-contained and
+> guaranteed to work with k6 + Grafana. Run a small Prometheus as its own
+> Container App:
 > ```bash
 > az containerapp create -g "$RG" \
 >   --environment "$AZURE_CONTAINER_APP_ENVIRONMENT" \
->   --name loadtest-prometheus \
->   --image prom/prometheus:latest \
+>   --name loadtest-prometheus --image prom/prometheus:latest \
 >   --args '--config.file=/etc/prometheus/prometheus.yml' \
 >          '--storage.tsdb.retention.time=30d' \
 >          '--web.enable-remote-write-receiver' \
->   --ingress internal --target-port 9090 --min-replicas 1
+>   --ingress external --target-port 9090 --min-replicas 1
 > ```
-> Then `LOADTEST_PROMETHEUS_RW_URL=http://loadtest-prometheus/api/v1/write`
-> (internal ingress, reachable from the runner only if the runner is in-network —
-> otherwise use external ingress + a shared-secret header). Point Grafana's
-> Prometheus datasource at `http://loadtest-prometheus:9090`. This trades the
-> managed workspace for a single always-on container you operate yourself; retention
-> is whatever you set on the flag. Prefer the managed workspace if you can get
-> remote-write working.
+> Then `LOADTEST_PROMETHEUS_RW_URL=https://<fqdn>/api/v1/write` and point
+> Grafana's Prometheus datasource at `https://<fqdn>`. (Add a shared-secret
+> header or restrict ingress if you expose it externally.) Prefer the managed
+> workspace if you can get remote-write working.
 
 ## 3. Azure Managed Grafana
 
+**Portal:** Create a resource → **"Azure Managed Grafana"** → Create (name
+`stitch-grafana`, same RG/region). Then in the Grafana instance:
+- **Connections → Data sources → Add → Prometheus.** URL = the workspace query
+  endpoint (step 1); auth = **Microsoft Entra Managed Identity**. Set its **UID
+  to `stitch-prometheus`** (Settings, at the bottom) — the committed dashboards
+  reference that UID.
+- **Add → Azure Monitor** (built-in), scoped to the subscription/RG, for
+  drilling into App Insights traces.
+- **Dashboards → Import** the two JSON files from
+  [`loadtest/grafana/dashboards/`](loadtest/grafana/dashboards/).
+
+**CLI:**
 ```bash
 az extension add -n amg --upgrade
 az grafana create --name stitch-grafana -g "$RG" -l "$LOC"
-GRAFANA_ID=$(az grafana show --name stitch-grafana -g "$RG" --query id -o tsv)
-```
+GRAFANA_MI=$(az grafana show --name stitch-grafana -g "$RG" --query identity.principalId -o tsv)
 
-**Datasources** (Grafana → Connections → Data sources):
+# Grafana's MI needs to read the workspace's Prometheus metrics.
+az role assignment create --assignee "$GRAFANA_MI" \
+  --role "Monitoring Data Reader" --scope "$AMW_ID"
 
-- **Prometheus** — point at the workspace's query endpoint (step 1). Set its
-  **UID to `stitch-prometheus`** — the committed dashboards reference that UID.
-  Grafana's managed identity needs the **Monitoring Data Reader** role on the
-  workspace to query it:
-  ```bash
-  GRAFANA_MI=$(az grafana show --name stitch-grafana -g "$RG" \
-    --query identity.principalId -o tsv)
-  az role assignment create --assignee "$GRAFANA_MI" \
-    --role "Monitoring Data Reader" --scope "$AMW_ID"
-  ```
-- **Azure Monitor** — the built-in datasource, scoped to the subscription/RG, for
-  drilling from a Prometheus regression into the App Insights trace. Grafana's
-  managed identity needs **Monitoring Reader** / **Reader** on the App Insights
-  resource (or RG).
-
-**Import the dashboards** (committed in
-[`loadtest/grafana/dashboards/`](loadtest/grafana/dashboards/)):
-
-```bash
+# Datasource UID must be stitch-prometheus (add via UI, or `az grafana data-source create`).
 az grafana dashboard import --name stitch-grafana -g "$RG" \
   --definition deployments/loadtest/grafana/dashboards/k6-pr-compare.json
 az grafana dashboard import --name stitch-grafana -g "$RG" \
@@ -126,82 +130,56 @@ az grafana dashboard import --name stitch-grafana -g "$RG" \
 ```
 
 Re-import after editing the JSON in-repo to keep Grafana in sync (dashboards are
-version-controlled here, not in Grafana).
+version-controlled here, not in Grafana). The Azure Monitor datasource also needs
+**Monitoring Reader** (or **Reader**) on the App Insights resource / RG.
 
 ## 4. GitHub Actions variables
 
 The CI job runs in the **`development`** GitHub Environment. Set these as
-**environment variables** on that environment (Settings → Environments →
-development → Variables):
+**environment variables** there (Settings → Environments → development →
+Variables), or with the CLI:
 
 | Variable | Value |
 |---|---|
 | `LOADTEST_PROMETHEUS_RW_URL` | The remote-write ingestion URL from step 2. |
-| `GRAFANA_URL` | `https://<stitch-grafana endpoint>` (from `az grafana show ... --query properties.endpoint`). |
+| `GRAFANA_URL` | `https://<grafana endpoint>` (`az grafana show … --query properties.endpoint`). |
 
-Until `LOADTEST_PROMETHEUS_RW_URL` is set, the load test still runs each PR and
-prints its summary — it just doesn't publish (no dashboard data, and the PR
+```bash
+gh variable set LOADTEST_PROMETHEUS_RW_URL --env development --body "<ingestion url>"
+gh variable set GRAFANA_URL --env development --body "https://<grafana endpoint>"
+```
+
+Until `LOADTEST_PROMETHEUS_RW_URL` is set, the seed and load test still run and
+print their summaries — they just don't publish (no dashboard data, and the PR
 comment carries a warning). Nothing blocks a PR before this setup is done.
 
-## 5. Optional — server-side RED (span-derived metrics)
+## 5. Optional — server-side RED (span-derived metrics) on Azure
 
 The `api-live-red` dashboard shows rate/errors/duration derived from the API's
 **spans** (no app-side metrics code), via the collector's `spanmetrics`
-connector. It is **not enabled by default** because the live per-lane collector
-must not point a remote-write exporter at an endpoint that doesn't exist yet
-(a bad exporter stops the whole trace pipeline).
+connector. This is **already enabled locally** (see
+[`otel-collector/config.yaml`](otel-collector/config.yaml)); on Azure it is
+**opt-in**, because the live per-lane collector must not point a remote-write
+exporter at an endpoint that doesn't exist yet (a bad exporter stops the whole
+trace pipeline).
 
-To enable it, add to [`otel-collector/config-azure.yaml`](otel-collector/config-azure.yaml):
-
-```yaml
-connectors:
-  spanmetrics:
-    namespace: spanmetrics
-    histogram:
-      unit: ms
-      explicit:
-        buckets: [5ms, 10ms, 25ms, 50ms, 75ms, 100ms, 250ms, 500ms, 750ms, 1s, 2500ms, 5s, 10s]
-    dimensions:
-      - name: http.route
-      - name: http.request.method
-      - name: http.response.status_code
-    exemplars:
-      enabled: false
-    metrics_flush_interval: 15s
-
-exporters:
-  # ... existing azuremonitor, debug ...
-  prometheusremotewrite:
-    endpoint: ${PROMETHEUS_REMOTE_WRITE_ENDPOINT}   # the workspace ingestion URL
-    auth:
-      authenticator: oauth2client   # Entra token; configure via the collector's managed identity
-
-service:
-  pipelines:
-    traces:
-      receivers: [otlp]
-      processors: [batch]
-      exporters: [azuremonitor, debug, spanmetrics]  # spanmetrics = connector input
-    metrics/spanmetrics:
-      receivers: [spanmetrics]
-      processors: [batch]
-      exporters: [prometheusremotewrite]
-```
-
-Then: grant the collector Container App's managed identity **Monitoring Metrics
-Publisher** on the DCR, and set `PROMETHEUS_REMOTE_WRITE_ENDPOINT` on the
-collector app.
+To enable it, add to [`otel-collector/config-azure.yaml`](otel-collector/config-azure.yaml)
+the same `spanmetrics` connector as the local config, plus a
+`prometheusremotewrite` exporter to the workspace (Entra auth via the collector
+Container App's managed identity), wired into a `metrics/spanmetrics` pipeline.
+Then grant that managed identity **Monitoring Metrics Publisher** on the DCR and
+set the remote-write endpoint on the collector app.
 
 > **Caveat:** the collector is deployed **once per lane**
 > (`{lane}-otel-collector`), so all `pr-{N}` apps in `development` share it and
 > their spans aggregate under `service_name=stitch-api` with no per-PR label. The
 > `api-live-red` dashboard is therefore a lane-wide live view, **not** per-PR. To
-> separate PRs, add `deployment.environment` (already set to `pr-{N}` on each app)
-> as a spanmetrics dimension and a Grafana template variable. Left as a follow-up.
+> separate PRs, add `deployment.environment` (already `pr-{N}` on each app) as a
+> spanmetrics dimension and a Grafana template variable. Left as a follow-up.
 
 ## 6. Cost & retention
 
-Managed Prometheus bills per sample ingested/queried. A 1–2 min flat-out test
-per PR is modest, but every PR adds up — set a sane retention on the workspace
-(or the fallback Prometheus `--storage.tsdb.retention.time`) and revisit if
-volume grows.
+Managed Prometheus bills per sample ingested/queried. A ~90s flat-out test plus
+the seed per PR is modest, but every PR adds up — set a sane retention on the
+workspace (or the fallback Prometheus `--storage.tsdb.retention.time`) and
+revisit if volume grows.
