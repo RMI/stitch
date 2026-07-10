@@ -82,11 +82,10 @@ start — only genuinely slow queries are recorded, keeping log volume sane).
 ## Step 2 — Drive traffic
 
 Make sure the DB has realistic row counts first. The `full` profile (used by
-`make reboot-docker` and `make dev-docker`) includes the `seed` service, so a
-fresh stack is already seeded; tune volume by setting `SEED_FAKER_POST_COUNT` in
-`.env` (compose maps it to the seed service's `FAKER_POST_COUNT` — a bare
-`FAKER_POST_COUNT` in `.env` is ignored; see [`deployments/seed`](seed)). To
-re-seed an existing stack:
+`make reboot-docker` and `make dev-docker`) includes the `seed` service (the k6
+seeder — [`deployments/loadtest`](loadtest)), so a fresh stack is already seeded;
+tune volume by setting `SEED_VOLUME` in `.env` (how many faker-generated fields
+to create, on top of the committed demo data). To re-seed an existing stack:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.local.yml \
@@ -286,11 +285,11 @@ COMPOSE="docker compose -f docker-compose.yml -f docker-compose.local.yml"
 
 ### Variant by data volume (re-seed between runs)
 
-The seed volume is controlled from `.env` via `SEED_FAKER_POST_COUNT` (the
-`seed` service reads it; default 5). Re-running the seed service **adds** more
-rows, so you can build up a volume ladder on a live stack.
+The seed volume is controlled from `.env` via `SEED_VOLUME` (how many
+faker-generated fields the k6 seeder creates; default 50). Re-running the seed
+service **adds** more rows, so you can build up a volume ladder on a live stack.
 
-1. **Start the stack at the first volume.** Set `SEED_FAKER_POST_COUNT=1000` in
+1. **Start the stack at the first volume.** Set `SEED_VOLUME=1000` in
    `.env`, then bring it up — the `full` profile seeds automatically:
 
    ```bash
@@ -306,7 +305,7 @@ rows, so you can build up a volume ladder on a live stack.
    done
    ```
 
-3. **Re-seed to a larger volume.** Bump `SEED_FAKER_POST_COUNT` (e.g. to
+3. **Re-seed to a larger volume.** Bump `SEED_VOLUME` (e.g. to
    `50000`) in `.env`, then re-run *only* the seed service against the running
    stack:
 
@@ -345,7 +344,7 @@ rows, so you can build up a volume ladder on a live stack.
 
 > Re-seeding is **cumulative** (volume keeps growing), which is what you want for
 > a volume ladder. For *independent*, repeatable volumes, set
-> `SEED_FAKER_POST_COUNT` and run `make reboot-docker` before each labelled run —
+> `SEED_VOLUME` and run `make reboot-docker` before each labelled run —
 > it wipes the DB so the volumes don't stack.
 
 ### Variant by query params
