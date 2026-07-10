@@ -125,6 +125,31 @@ def test_setup_fastapi_tracing_can_skip_outbound_httpx(monkeypatch) -> None:
     assert calls == ["fastapi"]
 
 
+def test_setup_fastapi_tracing_threads_otlp_protocol(monkeypatch) -> None:
+    # Guards the Azure export path: the http protocol from settings must reach
+    # configure_tracing, or it silently defaults to grpc and Azure's http/OTLP
+    # ingestion (…/v1/traces over Container Apps ingress) breaks.
+    captured: dict[str, object] = {}
+
+    def _capture(**kwargs):
+        captured.update(kwargs)
+        return None  # None -> setup_fastapi_tracing skips instrumentation
+
+    monkeypatch.setattr(pkg_tracing, "configure_tracing", _capture)
+    setup_fastapi_tracing(
+        object(),
+        service_name="svc",
+        settings=OTelSettings(
+            otel_traces_exporter="otlp",
+            otel_exporter_otlp_protocol="http",
+            otel_exporter_otlp_endpoint="https://collector.example/v1/traces",
+        ),
+    )
+    assert captured["exporter"] == "otlp"
+    assert captured["otlp_protocol"] == "http"
+    assert captured["otlp_endpoint"] == "https://collector.example/v1/traces"
+
+
 def test_setup_sqlalchemy_tracing_noop_when_disabled(monkeypatch) -> None:
     calls: list[object] = []
     monkeypatch.setattr(pkg_tracing, "instrument_sqlalchemy", lambda e: calls.append(e))
@@ -152,6 +177,8 @@ def test_setup_sqlalchemy_tracing_instruments_when_enabled(monkeypatch) -> None:
         is True
     )
     assert calls == [engine]
+
+
 def test_logging_span_exporter_emits_one_record_per_span(caplog) -> None:
     # A local provider + the exporter under test; never touches the global.
     exporter = LoggingSpanExporter()
