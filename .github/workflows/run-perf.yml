@@ -1,0 +1,262 @@
+name: Run perf (seed + load test)
+
+# Unified seed + load-test job. Both run as `docker run` in the GitHub runner
+# (runners are Azure-hosted; the comparison signal we care about is server-side).
+# Either half is independently toggleable:
+#   run-seed=true,  run-loadtest=false  -> seed only (old run-seed.yml behavior)
+#   run-seed=false, run-loadtest=true   -> load-test only (re-run on a populated DB)
+#   both true                           -> seed THEN load-test (fresh PR DB)
+#
+# The load-test step streams k6 results to Azure Monitor managed Prometheus via
+# remote-write, tagged pr/run_id/sha/run so Grafana can compare across PRs and
+# across runs within a PR. If the remote-write endpoint var is not yet
+# provisioned (see deployments/OBSERVABILITY_SETUP.md), k6 still runs and prints
+# its summary — it just does not publish, so this never blocks a PR.
+
+on:
+  workflow_call:
+    inputs:
+      deployment-lane:
+        description: "Deployment lane and GitHub Environment name"
+        required: true
+        type: string
+      api-url:
+        description: "Base API URL for the deployed API (…/api/v1)"
+        required: true
+        type: string
+      run-seed:
+        description: "Seed the deployed API before testing"
+        required: false
+        default: false
+        type: boolean
+      run-loadtest:
+        description: "Run the k6 load test"
+        required: false
+        default: true
+        type: boolean
+      seed-image-name:
+        description: "Full pushed seed image (host/registry, name, digest). Required when run-seed."
+        required: false
+        default: ""
+        type: string
+      loadtest-image-name:
+        description: "Full pushed k6 image (host/registry, name, digest). Required when run-loadtest."
+        required: false
+        default: ""
+        type: string
+      k6-vus:
+        description: "k6 preallocated virtual users"
+        required: false
+        default: "20"
+        type: string
+      k6-rate:
+        description: "k6 target arrival rate (req/s)"
+        required: false
+        default: "50"
+        type: string
+      k6-duration:
+        description: "k6 run duration (flat out)"
+        required: false
+        default: "90s"
+        type: string
+    secrets:
+      stitch-client-bearer-token:
+        required: true
+      azure-client-id:
+        required: false
+      azure-tenant-id:
+        required: false
+      azure-subscription-id:
+        required: false
+
+jobs:
+  run-perf:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.deployment-lane }}
+    permissions:
+      contents: read
+      packages: read
+      id-token: write # mint the Monitor remote-write token via OIDC az login
+    timeout-minutes: 25
+
+    steps:
+      - name: Log in to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # ── Seed ────────────────────────────────────────────────────────────
+      - name: Pull seed image
+        if: ${{ inputs.run-seed }}
+        run: docker pull "${{ inputs.seed-image-name }}"
+
+      - name: Run seed job
+        if: ${{ inputs.run-seed }}
+        env:
+          API_BASE_URL: ${{ inputs.api-url }}
+          FAKER_POST_COUNT: "0"
+          LOG_LEVEL: "INFO"
+          RANDOM_SEED: "8675309"
+          SEED_SOURCE: "mixed"
+          NULL_PROBABILITY: "0.3"
+          STATIC_PAYLOAD_DIR: "/mnt/data"
+          STITCH_CLIENT_BEARER_TOKEN: ${{ secrets.stitch-client-bearer-token }}
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -e LOG_LEVEL \
+            -e API_BASE_URL \
+            -e FAKER_POST_COUNT \
+            -e RANDOM_SEED \
+            -e SEED_SOURCE \
+            -e NULL_PROBABILITY \
+            -e STATIC_PAYLOAD_DIR \
+            -e STITCH_CLIENT_BEARER_TOKEN \
+            -v "$GITHUB_WORKSPACE/deployments/seed/data:/mnt/data:ro" \
+            "${{ inputs.seed-image-name }}"
+
+      # ── Load test ───────────────────────────────────────────────────────
+      - name: Pull k6 image
+        if: ${{ inputs.run-loadtest }}
+        run: docker pull "${{ inputs.loadtest-image-name }}"
+
+      - name: Warm up the API
+        # Development apps scale to zero; hit the API until it responds 200 so
+        # cold-start latency does not pollute the first load-test samples.
+        if: ${{ inputs.run-loadtest }}
+        env:
+          API_URL: ${{ inputs.api-url }}
+          BEARER: ${{ secrets.stitch-client-bearer-token }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Bearer $BEARER" \
+              "$API_URL/oil-gas-fields/?page=1&page_size=1" || echo 000)
+            echo "warm-up attempt $i -> $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 3
+          done
+          echo "::warning::API did not return 200 during warm-up; running load test anyway"
+
+      - name: Azure login
+        # Only needed to mint the managed-Prometheus remote-write token.
+        if: ${{ inputs.run-loadtest && vars.LOADTEST_PROMETHEUS_RW_URL != '' }}
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.azure-client-id }}
+          tenant-id: ${{ secrets.azure-tenant-id }}
+          subscription-id: ${{ secrets.azure-subscription-id }}
+
+      - name: Run k6 load test
+        if: ${{ inputs.run-loadtest }}
+        env:
+          API_URL: ${{ inputs.api-url }}
+          BEARER_TOKEN: ${{ secrets.stitch-client-bearer-token }}
+          K6_VUS: ${{ inputs.k6-vus }}
+          K6_RATE: ${{ inputs.k6-rate }}
+          K6_DURATION: ${{ inputs.k6-duration }}
+          RW_URL: ${{ vars.LOADTEST_PROMETHEUS_RW_URL }}
+          IMAGE: ${{ inputs.loadtest-image-name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_ID: ${{ github.run_id }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+
+          # k6's script does `${BASE_URL}/api/v1`, so strip the /api/v1 suffix.
+          BASE_URL="${API_URL%/api/v1}"
+          SHORT_SHA="${HEAD_SHA:0:7}"
+          PR="${PR_NUMBER:-0}"
+          RUN="pr${PR}-${RUN_ID}"
+
+          args=(
+            --tag "pr=${PR}"
+            --tag "run_id=${RUN_ID}"
+            --tag "sha=${SHORT_SHA}"
+            --tag "run=${RUN}"
+          )
+          envs=(
+            -e "BASE_URL=${BASE_URL}"
+            -e BEARER_TOKEN
+            -e K6_VUS -e K6_RATE -e K6_DURATION
+          )
+
+          if [ -n "${RW_URL:-}" ]; then
+            echo "Streaming k6 metrics to managed Prometheus remote-write."
+            TOKEN=$(az account get-access-token \
+              --resource https://monitor.azure.com \
+              --query accessToken -o tsv)
+            envs+=(
+              -e "K6_PROMETHEUS_RW_SERVER_URL=${RW_URL}"
+              -e "K6_PROMETHEUS_RW_TREND_STATS=p(90),p(95),p(99),avg,min,max,med"
+              -e "K6_PROMETHEUS_RW_BEARER_TOKEN=${TOKEN}"
+            )
+            args+=(--out experimental-prometheus-rw)
+          else
+            echo "::warning::LOADTEST_PROMETHEUS_RW_URL is not set; running k6 without remote-write (summary only). See deployments/OBSERVABILITY_SETUP.md."
+          fi
+
+          docker run --rm "${envs[@]}" "$IMAGE" "${args[@]}"
+
+      # ── PR comment ──────────────────────────────────────────────────────
+      - name: Write comment JSON
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
+        env:
+          GRAFANA_URL: ${{ vars.GRAFANA_URL }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_ID: ${{ github.run_id }}
+          RAN_SEED: ${{ inputs.run-seed }}
+          RAN_LOADTEST: ${{ inputs.run-loadtest }}
+          PUBLISHED: ${{ vars.LOADTEST_PROMETHEUS_RW_URL != '' }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/comment-json
+          json_file="/tmp/comment-json/comment-json-perf.json"
+
+          run="pr${PR_NUMBER}-${RUN_ID}"
+          if [ -n "${GRAFANA_URL:-}" ]; then
+            link="[open](${GRAFANA_URL%/}/d/k6-pr-compare?var-pr=${PR_NUMBER}&var-run=${run})"
+          else
+            link='_set the `GRAFANA_URL` variable to link the dashboard_'
+          fi
+
+          warnings='[]'
+          if [ "${RAN_LOADTEST}" = "true" ] && [ "${PUBLISHED}" != "true" ]; then
+            warnings='["load test ran without remote-write (LOADTEST_PROMETHEUS_RW_URL unset) — no dashboard data"]'
+          fi
+
+          jq -n \
+            --arg section "jobs" \
+            --arg kind "perf_run" \
+            --arg name "perf" \
+            --arg seeded "${RAN_SEED}" \
+            --arg loadtested "${RAN_LOADTEST}" \
+            --arg run "$run" \
+            --arg dashboard "$link" \
+            --argjson warnings "$warnings" \
+            '{
+              "section": $section,
+              "kind": $kind,
+              "name": $name,
+              "warnings": $warnings,
+              "data": {
+                "seeded": $seeded,
+                "loadtested": $loadtested,
+                "run": $run,
+                "dashboard": $dashboard
+              }
+            }' > "$json_file"
+
+          jq empty "$json_file"
+          cat "$json_file"
+
+      - name: Upload comment JSON artifact
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: comment-json-perf
+          path: /tmp/comment-json/*.json
+          if-no-files-found: error
