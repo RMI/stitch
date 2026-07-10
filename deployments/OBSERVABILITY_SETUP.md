@@ -58,26 +58,45 @@ az monitor account show --name stitch-prometheus -g "$RG" \
 
 k6 pushes metrics via Prometheus remote-write, authenticated with an **Entra
 token** for resource `https://monitor.azure.com` (the CI job mints this with
-`az account get-access-token`; no static secret). Standalone (non-AKS)
-remote-write to an Azure Monitor Workspace goes through a **Data Collection
-Endpoint (DCE) + Data Collection Rule (DCR)**, and the exact URL shape is
-version-dependent — follow current Microsoft docs for *"send Prometheus
-remote-write to Azure Monitor Workspace"*, then:
+`az account get-access-token`; no static secret). Remote-write to an Azure
+Monitor Workspace goes through a **Data Collection Endpoint (DCE) + Data
+Collection Rule (DCR)** — but **you do not create these by hand**: creating the
+workspace in Step 1 auto-provisions both (both named `stitch-prometheus`, shown
+on the workspace **Overview** as "Data collection endpoint" and "Data collection
+rule"). **Do not** use the generic "Create Data Collection Rule" wizard — its
+telemetry types (Agent-based / Platform telemetry) are not the Prometheus
+remote-write path. Reuse the auto-created pair:
 
 **Portal:**
-1. Create a **Data Collection Endpoint** in the same region.
-2. Create a **Data Collection Rule** that sends to the `stitch-prometheus`
-   workspace, associated with that DCE.
-3. IAM (on the DCR) → Add role assignment → **Monitoring Metrics Publisher** →
-   assign to the CI service principal (`AZURE_CLIENT_ID`).
-4. Copy the DCE's remote-write ingestion URL (ends in `/api/v1/write`).
+1. On the workspace **Overview**, note the **Metrics ingestion endpoint**
+   (e.g. `https://stitch-prometheus-wxjg.westus2-1.metrics.ingest.monitor.azure.com`).
+2. Open the linked **Data collection rule → `stitch-prometheus` → JSON View** and
+   copy `properties.immutableId` (format `dcr-…`).
+3. On that DCR → **Access control (IAM)** → Add role assignment →
+   **Monitoring Metrics Publisher** → assign to the CI service principal
+   (`AZURE_CLIENT_ID`). **This needs `Owner` or `User Access Administrator`** on
+   the DCR (or its RG/subscription) — if you're a limited admin, hand the CLI
+   command below to someone who has it. Assigning at the **resource-group** scope
+   instead is fine (covers future DCRs too); DCR scope is tighter.
+4. Assemble the remote-write URL (this becomes `LOADTEST_PROMETHEUS_RW_URL` in
+   step 4):
+   ```
+   <metrics-ingestion-endpoint>/dataCollectionRules/<immutableId>/streams/Microsoft-PrometheusMetrics/api/v1/write?api-version=2023-04-24
+   ```
+   (the `api-version` is version-dependent — confirm against the current docs).
 
-**CLI:** (create DCE/DCR per current docs, then:)
+> **Order matters:** don't set `LOADTEST_PROMETHEUS_RW_URL` (step 4) until the
+> role assignment above exists. If the URL is set but the principal can't publish,
+> k6's remote-write gets 403s and can fail the load-test step. While it's unset,
+> the job runs summary-only and never blocks a PR.
+
+**CLI:** (grant the role — requires Owner / User Access Administrator on the scope)
 ```bash
 az role assignment create \
   --assignee "$CI_PRINCIPAL" \
+  --assignee-principal-type ServicePrincipal \
   --role "Monitoring Metrics Publisher" \
-  --scope "<DCR resource id>"
+  --scope "<DCR resource id>"   # DCR -> JSON View -> top-level "id"
 ```
 
 Capture the ingestion URL — it becomes `LOADTEST_PROMETHEUS_RW_URL` in step 4.
