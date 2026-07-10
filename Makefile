@@ -291,7 +291,7 @@ loadtest:
 # faker volume:  make seed N=500   (N=0 seeds only the committed demo data).
 N ?= 50
 seed:
-	SEED_VOLUME=$(N) $(DOCKER_COMPOSE_DEV) --profile seed run --rm --build seed
+	SEED_VOLUME=$(N) $(DOCKER_COMPOSE_DEV) --profile api --profile seed run --rm --build seed
 
 follow-stack-logs:
 	$(DOCKER_COMPOSE_DEV) --profile full logs -f
