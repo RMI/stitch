@@ -24,6 +24,10 @@
         "dismiss_stale_reviews_on_push": true,
         "required_reviewers": [],
         "require_code_owner_review": true,
+        "dismissal_restriction": {
+          "enabled": false,
+          "allowed_actors": []
+        },
         "require_last_push_approval": true,
         "required_review_thread_resolution": true,
         "allowed_merge_methods": ["merge"]
