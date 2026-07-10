@@ -1,8 +1,9 @@
 UV ?= uv
 DOCKER_COMPOSE := docker compose -f docker-compose.yml
 DOCKER_COMPOSE_DEV := $(DOCKER_COMPOSE) -f docker-compose.local.yml
-# Adds the OpenTelemetry collector + Jaeger sidecars (the "heavy" stack).
-DOCKER_COMPOSE_OTEL := $(DOCKER_COMPOSE_DEV) -f docker-compose.otel.yml
+# Adds the observability + load-test sidecars (OTel collector, Jaeger,
+# Prometheus, Grafana, k6) — the "heavy" stack.
+DOCKER_COMPOSE_OBSERVABILITY := $(DOCKER_COMPOSE_DEV) -f docker-compose.observability.yml
 PYTEST := $(UV) run pytest
 RUFF := $(UV) run ruff
 TEST_PKG := ./scripts/test-package.py
@@ -48,8 +49,8 @@ py-lint: uv-dev
 py-test: py-deployment-test pkg-test
 py-test-exact: py-deployment-test-exact pkg-test-exact
 
-py-deployment-test: api-test entity-linkage-test seed-test stitch-llm-test
-py-deployment-test-exact: api-test-exact entity-linkage-test-exact seed-test-exact stitch-llm-test-exact
+py-deployment-test: api-test entity-linkage-test stitch-llm-test
+py-deployment-test-exact: api-test-exact entity-linkage-test-exact stitch-llm-test-exact
 
 py-format-check: uv-dev
 	$(RUFF) format --check
@@ -151,7 +152,7 @@ alembic-check:
 		alembic -c deployments/api/alembic.ini check
 
 stack-api-dev:
-	SEED_API_BASE_URL=http://host.docker.internal:8000/api/v1 \
+	SEED_BASE_URL=http://host.docker.internal:8000 \
 	ENTITY_LINKAGE_API_BASE_URL=http://host.docker.internal:8000/api/v1 \
 	VITE_GIT_SHA=$(GIT_SHA) \
 	VITE_BUILD_ID=$(BUILD_ID) \
@@ -178,11 +179,6 @@ stitch-llm-test:
 	$(MAKE) uv-test-target PKG=stitch-llm TEST_PATH=deployments/stitch-llm
 stitch-llm-test-exact:
 	$(MAKE) uv-test-target-exact PKG=stitch-llm TEST_PATH=deployments/stitch-llm
-
-seed-test:
-	$(MAKE) uv-test-target PKG=stitch-seed TEST_PATH=deployments/seed
-seed-test-exact:
-	$(MAKE) uv-test-target-exact PKG=stitch-seed TEST_PATH=deployments/seed
 
 # ---------------------------------------------------------------------
 # stitch-frontend
@@ -213,7 +209,7 @@ frontend-dev: $(FRONTEND_INSTALL_STAMP) stack-frontend-dev
 	$(NPM) run dev
 
 stack-frontend-dev:
-	SEED_API_BASE_URL=http://api:8000/api/v1 \
+	SEED_BASE_URL=http://api:8000 \
 	API_GIT_SHA=$(GIT_SHA) \
 	API_BUILD_ID=$(BUILD_ID) \
 	API_BUILD_TIME=$(BUILD_TIME) \
@@ -270,12 +266,20 @@ dev-docker:
 reboot-docker: clean-docker
 	$(DOCKER_COMPOSE_DEV) --profile full up --build
 
-# Like reboot-docker, but also brings up the OTel collector + Jaeger. The otel
-# compose file overrides the API to otlp export, so the default `console` path
-# (and a collector-free `make reboot-docker`) is never aimed at an absent
-# collector. Jaeger UI: http://localhost:16686
+# Like reboot-docker, but also brings up the observability + dashboard stack
+# (OTel collector + Jaeger + Prometheus + Grafana). To populate the live RED
+# dashboard, enable OTEL export in .env (OTEL_ENABLED=true,
+# OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317).
+#   Jaeger UI: http://localhost:16686 · Grafana: http://localhost:3001
 reboot-docker-heavy: clean-docker
-	$(DOCKER_COMPOSE_OTEL) --profile full up --build
+	$(DOCKER_COMPOSE_OBSERVABILITY) --profile full up --build
+
+# Run the k6 load test once against the running heavy stack; metrics stream to
+# the local Prometheus and render in Grafana (http://localhost:3001). Requires
+# `make reboot-docker-heavy` first. Seed volume first for meaningful numbers.
+loadtest:
+	$(DOCKER_COMPOSE_OBSERVABILITY) --profile loadtest run --rm k6 \
+		/scripts/script.js --tag run=local-$(GIT_SHORT_SHA)
 
 follow-stack-logs:
 	$(DOCKER_COMPOSE_DEV) --profile full logs -f
@@ -303,7 +307,6 @@ follow-stack-logs:
 	# API
 	api-build api-test api-test-exact api-dev stack-api-dev \
 	alembic-autogenerate \
-	seed-test seed-test-exact \
 	stitch-llm-build stitch-llm-test stitch-llm-test-exact \
 	\
 	# Frontend
@@ -312,5 +315,5 @@ follow-stack-logs:
 	frontend-dev frontend-clean \
 	\
 	# Docker
-	clean-docker dev-docker reboot-docker reboot-docker-heavy \
+	clean-docker dev-docker reboot-docker reboot-docker-heavy loadtest \
 	stack-frontend-dev follow-stack-logs

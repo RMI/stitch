@@ -40,29 +40,28 @@ services:
     profiles: ["alembic-generate"]
     restart: "no"
 
+  # Seeder — the k6 image running seed.dist.js (faker-generated + committed demo
+  # data). Replaces the former Python stitch-seed service; the demo JSON is baked
+  # into the image (deployments/loadtest/data). Populate-only here (no
+  # remote-write); create-latency metrics are a cloud/CI concern (run-perf).
   seed:
     build:
       context: .
-      dockerfile: deployments/seed/Dockerfile
-    env_file:
-      - .env
+      dockerfile: deployments/loadtest/Dockerfile
     environment:
-      # Inside compose network, talk to the api service by name.
-      API_BASE_URL: ${SEED_API_BASE_URL:-http://api:8000/api/v1}
-      STITCH_CLIENT_BEARER_TOKEN: ${STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN:?STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN must be set}
-      FAKER_POST_COUNT: ${SEED_FAKER_POST_COUNT:-5}
-      LOG_LEVEL: ${SEED_LOG_LEVEL:-INFO}
-      RANDOM_SEED: 8675309
-      SEED_SOURCE: "mixed"
-      NULL_PROBABILITY: 0.3
-      STATIC_PAYLOAD_DIR: "/mnt/data"
+      # Inside compose network, talk to the api service by name. seed.js appends
+      # /api/v1, so give it the origin only.
+      BASE_URL: ${SEED_BASE_URL:-http://api:8000}
+      BEARER_TOKEN: ${STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN:?STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN must be set}
+      SEED_VOLUME: ${SEED_VOLUME:-50}
+      SEED_VUS: ${SEED_VUS:-5}
+      SEED_RANDOM_SEED: 8675309
+    command: ["/scripts/seed.dist.js"]
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       api:
         condition: service_healthy
-    volumes:
-      - ./deployments/seed/data:/mnt/data:ro
     restart: "no"
     profiles: ["seed", "full"]
 

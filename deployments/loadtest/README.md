@@ -1,10 +1,11 @@
-# Load testing (k6) & PR-comparison dashboards
+# Load testing (k6), seeding & PR-comparison dashboards
 
 A flat-out [k6](https://k6.io) load test of the stitch API's read-heavy
-`oil-gas-fields` endpoints. It runs on **every PR** against that PR's freshly
+`oil-gas-fields` endpoints, plus a k6-based **seeder** that replaces the old
+Python `stitch-seed` service. It runs on **every PR** against that PR's freshly
 deployed cloud instance, streams results to Azure Monitor managed Prometheus,
 and renders them in Azure Managed Grafana so you can compare response times
-**across PRs** and **across runs within a single PR**.
+**across PRs** and **across runs within a PR** — reads *and* writes.
 
 For the wider perf story (server-side query profiling, drill-down into slow
 queries) see [`../PERFORMANCE.md`](../PERFORMANCE.md). For the one-time cloud
@@ -15,16 +16,21 @@ setup (Grafana, Monitor Workspace, remote-write auth) see
 
 | Path | Purpose |
 |---|---|
-| `script.js` | The k6 scenario: weighted read-mix (list/search 55%, detail 30%, filter-options 15%) with randomized params, `constant-arrival-rate` executor. |
-| `Dockerfile` | Thin image over `grafana/k6` with `script.js` baked in. Built & pushed per-PR by the CD pipeline. |
-| `grafana/dashboards/k6-pr-compare.json` | Grafana dashboard: avg/p95/p99 per endpoint, per-run, with `$pr`/`$run` filters. **The PR-comparison view.** |
-| `grafana/dashboards/api-live-red.json` | Grafana dashboard: live server-side RED (rate/errors/duration) from span-derived metrics. Needs the optional collector `spanmetrics` pipeline (see setup doc). |
+| `script.js` | The load-test scenario: weighted read-mix (list/search 55%, detail 30%, filter-options 15%), `constant-arrival-rate` executor. k6 built-ins only — no bundling. |
+| `seed.js` | The seeder: POSTs the committed demo data + `SEED_VOLUME` faker-generated fields. Imports `@faker-js/faker`, so it is **bundled** with esbuild in the Docker build. |
+| `data/*.json` | Committed demo payloads (merge / llm / source-value demos), bundled into `seed.js`. |
+| `Dockerfile` | Multi-stage: a Node/esbuild stage bundles `seed.js`; the k6 stage ships `script.js` + `seed.dist.js`. Built & pushed per-PR by the CD pipeline. |
+| `package.json` | faker + esbuild for the bundle step. |
+| `prometheus.yml`, `grafana/` | The **local** Prometheus config + Grafana datasource/dashboard provisioning (see local stack below). |
+| `grafana/dashboards/k6-pr-compare.json` | Grafana dashboard: read + write latency (avg/p95/p99) per endpoint, per run, with `$pr`/`$run` filters. **The PR-comparison view.** |
+| `grafana/dashboards/api-live-red.json` | Grafana dashboard: live server-side RED (rate/errors/duration) from span-derived metrics. |
 
 ## How it runs in CI
 
 The reusable `run-perf.yml` workflow (called from `build-and-deploy.yml`) runs
-the k6 image with `--out experimental-prometheus-rw` pointed at the managed
-Prometheus remote-write endpoint, tagging each run:
+this image twice against the deployed PR instance — `seed.dist.js` then
+`script.js` — each with `--out experimental-prometheus-rw` to the managed
+Prometheus endpoint, tagging every run:
 
 ```
 --tag pr=<PR number>  --tag run_id=<gh run id>  --tag sha=<short sha>
@@ -32,29 +38,42 @@ Prometheus remote-write endpoint, tagging each run:
 ```
 
 `run` uniquely identifies one Actions run, so selecting several PRs compares
-them, and selecting one PR's runs shows how it evolved commit-to-commit.
+them, and selecting one PR's runs shows how it evolved commit-to-commit. Seed
+POSTs are tagged `name=create`, so create latency shows in the dashboard's
+write-path panels alongside the read results.
 
-## Running locally
+## Local stack
 
-Against a local stack (`make reboot-docker`, API on `:8000`). k6 tunables are
-env vars; the target is `BASE_URL`.
+Bring up the full observability + dashboard stack, then run the load test:
 
 ```bash
-# Local default auth is disabled, so no token is needed. Point at the host API:
-docker run --rm --network host \
-  -e BASE_URL=http://localhost:8000 \
-  -e K6_VUS=20 -e K6_RATE=50 -e K6_DURATION=1m \
-  $(docker build -q -f deployments/loadtest/Dockerfile .) \
-  --tag run=local-$(git rev-parse --short HEAD)
+make reboot-docker-heavy   # api + friends + seed + collector/jaeger + prometheus + grafana
+make loadtest              # runs script.js once; metrics -> local Prometheus -> Grafana
 ```
 
-To stream to a local Prometheus (e.g. the docker-compose stack from the setup
-doc's fallback), add `-e K6_OUT=experimental-prometheus-rw` and
-`-e K6_PROMETHEUS_RW_SERVER_URL=http://localhost:9090/api/v1/write`. Without
-`K6_OUT`, k6 just prints its end-of-test summary — handy for a quick check that
-the scenario and tags are wired correctly before involving the cloud.
+- Grafana: <http://localhost:3001> (anonymous view; the committed dashboards are
+  auto-provisioned against a Prometheus datasource with UID `stitch-prometheus`,
+  the same UID the Azure Managed Grafana datasource should use — so the dashboard
+  JSON is identical in both places).
+- Prometheus: <http://localhost:9090> · Jaeger: <http://localhost:16686>
+- For the live RED dashboard, enable OTEL export in `.env`
+  (`OTEL_ENABLED=true`, `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317`).
+- Seed volume is `SEED_VOLUME` in `.env` (default 50 locally). Bump it before a
+  meaningful load test so the query-expensive paths have real data.
+
+### Ad-hoc run against any target
+
+The image ENTRYPOINT is `k6 run`; pass a script path + flags:
+
+```bash
+IMG=$(docker build -q -f deployments/loadtest/Dockerfile .)
+docker run --rm --network host \
+  -e BASE_URL=http://localhost:8000 -e K6_DURATION=30s \
+  "$IMG" /scripts/script.js --tag run=local-$(git rev-parse --short HEAD)
+# or seed:  "$IMG" /scripts/seed.dist.js   (with -e BEARER_TOKEN=… -e SEED_VOLUME=…)
+```
 
 > **Auth:** protected endpoints 401 before touching the DB, so an unauthenticated
-> run measures nothing. Locally, `AUTH_DISABLED=true` is the default. Against a
-> deployed lane, pass `-e BEARER_TOKEN=<token>` (the CI job uses the privileged
-> seed/client token). See the auth note in [`../PERFORMANCE.md`](../PERFORMANCE.md).
+> run measures nothing. Locally `AUTH_DISABLED=true` is the default; against a
+> deployed lane pass `-e BEARER_TOKEN=<token>`. See the auth note in
+> [`../PERFORMANCE.md`](../PERFORMANCE.md).

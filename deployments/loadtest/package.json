@@ -1,0 +1,14 @@
+{
+  "name": "stitch-loadtest",
+  "version": "1.0.0",
+  "private": true,
+  "description": "k6 load-test + seed scripts for the stitch API. seed.js is bundled with esbuild (k6 runs on goja, which has no npm at runtime); script.js uses only k6 built-ins and needs no bundling.",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild seed.js --bundle --format=esm --target=es2020 --minify --external:k6 --external:k6/* --outfile=seed.dist.js"
+  },
+  "devDependencies": {
+    "@faker-js/faker": "^9.5.0",
+    "esbuild": "^0.24.2"
+  }
+}

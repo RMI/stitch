@@ -731,6 +731,163 @@
           "instant": true
         }
       ]
+    },
+    {
+      "type": "row",
+      "title": "Write path \u2014 create (POST /oil-gas-fields/, measured during seed)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 38
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "barchart",
+      "title": "create \u2014 avg / p95 / p99 (s)",
+      "description": "POST /oil-gas-fields/ latency during the seed phase (name=create). Grouped bars (avg, p95, p99) per run.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "stitch-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 39
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "auto",
+        "xField": "run",
+        "showValue": "auto",
+        "stacking": "none",
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "xTickLabelRotation": 0,
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "stitch-prometheus"
+          },
+          "expr": "avg by (run) (last_over_time(k6_http_req_duration_avg{name=\"create\", pr=~\"$pr\", run=~\"$run\"}[$__range]))",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "stitch-prometheus"
+          },
+          "expr": "avg by (run) (last_over_time(k6_http_req_duration_p95{name=\"create\", pr=~\"$pr\", run=~\"$run\"}[$__range]))",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "stitch-prometheus"
+          },
+          "expr": "avg by (run) (last_over_time(k6_http_req_duration_p99{name=\"create\", pr=~\"$pr\", run=~\"$run\"}[$__range]))",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "run",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true
+            },
+            "renameByName": {
+              "Value #A": "avg",
+              "Value #B": "p95",
+              "Value #C": "p99"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "Total creates (seed, run total)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "stitch-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 39
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "continuous-BlPu"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "stitch-prometheus"
+          },
+          "expr": "sum by (run) (last_over_time(k6_http_reqs_total{name=\"create\", pr=~\"$pr\", run=~\"$run\"}[$__range]))",
+          "legendFormat": "{{run}}",
+          "instant": true
+        }
+      ]
     }
   ]
 }

@@ -1,0 +1,100 @@
+# Heavy local-dev observability + load-testing sidecars. Kept separate from
+# docker-compose.local.yml so the normal dev path never pulls these images.
+# Layered on via the Makefile. Two opt-in tiers:
+#
+#   profile "full"     -> OTel Collector + Jaeger (tracing) AND Prometheus +
+#                         Grafana (span-derived RED metrics). Brought up by
+#                         `make reboot-docker-heavy`.
+#                           Jaeger UI:     http://localhost:16686
+#                           Grafana:       http://localhost:3001
+#                           Prometheus:    http://localhost:9090
+#   profile "loadtest" -> the k6 load generator, run on demand by `make loadtest`
+#                         (metrics remote-write to the local Prometheus, rendered
+#                         by the same committed Grafana dashboards used in Azure).
+#
+# The same dashboards (deployments/loadtest/grafana/dashboards) work here and in
+# Azure Managed Grafana because both wire a Prometheus datasource with UID
+# `stitch-prometheus`.
+services:
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./deployments/otel-collector/config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8889:8889"   # Prometheus scrape target for span-derived metrics
+    profiles: ["full"]
+    depends_on:
+      - jaeger
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"  # Jaeger UI
+    profiles: ["full"]
+
+  # Prometheus + Grafana back the live RED dashboard (span-derived metrics the
+  # collector exposes on :8889) and the k6 PR-comparison dashboard (k6
+  # remote-writes its run metrics here). prom_data/grafana_data are named volumes
+  # scoped to this file, so `make clean-docker` (which only touches the DEV
+  # compose) does not wipe historical runs.
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.enable-remote-write-receiver"
+      - "--storage.tsdb.retention.time=30d"
+    volumes:
+      - ./deployments/loadtest/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom_data:/prometheus
+    ports:
+      - "9090:9090"
+    profiles: ["full", "loadtest"]
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin}
+      # Anonymous VIEW only (local dev convenience); admin needs the password.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+    volumes:
+      - ./deployments/loadtest/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deployments/loadtest/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"   # Grafana UI (3000 is the frontend)
+    profiles: ["full", "loadtest"]
+    depends_on:
+      - prometheus
+
+  # On-demand load generator. NOT started by `up`; invoked via `make loadtest`
+  # (docker compose run --rm k6 /scripts/script.js ...).
+  k6:
+    build:
+      context: .
+      dockerfile: deployments/loadtest/Dockerfile
+    environment:
+      BASE_URL: ${K6_BASE_URL:-http://api:8000}
+      BEARER_TOKEN: ${STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN:-}
+      K6_VUS: ${K6_VUS:-20}
+      K6_RATE: ${K6_RATE:-50}
+      K6_DURATION: ${K6_DURATION:-1m}
+      K6_OUT: experimental-prometheus-rw
+      K6_PROMETHEUS_RW_SERVER_URL: http://prometheus:9090/api/v1/write
+      K6_PROMETHEUS_RW_TREND_STATS: "p(90),p(95),p(99),avg,min,max,med"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - prometheus
+    restart: "no"
+    profiles: ["loadtest"]
+
+volumes:
+  prom_data:
+  grafana_data:

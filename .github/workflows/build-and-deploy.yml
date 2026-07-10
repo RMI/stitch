@@ -185,25 +185,12 @@ jobs:
       image-name: ${{ github.event.repository.name }}-stitch-llm
       image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
 
-  build-seed-docker-image:
-    name: "Build and publish Seed"
-    # Seed only runs in development; non-development lanes are populated by the
-    # ETL pipelines instead (one or the other, never both).
-    if: ${{ needs.resolve-context.outputs.deployment-lane == 'development' }}
-    needs: [resolve-context]
-    uses: ./.github/workflows/build-and-push-Docker-image.yml
-    secrets: inherit
-    permissions:
-      packages: write
-      contents: read
-    with:
-      dockerfile: deployments/seed/Dockerfile
-      image-name: ${{ github.event.repository.name }}-seed
-      image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
-
   build-loadtest-docker-image:
     name: "Build and publish Load test (k6)"
-    # Load test runs only in development (against the per-PR instance), like seed.
+    # Runs only in development (against the per-PR instance). This image carries
+    # both the k6 load test and the k6 seeder (seed.dist.js) — it replaces the
+    # former Python seed image; non-development lanes are populated by the ETL
+    # pipelines instead.
     if: ${{ needs.resolve-context.outputs.deployment-lane == 'development' }}
     needs: [resolve-context]
     uses: ./.github/workflows/build-and-push-Docker-image.yml
@@ -479,7 +466,7 @@ jobs:
     # lanes use the ETL pipelines to populate data. Seed only on a freshly
     # created DB; the load test runs on every development-lane run.
     if: ${{ needs.resolve-context.outputs.deployment-lane == 'development' }}
-    needs: [resolve-context, build-seed-docker-image, build-loadtest-docker-image, deploy-db, deploy-api]
+    needs: [resolve-context, build-loadtest-docker-image, deploy-db, deploy-api]
     uses: ./.github/workflows/run-perf.yml
     secrets:
       stitch-client-bearer-token: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
@@ -491,7 +478,6 @@ jobs:
       api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
       run-seed: ${{ needs.deploy-db.outputs.database-created == 'true' }}
       run-loadtest: true
-      seed-image-name: ${{ needs.build-seed-docker-image.outputs.digest-image-name }}
       loadtest-image-name: ${{ needs.build-loadtest-docker-image.outputs.digest-image-name }}
 
   deploy-frontend:
@@ -521,4 +507,4 @@ jobs:
     if: ${{ always() && github.event_name == 'pull_request' }}
     uses: ./.github/workflows/comment-pr-summary.yml
     secrets: inherit
-    needs: [resolve-context, build-api-docker-image, build-entity-linkage-docker-image, build-stitch-llm-docker-image, build-seed-docker-image, build-loadtest-docker-image, deploy-db, run-db-migrations, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl-gem, deploy-etl-woodmac, run-perf, deploy-frontend]
+    needs: [resolve-context, build-api-docker-image, build-entity-linkage-docker-image, build-stitch-llm-docker-image, build-loadtest-docker-image, deploy-db, run-db-migrations, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl-gem, deploy-etl-woodmac, run-perf, deploy-frontend]

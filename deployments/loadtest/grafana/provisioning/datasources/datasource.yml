@@ -1,0 +1,13 @@
+# Grafana datasource provisioning for the LOCAL stack. The UID matches what the
+# committed dashboards reference (and what the Azure Managed Grafana Prometheus
+# datasource should be set to), so the same dashboard JSON renders in both.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: stitch-prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true

@@ -7,7 +7,7 @@ This guide covers the day-to-day development workflow in the Stitch monorepo.
 * `deployments/api` — FastAPI service (`stitch-api`)
 * `deployments/stitch-frontend` — React + Vite frontend
 * `deployments/db` — database bootstrap and role scripts
-* `deployments/seed` — local seed data tooling
+* `deployments/loadtest` — k6 load test + seeder, and the Grafana dashboards
 * `packages/` — shared Python packages
 
 ## Prerequisites

@@ -18,7 +18,6 @@ members = [
     "stitch-models",
     "stitch-observability",
     "stitch-ogsi",
-    "stitch-seed",
 ]
 
 [[package]]
@@ -1620,35 +1619,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8" }]
-
-[[package]]
-name = "stitch-seed"
-version = "0.1.0"
-source = { editable = "deployments/seed" }
-dependencies = [
-    { name = "faker" },
-    { name = "stitch-client" },
-    { name = "stitch-ogsi" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-anyio" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "faker", specifier = ">=24.0.0" },
-    { name = "stitch-client", editable = "packages/stitch-client" },
-    { name = "stitch-ogsi", editable = "packages/stitch-ogsi" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8.0" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-]
 
 [[package]]
 name = "typer"
