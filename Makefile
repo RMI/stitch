@@ -277,9 +277,21 @@ reboot-docker-heavy: clean-docker
 # Run the k6 load test once against the running heavy stack; metrics stream to
 # the local Prometheus and render in Grafana (http://localhost:3001). Requires
 # `make reboot-docker-heavy` first. Seed volume first for meaningful numbers.
+# Override the Grafana labels to compare runs:  make loadtest RUN=before-fix
+#   RUN -> the `run` label (the dashboard x-axis; pick one per comparison point)
+#   PR  -> the `pr` label   (groups runs; defaults to "local")
+# Inline k6 knobs also work:  K6_DURATION=30s K6_RATE=100 make loadtest RUN=heavier
+RUN ?= local-$(GIT_SHORT_SHA)
+PR  ?= local
 loadtest:
 	$(DOCKER_COMPOSE_OBSERVABILITY) --profile loadtest run --rm k6 \
-		/scripts/script.js --tag run=local-$(GIT_SHORT_SHA)
+		/scripts/script.js --tag pr=$(PR) --tag run=$(RUN)
+
+# Run just the seeder against the running stack (no load test). Override the
+# faker volume:  make seed N=500   (N=0 seeds only the committed demo data).
+N ?= 50
+seed:
+	SEED_VOLUME=$(N) $(DOCKER_COMPOSE_DEV) --profile seed run --rm --build seed
 
 follow-stack-logs:
 	$(DOCKER_COMPOSE_DEV) --profile full logs -f
@@ -315,5 +327,5 @@ follow-stack-logs:
 	frontend-dev frontend-clean \
 	\
 	# Docker
-	clean-docker dev-docker reboot-docker reboot-docker-heavy loadtest \
+	clean-docker dev-docker reboot-docker reboot-docker-heavy loadtest seed \
 	stack-frontend-dev follow-stack-logs
