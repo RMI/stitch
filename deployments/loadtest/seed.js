@@ -34,9 +34,19 @@ import f006 from "./data/006-source-values-demo.json";
 
 const BASE_URL = (__ENV.BASE_URL || "http://api:8000").replace(/\/$/, "");
 const API = `${BASE_URL}/api/v1`;
-const VOLUME = Number(__ENV.SEED_VOLUME) || 500;
-const VUS = Number(__ENV.SEED_VUS) || 10;
-const SEED = Number(__ENV.SEED_RANDOM_SEED) || 8675309;
+
+// Read a numeric env var, honoring an explicit 0 (a plain `|| default` would
+// treat 0 as unset — so SEED_VOLUME=0 must fall through here, not to the default).
+function envNum(name, def) {
+  const raw = __ENV[name];
+  if (raw === undefined || raw === "") return def;
+  const n = Number(raw);
+  return Number.isNaN(n) ? def : n;
+}
+
+const VOLUME = envNum("SEED_VOLUME", 500);
+const VUS = envNum("SEED_VUS", 10);
+const SEED = envNum("SEED_RANDOM_SEED", 8675309);
 const RUN_ID = __ENV.SEED_RUN_ID || "local";
 const PRODUCER = "stitch-loadtest-seed/1.0";
 
