@@ -24,8 +24,14 @@ Two structured log streams, distinguished by the `logger` field:
 
 | Logger | Emitted | Key fields |
 |---|---|---|
-| `stitch.api.observability.request` | once per HTTP request (always) | `route`, `method`, `status_code`, `duration_ms`, `db_query_count`, `db_time_ms`, `request_id` |
+| `stitch.observability.request` | once per HTTP request (always) | `route`, `method`, `status_code`, `duration_ms`, `db_query_count`, `db_time_ms`, `request_id` |
 | `stitch.api.observability.query` | once per query above the slow threshold | `statement` (parameterized SQL, **no bound values**), `duration_ms`, `rowcount`, `route`, `request_id` |
+
+> The request summary is emitted by the shared `stitch.observability`
+> middleware, so it logs under `stitch.observability.request` (the API's
+> `db_query_count` / `db_time_ms` are grafted on by its subclass). The query
+> stream stays API-specific under `stitch.api.observability.query`. Filter on the
+> `observability` substring to capture both.
 
 `db_query_count` on a request is the N+1 detector; the `query` stream tells you
 *which* statement is expensive.
@@ -121,7 +127,7 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 for i in $(seq 200); do
   curl -s -o /dev/null \
     -H "Authorization: Bearer $TOKEN" \
-    -H 'X-Perf-Scenario: vol=8k' \
+    -H 'X-Stitch-Perf-Scenario: vol=8k' \
     "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=50"
 done
 ```
@@ -138,7 +144,7 @@ For concurrency/throughput numbers, use a load tool if you have one installed
 ```bash
 hey -n 500 -c 20 \
   -H "Authorization: Bearer $TOKEN" \
-  -H "X-Perf-Scenario: vol=8k" \
+  -H "X-Stitch-Perf-Scenario: vol=8k" \
   "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=50"
 ```
 
@@ -202,7 +208,7 @@ az monitor log-analytics query \
     | where ContainerName_s == "api"
     | where TimeGenerated > ago(1h)
     | extend p = parse_json(Log_s)
-    | where tostring(p.logger) startswith "stitch.api.observability"
+    | where tostring(p.logger) contains "observability"
     | project line = Log_s' \
   -o tsv > /tmp/prod-events.jsonl
 ```
@@ -271,7 +277,7 @@ ROUTES — top 3 by total
 ## Comparing variants (data volume / params)
 
 To see how the *same* query behaves under different conditions, **tag each batch
-of traffic** with an `X-Perf-Scenario: <label>` request header. The label is
+of traffic** with an `X-Stitch-Perf-Scenario: <label>` request header. The label is
 recorded on every request *and* query event it triggers, so a single log
 captures all variants and the analyzer compares them with `--group-by scenario`.
 No log slicing, no separate files.
@@ -300,7 +306,7 @@ service **adds** more rows, so you can build up a volume ladder on a live stack.
 
    ```bash
    for i in $(seq 200); do
-     curl -s -o /dev/null -H 'X-Perf-Scenario: vol=1k' \
+     curl -s -o /dev/null -H 'X-Stitch-Perf-Scenario: vol=1k' \
        "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=50"
    done
    ```
@@ -317,7 +323,7 @@ service **adds** more rows, so you can build up a volume ladder on a live stack.
 
    ```bash
    for i in $(seq 200); do
-     curl -s -o /dev/null -H 'X-Perf-Scenario: vol=50k' \
+     curl -s -o /dev/null -H 'X-Stitch-Perf-Scenario: vol=50k' \
        "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=50"
    done
    ```
@@ -355,7 +361,7 @@ own label — the param values are a natural label:
 ```bash
 for ps in 50 500; do
   for i in $(seq 200); do
-    curl -s -o /dev/null -H "X-Perf-Scenario: page_size=$ps" \
+    curl -s -o /dev/null -H "X-Stitch-Perf-Scenario: page_size=$ps" \
       "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=$ps"
   done
 done
@@ -367,7 +373,7 @@ The `--group-by scenario` view breaks each query/route down by label, so
 `page_size=50` and `page_size=500` sit side by side even though they hit the
 same route template.
 
-> The `X-Perf-Scenario` label is opaque to the server (truncated to 80 chars)
+> The `X-Stitch-Perf-Scenario` label is opaque to the server (truncated to 80 chars)
 > and recorded only when sent, so it's safe to leave the feature in place — it
 > costs nothing on untagged production traffic.
 

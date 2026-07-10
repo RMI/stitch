@@ -1352,9 +1352,6 @@ dependencies = [
     { name = "alembic" },
     { name = "fastapi", extra = ["standard-no-fastapi-cloud-cli"] },
     { name = "greenlet" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc" },
-    { name = "opentelemetry-instrumentation-fastapi" },
-    { name = "opentelemetry-instrumentation-sqlalchemy" },
     { name = "opentelemetry-sdk" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
@@ -1379,9 +1376,6 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.17.1" },
     { name = "fastapi", extras = ["standard-no-fastapi-cloud-cli"], specifier = ">=0.135.1" },
     { name = "greenlet", specifier = ">=3.3.0" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.30.0" },
-    { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.51b0" },
-    { name = "opentelemetry-instrumentation-sqlalchemy", specifier = ">=0.51b0" },
     { name = "opentelemetry-sdk", specifier = ">=1.30.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.12" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
@@ -1578,6 +1572,8 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "fastapi", extra = ["standard-no-fastapi-cloud-cli"] },
+    { name = "httpx" },
     { name = "pytest" },
 ]
 
@@ -1593,7 +1589,11 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=9.0.2" }]
+dev = [
+    { name = "fastapi", extras = ["standard-no-fastapi-cloud-cli"], specifier = ">=0.135.1" },
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "pytest", specifier = ">=9.0.2" },
+]
 
 [[package]]
 name = "stitch-ogsi"

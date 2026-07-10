@@ -311,6 +311,8 @@ jobs:
         OTEL_TRACES_EXPORTER=otlp
         OTEL_EXPORTER_OTLP_PROTOCOL=http
         OTEL_EXPORTER_OTLP_ENDPOINT=${{ format('{0}/v1/traces', needs.deploy-otel-collector.outputs.container-app-url) }}
+        OTEL_SERVICE_NAME=stitch-api
+        OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: api
       # Keep staging / dress-rehearsal always-on; development scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
@@ -341,6 +343,8 @@ jobs:
         OTEL_TRACES_EXPORTER=otlp
         OTEL_EXPORTER_OTLP_PROTOCOL=http
         OTEL_EXPORTER_OTLP_ENDPOINT=${{ format('{0}/v1/traces', needs.deploy-otel-collector.outputs.container-app-url) }}
+        OTEL_SERVICE_NAME=stitch-entity-linkage
+        OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: entity-linkage
       # Keep staging / dress-rehearsal always-on; development scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
@@ -379,6 +383,8 @@ jobs:
         OTEL_TRACES_EXPORTER=otlp
         OTEL_EXPORTER_OTLP_PROTOCOL=http
         OTEL_EXPORTER_OTLP_ENDPOINT=${{ format('{0}/v1/traces', needs.deploy-otel-collector.outputs.container-app-url) }}
+        OTEL_SERVICE_NAME=stitch-llm
+        OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: stitch-llm
       # Keep staging / dress-rehearsal always-on; development scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}

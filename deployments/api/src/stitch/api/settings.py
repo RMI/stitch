@@ -3,8 +3,9 @@ from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
 from fastapi import Depends
-from pydantic import AfterValidator, Field, HttpUrl, SecretStr
+from pydantic import AfterValidator, HttpUrl, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from stitch.observability import OTelSettings
 from sqlalchemy import URL
 
 Dialect = Literal["postgresql", "sqlite"]
@@ -70,7 +71,7 @@ def _validate_origin(url: HttpUrl):
 OriginUrl = Annotated[HttpUrl, AfterValidator(_validate_origin)]
 
 
-class Settings(BaseSettings):
+class Settings(OTelSettings):
     environment: str = "dev"
     dialect: Dialect = "postgresql"
     frontend_origin_url: OriginUrl = HttpUrl("http://localhost:3000")
@@ -88,16 +89,9 @@ class Settings(BaseSettings):
     slow_query_ms: float = 200.0
     log_all_queries: bool = False
 
-    # OpenTelemetry tracing. Default exporter "console" logs spans to stdout via
-    # the JSON formatter (no collector/Jaeger needed); "otlp" ships them to the
-    # collector; "none" disables tracing. otel_sample_ratio feeds the root
-    # sampler (1.0 = capture everything); downstream spans honor the upstream
-    # decision via ParentBased.
-    otel_enabled: bool = True
-    otel_traces_exporter: Literal["console", "otlp", "none"] = "console"
-    otel_exporter_otlp_endpoint: str | None = None
-    otel_exporter_otlp_protocol: Literal["grpc", "http"] = "grpc"
-    otel_sample_ratio: float = Field(1.0, ge=0.0, le=1.0)
+    # OpenTelemetry tracing settings (otel_enabled / otel_traces_exporter /
+    # otel_exporter_otlp_endpoint / otel_sample_ratio) are inherited from
+    # OTelSettings, shared across all services.
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=".env",

@@ -2,9 +2,9 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from fastapi import APIRouter, FastAPI
 from stitch.observability import (
-    configure_tracing,
-    instrument_fastapi,
-    instrument_httpx,
+    configure_logging,
+    resource_attributes_from_env,
+    setup_fastapi_tracing,
     shutdown_tracing,
 )
 from .middleware import register_middlewares
@@ -39,23 +39,24 @@ async def lifespan(app: FastAPI):
 
 settings = get_settings()
 
-_tracer_provider = configure_tracing(
-    service_name="stitch-entity-linkage",
-    enabled=settings.otel_enabled,
-    exporter=settings.otel_traces_exporter,
-    otlp_endpoint=settings.otel_exporter_otlp_endpoint,
-    otlp_protocol=settings.otel_exporter_otlp_protocol,
-    sample_ratio=settings.otel_sample_ratio,
+# Structured JSON logs on the root logger, stamped with the same deployment
+# metadata (deployment.name / lane / service.version) that the tracing SDK puts
+# on spans, so logs and traces are comparable across deployments/PRs.
+configure_logging(
+    level=settings.log_level,
+    resource_attributes=resource_attributes_from_env(),
 )
 
 app = FastAPI(lifespan=lifespan)
 
 register_middlewares(application=app, settings=settings)
 
-if _tracer_provider is not None:
-    instrument_fastapi(app)
-    # Propagates the W3C traceparent on downstream stitch-client calls, so the
-    # API continues this service's trace instead of starting a disconnected one.
-    instrument_httpx()
+# Configure tracing, then instrument server spans + outbound httpx (traceparent
+# propagation to the API), in the package's defined order.
+_tracer_provider = setup_fastapi_tracing(
+    app,
+    service_name="stitch-entity-linkage",
+    settings=settings,
+)
 
 app.include_router(base_router)

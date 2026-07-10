@@ -10,7 +10,9 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from stitch.api.observability import instrument_sqlalchemy, register_query_timing
+from stitch.observability import setup_sqlalchemy_tracing
+
+from stitch.api.observability import register_query_timing
 from stitch.api.settings import get_settings
 
 
@@ -61,8 +63,8 @@ def get_engine() -> AsyncEngine:
     # Per-query spans (separate from the aggregate timing listener above).
     # get_engine is @lru_cache'd, so this instruments the engine once per
     # process — SQLAlchemyInstrumentor is not safely re-entrant per engine.
-    if settings.otel_enabled and settings.otel_traces_exporter != "none":
-        instrument_sqlalchemy(engine.sync_engine)
+    # setup_sqlalchemy_tracing is a no-op when tracing is disabled.
+    setup_sqlalchemy_tracing(engine.sync_engine, settings=settings)
     return engine
 
 

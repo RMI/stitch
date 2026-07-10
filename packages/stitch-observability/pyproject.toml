@@ -29,4 +29,7 @@ python_functions = ["test_*"]
 addopts = ["-v", "--strict-markers", "--tb=short"]
 
 [dependency-groups]
-dev = ["pytest>=9.0.2"]
+# fastapi + httpx are test-only: RequestContextMiddleware is Starlette
+# middleware (in the `middleware` submodule, kept out of the top-level package
+# import so tracing/logging stay framework-free), exercised via TestClient.
+dev = ["pytest>=9.0.2", "fastapi[standard-no-fastapi-cloud-cli]>=0.135.1", "httpx>=0.28.0"]

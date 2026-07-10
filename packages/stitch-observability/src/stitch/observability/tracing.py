@@ -30,30 +30,51 @@ from opentelemetry.sdk.trace.export import (
 from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from fastapi import FastAPI
     from opentelemetry.sdk.trace import ReadableSpan
     from sqlalchemy.engine import Engine
 
+    from .settings import OTelSettings
+
 _span_logger = logging.getLogger("stitch.observability.trace")
 
-# Cap the length of any single string span attribute before it is logged. Long
-# values — notably SQLAlchemy's ``db.statement`` (big IN (...) lists, wide CTEs)
-# — would otherwise dump untruncated to stdout / Log Analytics. Mirrors the
-# 2000-char cap in the API's query_timing._normalize_statement.
+# Bound attribute values before they are logged. Long strings — notably
+# SQLAlchemy's ``db.statement`` (big IN (...) lists, wide CTEs) — and large array
+# attributes would otherwise dump untruncated to stdout / Log Analytics. The
+# per-string cap mirrors query_timing._normalize_statement's 2000-char limit.
 _MAX_ATTR_CHARS = 2000
+_MAX_ATTR_ITEMS = 100
+
+
+def _truncate_str(value: str) -> str:
+    if len(value) > _MAX_ATTR_CHARS:
+        return value[:_MAX_ATTR_CHARS] + "…"
+    return value
+
+
+def _truncate_value(value: object) -> object:
+    """Bound a single attribute value: cap long strings, and cap both the length
+    and the per-element size of sequence (array) attributes. Scalars (bool / int
+    / float) pass through unchanged."""
+    if isinstance(value, str):
+        return _truncate_str(value)
+    if isinstance(value, (list, tuple)):
+        capped: list = [
+            _truncate_str(item) if isinstance(item, str) else item
+            for item in value[:_MAX_ATTR_ITEMS]
+        ]
+        if len(value) > _MAX_ATTR_ITEMS:
+            capped.append(f"…(+{len(value) - _MAX_ATTR_ITEMS} more)")
+        return capped
+    return value
 
 
 def _truncate_attributes(attributes: dict) -> dict:
-    """Cap over-long string attribute values so a span log record stays bounded."""
-    result: dict = {}
-    for key, value in attributes.items():
-        if isinstance(value, str) and len(value) > _MAX_ATTR_CHARS:
-            result[key] = value[:_MAX_ATTR_CHARS] + "…"
-        else:
-            result[key] = value
-    return result
+    """Bound over-long attribute values (strings and array attributes) so a span
+    log record stays bounded."""
+    return {key: _truncate_value(value) for key, value in attributes.items()}
 
 
 def get_tracer(name: str) -> trace.Tracer:
@@ -69,6 +90,21 @@ class LoggingSpanExporter(SpanExporter):
     ``event`` dict a JSON log formatter can flatten, so fields like ``trace_id``
     / ``duration_ms`` sit alongside request / query events on the same stream.
     """
+
+    def __init__(self) -> None:
+        # Resource attributes are process-invariant (one Resource per provider),
+        # so the truncated dict is cached per Resource identity rather than
+        # rebuilt for every span on the synchronous console export path.
+        self._resource_cache: dict[int, dict] = {}
+
+    def _resource_attributes(self, resource: "Resource | None") -> dict:
+        if resource is None:
+            return {}
+        cached = self._resource_cache.get(id(resource))
+        if cached is None:
+            cached = _truncate_attributes(dict(resource.attributes))
+            self._resource_cache[id(resource)] = cached
+        return cached
 
     def export(self, spans: "Sequence[ReadableSpan]") -> SpanExportResult:
         for span in spans:
@@ -93,6 +129,11 @@ class LoggingSpanExporter(SpanExporter):
                         "duration_ms": duration_ms,
                         "status": span.status.status_code.name,
                         "attributes": _truncate_attributes(dict(span.attributes or {})),
+                        # Resource attributes (service.name, deployment.name, ...)
+                        # so the stdout span stream carries the same deployment
+                        # tags as the OTLP path, groupable across deployments/PRs.
+                        # Truncated + cached per Resource (see _resource_attributes).
+                        "resource": self._resource_attributes(span.resource),
                     }
                 },
             )
@@ -110,8 +151,9 @@ def configure_tracing(
     otlp_endpoint: str | None = None,
     otlp_protocol: str = "grpc",
     sample_ratio: float = 1.0,
-    version: str = "unknown",
-    environment: str = "unknown",
+    version: str | None = None,
+    environment: str | None = None,
+    extra_resource_attributes: "Mapping[str, str] | None" = None,
 ) -> TracerProvider | None:
     """Install the global tracer provider, or return ``None`` if disabled.
 
@@ -121,13 +163,20 @@ def configure_tracing(
     if not enabled or exporter == "none":
         return None
 
-    resource = Resource.create(
-        {
-            "service.name": service_name,
-            "service.version": version or "unknown",
-            "deployment.environment": environment,
-        }
-    )
+    # Only include keys we actually have a value for. Anything omitted is
+    # supplied by the OTEL_RESOURCE_ATTRIBUTES / OTEL_SERVICE_NAME env vars,
+    # which Resource.create() merges automatically — that is how deployment
+    # metadata (deployment.name, deployment.lane, ...) gets stamped on every
+    # span without per-service code. Passing an explicit value here would
+    # override the env, so we must NOT pass placeholder "unknown"s.
+    attributes: dict[str, str] = {"service.name": service_name}
+    if version:
+        attributes["service.version"] = version
+    if environment:
+        attributes["deployment.environment"] = environment
+    if extra_resource_attributes:
+        attributes.update(extra_resource_attributes)
+    resource = Resource.create(attributes)
     sampler = ParentBased(root=TraceIdRatioBased(sample_ratio))
     provider = TracerProvider(resource=resource, sampler=sampler)
 
@@ -170,6 +219,12 @@ def instrument_fastapi(app: "FastAPI") -> None:
     hook, where middleware-stack timing makes it ineffective. Imported lazily so
     the instrumentor's optional ``fastapi`` dependency is only required by
     services that actually call this.
+
+    URL query strings are intentionally left intact on server spans — they are
+    the diagnostic payload for the performance work this serves. When a retained
+    cloud backend makes aggregate PII a concern, scrub them at the collector's
+    egress (an ``attributes``/``redaction`` processor) rather than blinding local
+    dev.
     """
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
@@ -199,3 +254,62 @@ def instrument_sqlalchemy(engine: "Engine") -> None:
     from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
     SQLAlchemyInstrumentor().instrument(engine=engine)
+
+
+def setup_fastapi_tracing(
+    app: "FastAPI",
+    *,
+    service_name: str,
+    settings: "OTelSettings",
+    instrument_outbound_httpx: bool = True,
+    version: str | None = None,
+    environment: str | None = None,
+    extra_resource_attributes: "Mapping[str, str] | None" = None,
+) -> "TracerProvider | None":
+    """Configure tracing and instrument a FastAPI app, in one ordered step.
+
+    Collapses the per-service wiring — :func:`configure_tracing` (reading the
+    shared ``OTEL_*`` settings) then :func:`instrument_fastapi` (+ optional
+    :func:`instrument_httpx`) — so the ordering lives in one place instead of
+    being replicated (and drifting) across services. Call it *after* the app and
+    its middleware are constructed but before it serves requests.
+
+    Returns the provider (``None`` when tracing is disabled); the caller keeps it
+    and calls :func:`shutdown_tracing` on shutdown. ``instrument_outbound_httpx``
+    propagates the W3C ``traceparent`` on outbound httpx calls so downstream
+    services continue the same trace — leave it on for any service that makes
+    downstream HTTP calls.
+    """
+    provider = configure_tracing(
+        service_name=service_name,
+        enabled=settings.otel_enabled,
+        exporter=settings.otel_traces_exporter,
+        otlp_endpoint=settings.otel_exporter_otlp_endpoint,
+        otlp_protocol=settings.otel_exporter_otlp_protocol,
+        sample_ratio=settings.otel_sample_ratio,
+        version=version,
+        environment=environment,
+        extra_resource_attributes=extra_resource_attributes,
+    )
+    if provider is not None:
+        instrument_fastapi(app)
+        if instrument_outbound_httpx:
+            instrument_httpx()
+    return provider
+
+
+def setup_sqlalchemy_tracing(engine: "Engine", *, settings: "OTelSettings") -> bool:
+    """Instrument a SQLAlchemy engine for per-query spans, if tracing is enabled.
+
+    The engine-seam companion to :func:`setup_fastapi_tracing`. Unlike that
+    helper it does **not** call :func:`configure_tracing` — the global provider is
+    installed once at app startup, whereas engines are created lazily (often
+    after startup, e.g. a cached ``get_engine``) and only need instrumenting.
+    Guarded on the shared ``OTEL_*`` settings so a tracing-disabled service does
+    not pay the per-query span-wrapping cost. Pass ``async_engine.sync_engine``
+    for an ``AsyncEngine``. Returns whether the engine was instrumented.
+    """
+    if not settings.otel_enabled or settings.otel_traces_exporter == "none":
+        return False
+    instrument_sqlalchemy(engine)
+    return True

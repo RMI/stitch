@@ -14,7 +14,7 @@ Input is tolerant: it accepts a clean ``.jsonl`` file, raw ``docker compose
 logs`` output (the ``api-1 | `` prefix is stripped), or stdin. Non-JSON lines
 are ignored, so you can point it straight at mixed log output.
 
-Tag traffic with an ``X-Perf-Scenario: <label>`` request header to compare
+Tag traffic with an ``X-Stitch-Perf-Scenario: <label>`` request header to compare
 variants (data volume, query params, ...) with ``--group-by scenario``.
 
 Examples:
@@ -257,7 +257,7 @@ def report_by_scenario(
     if scenarios == {"(none)"}:
         print(
             f"\n{label}: no scenarios tagged — send requests with an "
-            "'X-Perf-Scenario: <label>' header to compare variants."
+            "'X-Stitch-Perf-Scenario: <label>' header to compare variants."
         )
         return
 
@@ -327,7 +327,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--group-by",
         choices=["scenario"],
-        help="compare variants tagged via the X-Perf-Scenario header, "
+        help="compare variants tagged via the X-Stitch-Perf-Scenario header, "
         "broken down per query/route",
     )
     parser.add_argument(
