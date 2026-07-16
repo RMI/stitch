@@ -87,18 +87,19 @@ function ComparisonRow({ fieldKey, details }) {
   );
 }
 
-// A loading cell is an empty cell: same box, same neutral left edge, same
-// em dash. The status cue is reserved but left blank — a loading cell has no
-// status to report yet, and claiming "No value" before the fetch returns would
-// be false.
+// A loading cell keeps the empty cell's box and neutral left edge, with a
+// spinner where the value will land. The value row is pinned to h-5 — the
+// text-sm line height of a loaded value — and the status cue is reserved but
+// blank, so the cell is exactly the height of a loaded one. The cue stays blank
+// on purpose: a loading cell has no status yet, and "No value" would be false.
 function ComparisonSkeletonCell() {
   return (
     <div
       data-testid="comparison-skeleton-cell"
       className={`${CELL_BOX_CLASSES} ${STATUS_META.empty.borderClass}`}
     >
-      <div className="break-words text-sm text-ink">
-        <span className="text-ink-muted">—</span>
+      <div className="flex h-5 items-center">
+        <span className="h-4 w-4 animate-spin rounded-full border-2 border-line border-t-ink-muted motion-reduce:animate-none" />
       </div>
       <div className="mt-1 text-xs">&nbsp;</div>
     </div>
