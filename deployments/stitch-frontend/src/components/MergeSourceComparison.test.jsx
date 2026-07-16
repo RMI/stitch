@@ -57,6 +57,34 @@ describe("MergeSourceComparison", () => {
     expect(screen.getByText("Resource #102")).toBeInTheDocument();
   });
 
+  it("keeps headers and field labels in place while sources load", () => {
+    vi.mocked(getResourceDetail).mockReturnValue(new Promise(() => {}));
+    renderComparison();
+
+    expect(screen.getByText("Resource #101")).toBeInTheDocument();
+    expect(screen.getByText("Resource #102")).toBeInTheDocument();
+    expect(screen.getByText("Name")).toBeInTheDocument();
+    expect(screen.getByText("Country")).toBeInTheDocument();
+    expect(screen.getByText("Region")).toBeInTheDocument();
+    expect(screen.getByText("Basin")).toBeInTheDocument();
+    expect(screen.getByText("State / Province")).toBeInTheDocument();
+  });
+
+  it("shows a placeholder cell per source for every field while loading", () => {
+    vi.mocked(getResourceDetail).mockReturnValue(new Promise(() => {}));
+    renderComparison();
+
+    // 5 core fields x 2 sources
+    expect(screen.getAllByTestId("comparison-skeleton-cell")).toHaveLength(10);
+  });
+
+  it("announces the loading state to screen readers", () => {
+    vi.mocked(getResourceDetail).mockReturnValue(new Promise(() => {}));
+    renderComparison();
+
+    expect(screen.getByText("Loading source resources…")).toBeInTheDocument();
+  });
+
   it("marks agreeing values as matches on every cell", async () => {
     renderComparison();
 
@@ -95,7 +123,9 @@ describe("MergeSourceComparison", () => {
     const user = userEvent.setup();
     renderComparison();
 
-    await screen.findByText("Resource #101");
+    // "Burgan" is a fetched value, so it only appears once the sources load.
+    // Headers render during loading and are no longer a loaded signal.
+    await screen.findAllByText("Burgan");
     expect(
       screen.queryByRole("group", { name: "Discovery Year" }),
     ).not.toBeInTheDocument();

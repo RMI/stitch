@@ -32,6 +32,11 @@ const STATUS_META = {
   },
 };
 
+// Shared by ComparisonCell and ComparisonSkeletonCell so the loading grid and
+// the loaded grid cannot drift apart in size.
+const CELL_BOX_CLASSES =
+  "min-w-0 rounded-md border border-line border-l-4 bg-panel px-3 py-2";
+
 function gridColumnsStyle(count) {
   return { gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))` };
 }
@@ -40,9 +45,7 @@ function ComparisonCell({ value, status }) {
   const meta = STATUS_META[status];
 
   return (
-    <div
-      className={`min-w-0 rounded-md border border-line border-l-4 bg-panel px-3 py-2 ${meta.borderClass}`}
-    >
+    <div className={`${CELL_BOX_CLASSES} ${meta.borderClass}`}>
       <div className="break-words text-sm text-ink">
         {isEmptyValue(value) ? (
           <span className="text-ink-muted">—</span>
@@ -79,6 +82,61 @@ function ComparisonRow({ fieldKey, details }) {
             status={isEmptyValue(value) ? "empty" : rowStatus}
           />
         ))}
+      </div>
+    </div>
+  );
+}
+
+// Mirrors ComparisonCell's box and line heights so a loading cell occupies the
+// same space as a loaded one. h-5 matches the text-sm value line; h-4 matches
+// the mt-1 text-xs status cue. Keep in sync if ComparisonCell's type changes.
+function ComparisonSkeletonCell() {
+  return (
+    <div
+      data-testid="comparison-skeleton-cell"
+      className={`${CELL_BOX_CLASSES} border-l-line`}
+    >
+      <div className="h-5 animate-pulse rounded bg-line motion-reduce:animate-none" />
+      <div className="mt-1 h-4 w-16 animate-pulse rounded bg-line motion-reduce:animate-none" />
+    </div>
+  );
+}
+
+// The loaded layout with placeholders in the cells. Headers and field labels are
+// real: resourceIds is a prop and FIELD_META is static, so neither changes when
+// the data lands. The trailing bar stands in for the collapsed accordion summary.
+function ComparisonSkeleton({ resourceIds }) {
+  return (
+    <div aria-hidden="true" className="space-y-4">
+      <div className="grid gap-3" style={gridColumnsStyle(resourceIds.length)}>
+        {resourceIds.map((id) => (
+          <p
+            key={id}
+            className="min-w-0 break-words text-sm font-semibold text-ink"
+          >
+            Resource #{id}
+          </p>
+        ))}
+      </div>
+
+      {MERGE_COMPARISON_CORE_FIELDS.map((fieldKey) => (
+        <div key={fieldKey} className="min-w-0">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+            {FIELD_META[fieldKey].label}
+          </p>
+          <div
+            className="grid gap-3"
+            style={gridColumnsStyle(resourceIds.length)}
+          >
+            {resourceIds.map((id) => (
+              <ComparisonSkeletonCell key={id} />
+            ))}
+          </div>
+        </div>
+      ))}
+
+      <div className="border-t border-line pt-4">
+        <div className="h-5 w-40 animate-pulse rounded bg-line motion-reduce:animate-none" />
       </div>
     </div>
   );
@@ -143,7 +201,10 @@ export default function MergeSourceComparison({ endpoint, resourceIds }) {
             At least two source resources are required to compare.
           </p>
         ) : isLoading ? (
-          <p className="text-sm text-ink-muted">Loading source resources…</p>
+          <div aria-busy="true">
+            <p className="sr-only">Loading source resources…</p>
+            <ComparisonSkeleton resourceIds={ids} />
+          </div>
         ) : isError ? (
           <p className="text-sm text-danger">
             {error?.message ?? "Failed to load source resources."}
