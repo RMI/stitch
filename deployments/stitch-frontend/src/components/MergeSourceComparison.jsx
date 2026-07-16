@@ -87,17 +87,20 @@ function ComparisonRow({ fieldKey, details }) {
   );
 }
 
-// Mirrors ComparisonCell's box and line heights so a loading cell occupies the
-// same space as a loaded one. h-5 matches the text-sm value line; h-4 matches
-// the mt-1 text-xs status cue. Keep in sync if ComparisonCell's type changes.
+// A loading cell is an empty cell: same box, same neutral left edge, same
+// em dash. The status cue is reserved but left blank — a loading cell has no
+// status to report yet, and claiming "No value" before the fetch returns would
+// be false.
 function ComparisonSkeletonCell() {
   return (
     <div
       data-testid="comparison-skeleton-cell"
-      className={`${CELL_BOX_CLASSES} border-l-line`}
+      className={`${CELL_BOX_CLASSES} ${STATUS_META.empty.borderClass}`}
     >
-      <div className="h-5 animate-pulse rounded bg-line motion-reduce:animate-none" />
-      <div className="mt-1 h-4 w-16 animate-pulse rounded bg-line motion-reduce:animate-none" />
+      <div className="break-words text-sm text-ink">
+        <span className="text-ink-muted">—</span>
+      </div>
+      <div className="mt-1 text-xs">&nbsp;</div>
     </div>
   );
 }
@@ -136,7 +139,9 @@ function ComparisonSkeleton({ resourceIds }) {
       ))}
 
       <div className="border-t border-line pt-4">
-        <div className="h-5 w-40 animate-pulse rounded bg-line motion-reduce:animate-none" />
+        <p className="text-sm font-semibold text-ink">
+          Other attributes ({MERGE_COMPARISON_OTHER_FIELDS.length})
+        </p>
       </div>
     </div>
   );
