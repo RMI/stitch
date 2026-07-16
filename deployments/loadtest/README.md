@@ -52,9 +52,9 @@ make loadtest              # runs script.js once; metrics -> local Prometheus ->
 ```
 
 - Grafana: <http://localhost:3001> (anonymous view; the committed dashboards are
-  auto-provisioned against a Prometheus datasource with UID `stitch-prometheus`,
-  the same UID the Azure Managed Grafana datasource should use — so the dashboard
-  JSON is identical in both places).
+  auto-provisioned. They select their Prometheus source via a `datasource`
+  template variable that auto-picks the default datasource, so the same dashboard
+  JSON renders here and in Azure Managed Grafana with no per-environment edits).
 - Prometheus: <http://localhost:9090> · Jaeger: <http://localhost:16686>
 - For the live RED dashboard, enable OTEL export in `.env`
   (`OTEL_ENABLED=true`, `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317`).

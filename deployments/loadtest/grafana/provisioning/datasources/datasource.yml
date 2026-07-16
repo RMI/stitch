@@ -1,6 +1,8 @@
-# Grafana datasource provisioning for the LOCAL stack. The UID matches what the
-# committed dashboards reference (and what the Azure Managed Grafana Prometheus
-# datasource should be set to), so the same dashboard JSON renders in both.
+# Grafana datasource provisioning for the LOCAL stack. `isDefault: true` is what
+# matters: the committed dashboards select their Prometheus source via a
+# `datasource` template variable (not a hardcoded UID), and that variable
+# auto-picks the default Prometheus datasource — so the same dashboard JSON
+# renders here and in Azure Managed Grafana without any UID matching.
 apiVersion: 1
 
 datasources:
