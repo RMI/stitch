@@ -197,6 +197,7 @@ function DecisionControls({
 
 function CandidateDecisionPanel({
   selectedId,
+  listCandidate,
   candidateQuery,
   reviewNotes,
   onReviewNotesChange,
@@ -206,24 +207,17 @@ function CandidateDecisionPanel({
   activeReviewAction,
 }) {
   const {
-    data: candidate,
-    isLoading: candidateLoading,
+    data: detailCandidate,
     isError: candidateError,
     error: candidateErrorObj,
   } = candidateQuery;
+
+  const candidate = detailCandidate ?? listCandidate;
 
   if (!selectedId) {
     return (
       <section className="rounded-md border border-line bg-panel p-5">
         <p className="text-sm text-ink-muted">Select a candidate.</p>
-      </section>
-    );
-  }
-
-  if (candidateLoading) {
-    return (
-      <section className="rounded-md border border-line bg-panel p-5">
-        <p className="text-sm text-ink-muted">Loading candidate…</p>
       </section>
     );
   }
@@ -335,7 +329,12 @@ export default function MergeCandidateReviewPage() {
     selectedId,
     Boolean(selectedId),
   );
-  const candidate = candidateQuery.data;
+  // The list and detail endpoints return the same schema, so the already-loaded
+  // queue item stands in until the detail query lands. Without this, review
+  // actions dead-click while the detail is in flight.
+  const listCandidate =
+    candidates?.find((item) => item.id === selectedId) ?? null;
+  const candidate = candidateQuery.data ?? listCandidate;
 
   const pendingCount =
     candidates?.filter((c) => c.status === "PENDING").length ?? 0;
@@ -436,6 +435,7 @@ export default function MergeCandidateReviewPage() {
 
         <CandidateDecisionPanel
           selectedId={selectedId}
+          listCandidate={listCandidate}
           candidateQuery={candidateQuery}
           reviewNotes={reviewNotes}
           onReviewNotesChange={setReviewNotes}

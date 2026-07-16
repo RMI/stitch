@@ -155,4 +155,48 @@ describe("MergeCandidateReviewPage", () => {
     });
     expect(screen.getByLabelText("Decision notes")).toHaveValue("");
   });
+
+  it("keeps the candidate panel in place while the detail query loads", () => {
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: null,
+      isLoading: true,
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      screen.getByRole("heading", { name: "Candidate #11" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Source comparison for 101, 102"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Approve merge" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Loading candidate…")).not.toBeInTheDocument();
+  });
+
+  it("approves with the queue's candidate id while the detail query loads", async () => {
+    const user = userEvent.setup();
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: null,
+      isLoading: true,
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+    await user.click(screen.getByRole("button", { name: "Approve merge" }));
+
+    await waitFor(() => {
+      expect(reviewMergeCandidate).toHaveBeenCalledWith(
+        expect.any(Object),
+        11,
+        "approve",
+        expect.any(Function),
+        "oil-gas-fields",
+        "",
+      );
+    });
+  });
 });
