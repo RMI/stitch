@@ -3,48 +3,12 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useAuth0 } from "@auth0/auth0-react";
 import { auth0TestDefaults, renderWithQueryClient } from "../test/utils";
-import MergeSourceComparison, { getRowStatus } from "./MergeSourceComparison";
+import MergeSourceComparison from "./MergeSourceComparison";
 import { getResourceDetail } from "../queries/api";
 
 vi.mock("../queries/api", () => ({
   getResourceDetail: vi.fn(),
 }));
-
-describe("getRowStatus", () => {
-  it("returns match when all values are populated and identical", () => {
-    expect(getRowStatus(["Burgan", "Burgan"])).toBe("match");
-  });
-
-  it("returns differs when populated values disagree", () => {
-    expect(getRowStatus(["Burgan", "Bergan"])).toBe("differs");
-  });
-
-  it("compares exactly: case differences differ", () => {
-    expect(getRowStatus(["Kuwait", "kuwait"])).toBe("differs");
-  });
-
-  it("compares exactly: number and numeric string differ", () => {
-    expect(getRowStatus([1938, "1938"])).toBe("differs");
-  });
-
-  it("returns differs when only some values are populated", () => {
-    expect(getRowStatus(["Arabian", null])).toBe("differs");
-    expect(getRowStatus(["Arabian", undefined])).toBe("differs");
-    expect(getRowStatus(["Arabian", ""])).toBe("differs");
-  });
-
-  it("returns empty when no values are populated", () => {
-    expect(getRowStatus([null, undefined, ""])).toBe("empty");
-  });
-
-  it("handles three matching sources", () => {
-    expect(getRowStatus(["Burgan", "Burgan", "Burgan"])).toBe("match");
-  });
-
-  it("handles three sources where one differs", () => {
-    expect(getRowStatus(["Burgan", "Burgan", "Safaniya"])).toBe("differs");
-  });
-});
 
 const detailsById = {
   101: {
@@ -71,7 +35,10 @@ const detailsById = {
 
 function renderComparison(resourceIds = [101, 102]) {
   return renderWithQueryClient(
-    <MergeSourceComparison endpoint="oil-gas-fields" resourceIds={resourceIds} />,
+    <MergeSourceComparison
+      endpoint="oil-gas-fields"
+      resourceIds={resourceIds}
+    />,
   );
 }
 
@@ -143,7 +110,9 @@ describe("MergeSourceComparison", () => {
     renderComparison([101]);
 
     expect(
-      screen.getByText("At least two source resources are required to compare."),
+      screen.getByText(
+        "At least two source resources are required to compare.",
+      ),
     ).toBeInTheDocument();
     expect(getResourceDetail).not.toHaveBeenCalled();
   });

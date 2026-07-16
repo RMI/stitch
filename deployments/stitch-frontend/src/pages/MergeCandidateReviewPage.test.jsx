@@ -4,25 +4,22 @@ import userEvent from "@testing-library/user-event";
 import { useAuth0 } from "@auth0/auth0-react";
 import { auth0TestDefaults, renderWithQueryClient } from "../test/utils";
 import MergeCandidateReviewPage from "./MergeCandidateReviewPage";
-import {
-  useMergeCandidates,
-  useMergeCandidate,
-  useMergeCandidatePreview,
-} from "../hooks/useResources";
+import { useMergeCandidates, useMergeCandidate } from "../hooks/useResources";
 import { reviewMergeCandidate } from "../queries/api";
 
 vi.mock("../hooks/useResources", () => ({
   useMergeCandidates: vi.fn(),
   useMergeCandidate: vi.fn(),
-  useMergeCandidatePreview: vi.fn(),
 }));
 
 vi.mock("../queries/api", () => ({
   reviewMergeCandidate: vi.fn(),
 }));
 
-vi.mock("../components/ResourceView", () => ({
-  default: ({ initialID }) => <div>Resource evidence {initialID}</div>,
+vi.mock("../components/MergeSourceComparison", () => ({
+  default: ({ resourceIds }) => (
+    <div>Source comparison for {resourceIds.join(", ")}</div>
+  ),
 }));
 
 const candidates = [
@@ -47,13 +44,6 @@ const nextPendingCandidate = {
   resource_ids: [301, 302],
   merged_resource_id: null,
 };
-const preview = {
-  resource_ids: [101, 102],
-  data: {
-    name: "Merged Burgan Field",
-    basin: "Arabian",
-  },
-};
 
 const defaultHookReturn = {
   data: null,
@@ -73,11 +63,6 @@ beforeEach(() => {
   vi.mocked(useMergeCandidate).mockReturnValue({
     ...defaultHookReturn,
     data: pendingCandidate,
-    refetch: vi.fn(),
-  });
-  vi.mocked(useMergeCandidatePreview).mockReturnValue({
-    ...defaultHookReturn,
-    data: preview,
     refetch: vi.fn(),
   });
   vi.mocked(reviewMergeCandidate).mockResolvedValue({});
@@ -106,42 +91,23 @@ describe("MergeCandidateReviewPage", () => {
     expect(screen.getByText("Total")).toBeInTheDocument();
   });
 
-  it("places the decision controls after preview evidence", () => {
+  it("shows the source comparison instead of the merged preview", () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
-    const previewHeading = screen.getByText("Merged preview");
+    const comparison = screen.getByText("Source comparison for 101, 102");
     const decisionNotes = screen.getByLabelText("Decision notes");
-    const sourceResources = screen.getByText("Source resources (2)");
 
-    expect(decisionNotes).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Approve merge" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Deny merge" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Merged preview")).toBeInTheDocument();
-    expect(screen.getByLabelText("Merged preview data")).toHaveTextContent(
-      "Merged Burgan Field",
-    );
-    expect(previewHeading.compareDocumentPosition(decisionNotes)).toBe(
+    expect(screen.queryByText("Merged preview")).not.toBeInTheDocument();
+    expect(screen.queryByText("Source resources (2)")).not.toBeInTheDocument();
+    expect(comparison.compareDocumentPosition(decisionNotes)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(decisionNotes.compareDocumentPosition(sourceResources)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-  });
-
-  it("keeps source resource evidence hidden until requested", async () => {
-    const user = userEvent.setup();
-    renderWithQueryClient(<MergeCandidateReviewPage />);
-
-    expect(screen.queryByText("Resource evidence 101")).not.toBeInTheDocument();
-
-    await user.click(screen.getByText("Source resources (2)"));
-
-    expect(screen.getByText("Resource evidence 101")).toBeInTheDocument();
-    expect(screen.getByText("Resource evidence 102")).toBeInTheDocument();
   });
 
   it("submits the selected review decision with notes", async () => {

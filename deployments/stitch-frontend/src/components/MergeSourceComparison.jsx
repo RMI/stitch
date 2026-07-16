@@ -7,22 +7,7 @@ import {
   MERGE_COMPARISON_CORE_FIELDS,
   MERGE_COMPARISON_OTHER_FIELDS,
 } from "../constants/fieldMeta";
-
-function isEmpty(value) {
-  return value === null || value === undefined || value === "";
-}
-
-// Row status across all source values: "match" when every source has the same
-// populated value (exact ===), "differs" when populated values disagree or
-// only some sources have a value, "empty" when no source has a value.
-export function getRowStatus(values) {
-  const populated = values.filter((value) => !isEmpty(value));
-  if (populated.length === 0) return "empty";
-  if (populated.length < values.length) return "differs";
-  return populated.every((value) => value === populated[0])
-    ? "match"
-    : "differs";
-}
+import { getRowStatus, isEmptyValue } from "../utils/mergeComparison";
 
 // Color is never the only signal: each status pairs its strip color with an
 // icon (aria-hidden) and a text label.
@@ -59,7 +44,11 @@ function ComparisonCell({ value, status }) {
       className={`min-w-0 rounded-md border border-line border-l-4 bg-panel px-3 py-2 ${meta.borderClass}`}
     >
       <div className="break-words text-sm text-ink">
-        {isEmpty(value) ? <span className="text-ink-muted">—</span> : String(value)}
+        {isEmptyValue(value) ? (
+          <span className="text-ink-muted">—</span>
+        ) : (
+          String(value)
+        )}
       </div>
       <div className={`mt-1 text-xs font-medium ${meta.cueClass}`}>
         {meta.icon ? <span aria-hidden="true">{meta.icon} </span> : null}
@@ -74,7 +63,11 @@ function ComparisonRow({ fieldKey, details }) {
   const rowStatus = getRowStatus(values);
 
   return (
-    <div role="group" aria-label={FIELD_META[fieldKey].label} className="min-w-0">
+    <div
+      role="group"
+      aria-label={FIELD_META[fieldKey].label}
+      className="min-w-0"
+    >
       <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">
         {FIELD_META[fieldKey].label}
       </p>
@@ -83,7 +76,7 @@ function ComparisonRow({ fieldKey, details }) {
           <ComparisonCell
             key={index}
             value={value}
-            status={isEmpty(value) ? "empty" : rowStatus}
+            status={isEmptyValue(value) ? "empty" : rowStatus}
           />
         ))}
       </div>
@@ -106,7 +99,11 @@ function OtherAttributesAccordion({ details }) {
       {isOpen ? (
         <div className="mt-4 space-y-4">
           {MERGE_COMPARISON_OTHER_FIELDS.map((fieldKey) => (
-            <ComparisonRow key={fieldKey} fieldKey={fieldKey} details={details} />
+            <ComparisonRow
+              key={fieldKey}
+              fieldKey={fieldKey}
+              details={details}
+            />
           ))}
         </div>
       ) : null}
@@ -130,7 +127,9 @@ export default function MergeSourceComparison({ endpoint, resourceIds }) {
   } = useAuthenticatedQuery({
     queryKey: [endpoint, "merge-source-details", ...ids],
     queryFn: (fetcher) =>
-      Promise.all(ids.map((id) => getResourceDetail(config, id, fetcher, endpoint))),
+      Promise.all(
+        ids.map((id) => getResourceDetail(config, id, fetcher, endpoint)),
+      ),
     enabled: hasEnoughSources,
   });
 
@@ -162,7 +161,11 @@ export default function MergeSourceComparison({ endpoint, resourceIds }) {
               ))}
             </div>
             {MERGE_COMPARISON_CORE_FIELDS.map((fieldKey) => (
-              <ComparisonRow key={fieldKey} fieldKey={fieldKey} details={details} />
+              <ComparisonRow
+                key={fieldKey}
+                fieldKey={fieldKey}
+                details={details}
+              />
             ))}
             <OtherAttributesAccordion details={details} />
           </div>
