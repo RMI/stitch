@@ -222,7 +222,10 @@ function CandidateDecisionPanel({
     );
   }
 
-  if (candidateError) {
+  // A detail error only blocks when there is nothing to show. When the queue
+  // item is present it carries every field the panel renders, so the panel
+  // degrades to a banner rather than disappearing.
+  if (candidateError && !candidate) {
     return (
       <section className="rounded-md border border-line bg-panel p-5">
         <p className="text-sm text-danger">
@@ -242,6 +245,13 @@ function CandidateDecisionPanel({
 
   return (
     <article className="min-w-0 overflow-hidden rounded-md border border-line bg-panel">
+      {candidateError ? (
+        <p className="border-b border-danger/25 bg-danger-soft px-5 py-4 text-sm text-danger">
+          These details could not be refreshed and may be out of date.{" "}
+          {candidateErrorObj?.message ?? "Failed to load candidate."}
+        </p>
+      ) : null}
+
       <div className="space-y-4 px-5 py-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

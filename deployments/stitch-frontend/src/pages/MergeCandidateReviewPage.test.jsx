@@ -199,4 +199,47 @@ describe("MergeCandidateReviewPage", () => {
       );
     });
   });
+
+  it("renders the panel with a banner when the detail query fails", () => {
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: null,
+      isError: true,
+      error: new Error("detail boom"),
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      screen.getByRole("heading", { name: "Candidate #11" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Approve merge" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/could not be refreshed/)).toBeInTheDocument();
+    expect(screen.getByText(/detail boom/)).toBeInTheDocument();
+  });
+
+  it("blocks with an error when the detail query fails and the queue has no item", () => {
+    vi.mocked(useMergeCandidates).mockReturnValue({
+      ...defaultHookReturn,
+      data: [],
+      refetch: vi.fn(),
+    });
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: null,
+      isError: true,
+      error: new Error("detail boom"),
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      screen.getByText("No merge candidates to review."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Candidate #11" }),
+    ).not.toBeInTheDocument();
+  });
 });
