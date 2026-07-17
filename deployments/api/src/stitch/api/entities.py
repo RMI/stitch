@@ -13,7 +13,6 @@ from stitch.ogsi.model.types import (
     PrimaryHydrocarbonGroup,
     ProductionConventionality,
 )
-from stitch.ogsi.model.og_field import OilGasFieldBase
 
 OGSI_SOURCE_DEFAULT: tuple[OGSISrcKey, ...] = (RMI_SRC, GEM_SRC, WM_SRC, LLM_SRC)
 
@@ -170,9 +169,3 @@ class MergeCandidateView(BaseModel):
     last_updated_by_id: int
     reviewed_at: datetime | None = None
     reviewed_by_id: int | None = None
-
-
-class OGFieldMergePreviewView(BaseModel):
-    resource_ids: list[int]
-    data: OilGasFieldBase
-    provenance: dict[str, OGSISrcKey | None]

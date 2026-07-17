@@ -108,6 +108,7 @@ def construct_base_query_statement(
             v.colname.label("colname"),
             v.value_text,
             v.value_num,
+            v.value_json,
         )
         .select_from(m)
         .join(r, r.id == m.resource_id)
@@ -157,6 +158,12 @@ def add_ranking(base_cte: CTE) -> Select[tuple[Any, ...]]:
     cols = base_cte.c
     ranked = (
         select(base_cte)
+        # Empty text can't win coalescing: drop empty-string values before the
+        # window so a lower-priority non-empty source wins instead. Only
+        # text-kind attributes populate value_text (ck_source_value_exactly_one),
+        # so this leaves numeric/JSON untouched. If every source is empty/absent
+        # for a field, no row survives and the field coalesces to NULL.
+        .where(or_(cols.value_text.is_(None), cols.value_text != ""))
         .add_columns(
             func.row_number()
             .over(
@@ -172,6 +179,31 @@ def add_ranking(base_cte: CTE) -> Select[tuple[Any, ...]]:
         .cte()
     )
     return select(ranked).where(ranked.c.rn == 1)
+
+
+def coalesced_winner_rows(
+    resource_ids: Collection[int],
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> Select[tuple[Any, ...]]:
+    """Winning ``(value, source)`` per ``(resource, field)`` for given resources.
+
+    One row per ``(resource_id, colname)`` that wins coalescing -- the same
+    priority ranking the list/filter path uses (``add_ranking``), narrowed to
+    ``resource_ids``. Callers materialize the typed value and read the winning
+    ``source``/``source_pk`` as provenance; the winner is already chosen in SQL,
+    so no priority logic remains in Python.
+    """
+    base = construct_base_query_statement(licensed_sources)
+    winners = add_ranking(base).cte("coalesced_winners")
+    return select(
+        winners.c.resource_id,
+        winners.c.colname,
+        winners.c.value_text,
+        winners.c.value_num,
+        winners.c.value_json,
+        winners.c.source,
+        winners.c.source_pk,
+    ).where(winners.c.resource_id.in_(list(dict.fromkeys(resource_ids))))
 
 
 def _resource_universe() -> Select[tuple[int]]:

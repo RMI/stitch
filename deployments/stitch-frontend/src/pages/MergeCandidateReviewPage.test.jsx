@@ -7,14 +7,12 @@ import MergeCandidateReviewPage from "./MergeCandidateReviewPage";
 import {
   useMergeCandidates,
   useMergeCandidate,
-  useMergeCandidatePreview,
 } from "../hooks/useResources";
 import { reviewMergeCandidate } from "../queries/api";
 
 vi.mock("../hooks/useResources", () => ({
   useMergeCandidates: vi.fn(),
   useMergeCandidate: vi.fn(),
-  useMergeCandidatePreview: vi.fn(),
 }));
 
 vi.mock("../queries/api", () => ({
@@ -47,14 +45,6 @@ const nextPendingCandidate = {
   resource_ids: [301, 302],
   merged_resource_id: null,
 };
-const preview = {
-  resource_ids: [101, 102],
-  data: {
-    name: "Merged Burgan Field",
-    basin: "Arabian",
-  },
-};
-
 const defaultHookReturn = {
   data: null,
   isLoading: false,
@@ -73,11 +63,6 @@ beforeEach(() => {
   vi.mocked(useMergeCandidate).mockReturnValue({
     ...defaultHookReturn,
     data: pendingCandidate,
-    refetch: vi.fn(),
-  });
-  vi.mocked(useMergeCandidatePreview).mockReturnValue({
-    ...defaultHookReturn,
-    data: preview,
     refetch: vi.fn(),
   });
   vi.mocked(reviewMergeCandidate).mockResolvedValue({});
@@ -121,9 +106,9 @@ describe("MergeCandidateReviewPage", () => {
       screen.getByRole("button", { name: "Deny merge" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Merged preview")).toBeInTheDocument();
-    expect(screen.getByLabelText("Merged preview data")).toHaveTextContent(
-      "Merged Burgan Field",
-    );
+    expect(
+      screen.getByText("Merge preview is temporarily unavailable."),
+    ).toBeInTheDocument();
     expect(previewHeading.compareDocumentPosition(decisionNotes)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );

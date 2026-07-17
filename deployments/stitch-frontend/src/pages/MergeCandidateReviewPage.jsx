@@ -6,13 +6,11 @@ import Button from "../components/Button";
 import {
   useMergeCandidates,
   useMergeCandidate,
-  useMergeCandidatePreview,
 } from "../hooks/useResources";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { reviewMergeCandidate } from "../queries/api";
 import { useConfig } from "../config/useConfig";
 import { resourceKeys } from "../queries/resources";
-import StructuredDataView from "../components/StructuredDataView";
 
 const ENDPOINT = "oil-gas-fields";
 
@@ -200,49 +198,16 @@ function DecisionControls({
   );
 }
 
-function PreviewPanel({
-  candidate,
-  shouldShowPreview,
-  preview,
-  isLoading,
-  isError,
-  error,
-}) {
+function PreviewPanel({ candidate }) {
   return (
     <section className="border-t border-line px-5 py-5">
       <h3 className="text-base font-semibold text-ink">Merged preview</h3>
 
-      <div className="mt-3">
-        {shouldShowPreview ? (
-          isLoading ? (
-            <p className="text-sm text-ink-muted">Loading preview…</p>
-          ) : isError ? (
-            <p className="text-sm text-danger">
-              {error?.message ?? "Failed to load preview."}
-            </p>
-          ) : preview?.data ? (
-            <div className="space-y-3">
-              <p className="text-sm text-ink-muted">
-                Created from resources {preview.resource_ids.join(", ")}.
-              </p>
-              <div className="rounded-md border border-line bg-surface p-3">
-                <StructuredDataView
-                  data={preview.data}
-                  label="Merged preview data"
-                />
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-ink-muted">No preview available.</p>
-          )
-        ) : (
-          <div className="space-y-2 text-sm text-ink-muted">
-            <p>Preview is available only while a candidate is pending.</p>
-            {candidate.merged_resource_id ? (
-              <p>Merged resource: {candidate.merged_resource_id}</p>
-            ) : null}
-          </div>
-        )}
+      <div className="mt-3 space-y-2 text-sm text-ink-muted">
+        <p>Merge preview is temporarily unavailable.</p>
+        {candidate.merged_resource_id ? (
+          <p>Merged resource: {candidate.merged_resource_id}</p>
+        ) : null}
       </div>
     </section>
   );
@@ -290,8 +255,6 @@ function CandidateDecisionPanel({
   actionError,
   actionLoading,
   activeReviewAction,
-  shouldShowPreview,
-  previewQuery,
   showSourceResources,
   onToggleSourceResources,
 }) {
@@ -301,12 +264,6 @@ function CandidateDecisionPanel({
     isError: candidateError,
     error: candidateErrorObj,
   } = candidateQuery;
-  const {
-    data: preview,
-    isLoading: previewLoading,
-    isError: previewError,
-    error: previewErrorObj,
-  } = previewQuery;
 
   if (!selectedId) {
     return (
@@ -373,14 +330,7 @@ function CandidateDecisionPanel({
         ) : null}
       </div>
 
-      <PreviewPanel
-        candidate={candidate}
-        shouldShowPreview={shouldShowPreview}
-        preview={preview}
-        isLoading={previewLoading}
-        isError={previewError}
-        error={previewErrorObj}
-      />
+      <PreviewPanel candidate={candidate} />
 
       {candidate.status === "PENDING" ? (
         <DecisionControls
@@ -444,14 +394,6 @@ export default function MergeCandidateReviewPage() {
   );
   const candidate = candidateQuery.data;
 
-  const shouldShowPreview = candidate?.status === "PENDING";
-
-  const previewQuery = useMergeCandidatePreview(
-    ENDPOINT,
-    selectedId,
-    Boolean(selectedId) && shouldShowPreview,
-  );
-
   const pendingCount =
     candidates?.filter((c) => c.status === "PENDING").length ?? 0;
   const reviewedCount =
@@ -488,9 +430,6 @@ export default function MergeCandidateReviewPage() {
         }),
         queryClient.invalidateQueries({
           queryKey: resourceKeys.mergeCandidate(ENDPOINT, candidate.id),
-        }),
-        queryClient.invalidateQueries({
-          queryKey: resourceKeys.preview(ENDPOINT, candidate.id),
         }),
       ]);
 
@@ -563,8 +502,6 @@ export default function MergeCandidateReviewPage() {
           actionError={actionError}
           actionLoading={actionLoading}
           activeReviewAction={activeReviewAction}
-          shouldShowPreview={shouldShowPreview}
-          previewQuery={previewQuery}
           showSourceResources={showSourceResources}
           onToggleSourceResources={setShowSourceResources}
         />

@@ -288,6 +288,41 @@ class TestResourceQueryAction:
         assert items[0].provenance["reservoir_formation"] == "wm"
 
     @pytest.mark.anyio
+    async def test_empty_string_value_loses_to_lower_priority_nonempty(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        # Highest-priority source (rmi) carries an empty-string basin; coalescing
+        # must fall through to the lower-priority non-empty value instead of
+        # letting the empty string win.
+        resource_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "rmi", "name": "RMI Name", "country": "USA", "basin": ""},
+            {
+                "source": "gem",
+                "name": "GEM Name",
+                "country": "USA",
+                "basin": "GEM Basin",
+            },
+        )
+
+        params = _QueryParams(page=1, page_size=10)
+        items, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 1
+        assert items[0].data.basin == "GEM Basin"
+        assert items[0].provenance["basin"] == "gem"
+
+        # The all-sources view omits the empty value, so its winner-first order
+        # agrees with the coalesced winner.
+        values = await resource_actions.field_source_values(
+            seeded_integration_session, resource_id, "basin"
+        )
+        assert [v.source for v in values] == ["gem"]
+
+    @pytest.mark.anyio
     async def test_no_redaction_uses_priority_coalesced_owner_operator_lists(
         self,
         seeded_integration_session: AsyncSession,
@@ -1424,7 +1459,11 @@ class TestCoalescingEngineParity:
 
 
 class TestCoalesceResources:
-    """The shared in-memory coalescing core used by detail + list."""
+    """The shared SQL coalescing core used by detail + list.
+
+    Produces the coalesced view + provenance; raw ``source_data`` is left empty
+    here and attached by the detail path (``resource_model_to_entity``).
+    """
 
     @pytest.mark.anyio
     async def test_entry_per_id_with_nullshell_for_empty(
@@ -1445,7 +1484,9 @@ class TestCoalesceResources:
         res = out[rid]
         assert res.view.name == "G"
         assert res.provenance["name"][1] == "gem"
-        assert {s.source for s in res.source_data} == {"gem"}
+        # coalesce_resources returns the coalesced view + provenance only; raw
+        # sources are attached separately by the detail path.
+        assert res.source_data == []
 
         empty_res = out[empty.id]
         assert empty_res.view.name is None
