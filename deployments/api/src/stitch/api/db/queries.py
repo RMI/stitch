@@ -90,6 +90,7 @@ def _participating_columns(params: OGFieldQueryParams) -> list[str]:
 
 def construct_base_query_statement(
     licensed_sources: Collection[OGSISrcKey] | None = None,
+    resource_ids: Collection[int] | None = None,
 ) -> CTE:
     s = OilGasFieldSourceModel
     v = OilGasFieldSourceValueModel
@@ -124,6 +125,13 @@ def construct_base_query_statement(
     if licensed_sources is not None:
         active_src = active_src.where(
             m.source.in_(list(dict.fromkeys(licensed_sources)))
+        )
+    # Narrow to specific resources before ranking so the window partitions cover
+    # only those resources -- a detail/page hydration must not rank every active
+    # row in the table.
+    if resource_ids is not None:
+        active_src = active_src.where(
+            m.resource_id.in_(list(dict.fromkeys(resource_ids)))
         )
     return active_src.cte("active_src")
 
@@ -188,12 +196,13 @@ def coalesced_winner_rows(
     """Winning ``(value, source)`` per ``(resource, field)`` for given resources.
 
     One row per ``(resource_id, colname)`` that wins coalescing -- the same
-    priority ranking the list/filter path uses (``add_ranking``), narrowed to
-    ``resource_ids``. Callers materialize the typed value and read the winning
-    ``source``/``source_pk`` as provenance; the winner is already chosen in SQL,
-    so no priority logic remains in Python.
+    priority ranking the list/filter path uses (``add_ranking``). The base CTE is
+    narrowed to ``resource_ids`` *before* ranking, so the window partitions cover
+    only the requested resources rather than the whole table. Callers materialize
+    the typed value and read the winning ``source``/``source_pk`` as provenance;
+    the winner is already chosen in SQL, so no priority logic remains in Python.
     """
-    base = construct_base_query_statement(licensed_sources)
+    base = construct_base_query_statement(licensed_sources, resource_ids=resource_ids)
     winners = add_ranking(base).cte("coalesced_winners")
     return select(
         winners.c.resource_id,
@@ -203,7 +212,7 @@ def coalesced_winner_rows(
         winners.c.value_json,
         winners.c.source,
         winners.c.source_pk,
-    ).where(winners.c.resource_id.in_(list(dict.fromkeys(resource_ids))))
+    )
 
 
 def _resource_universe() -> Select[tuple[int]]:
