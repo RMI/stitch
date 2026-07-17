@@ -75,9 +75,14 @@ remote-write path. Reuse the auto-created pair:
 3. On that DCR → **Access control (IAM)** → Add role assignment →
    **Monitoring Metrics Publisher** → assign to the CI service principal
    (`AZURE_CLIENT_ID`). **This needs `Owner` or `User Access Administrator`** on
-   the DCR (or its RG/subscription) — if you're a limited admin, hand the CLI
-   command below to someone who has it. Assigning at the **resource-group** scope
-   instead is fine (covers future DCRs too); DCR scope is tighter.
+   the DCR — if you're a limited admin, hand the CLI command below to someone who
+   has it.
+   > ⚠️ **Scope gotcha (this bit us):** the auto-created DCR does **not** live in
+   > your workspace's resource group — it's in Azure's **managed** RG
+   > (`MA_<workspace>_<region>_managed`, e.g. `MA_stitch-prometheus_westus2_managed`).
+   > So granting the role on `STITCH-DEV-RG` does **nothing** for it; every
+   > remote-write 403s. Scope the grant to the **DCR itself** (or that managed RG).
+   > Find the DCR with `az monitor data-collection rule list -o table`.
 4. Assemble the remote-write URL (this becomes `LOADTEST_PROMETHEUS_RW_URL` in
    step 4):
    ```
@@ -100,6 +105,82 @@ az role assignment create \
 ```
 
 Capture the ingestion URL — it becomes `LOADTEST_PROMETHEUS_RW_URL` in step 4.
+
+### Alternative: your own DCE + DCR (when you can't grant on the managed DCR)
+
+If you only have role-assignment rights in your own resource group (not the
+managed `MA_…` RG where the auto-created DCR lives), you can't grant the CI
+principal on that DCR. Instead, create **your own** DCE + DCR **in a RG you
+control** (`STITCH-DEV-RG`) that ingests to the *same* Azure Monitor Workspace,
+grant the role on your DCR, and point `LOADTEST_PROMETHEUS_RW_URL` at it.
+
+**Portal vs CLI for each piece:**
+
+**You do not need a new DCE** — reuse the workspace's existing managed DCE
+(`stitch-prometheus`); a DCR can reference a DCE across resource groups, and only
+*read* on the DCE is required. Its metrics endpoint is also the **same host**
+already in your `LOADTEST_PROMETHEUS_RW_URL`, so only the DCR immutable-id segment
+of the URL changes. You only create the **DCR** (in your RG, so you can grant on it).
+
+| Piece | Portal | CLI |
+|---|---|---|
+| Data Collection **Endpoint** | reuse the existing managed one (no create) | — |
+| Data Collection **Rule** (Prometheus remote-write) | ❌ **CLI/ARM only** — the "Create Data Collection Rule" wizard offers only *Agent-based* / *Platform telemetry*, not the Prometheus stream | ✅ (`--rule-file`) |
+| Role assignment + reading the immutable ID | ✅ (DCR → IAM / JSON View) | ✅ |
+
+**CLI** (verify field names against the `show` output — the DCR schema is
+version-dependent; the surest template is the managed DCR's own JSON, below):
+
+```bash
+RG=STITCH-DEV-RG ; LOC=westus2
+AMW_ID=$(az monitor account show -n stitch-prometheus -g "$RG" --query id -o tsv)
+
+# Reuse the workspace's existing managed DCE (no new one needed):
+DCE_ID=$(az monitor data-collection endpoint list \
+  --query "[?name=='stitch-prometheus'].id | [0]" -o tsv)
+
+# See the managed DCR's exact shape and mirror its dataSources/destinations/dataFlows:
+az monitor data-collection rule show -n stitch-prometheus \
+  -g MA_stitch-prometheus_westus2_managed
+
+# DCR rule file targeting the workspace (mirror the managed DCR if this shape drifts)
+cat > /tmp/stitch-prom-dcr.json <<JSON
+{
+  "location": "$LOC",
+  "properties": {
+    "dataCollectionEndpointId": "$DCE_ID",
+    "dataSources": { "prometheusForwarder": [
+      { "name": "PrometheusDataSource", "streams": ["Microsoft-PrometheusMetrics"], "labelIncludeFilter": {} }
+    ] },
+    "destinations": { "monitoringAccounts": [
+      { "accountResourceId": "$AMW_ID", "name": "MonitoringAccount1" }
+    ] },
+    "dataFlows": [
+      { "streams": ["Microsoft-PrometheusMetrics"], "destinations": ["MonitoringAccount1"] }
+    ]
+  }
+}
+JSON
+az monitor data-collection rule create \
+  --name stitch-prom-dcr -g "$RG" -l "$LOC" --rule-file /tmp/stitch-prom-dcr.json
+
+# 3. Grant the CI principal on YOUR DCR (you own this RG, so this works)
+DCR_ID=$(az monitor data-collection rule show -n stitch-prom-dcr -g "$RG" --query id -o tsv)
+az role assignment create \
+  --assignee-object-id <CI service principal object id> \
+  --assignee-principal-type ServicePrincipal \
+  --role "Monitoring Metrics Publisher" --scope "$DCR_ID"
+
+# 4. Build LOADTEST_PROMETHEUS_RW_URL: SAME host as before (the reused managed
+#    DCE's metrics endpoint), only the immutable id changes to your new DCR's.
+IMMUTABLE=$(az monitor data-collection rule show -n stitch-prom-dcr -g "$RG" --query immutableId -o tsv)
+# URL = https://stitch-prometheus-wxjg.westus2-1.metrics.ingest.monitor.azure.com/dataCollectionRules/$IMMUTABLE/streams/Microsoft-PrometheusMetrics/api/v1/write?api-version=2023-04-24
+```
+
+> The DCR JSON and the exact ingestion-endpoint field are the finicky, version-
+> dependent bits — **base them on the managed DCR's `show` output** and current
+> Microsoft docs rather than trusting the snippet verbatim. If this fights you,
+> the self-hosted-Prometheus fallback below sidesteps DCE/DCR entirely.
 
 > **Fallback if remote-write proves fiddly** — fully self-contained and
 > guaranteed to work with k6 + Grafana. Run a small Prometheus as its own
