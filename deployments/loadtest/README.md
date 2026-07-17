@@ -23,7 +23,7 @@ setup (Grafana, Monitor Workspace, remote-write auth) see
 | `package.json` | faker + esbuild for the bundle step. |
 | `prometheus.yml`, `grafana/` | The **local** Prometheus config + Grafana datasource/dashboard provisioning (see local stack below). |
 | `grafana/dashboards/k6-pr-compare.json` | Grafana dashboard: read + write latency (avg/p95/p99) per endpoint, per run, with `$pr`/`$run` filters. **The PR-comparison view.** |
-| `grafana/dashboards/api-live-red.json` | Grafana dashboard: live server-side RED (rate/errors/duration) from span-derived metrics. |
+| `grafana/dashboards/api-live-red.json` | Grafana dashboard: server-side RED (rate/errors/duration) per PR, from **Application Insights** via the Azure Monitor datasource (KQL). **Azure-only** — App Insights doesn't exist locally. |
 
 ## How it runs in CI
 
@@ -51,13 +51,17 @@ make reboot-docker-heavy   # api + friends + seed + collector/jaeger + prometheu
 make loadtest              # runs script.js once; metrics -> local Prometheus -> Grafana
 ```
 
-- Grafana: <http://localhost:3001> (anonymous view; the committed dashboards are
-  auto-provisioned. They select their Prometheus source via a `datasource`
-  template variable that auto-picks the default datasource, so the same dashboard
-  JSON renders here and in Azure Managed Grafana with no per-environment edits).
+- Grafana: <http://localhost:3001> (anonymous view). **`k6-pr-compare`** is
+  auto-provisioned and works locally — it selects its Prometheus source via a
+  `datasource` template variable, so the same JSON renders here and in Azure with
+  no edits. **`api-live-red` is Azure-only** (it queries Application Insights,
+  which has no local equivalent).
 - Prometheus: <http://localhost:9090> · Jaeger: <http://localhost:16686>
-- For the live RED dashboard, enable OTEL export in `.env`
-  (`OTEL_ENABLED=true`, `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317`).
+- For local span-derived RED, enable OTEL export in `.env` (`OTEL_ENABLED=true`,
+  `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317`) — the collector then
+  emits `spanmetrics_*` to the local Prometheus, which you can explore in Grafana
+  **Explore** (there's no committed local RED dashboard; `api-live-red` is the
+  Azure/App-Insights one).
 - Seed volume is `SEED_VOLUME` in `.env` (default 50 locally). Bump it before a
   meaningful load test so the query-expensive paths have real data.
 

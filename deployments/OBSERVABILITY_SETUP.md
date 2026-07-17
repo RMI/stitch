@@ -162,8 +162,9 @@ GRAFANA_MI=$(az grafana show --name stitch-grafana -g "$RG" --query identity.pri
 az role assignment create --assignee "$GRAFANA_MI" \
   --role "Monitoring Data Reader" --scope "$AMW_ID"
 
-# Dashboards select their datasource via a `datasource` template variable, so
-# there is no UID to match — they auto-pick the Prometheus source on import.
+# Dashboards select their datasource via a `datasource` template variable (no UID
+# to match): k6-pr-compare auto-picks Prometheus; api-live-red auto-picks Azure
+# Monitor (set its `appinsights` variable to the App Insights resource ID).
 az grafana dashboard import --name stitch-grafana -g "$RG" \
   --definition deployments/loadtest/grafana/dashboards/k6-pr-compare.json
 az grafana dashboard import --name stitch-grafana -g "$RG" \
@@ -194,29 +195,39 @@ Until `LOADTEST_PROMETHEUS_RW_URL` is set, the seed and load test still run and
 print their summaries — they just don't publish (no dashboard data, and the PR
 comment carries a warning). Nothing blocks a PR before this setup is done.
 
-## 5. Optional — server-side RED (span-derived metrics) on Azure
+## 5. Server-side RED (from Application Insights — no collector changes)
 
-The `api-live-red` dashboard shows rate/errors/duration derived from the API's
-**spans** (no app-side metrics code), via the collector's `spanmetrics`
-connector. This is **already enabled locally** (see
-[`otel-collector/config.yaml`](otel-collector/config.yaml)); on Azure it is
-**opt-in**, because the live per-lane collector must not point a remote-write
-exporter at an endpoint that doesn't exist yet (a bad exporter stops the whole
-trace pipeline).
+The `api-live-red` dashboard shows per-PR rate/errors/duration for the API. It
+reads the **request spans already flowing to Application Insights** (stamped with
+`deployment.name=pr-<N>` via `OTEL_RESOURCE_ATTRIBUTES` in CI) and queries them
+with **KQL through Grafana's Azure Monitor datasource** — so there are **no
+collector changes**, no `prometheusremotewrite` auth, and no risk to the live
+trace pipeline.
 
-To enable it, add to [`otel-collector/config-azure.yaml`](otel-collector/config-azure.yaml)
-the same `spanmetrics` connector as the local config, plus a
-`prometheusremotewrite` exporter to the workspace (Entra auth via the collector
-Container App's managed identity), wired into a `metrics/spanmetrics` pipeline.
-Then grant that managed identity **Monitoring Metrics Publisher** on the DCR and
-set the remote-write endpoint on the collector app.
+Why this and not span-derived Prometheus metrics: the OTel collector is deployed
+**once per lane** (`{lane}-otel-collector`, shared by every `pr-{N}` in the
+lane), and making it remote-write to managed Prometheus would need continuous
+Azure auth (a static service-principal secret via `oauth2client`) plus edits to
+the live `config-azure.yaml`. App Insights already has the per-PR data, so we
+query it directly instead. (The flat-out k6 comparison stays on managed
+Prometheus, where sampling can't thin the numbers; App Insights is for
+server-side per-request detail and drill-down.)
 
-> **Caveat:** the collector is deployed **once per lane**
-> (`{lane}-otel-collector`), so all `pr-{N}` apps in `development` share it and
-> their spans aggregate under `service_name=stitch-api` with no per-PR label. The
-> `api-live-red` dashboard is therefore a lane-wide live view, **not** per-PR. To
-> separate PRs, add `deployment.environment` (already `pr-{N}` on each app) as a
-> spanmetrics dimension and a Grafana template variable. Left as a follow-up.
+**Setup:**
+1. In Grafana, ensure the **Azure Monitor** datasource exists (usually
+   pre-provisioned by Azure Managed Grafana; see Step 3). Its managed identity
+   needs **Monitoring Reader** / **Reader** on the App Insights resource / RG.
+2. Import `api-live-red.json` (done in Step 3). It has two variables:
+   - `datasource` → pick the Azure Monitor datasource (auto-selected).
+   - `appinsights` → paste the **App Insights resource ID** (Portal → App
+     Insights → Settings → Properties → Resource ID). The KQL queries target it.
+3. Data appears once PR traffic (or a load test) has hit the deployed API and
+   spans have flowed to App Insights.
+
+> **Note:** App Insights applies adaptive sampling under heavy load, so treat
+> these numbers as representative of normal/PR traffic — the flat-out k6 test's
+> authoritative numbers live in the Prometheus `k6-pr-compare` dashboard. If you
+> need exact server-side percentiles under load, lower sampling on the dev lane.
 
 ## 6. Cost & retention
 
