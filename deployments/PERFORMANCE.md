@@ -14,6 +14,8 @@ This doc covers the basic loop: **enable capture → drive traffic → analyze**
 > `make reboot-docker`, or the deployed container) — only *how you configure and
 > collect it* differs.
 
+**NOTE:** See lower down for notes on assessing Cloud performance.
+
 ---
 
 ## What gets captured
@@ -22,8 +24,14 @@ Two structured log streams, distinguished by the `logger` field:
 
 | Logger | Emitted | Key fields |
 |---|---|---|
-| `stitch.api.observability.request` | once per HTTP request (always) | `route`, `method`, `status_code`, `duration_ms`, `db_query_count`, `db_time_ms`, `request_id` |
+| `stitch.observability.request` | once per HTTP request (always) | `route`, `method`, `status_code`, `duration_ms`, `db_query_count`, `db_time_ms`, `request_id` |
 | `stitch.api.observability.query` | once per query above the slow threshold | `statement` (parameterized SQL, **no bound values**), `duration_ms`, `rowcount`, `route`, `request_id` |
+
+> The request summary is emitted by the shared `stitch.observability`
+> middleware, so it logs under `stitch.observability.request` (the API's
+> `db_query_count` / `db_time_ms` are grafted on by its subclass). The query
+> stream stays API-specific under `stitch.api.observability.query`. Filter on the
+> `observability` substring to capture both.
 
 `db_query_count` on a request is the N+1 detector; the `query` stream tells you
 *which* statement is expensive.
@@ -80,11 +88,10 @@ start — only genuinely slow queries are recorded, keeping log volume sane).
 ## Step 2 — Drive traffic
 
 Make sure the DB has realistic row counts first. The `full` profile (used by
-`make reboot-docker` and `make dev-docker`) includes the `seed` service, so a
-fresh stack is already seeded; tune volume by setting `SEED_FAKER_POST_COUNT` in
-`.env` (compose maps it to the seed service's `FAKER_POST_COUNT` — a bare
-`FAKER_POST_COUNT` in `.env` is ignored; see [`deployments/seed`](seed)). To
-re-seed an existing stack:
+`make reboot-docker` and `make dev-docker`) includes the `seed` service (the k6
+seeder — [`deployments/loadtest`](loadtest)), so a fresh stack is already seeded;
+tune volume by setting `SEED_VOLUME` in `.env` (how many faker-generated fields
+to create, on top of the committed demo data). To re-seed an existing stack:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.local.yml \
@@ -120,7 +127,7 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 for i in $(seq 200); do
   curl -s -o /dev/null \
     -H "Authorization: Bearer $TOKEN" \
-    -H 'X-Perf-Scenario: vol=8k' \
+    -H 'X-Stitch-Perf-Scenario: vol=8k' \
     "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=50"
 done
 ```
@@ -137,7 +144,7 @@ For concurrency/throughput numbers, use a load tool if you have one installed
 ```bash
 hey -n 500 -c 20 \
   -H "Authorization: Bearer $TOKEN" \
-  -H "X-Perf-Scenario: vol=8k" \
+  -H "X-Stitch-Perf-Scenario: vol=8k" \
   "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=50"
 ```
 
@@ -201,7 +208,7 @@ az monitor log-analytics query \
     | where ContainerName_s == "api"
     | where TimeGenerated > ago(1h)
     | extend p = parse_json(Log_s)
-    | where tostring(p.logger) startswith "stitch.api.observability"
+    | where tostring(p.logger) contains "observability"
     | project line = Log_s' \
   -o tsv > /tmp/prod-events.jsonl
 ```
@@ -270,7 +277,7 @@ ROUTES — top 3 by total
 ## Comparing variants (data volume / params)
 
 To see how the *same* query behaves under different conditions, **tag each batch
-of traffic** with an `X-Perf-Scenario: <label>` request header. The label is
+of traffic** with an `X-Stitch-Perf-Scenario: <label>` request header. The label is
 recorded on every request *and* query event it triggers, so a single log
 captures all variants and the analyzer compares them with `--group-by scenario`.
 No log slicing, no separate files.
@@ -284,11 +291,11 @@ COMPOSE="docker compose -f docker-compose.yml -f docker-compose.local.yml"
 
 ### Variant by data volume (re-seed between runs)
 
-The seed volume is controlled from `.env` via `SEED_FAKER_POST_COUNT` (the
-`seed` service reads it; default 5). Re-running the seed service **adds** more
-rows, so you can build up a volume ladder on a live stack.
+The seed volume is controlled from `.env` via `SEED_VOLUME` (how many
+faker-generated fields the k6 seeder creates; default 50). Re-running the seed
+service **adds** more rows, so you can build up a volume ladder on a live stack.
 
-1. **Start the stack at the first volume.** Set `SEED_FAKER_POST_COUNT=1000` in
+1. **Start the stack at the first volume.** Set `SEED_VOLUME=1000` in
    `.env`, then bring it up — the `full` profile seeds automatically:
 
    ```bash
@@ -299,12 +306,12 @@ rows, so you can build up a volume ladder on a live stack.
 
    ```bash
    for i in $(seq 200); do
-     curl -s -o /dev/null -H 'X-Perf-Scenario: vol=1k' \
+     curl -s -o /dev/null -H 'X-Stitch-Perf-Scenario: vol=1k' \
        "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=50"
    done
    ```
 
-3. **Re-seed to a larger volume.** Bump `SEED_FAKER_POST_COUNT` (e.g. to
+3. **Re-seed to a larger volume.** Bump `SEED_VOLUME` (e.g. to
    `50000`) in `.env`, then re-run *only* the seed service against the running
    stack:
 
@@ -316,7 +323,7 @@ rows, so you can build up a volume ladder on a live stack.
 
    ```bash
    for i in $(seq 200); do
-     curl -s -o /dev/null -H 'X-Perf-Scenario: vol=50k' \
+     curl -s -o /dev/null -H 'X-Stitch-Perf-Scenario: vol=50k' \
        "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=50"
    done
    ```
@@ -343,7 +350,7 @@ rows, so you can build up a volume ladder on a live stack.
 
 > Re-seeding is **cumulative** (volume keeps growing), which is what you want for
 > a volume ladder. For *independent*, repeatable volumes, set
-> `SEED_FAKER_POST_COUNT` and run `make reboot-docker` before each labelled run —
+> `SEED_VOLUME` and run `make reboot-docker` before each labelled run —
 > it wipes the DB so the volumes don't stack.
 
 ### Variant by query params
@@ -354,7 +361,7 @@ own label — the param values are a natural label:
 ```bash
 for ps in 50 500; do
   for i in $(seq 200); do
-    curl -s -o /dev/null -H "X-Perf-Scenario: page_size=$ps" \
+    curl -s -o /dev/null -H "X-Stitch-Perf-Scenario: page_size=$ps" \
       "http://localhost:8000/api/v1/oil-gas-fields/?page=1&page_size=$ps"
   done
 done
@@ -366,9 +373,63 @@ The `--group-by scenario` view breaks each query/route down by label, so
 `page_size=50` and `page_size=500` sit side by side even though they hit the
 same route template.
 
-> The `X-Perf-Scenario` label is opaque to the server (truncated to 80 chars)
+> The `X-Stitch-Perf-Scenario` label is opaque to the server (truncated to 80 chars)
 > and recorded only when sent, so it's safe to leave the feature in place — it
 > costs nothing on untagged production traffic.
+
+---
+
+## Cloud dashboards (Grafana) & per-PR load testing
+
+Everything above is the **local, offline** loop (drive traffic → dump logs →
+`analyze_logs.py`). In the cloud there's a **continuous** loop: every PR is load
+tested against its own freshly deployed instance, and the results land in a
+Grafana dashboard you can compare across PRs.
+
+**What runs.** The [`run-perf`](../.github/workflows/run-perf.yml) CI job (part
+of the CD pipeline, `development` lane) runs a flat-out [k6](../deployments/loadtest)
+test (~90s) of the read-heavy `oil-gas-fields` endpoints against `pr-{N}-api`,
+after seeding a fresh DB. It streams results to Azure Monitor **managed
+Prometheus** via remote-write, tagging each run:
+
+| Tag | Value | Use |
+|---|---|---|
+| `pr` | PR number | pick which PRs to compare |
+| `run_id` | GitHub Actions run id | distinguish runs of the same PR |
+| `sha` | short head SHA | which commit produced this run |
+| `run` | `pr<N>-<run_id>` | the dashboard's x-axis (one bar per run) |
+
+**Where to look.** Grafana → **"k6 — PR response-time comparison"**
+(`GRAFANA_URL/d/k6-pr-compare`). The PR comment posted by CI deep-links straight
+to the run it just produced. Two template variables drive it:
+
+- **Compare PRs:** set `$pr` to several PR numbers → each PR's latest run(s) sit
+  side by side (avg / p95 / p99 per endpoint, total requests, failure rate).
+- **Watch a PR evolve:** set `$pr` to one PR and `$run` to All → every run of that
+  PR lines up, so you see a commit-by-commit regression or win.
+
+**How to read it.** Same instincts as the local `ROUTES`/`QUERIES` reports: a
+widening p99-vs-p95 gap is a long tail; a p95 that climbs across a PR's runs is a
+regression that commit introduced. Bars are in seconds; the stats table breaks
+every endpoint × run down (count / avg / med / p90 / p95 / p99 / max).
+
+**Drill down to the cause.** Prometheus tells you *what* regressed and *when*; it
+can't tell you *why*. For that, pivot to the **App Insights** datasource (also in
+this Grafana) or the Log Analytics query in
+[Step 3](#deployed-log-analytics-via-az): find the same route in the same time
+window and read the trace / slow-query. This is the App-Insights-vs-Prometheus
+split — aggregate comparison lives in Prometheus, per-request root-cause lives in
+App Insights; use each for what it's good at.
+
+**Run it on demand / elsewhere.** Locally, run the k6 image against any target
+(see [`loadtest/README.md`](loadtest/README.md)). The CI job runs on every
+development-lane PR automatically; the seed half only runs on a freshly created
+DB (re-runs on an existing PR DB skip seeding and just re-test).
+
+> First-time setup (Grafana, the managed Prometheus workspace, remote-write auth)
+> is a **one-time by-hand** step documented in
+> [`OBSERVABILITY_SETUP.md`](OBSERVABILITY_SETUP.md). Until it's done the test
+> still runs and prints its summary — it just doesn't publish.
 
 ---
 
@@ -393,8 +454,10 @@ behind `GET /api/v1/oil-gas-fields/`. Let the data confirm it before optimizing.
   raise the threshold or add sampling.
 - **No PII in logs** — only parameterized statement text is recorded, never
   bound parameter values.
-- **Future / OpenTelemetry**: all emission flows through one seam
-  ([`observability/sinks.py`](api/src/stitch/api/observability/sinks.py)). When
-  richer analysis is worth it, the Azure Monitor OpenTelemetry distro can emit
-  spans (per-query dependency waterfalls, percentiles) from the same timing data
-  without reworking the instrumentation. Deliberately not enabled yet.
+- **OpenTelemetry & dashboards**: all emission flows through one seam
+  ([`observability/sinks.py`](api/src/stitch/api/observability/sinks.py)). Spans
+  now export via the per-lane OTel collector to **Application Insights** (traces /
+  per-query waterfalls), and aggregate load-test metrics land in **managed
+  Prometheus** rendered by **Grafana** (see the cloud-dashboards section above and
+  [`OBSERVABILITY_SETUP.md`](OBSERVABILITY_SETUP.md)). Server-side RED metrics
+  derived from spans (`spanmetrics`) are wired but opt-in — see the setup doc.

@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from stitch.api.observability import query_timing
 from stitch.api.observability.context import db_stats_var, new_db_stats
-from stitch.api.observability.logging_config import JsonFormatter, configure_logging
 from stitch.api.observability.query_timing import _START_KEY
+from stitch.observability import JsonFormatter, configure_logging
 
 
 @pytest.fixture

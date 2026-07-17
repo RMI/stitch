@@ -10,14 +10,16 @@ dependencies = [
   "fastapi[standard-no-fastapi-cloud-cli]>=0.135.1",
   "greenlet>=3.3.0",
   "psycopg[binary]>=3.2.12",
+  # opentelemetry-sdk stays: the API imports `opentelemetry.trace` directly
+  # (request_logging) and its tests use opentelemetry.sdk. The OTLP exporter and
+  # the FastAPI/SQLAlchemy instrumentors now come transitively via
+  # stitch-observability (which owns tracing setup + instrumentation).
   "opentelemetry-sdk>=1.30.0",
-  "opentelemetry-exporter-otlp-proto-grpc>=1.30.0",
-  "opentelemetry-instrumentation-fastapi>=0.51b0",
-  "opentelemetry-instrumentation-sqlalchemy>=0.51b0",
   "pydantic-settings>=2.12.0",
   "sqlalchemy>=2.0.44",
   "stitch-auth",
   "stitch-models",
+  "stitch-observability",
   "stitch-ogsi",
 ]
 
@@ -47,4 +49,5 @@ addopts = ["-v", "--strict-markers", "--tb=short"]
 [tool.uv.sources]
 stitch-auth = { workspace = true }
 stitch-models = { workspace = true }
+stitch-observability = { workspace = true }
 stitch-ogsi = { workspace = true }

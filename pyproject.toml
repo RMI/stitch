@@ -9,11 +9,11 @@ requires-python = ">=3.12"
 members = [
   "deployments/api",
   "deployments/entity-linkage",
-  "deployments/seed",
   "deployments/stitch-llm",
   "packages/stitch-auth",
   "packages/stitch-client",
   "packages/stitch-models",
+  "packages/stitch-observability",
   "packages/stitch-ogsi",
 ]
 

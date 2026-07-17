@@ -185,10 +185,12 @@ jobs:
       image-name: ${{ github.event.repository.name }}-stitch-llm
       image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
 
-  build-seed-docker-image:
-    name: "Build and publish Seed"
-    # Seed only runs in development; non-development lanes are populated by the
-    # ETL pipelines instead (one or the other, never both).
+  build-loadtest-docker-image:
+    name: "Build and publish Load test (k6)"
+    # Runs only in development (against the per-PR instance). This image carries
+    # both the k6 load test and the k6 seeder (seed.dist.js) — it replaces the
+    # former Python seed image; non-development lanes are populated by the ETL
+    # pipelines instead.
     if: ${{ needs.resolve-context.outputs.deployment-lane == 'development' }}
     needs: [resolve-context]
     uses: ./.github/workflows/build-and-push-Docker-image.yml
@@ -197,9 +199,43 @@ jobs:
       packages: write
       contents: read
     with:
-      dockerfile: deployments/seed/Dockerfile
-      image-name: ${{ github.event.repository.name }}-seed
+      dockerfile: deployments/loadtest/Dockerfile
+      image-name: ${{ github.event.repository.name }}-loadtest
       image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
+
+  build-otel-collector-docker-image:
+    name: "Build and publish OTel Collector"
+    needs: [resolve-context]
+    uses: ./.github/workflows/build-and-push-Docker-image.yml
+    secrets: inherit
+    permissions:
+      packages: write
+      contents: read
+    with:
+      dockerfile: deployments/otel-collector/Dockerfile
+      image-name: ${{ github.event.repository.name }}-otel-collector
+      image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
+
+  deploy-otel-collector:
+    name: "Deploy OTel Collector"
+    needs: [resolve-context, build-otel-collector-docker-image]
+    uses: ./.github/workflows/deploy-container.yml
+    secrets:
+      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      applicationinsights-connection-string: ${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}
+    with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
+      full-image-name: ${{ needs.build-otel-collector-docker-image.outputs.digest-image-name }}
+      # Lane-scoped name: all deployments in the same lane share one collector.
+      container-app-name: ${{ format('{0}-otel-collector', needs.resolve-context.outputs.deployment-lane) }}
+      # OTLP/HTTP receiver; services export over the Container Apps HTTPS ingress.
+      target-port: 4318
+      deployment-label: otel-collector
+      # Always keep one replica so spans are not dropped during cold-start.
+      min-replicas: "1"
+      environment-variables: ""
 
   deploy-db:
     name: "Create DB"
@@ -246,7 +282,7 @@ jobs:
 
   deploy-api:
     name: "Deploy API"
-    needs: [resolve-context, lane-config-validate, build-api-docker-image, deploy-db, run-db-migrations]
+    needs: [resolve-context, lane-config-validate, build-api-docker-image, deploy-db, run-db-migrations, deploy-otel-collector]
     uses: ./.github/workflows/deploy-container.yml
     secrets:
       azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -272,13 +308,18 @@ jobs:
         POSTGRES_DB=${{ needs.deploy-db.outputs.postgres-db }}
         POSTGRES_USER=${{ needs.deploy-db.outputs.postgres-user }}
         PGSSLMODE=${{ needs.deploy-db.outputs.postgres-sslmode }}
+        OTEL_TRACES_EXPORTER=otlp
+        OTEL_EXPORTER_OTLP_PROTOCOL=http
+        OTEL_EXPORTER_OTLP_ENDPOINT=${{ format('{0}/v1/traces', needs.deploy-otel-collector.outputs.container-app-url) }}
+        OTEL_SERVICE_NAME=stitch-api
+        OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: api
       # Keep staging / dress-rehearsal always-on; development scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
 
   deploy-entity-linkage:
     name: "Deploy entity linkage"
-    needs: [resolve-context, lane-config-validate, build-entity-linkage-docker-image, deploy-api]
+    needs: [resolve-context, lane-config-validate, build-entity-linkage-docker-image, deploy-api, deploy-otel-collector]
     uses: ./.github/workflows/deploy-container.yml
     secrets:
       azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -299,6 +340,11 @@ jobs:
         AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
         ENTITY_LINKAGE_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
         ENTITY_LINKAGE_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
+        OTEL_TRACES_EXPORTER=otlp
+        OTEL_EXPORTER_OTLP_PROTOCOL=http
+        OTEL_EXPORTER_OTLP_ENDPOINT=${{ format('{0}/v1/traces', needs.deploy-otel-collector.outputs.container-app-url) }}
+        OTEL_SERVICE_NAME=stitch-entity-linkage
+        OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: entity-linkage
       # Keep staging / dress-rehearsal always-on; development scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
@@ -309,7 +355,7 @@ jobs:
 
   deploy-stitch-llm:
     name: "Deploy stitch-llm"
-    needs: [resolve-context, lane-config-validate, build-stitch-llm-docker-image, deploy-api]
+    needs: [resolve-context, lane-config-validate, build-stitch-llm-docker-image, deploy-api, deploy-otel-collector]
     uses: ./.github/workflows/deploy-container.yml
     secrets:
       azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -334,6 +380,11 @@ jobs:
         STITCH_LLM_AZURE_OPENAI_BASE_URL=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-base-url }}
         STITCH_LLM_AZURE_OPENAI_MODEL=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-model }}
         STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-timeout-seconds }}
+        OTEL_TRACES_EXPORTER=otlp
+        OTEL_EXPORTER_OTLP_PROTOCOL=http
+        OTEL_EXPORTER_OTLP_ENDPOINT=${{ format('{0}/v1/traces', needs.deploy-otel-collector.outputs.container-app-url) }}
+        OTEL_SERVICE_NAME=stitch-llm
+        OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: stitch-llm
       # Keep staging / dress-rehearsal always-on; development scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
@@ -415,18 +466,25 @@ jobs:
       storage-name: ${{ needs.lane-config-validate.outputs.etl-storage-name }}
       storage-mount-path: /mnt/data
 
-  run-seed:
-    name: "Run seed"
-    # Seed only runs in development; non-development lanes use the ETL pipelines.
-    if: ${{ needs.resolve-context.outputs.deployment-lane == 'development' && needs.deploy-db.outputs.database-created == 'true' }}
-    needs: [resolve-context, build-seed-docker-image, deploy-db, deploy-api]
-    uses: ./.github/workflows/run-seed.yml
+  run-perf:
+    name: "Run perf (seed + load test)"
+    # Runs only in development (against the per-PR instance); non-development
+    # lanes use the ETL pipelines to populate data. Seed only on a freshly
+    # created DB; the load test runs on every development-lane run.
+    if: ${{ needs.resolve-context.outputs.deployment-lane == 'development' }}
+    needs: [resolve-context, build-loadtest-docker-image, deploy-db, deploy-api]
+    uses: ./.github/workflows/run-perf.yml
     secrets:
       stitch-client-bearer-token: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
+      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      full-image-name: ${{ needs.build-seed-docker-image.outputs.digest-image-name }}
       api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
+      run-seed: ${{ needs.deploy-db.outputs.database-created == 'true' }}
+      run-loadtest: true
+      loadtest-image-name: ${{ needs.build-loadtest-docker-image.outputs.digest-image-name }}
 
   deploy-frontend:
     name: "Deploy frontend"
@@ -455,4 +513,4 @@ jobs:
     if: ${{ always() && github.event_name == 'pull_request' }}
     uses: ./.github/workflows/comment-pr-summary.yml
     secrets: inherit
-    needs: [resolve-context, build-api-docker-image, build-entity-linkage-docker-image, build-stitch-llm-docker-image, build-seed-docker-image, deploy-db, run-db-migrations, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl-gem, deploy-etl-woodmac, run-seed, deploy-frontend]
+    needs: [resolve-context, build-api-docker-image, build-entity-linkage-docker-image, build-stitch-llm-docker-image, build-loadtest-docker-image, deploy-db, run-db-migrations, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl-gem, deploy-etl-woodmac, run-perf, deploy-frontend]

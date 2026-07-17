@@ -1,9 +1,16 @@
 # OpenTelemetry Collector config for local dev.
 #
-# Receives OTLP from the API, batches, and forwards to the Jaeger all-in-one
-# container (which exposes an OTLP receiver of its own). The `debug` exporter
-# also dumps a summary to the collector's stdout, handy when traces aren't
-# showing up in Jaeger.
+# Receives OTLP from the API and:
+#   - forwards traces to the Jaeger all-in-one container (OTLP receiver), plus a
+#     stdout `debug` dump (handy when traces aren't showing up in Jaeger);
+#   - derives RED metrics (request rate / errors / latency histogram) from those
+#     same spans via the `spanmetrics` connector, and exposes them for Prometheus
+#     to scrape at otel-collector:8889. This powers the live "stitch API — RED"
+#     Grafana dashboard — no app-side metrics instrumentation required.
+#
+# (The Azure collector, config-azure.yaml, stays traces-only -> Application
+# Insights; enabling span-derived metrics there is documented as an opt-in step
+# in deployments/OBSERVABILITY_SETUP.md.)
 receivers:
   otlp:
     protocols:
@@ -15,6 +22,25 @@ receivers:
 processors:
   batch: {}
 
+connectors:
+  # Turns spans into RED metrics. service.name becomes the `service_name` label;
+  # the dimensions below become extra labels so the dashboard can break latency
+  # and throughput down per HTTP route / method / status.
+  spanmetrics:
+    namespace: spanmetrics
+    histogram:
+      unit: ms
+      explicit:
+        buckets:
+          [5ms, 10ms, 25ms, 50ms, 75ms, 100ms, 250ms, 500ms, 750ms, 1s, 2500ms, 5s, 10s]
+    dimensions:
+      - name: http.route
+      - name: http.request.method
+      - name: http.response.status_code
+    exemplars:
+      enabled: false
+    metrics_flush_interval: 15s
+
 exporters:
   otlp/jaeger:
     endpoint: jaeger:4317
@@ -22,10 +48,21 @@ exporters:
       insecure: true
   debug:
     verbosity: normal
+  # Prometheus scrape target for the span-derived metrics.
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    send_timestamps: true
+    metric_expiration: 10m
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlp/jaeger, debug]
+      # `spanmetrics` here is the connector's input (it consumes spans and emits
+      # metrics into the metrics pipeline below).
+      exporters: [otlp/jaeger, debug, spanmetrics]
+    metrics/spanmetrics:
+      receivers: [spanmetrics]
+      processors: [batch]
+      exporters: [prometheus]

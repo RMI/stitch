@@ -1,0 +1,140 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "title": "stitch API — server-side RED (App Insights)",
+  "uid": "stitch-api-red",
+  "tags": ["stitch", "api", "red"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "1m",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Azure Monitor datasource",
+        "type": "datasource",
+        "query": "grafana-azure-monitor-datasource",
+        "refresh": 1,
+        "hide": 0,
+        "current": {},
+        "options": [],
+        "multi": false,
+        "includeAll": false,
+        "regex": ""
+      },
+      {
+        "name": "appinsights",
+        "label": "App Insights resource ID",
+        "description": "Full resource ID of the Application Insights component (Portal -> App Insights -> Settings -> Properties -> Resource ID).",
+        "type": "textbox",
+        "query": "",
+        "current": { "text": "", "value": "" },
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Server-side RED per deployment (deployment.name = pr-<N>), from Application Insights `requests`",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Request rate (per interval), by PR",
+      "description": "Count of inbound requests per time bucket, one series per deployment.name.",
+      "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "showLegend": true, "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${datasource}" },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": ["${appinsights}"],
+            "dashboardTime": true,
+            "timeColumn": "timestamp",
+            "resultFormat": "time_series",
+            "query": "requests\n| extend pr = tostring(customDimensions['deployment.name'])\n| where isnotempty(pr)\n| summarize Requests = count() by bin(timestamp, $__interval), pr\n| order by timestamp asc"
+          }
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Error rate, by PR",
+      "description": "Share of requests with success == false, one series per deployment.name.",
+      "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "showLegend": true, "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${datasource}" },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": ["${appinsights}"],
+            "dashboardTime": true,
+            "timeColumn": "timestamp",
+            "resultFormat": "time_series",
+            "query": "requests\n| extend pr = tostring(customDimensions['deployment.name'])\n| where isnotempty(pr)\n| summarize Total = count(), Errors = countif(success == false) by bin(timestamp, $__interval), pr\n| extend ErrorRate = todouble(Errors) / Total\n| project timestamp, pr, ErrorRate\n| order by timestamp asc"
+          }
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "p95 latency (ms), by PR",
+      "description": "95th percentile request duration, one series per deployment.name.",
+      "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "fillOpacity": 0 } }, "overrides": [] },
+      "options": { "legend": { "showLegend": true, "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${datasource}" },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": ["${appinsights}"],
+            "dashboardTime": true,
+            "timeColumn": "timestamp",
+            "resultFormat": "time_series",
+            "query": "requests\n| extend pr = tostring(customDimensions['deployment.name'])\n| where isnotempty(pr)\n| summarize p95 = percentile(duration, 95) by bin(timestamp, $__interval), pr\n| order by timestamp asc"
+          }
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "p95 latency (ms) by route — all PRs",
+      "description": "95th percentile duration per operation (route). Aggregated across deployments; use the per-PR panels above to compare PRs.",
+      "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "fillOpacity": 0 } }, "overrides": [] },
+      "options": { "legend": { "showLegend": true, "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "${datasource}" },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": ["${appinsights}"],
+            "dashboardTime": true,
+            "timeColumn": "timestamp",
+            "resultFormat": "time_series",
+            "query": "requests\n| summarize p95 = percentile(duration, 95) by bin(timestamp, $__interval), route = name\n| order by timestamp asc"
+          }
+        }
+      ]
+    }
+  ]
+}

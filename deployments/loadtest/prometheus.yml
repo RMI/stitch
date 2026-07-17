@@ -1,0 +1,19 @@
+# Local Prometheus for the observability/loadtest stack
+# (docker-compose.observability.yml). Remote-write is enabled via the
+# `--web.enable-remote-write-receiver` flag so k6 can push run metrics; this
+# file also scrapes the OTel collector's span-derived metrics for the live RED
+# dashboard. In Azure this role is played by the Azure Monitor Workspace (managed
+# Prometheus) — see deployments/OBSERVABILITY_SETUP.md.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Span-derived RED metrics exposed by the collector's prometheus exporter.
+  - job_name: otel-spanmetrics
+    static_configs:
+      - targets: ["otel-collector:8889"]
