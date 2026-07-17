@@ -222,11 +222,22 @@ IMMUTABLE=$(az monitor data-collection rule show -n stitch-prom-dcr -g "$RG" --q
    Prometheus source through a `datasource` **template variable** (not a
    hardcoded UID), so on import Grafana auto-selects the linked Prometheus source
    (or offers a picker at the top of the dashboard). Nothing to match up.
-3. **Azure Monitor datasource** (for App Insights trace drill-down), *in the
-   Grafana app* → **Connections → Data sources**: Azure Managed Grafana usually
-   **pre-provisions** an "Azure Monitor" datasource scoped to the subscription —
-   check before adding one. Its managed identity needs **Monitoring
-   Reader**/**Reader** on the App Insights resource.
+3. **Azure Monitor datasource** (for the App Insights RED board + trace
+   drill-down), *in the Grafana app* → **Connections → Data sources**: Azure
+   Managed Grafana usually **pre-provisions** an "Azure Monitor" datasource —
+   check before adding one.
+   > ⚠️ **Separate grant, easy to miss (this bit us):** linking the Prometheus
+   > workspace (step 1) grants read to *Prometheus only*. To read **App Insights**,
+   > Grafana's managed identity needs **Monitoring Reader** on the App Insights
+   > resource (or its RG). Without it the RED board shows red ⚠️ panels with
+   > `InsufficientAccessToResource`. Grant it (App Insights is in `STITCH-DEV-RG`,
+   > so an RG-scoped grant works and you can do it yourself):
+   > ```bash
+   > GRAFANA_MI=$(az grafana show -n stitch-grafana -g STITCH-DEV-RG --query identity.principalId -o tsv)
+   > az role assignment create --assignee-object-id "$GRAFANA_MI" \
+   >   --assignee-principal-type ServicePrincipal --role "Monitoring Reader" \
+   >   --scope "/subscriptions/<sub>/resourceGroups/STITCH-DEV-RG"
+   > ```
 4. **Import the dashboards**, *in the Grafana app* → **Dashboards → New →
    Import** → upload/paste the two JSON files from
    [`loadtest/grafana/dashboards/`](loadtest/grafana/dashboards/).
