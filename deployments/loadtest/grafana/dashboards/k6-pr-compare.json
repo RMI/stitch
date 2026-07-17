@@ -635,7 +635,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max by (run) (last_over_time(k6_http_req_failed_rate{pr=~\"$pr\", run=~\"$run\"}[$__range]))",
+          "expr": "sum by (run) (last_over_time(k6_http_reqs_total{pr=~\"$pr\", run=~\"$run\", expected_response=\"false\"}[$__range])) / clamp_min(sum by (run) (last_over_time(k6_http_reqs_total{pr=~\"$pr\", run=~\"$run\"}[$__range])), 1)",
           "legendFormat": "{{run}}",
           "instant": true
         }
