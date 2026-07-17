@@ -4,10 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { useAuth0 } from "@auth0/auth0-react";
 import { auth0TestDefaults, renderWithQueryClient } from "../test/utils";
 import MergeCandidateReviewPage from "./MergeCandidateReviewPage";
-import {
-  useMergeCandidates,
-  useMergeCandidate,
-} from "../hooks/useResources";
+import { useMergeCandidates, useMergeCandidate } from "../hooks/useResources";
 import { reviewMergeCandidate } from "../queries/api";
 
 vi.mock("../hooks/useResources", () => ({

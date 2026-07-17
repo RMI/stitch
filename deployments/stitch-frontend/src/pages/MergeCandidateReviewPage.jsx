@@ -3,10 +3,7 @@ import { useAuth0 } from "@auth0/auth0-react";
 import { useQueryClient } from "@tanstack/react-query";
 import ResourceView from "../components/ResourceView";
 import Button from "../components/Button";
-import {
-  useMergeCandidates,
-  useMergeCandidate,
-} from "../hooks/useResources";
+import { useMergeCandidates, useMergeCandidate } from "../hooks/useResources";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { reviewMergeCandidate } from "../queries/api";
 import { useConfig } from "../config/useConfig";
