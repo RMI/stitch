@@ -91,6 +91,7 @@ def _participating_columns(params: OGFieldQueryParams) -> list[str]:
 def construct_base_query_statement(
     licensed_sources: Collection[OGSISrcKey] | None = None,
     resource_ids: Collection[int] | None = None,
+    include_json: bool = False,
 ) -> CTE:
     s = OilGasFieldSourceModel
     v = OilGasFieldSourceValueModel
@@ -109,7 +110,6 @@ def construct_base_query_statement(
             v.colname.label("colname"),
             v.value_text,
             v.value_num,
-            v.value_json,
         )
         .select_from(m)
         .join(r, r.id == m.resource_id)
@@ -122,6 +122,12 @@ def construct_base_query_statement(
             m.status == MembershipStatus.ACTIVE,
         )
     )
+    # Only the coalescing/hydration path (coalesced_winner_rows) materializes JSON
+    # attributes (owners/operators). Keep value_json off the shared filter/sort
+    # CTE so the ranking window doesn't drag JSONB through its sort -- the
+    # filter/sort/filter-options paths never read it.
+    if include_json:
+        active_src = active_src.add_columns(v.value_json)
     if licensed_sources is not None:
         active_src = active_src.where(
             m.source.in_(list(dict.fromkeys(licensed_sources)))
@@ -202,7 +208,9 @@ def coalesced_winner_rows(
     the typed value and read the winning ``source``/``source_pk`` as provenance;
     the winner is already chosen in SQL, so no priority logic remains in Python.
     """
-    base = construct_base_query_statement(licensed_sources, resource_ids=resource_ids)
+    base = construct_base_query_statement(
+        licensed_sources, resource_ids=resource_ids, include_json=True
+    )
     winners = add_ranking(base).cte("coalesced_winners")
     return select(
         winners.c.resource_id,
