@@ -51,7 +51,7 @@ async def _create_candidate(client: AsyncClient, resource_ids: list[int]) -> int
 
 class TestMergeCandidateDetailIntegration:
     @pytest.mark.anyio
-    async def test_detail_includes_resources_and_compare(
+    async def test_detail_includes_compare_tagged_with_resource_ids(
         self,
         integration_client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
@@ -67,28 +67,35 @@ class TestMergeCandidateDetailIntegration:
         body = resp.json()
 
         assert body["status"] == "PENDING"
-        # resource_ids preserved alongside the richer `resources`
         assert body["resource_ids"] == [id_a, id_b]
+        # `resources` detail objects were dropped; `compare` carries everything.
+        assert "resources" not in body
 
-        # `resources`: one full detail object per candidate resource, in order
-        assert [r["id"] for r in body["resources"]] == [id_a, id_b]
-        for resource in body["resources"]:
-            assert {"id", "data", "provenance", "source_data"} <= set(resource)
-
-        # `compare`: one entry per OilGasFieldBase field, values per contributing
-        # source (winner-first), reusing the OGFieldSourceValueView shape.
+        # `compare`: one entry per field; each value tagged with its source and
+        # the resource it is attached to (source_id, value, priority, resource_id).
         compare = {c["field"]: c for c in body["compare"]}
         name_cmp = compare["name"]
         for entry in name_cmp["values"]:
-            assert {"source", "id", "value", "priority"} <= set(entry)
+            assert {
+                "source",
+                "source_id",
+                "value",
+                "priority",
+                "resource_id",
+            } <= set(entry)
 
         # RMI (highest priority) carries the given names on both resources; the
         # baseline resources[0]=A wins the RMI tie by id, so A's name stays put
         # while B's differing name is present at lower precedence -> unchanged.
         assert name_cmp["status"] == "unchanged"
         assert name_cmp["values"][0]["value"] == "Ghawar"  # merged winner
-        rmi_names = {v["value"] for v in name_cmp["values"] if v["source"] == "rmi"}
-        assert {"Ghawar", "Burgan"} <= rmi_names
+        # each source is attributed to the resource it is attached to
+        rmi_by_resource = {
+            (v["resource_id"], v["value"])
+            for v in name_cmp["values"]
+            if v["source"] == "rmi"
+        }
+        assert {(id_a, "Ghawar"), (id_b, "Burgan")} <= rmi_by_resource
 
     @pytest.mark.anyio
     async def test_detail_after_approve_is_live_null_shell(
@@ -116,11 +123,10 @@ class TestMergeCandidateDetailIntegration:
         assert body["status"] == "APPROVED"
         assert body["merged_resource_id"] is not None
         assert body["resource_ids"] == [id_a, id_b]
-        # Live compute: originals are repointed with memberships INACTIVE, so
-        # their coalesced data is a null-shell with no surviving sources.
+        assert "resources" not in body
+        # Live compute: originals are repointed with memberships INACTIVE, so no
+        # sources survive -> every field is unchanged with no values.
         # (Freeze snapshot is deferred.)
-        for resource in body["resources"]:
-            assert resource["data"]["name"] is None
         for entry in body["compare"]:
             assert entry["status"] == "unchanged"
             assert entry["values"] == []
@@ -157,6 +163,8 @@ class TestMergeCandidateDetailIntegration:
             )
             await session.commit()
 
+        # The baseline (resources[0] = A) reflects the override: A's coalesced
+        # name is GEM's value.
         detail_a = await integration_client.get(f"/oil-gas-fields/{id_a}/detail")
         assert detail_a.status_code == 200, detail_a.text
         assert detail_a.json()["data"]["name"] == "GEM-name"  # override in effect
@@ -168,13 +176,18 @@ class TestMergeCandidateDetailIntegration:
         assert resp.status_code == 200, resp.text
         body = resp.json()
 
-        # Baseline (resources[0] = A) reflects the override...
-        assert body["resources"][0]["data"]["name"] == "GEM-name"
-        # ...but the merge resets to default order (RMI wins), so the field
-        # changes -> mismatch, with RMI as the merged winner.
+        # The merge resets to default order (RMI wins), so the field changes
+        # against the override baseline -> mismatch, with RMI as the merged
+        # winner. Both of A's sources are attributed to resource A.
         name_cmp = next(c for c in body["compare"] if c["field"] == "name")
         assert name_cmp["status"] == "mismatch"
         assert name_cmp["values"][0]["value"] == "RMI-name"
+        a_values = {
+            (v["source"], v["value"])
+            for v in name_cmp["values"]
+            if v["resource_id"] == id_a
+        }
+        assert {("rmi", "RMI-name"), ("gem", "GEM-name")} <= a_values
 
         # Approving materializes the reset: the merged resource has no override
         # rows and resolves `name` in default order (RMI), dropping the override.

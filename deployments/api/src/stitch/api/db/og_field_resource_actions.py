@@ -159,14 +159,14 @@ async def field_source_values(
     )
     values = [
         OGFieldSourceValueView(
-            source=src.source, id=src.id, value=value, priority=priority
+            source=src.source, source_id=src.id, value=value, priority=priority
         )
         for src, priority in by_id.get(id, [])
         if src.id is not None
         and (value := getattr(src, field)) is not None
         and value != ""
     ]
-    values.sort(key=lambda v: (v.priority, v.id))
+    values.sort(key=lambda v: (v.priority, v.source_id))
     return values
 
 

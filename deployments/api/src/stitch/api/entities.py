@@ -10,7 +10,6 @@ from stitch.ogsi.model import (
     LLM_SRC,
     RMI_SRC,
     WM_SRC,
-    OGFieldDetailView,
     OGFieldSourceValueView,
 )
 from stitch.ogsi.model.types import (
@@ -179,12 +178,21 @@ class MergeCandidateView(BaseModel):
     reviewed_by_id: int | None = None
 
 
+class ComparisonValueView(OGFieldSourceValueView):
+    """A source's value in a merge comparison, tagged with ``resource_id`` --
+    the candidate resource the source is currently attached to."""
+
+    resource_id: int
+
+
 class FieldComparisonView(BaseModel):
     """One field across a merge candidate, per contributing source.
 
     ``values`` lists every source (across all candidate resources) that carries a
     value for the field, winner-first (lowest effective ``priority`` wins). The
-    merged winner is therefore ``values[0]``.
+    merged winner is therefore ``values[0]``. Each entry carries the
+    ``resource_id`` it is attached to, so the client can group values by resource
+    without a separate per-resource payload.
 
     ``status`` compares the merge outcome against the baseline -- the first
     resource in the candidate (``resources[0]``), i.e. the resource being merged
@@ -208,11 +216,10 @@ class FieldComparisonView(BaseModel):
 
     field: str
     status: Literal["match", "mismatch", "new", "unchanged"]
-    values: list[OGFieldSourceValueView]
+    values: list[ComparisonValueView]
 
 
 class MergeCandidateDetailView(MergeCandidateView):
-    resources: list[OGFieldDetailView]
     compare: list[FieldComparisonView]
 
 

@@ -16,6 +16,7 @@ from stitch.api.db.errors import (
     ResourceNotFoundError,
 )
 from stitch.api.entities import (
+    ComparisonValueView,
     FieldComparisonView,
     MergeCandidateCreateRequest,
     MergeCandidateDetailView,
@@ -24,11 +25,7 @@ from stitch.api.entities import (
     MergeCandidateView,
     OGFieldMergePreviewView,
 )
-from stitch.ogsi.model import (
-    OGFieldDetailView,
-    OGFieldSource,
-    OGFieldSourceValueView,
-)
+from stitch.ogsi.model import OGFieldSource
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
 
@@ -42,7 +39,7 @@ from .model import (
     ResourceModel,
 )
 from .og_field_resource_actions import apply_resource_merge
-from .utils import coalesce_resources, resource_to_detail_view
+from .utils import coalesce_resources
 
 
 def _normalize_resource_ids(resource_ids: Sequence[int]) -> list[int]:
@@ -104,7 +101,7 @@ def _candidate_to_view(model: MergeCandidateModel) -> MergeCandidateView:
 def _comparison_status(
     base_value: Any,
     winner: Any,
-    values: Sequence[OGFieldSourceValueView],
+    values: Sequence[ComparisonValueView],
 ) -> str:
     """Classify a field's merge outcome against the baseline resource value.
 
@@ -121,24 +118,25 @@ def _comparison_status(
 
 
 def _build_comparison(
-    baseline: OGFieldDetailView | None,
-    sources_with_priority: Sequence[tuple[OGFieldSource, int]],
+    baseline: OilGasFieldBase | None,
+    sources_with_priority: Sequence[tuple[int, OGFieldSource, int]],
 ) -> list[FieldComparisonView]:
     """Per-field comparison across every contributing source in the candidate.
 
     For each ``OilGasFieldBase`` field, list every source that carries a value
-    (winner-first by effective priority), then classify the merge outcome against
-    the baseline (``resources[0]``). See ``FieldComparisonView`` for the status
-    semantics. ``priority`` is the default source order, since a merge resets the
-    merged resource to default ordering.
+    (winner-first by effective priority) tagged with the resource it is attached
+    to, then classify the merge outcome against the baseline (the coalesced value
+    of ``resources[0]``). See ``FieldComparisonView`` for the status semantics.
+    ``priority`` is the default source order, since a merge resets the merged
+    resource to default ordering.
 
     The winner picked here is a best guess at the persisted merge result,
     coalesced in Python; it is superseded once coalescing moves into the DB.
     """
     comparison: list[FieldComparisonView] = []
     for field_name in OilGasFieldBase.model_fields:
-        values: list[OGFieldSourceValueView] = []
-        for source, priority in sources_with_priority:
+        values: list[ComparisonValueView] = []
+        for resource_id, source, priority in sources_with_priority:
             if source.id is None:
                 continue
             value = getattr(source, field_name, None)
@@ -150,17 +148,18 @@ def _build_comparison(
             if value is None:
                 continue
             values.append(
-                OGFieldSourceValueView(
+                ComparisonValueView(
+                    resource_id=resource_id,
                     source=source.source,
-                    id=source.id,
+                    source_id=source.id,
                     value=value,
                     priority=priority,
                 )
             )
-        values.sort(key=lambda entry: (entry.priority, entry.id))
+        values.sort(key=lambda entry: (entry.priority, entry.source_id))
         winner = values[0].value if values else None
         base_value = (
-            getattr(baseline.data, field_name, None) if baseline is not None else None
+            getattr(baseline, field_name, None) if baseline is not None else None
         )
         comparison.append(
             FieldComparisonView(
@@ -186,7 +185,6 @@ async def _default_source_priority(session: AsyncSession) -> dict[str, int]:
 
 def _candidate_to_detail_view(
     model: MergeCandidateModel,
-    resources: Sequence[OGFieldDetailView],
     compare: Sequence[FieldComparisonView],
 ) -> MergeCandidateDetailView:
     return MergeCandidateDetailView(
@@ -203,7 +201,6 @@ def _candidate_to_detail_view(
         last_updated_by_id=model.last_updated_by_id,
         reviewed_at=model.reviewed_at,
         reviewed_by_id=model.reviewed_by_id,
-        resources=list(resources),
         compare=list(compare),
     )
 
@@ -246,24 +243,24 @@ async def get_merge_candidate(
     ]
 
     # Computed live: repointed (post-merge) resources coalesce to a null-shell
-    # view here, so an APPROVED candidate's `resources`/`compare` reflect the
-    # emptied originals. Freezing a snapshot at approve/deny time is deferred.
+    # here, so an APPROVED candidate's `compare` reflects the emptied originals.
+    # Freezing a snapshot at approve/deny time is deferred.
     by_id = await coalesce_resources(session, resource_ids, licensed_sources)
-    resources = [resource_to_detail_view(by_id[rid]) for rid in resource_ids]
 
-    # Compare every contributing source against the baseline (resources[0]),
-    # ranked by the default source order the merged resource will use.
+    # Compare every contributing source (tagged with the resource it's attached
+    # to) against the baseline (resources[0]'s coalesced value), ranked by the
+    # default source order the merged resource will use.
     default_priority = await _default_source_priority(session)
     fallback_priority = max(default_priority.values(), default=0) + 1
     sources_with_priority = [
-        (source, default_priority.get(source.source, fallback_priority))
+        (rid, source, default_priority.get(source.source, fallback_priority))
         for rid in resource_ids
         for source in by_id[rid].source_data
     ]
-    baseline = resources[0] if resources else None
+    baseline = by_id[resource_ids[0]].view if resource_ids else None
     compare = _build_comparison(baseline, sources_with_priority)
 
-    return _candidate_to_detail_view(candidate, resources, compare)
+    return _candidate_to_detail_view(candidate, compare)
 
 
 async def create_merge_candidate(

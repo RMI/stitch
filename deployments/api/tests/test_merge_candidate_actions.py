@@ -14,7 +14,6 @@ from stitch.api.entities import (
 )
 from stitch.api.db.errors import InvalidActionError, ResourceNotFoundError
 from stitch.api.db import merge_candidate_actions as mca
-from stitch.ogsi.model import OGFieldDetailView
 from stitch.ogsi.model.og_field import OilGasFieldBase
 
 from datetime import datetime, timezone
@@ -343,21 +342,18 @@ def _status_for(compare, field):
 
 def _values_for(compare, field):
     entry = next(c for c in compare if c.field == field)
-    return [(v.source, v.id, v.value) for v in entry.values]
+    return [(v.resource_id, v.source, v.source_id, v.value) for v in entry.values]
 
 
 def test_build_comparison_classifies_each_field_against_baseline():
-    # baseline = resources[0]; winner = highest-priority source (lowest priority
-    # number). Sources need only .source / .id / field attrs.
-    baseline = OGFieldDetailView(
-        id=1,
-        data=OilGasFieldBase(name="Ghawar", country="SAU", basin=None, region="R1"),
-    )
+    # baseline = resources[0]'s coalesced value; winner = highest-priority source
+    # (lowest priority number). Each source is tagged with its resource_id.
+    baseline = OilGasFieldBase(name="Ghawar", country="SAU", basin=None, region="R1")
     src_rmi = SimpleNamespace(
         source="rmi", id=10, name="Ghawar", country="SAU", basin="BasinX", region="R2"
     )
     src_gem = SimpleNamespace(source="gem", id=11, name="Burgan", country="SAU")
-    sources_with_priority = [(src_rmi, 1), (src_gem, 2)]
+    sources_with_priority = [(18, src_rmi, 1), (19, src_gem, 2)]
 
     compare = mca._build_comparison(baseline, sources_with_priority)
 
@@ -370,12 +366,12 @@ def test_build_comparison_classifies_each_field_against_baseline():
     # a higher-priority source overrides the baseline's value
     assert _status_for(compare, "region") == "mismatch"
 
-    # values are per-source (winner-first), reusing OGFieldSourceValueView
+    # values are per-source (winner-first), tagged with the attached resource_id
     assert _values_for(compare, "name") == [
-        ("rmi", 10, "Ghawar"),
-        ("gem", 11, "Burgan"),
+        (18, "rmi", 10, "Ghawar"),
+        (19, "gem", 11, "Burgan"),
     ]
-    assert _values_for(compare, "basin") == [("rmi", 10, "BasinX")]
+    assert _values_for(compare, "basin") == [(18, "rmi", 10, "BasinX")]
 
     # every OilGasFieldBase field is represented, once, in field order
     assert [c.field for c in compare] == list(OilGasFieldBase.model_fields)
@@ -385,27 +381,23 @@ def test_build_comparison_flags_reverted_override_as_mismatch():
     # A per-resource override on resources[0] made GEM win `name` (so the
     # baseline is the GEM value). `compare` ranks by DEFAULT order (what the
     # merged resource will use), where RMI wins -- so the merge would change the
-    # field, and it is flagged `mismatch`.
-    baseline = OGFieldDetailView(
-        id=1, data=OilGasFieldBase(name="GEM-name", country="SAU")
-    )
+    # field, and it is flagged `mismatch`. Both sources are attached to res 18.
+    baseline = OilGasFieldBase(name="GEM-name", country="SAU")
     src_rmi = SimpleNamespace(source="rmi", id=10, name="RMI-name")
     src_gem = SimpleNamespace(source="gem", id=11, name="GEM-name")
-    sources_with_priority = [(src_rmi, 1), (src_gem, 2)]  # default order
+    sources_with_priority = [(18, src_rmi, 1), (18, src_gem, 2)]  # default order
 
     compare = mca._build_comparison(baseline, sources_with_priority)
 
     assert _status_for(compare, "name") == "mismatch"
     assert _values_for(compare, "name") == [
-        ("rmi", 10, "RMI-name"),  # default winner
-        ("gem", 11, "GEM-name"),
+        (18, "rmi", 10, "RMI-name"),  # default winner
+        (18, "gem", 11, "GEM-name"),
     ]
 
     # Without the override, the baseline already matches the default winner, so
     # merging changes nothing -> `unchanged` (GEM present at lower priority).
-    baseline_default = OGFieldDetailView(
-        id=1, data=OilGasFieldBase(name="RMI-name", country="SAU")
-    )
+    baseline_default = OilGasFieldBase(name="RMI-name", country="SAU")
     compare_default = mca._build_comparison(baseline_default, sources_with_priority)
     assert _status_for(compare_default, "name") == "unchanged"
 
@@ -414,16 +406,17 @@ def test_build_comparison_treats_empty_string_as_a_real_value():
     # The coalescer excludes only None (empty strings can win the merge), so
     # `compare` must keep "" too -- otherwise it disagrees with the persisted
     # result. Here RMI's "" wins `basin`, matching the baseline.
-    baseline = OGFieldDetailView(
-        id=1, data=OilGasFieldBase(name=None, country="SAU", basin="")
-    )
+    baseline = OilGasFieldBase(name=None, country="SAU", basin="")
     src_rmi = SimpleNamespace(source="rmi", id=10, basin="")
     src_gem = SimpleNamespace(source="gem", id=11, basin="Permian")
 
-    compare = mca._build_comparison(baseline, [(src_rmi, 1), (src_gem, 2)])
+    compare = mca._build_comparison(baseline, [(18, src_rmi, 1), (19, src_gem, 2)])
 
     # "" is present in values (not filtered out) and is the merged winner
-    assert _values_for(compare, "basin") == [("rmi", 10, ""), ("gem", 11, "Permian")]
+    assert _values_for(compare, "basin") == [
+        (18, "rmi", 10, ""),
+        (19, "gem", 11, "Permian"),
+    ]
     # winner "" == baseline "", a lower-priority source differs -> unchanged
     assert _status_for(compare, "basin") == "unchanged"
 
@@ -447,19 +440,19 @@ async def test_get_merge_candidate_returns_detail_view_in_item_order(monkeypatch
         # ordered by item position
         assert resource_ids == [18, 19]
         assert licensed == ["gem"]
-        return {rid: SimpleNamespace(rid=rid, source_data=[]) for rid in resource_ids}
-
-    def fake_detail_view(res):
-        return OGFieldDetailView(
-            id=res.rid, data=OilGasFieldBase(name=f"name-{res.rid}", country="USA")
-        )
+        return {
+            rid: SimpleNamespace(
+                source_data=[SimpleNamespace(source="rmi", id=rid, name=f"name-{rid}")],
+                view=OilGasFieldBase(name=f"name-{rid}", country="USA"),
+            )
+            for rid in resource_ids
+        }
 
     async def fake_default_priority(session_arg):
         return {"rmi": 1, "gem": 2, "wm": 3, "llm": 4}
 
     monkeypatch.setattr(mca, "_load_candidate_model", fake_load_candidate_model)
     monkeypatch.setattr(mca, "coalesce_resources", fake_coalesce)
-    monkeypatch.setattr(mca, "resource_to_detail_view", fake_detail_view)
     monkeypatch.setattr(mca, "_default_source_priority", fake_default_priority)
 
     view = await mca.get_merge_candidate(
@@ -468,13 +461,19 @@ async def test_get_merge_candidate_returns_detail_view_in_item_order(monkeypatch
 
     assert isinstance(view, MergeCandidateDetailView)
     assert view.resource_ids == [18, 19]
-    assert [r.id for r in view.resources] == [18, 19]
-    # one comparison entry per field (contents covered by the unit test above)
+    # resources detail objects are gone; compare carries the per-source values
+    assert not hasattr(view, "resources")
     assert [c.field for c in view.compare] == list(OilGasFieldBase.model_fields)
+    # each source value is tagged with the resource it is attached to
+    name_values = next(c for c in view.compare if c.field == "name").values
+    assert {(v.resource_id, v.value) for v in name_values} == {
+        (18, "name-18"),
+        (19, "name-19"),
+    }
 
 
 @pytest.mark.anyio
-async def test_get_merge_candidate_after_merge_yields_null_shell_resources(monkeypatch):
+async def test_get_merge_candidate_after_merge_yields_empty_compare(monkeypatch):
     # Live behavior for an APPROVED candidate: originals are repointed with
     # memberships INACTIVE, so coalesce_resources returns null-shell views with
     # no surviving source data.
@@ -489,26 +488,23 @@ async def test_get_merge_candidate_after_merge_yields_null_shell_resources(monke
         return candidate
 
     async def fake_coalesce(session_arg, resource_ids, licensed):
-        return {rid: SimpleNamespace(rid=rid, source_data=[]) for rid in resource_ids}
-
-    def fake_detail_view(res):
-        # null shell: no source data survived the merge
-        return OGFieldDetailView(
-            id=res.rid, data=OilGasFieldBase(name=None, country=None)
-        )
+        return {
+            rid: SimpleNamespace(
+                source_data=[], view=OilGasFieldBase(name=None, country=None)
+            )
+            for rid in resource_ids
+        }
 
     async def fake_default_priority(session_arg):
         return {"rmi": 1, "gem": 2, "wm": 3, "llm": 4}
 
     monkeypatch.setattr(mca, "_load_candidate_model", fake_load_candidate_model)
     monkeypatch.setattr(mca, "coalesce_resources", fake_coalesce)
-    monkeypatch.setattr(mca, "resource_to_detail_view", fake_detail_view)
     monkeypatch.setattr(mca, "_default_source_priority", fake_default_priority)
 
     view = await mca.get_merge_candidate(AsyncMock(), candidate_id=2)
 
     assert view.merged_resource_id == 31
-    assert all(r.data.name is None for r in view.resources)
     # baseline null + no surviving sources -> nothing changes on any field
     assert all(c.status == "unchanged" for c in view.compare)
     assert all(c.values == [] for c in view.compare)
