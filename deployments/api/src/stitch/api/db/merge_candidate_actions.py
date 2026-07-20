@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -15,12 +15,16 @@ from stitch.api.db.errors import (
     ResourceNotFoundError,
 )
 from stitch.api.entities import (
+    FieldComparisonView,
+    FieldValueView,
     MergeCandidateCreateRequest,
+    MergeCandidateDetailView,
     MergeCandidateReviewRequest,
     MergeCandidateStatus,
     MergeCandidateView,
     OGFieldMergePreviewView,
 )
+from stitch.ogsi.model import OGFieldDetailView
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
 
@@ -34,6 +38,7 @@ from .model import (
     ResourceModel,
 )
 from .og_field_resource_actions import apply_resource_merge
+from .utils import coalesce_resources, resource_to_detail_view
 
 
 def _normalize_resource_ids(resource_ids: Sequence[int]) -> list[int]:
@@ -92,6 +97,57 @@ def _candidate_to_view(model: MergeCandidateModel) -> MergeCandidateView:
     )
 
 
+def _build_comparison(
+    resources: Sequence[OGFieldDetailView],
+) -> list[FieldComparisonView]:
+    """Transpose each resource's coalesced ``data`` into a per-field comparison.
+
+    For every field on ``OilGasFieldBase`` a row lists each resource's value; the
+    status is ``"match"`` iff all values are equal (Python ``==``), else
+    ``"mismatch"``. See ``FieldComparisonView`` for the (deliberately
+    mismatch-leaning) semantics.
+    """
+    comparison: list[FieldComparisonView] = []
+    for field_name in OilGasFieldBase.model_fields:
+        values = [
+            FieldValueView(
+                resource_id=resource.id,
+                value=getattr(resource.data, field_name),
+            )
+            for resource in resources
+        ]
+        first = values[0].value if values else None
+        status = "match" if all(v.value == first for v in values) else "mismatch"
+        comparison.append(
+            FieldComparisonView(field=field_name, status=status, values=values)
+        )
+    return comparison
+
+
+def _candidate_to_detail_view(
+    model: MergeCandidateModel,
+    resources: Sequence[OGFieldDetailView],
+    compare: Sequence[FieldComparisonView],
+) -> MergeCandidateDetailView:
+    return MergeCandidateDetailView(
+        id=model.id,
+        resource_ids=[
+            item.resource_id for item in sorted(model.items, key=lambda i: i.position)
+        ],
+        status=model.status,
+        review_notes=model.review_notes,
+        merged_resource_id=model.merged_resource_id,
+        created=model.created,
+        updated=model.updated,
+        created_by_id=model.created_by_id,
+        last_updated_by_id=model.last_updated_by_id,
+        reviewed_at=model.reviewed_at,
+        reviewed_by_id=model.reviewed_by_id,
+        resources=list(resources),
+        compare=list(compare),
+    )
+
+
 async def _load_candidate_model(
     session: AsyncSession, candidate_id: int
 ) -> MergeCandidateModel:
@@ -119,10 +175,24 @@ async def list_merge_candidates(session: AsyncSession) -> list[MergeCandidateVie
 
 
 async def get_merge_candidate(
-    session: AsyncSession, candidate_id: int
-) -> MergeCandidateView:
+    session: AsyncSession,
+    candidate_id: int,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> MergeCandidateDetailView:
     candidate = await _load_candidate_model(session, candidate_id)
-    return _candidate_to_view(candidate)
+
+    resource_ids = [
+        item.resource_id for item in sorted(candidate.items, key=lambda i: i.position)
+    ]
+
+    # Computed live: repointed (post-merge) resources coalesce to a null-shell
+    # view here, so an APPROVED candidate's `resources`/`compare` reflect the
+    # emptied originals. Freezing a snapshot at approve/deny time is deferred.
+    by_id = await coalesce_resources(session, resource_ids, licensed_sources)
+    resources = [resource_to_detail_view(by_id[rid]) for rid in resource_ids]
+    compare = _build_comparison(resources)
+
+    return _candidate_to_detail_view(candidate, resources, compare)
 
 
 async def create_merge_candidate(

@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field, computed_field
 
-from stitch.ogsi.model import GEM_SRC, LLM_SRC, RMI_SRC, WM_SRC
+from stitch.ogsi.model import GEM_SRC, LLM_SRC, RMI_SRC, WM_SRC, OGFieldDetailView
 from stitch.ogsi.model.types import (
     FieldStatus,
     LocationType,
@@ -170,6 +170,31 @@ class MergeCandidateView(BaseModel):
     last_updated_by_id: int
     reviewed_at: datetime | None = None
     reviewed_by_id: int | None = None
+
+
+class FieldValueView(BaseModel):
+    resource_id: int
+    value: Any
+
+
+class FieldComparisonView(BaseModel):
+    """One field's value across every resource in a merge candidate.
+
+    ``status`` is ``"match"`` iff every resource's value for the field is equal
+    (Python ``==``), else ``"mismatch"``. This intentionally errs toward showing
+    mismatches: exact float equality and ordered ``owners``/``operators`` list
+    comparison surface differences rather than hiding them. All-``None`` fields
+    compare equal and report ``"match"`` (the client may choose to hide them).
+    """
+
+    field: str
+    status: Literal["match", "mismatch"]
+    values: list[FieldValueView]
+
+
+class MergeCandidateDetailView(MergeCandidateView):
+    resources: list[OGFieldDetailView]
+    compare: list[FieldComparisonView]
 
 
 class OGFieldMergePreviewView(BaseModel):

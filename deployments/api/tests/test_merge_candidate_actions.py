@@ -8,11 +8,14 @@ import pytest
 
 from stitch.api.entities import (
     MergeCandidateCreateRequest,
+    MergeCandidateDetailView,
     MergeCandidateReviewRequest,
     MergeCandidateStatus,
 )
 from stitch.api.db.errors import InvalidActionError, ResourceNotFoundError
 from stitch.api.db import merge_candidate_actions as mca
+from stitch.ogsi.model import OGFieldDetailView
+from stitch.ogsi.model.og_field import OilGasFieldBase
 
 from datetime import datetime, timezone
 
@@ -332,3 +335,108 @@ async def test_deny_merge_candidate_updates_candidate(monkeypatch, user):
     assert session.flush_calls == 1
     assert view.status == MergeCandidateStatus.DENIED
     assert view.review_notes == "do not merge"
+
+
+def _status_for(compare, field):
+    return next(c.status for c in compare if c.field == field)
+
+
+def _values_for(compare, field):
+    entry = next(c for c in compare if c.field == field)
+    return [(v.resource_id, v.value) for v in entry.values]
+
+
+def test_build_comparison_flags_match_mismatch_and_all_none():
+    resources = [
+        OGFieldDetailView(id=18, data=OilGasFieldBase(name="Ghawar", country="SAU")),
+        OGFieldDetailView(id=19, data=OilGasFieldBase(name="GHAWAR", country="SAU")),
+    ]
+
+    compare = mca._build_comparison(resources)
+
+    # a field where the resources agree
+    assert _status_for(compare, "country") == "match"
+    # a field where they differ (errs toward showing the mismatch)
+    assert _status_for(compare, "name") == "mismatch"
+    assert _values_for(compare, "name") == [(18, "Ghawar"), (19, "GHAWAR")]
+    # a field neither resource carries -> equal (both None) -> match
+    assert _status_for(compare, "basin") == "match"
+    # every OilGasFieldBase field is represented, once, in field order
+    assert [c.field for c in compare] == list(OilGasFieldBase.model_fields)
+
+
+@pytest.mark.anyio
+async def test_get_merge_candidate_returns_detail_view_in_item_order(monkeypatch):
+    candidate = FakeCandidate(
+        id=1,
+        status=MergeCandidateStatus.PENDING,
+        items=[
+            FakeItem(resource_id=19, position=1),
+            FakeItem(resource_id=18, position=0),
+        ],
+    )
+
+    async def fake_load_candidate_model(session_arg, candidate_id):
+        assert candidate_id == 1
+        return candidate
+
+    async def fake_coalesce(session_arg, resource_ids, licensed):
+        # ordered by item position
+        assert resource_ids == [18, 19]
+        assert licensed == ["gem"]
+        return {rid: SimpleNamespace(rid=rid) for rid in resource_ids}
+
+    def fake_detail_view(res):
+        return OGFieldDetailView(
+            id=res.rid, data=OilGasFieldBase(name=f"name-{res.rid}", country="USA")
+        )
+
+    monkeypatch.setattr(mca, "_load_candidate_model", fake_load_candidate_model)
+    monkeypatch.setattr(mca, "coalesce_resources", fake_coalesce)
+    monkeypatch.setattr(mca, "resource_to_detail_view", fake_detail_view)
+
+    view = await mca.get_merge_candidate(
+        AsyncMock(), candidate_id=1, licensed_sources=["gem"]
+    )
+
+    assert isinstance(view, MergeCandidateDetailView)
+    assert view.resource_ids == [18, 19]
+    assert [r.id for r in view.resources] == [18, 19]
+    # country agrees across resources, name differs
+    assert _status_for(view.compare, "country") == "match"
+    assert _status_for(view.compare, "name") == "mismatch"
+
+
+@pytest.mark.anyio
+async def test_get_merge_candidate_after_merge_yields_null_shell_resources(monkeypatch):
+    # Live behavior for an APPROVED candidate: originals are repointed with
+    # memberships INACTIVE, so coalesce_resources returns null-shell views.
+    candidate = FakeCandidate(
+        id=2,
+        status=MergeCandidateStatus.APPROVED,
+        items=[FakeItem(18, 0), FakeItem(19, 1)],
+        merged_resource_id=31,
+    )
+
+    async def fake_load_candidate_model(session_arg, candidate_id):
+        return candidate
+
+    async def fake_coalesce(session_arg, resource_ids, licensed):
+        return {rid: SimpleNamespace(rid=rid) for rid in resource_ids}
+
+    def fake_detail_view(res):
+        # null shell: no source data survived the merge
+        return OGFieldDetailView(
+            id=res.rid, data=OilGasFieldBase(name=None, country=None)
+        )
+
+    monkeypatch.setattr(mca, "_load_candidate_model", fake_load_candidate_model)
+    monkeypatch.setattr(mca, "coalesce_resources", fake_coalesce)
+    monkeypatch.setattr(mca, "resource_to_detail_view", fake_detail_view)
+
+    view = await mca.get_merge_candidate(AsyncMock(), candidate_id=2)
+
+    assert view.merged_resource_id == 31
+    assert all(r.data.name is None for r in view.resources)
+    # all-null on both sides -> every field trivially "match"
+    assert all(c.status == "match" for c in view.compare)
