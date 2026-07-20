@@ -5,7 +5,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field, computed_field
 
-from stitch.ogsi.model import GEM_SRC, LLM_SRC, RMI_SRC, WM_SRC, OGFieldDetailView
+from stitch.ogsi.model import (
+    GEM_SRC,
+    LLM_SRC,
+    RMI_SRC,
+    WM_SRC,
+    OGFieldDetailView,
+    OGFieldSourceValueView,
+)
 from stitch.ogsi.model.types import (
     FieldStatus,
     LocationType,
@@ -172,24 +179,36 @@ class MergeCandidateView(BaseModel):
     reviewed_by_id: int | None = None
 
 
-class FieldValueView(BaseModel):
-    resource_id: int
-    value: Any
-
-
 class FieldComparisonView(BaseModel):
-    """One field's value across every resource in a merge candidate.
+    """One field across a merge candidate, per contributing source.
 
-    ``status`` is ``"match"`` iff every resource's value for the field is equal
-    (Python ``==``), else ``"mismatch"``. This intentionally errs toward showing
-    mismatches: exact float equality and ordered ``owners``/``operators`` list
-    comparison surface differences rather than hiding them. All-``None`` fields
-    compare equal and report ``"match"`` (the client may choose to hide them).
+    ``values`` lists every source (across all candidate resources) that carries a
+    value for the field, winner-first (lowest effective ``priority`` wins). The
+    merged winner is therefore ``values[0]``.
+
+    ``status`` compares the merge outcome against the baseline -- the first
+    resource in the candidate (``resources[0]``), i.e. the resource being merged
+    into (``base`` = its coalesced value; ``winner`` = ``values[0].value``):
+
+    - ``new`` -- baseline had no value; the merge introduces one.
+    - ``unchanged`` -- ``winner == base`` (a differing source, if any, is lower
+      priority and does not win).
+    - ``mismatch`` -- ``winner != base``: a higher-priority source overrides the
+      baseline's value (the merge changes this field).
+    - ``match`` -- every contributing source agrees with the baseline.
+
+    Equality is Python ``==``, which errs toward showing changes (exact float
+    equality; ordered ``owners``/``operators`` comparison).
+
+    NOTE: ``values`` (and the derived ``status``) are a client-side best guess at
+    what the merge will persist -- they are coalesced in Python from the current
+    source data and the default source order. Once coalescing moves entirely into
+    the database, the persisted result is authoritative and may differ here.
     """
 
     field: str
-    status: Literal["match", "mismatch"]
-    values: list[FieldValueView]
+    status: Literal["match", "mismatch", "new", "unchanged"]
+    values: list[OGFieldSourceValueView]
 
 
 class MergeCandidateDetailView(MergeCandidateView):

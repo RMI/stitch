@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Collection, Sequence
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +17,6 @@ from stitch.api.db.errors import (
 )
 from stitch.api.entities import (
     FieldComparisonView,
-    FieldValueView,
     MergeCandidateCreateRequest,
     MergeCandidateDetailView,
     MergeCandidateReviewRequest,
@@ -24,7 +24,11 @@ from stitch.api.entities import (
     MergeCandidateView,
     OGFieldMergePreviewView,
 )
-from stitch.ogsi.model import OGFieldDetailView
+from stitch.ogsi.model import (
+    OGFieldDetailView,
+    OGFieldSource,
+    OGFieldSourceValueView,
+)
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
 
@@ -97,31 +101,82 @@ def _candidate_to_view(model: MergeCandidateModel) -> MergeCandidateView:
     )
 
 
-def _build_comparison(
-    resources: Sequence[OGFieldDetailView],
-) -> list[FieldComparisonView]:
-    """Transpose each resource's coalesced ``data`` into a per-field comparison.
+def _comparison_status(
+    base_value: Any,
+    winner: Any,
+    values: Sequence[OGFieldSourceValueView],
+) -> str:
+    """Classify a field's merge outcome against the baseline resource value.
 
-    For every field on ``OilGasFieldBase`` a row lists each resource's value; the
-    status is ``"match"`` iff all values are equal (Python ``==``), else
-    ``"mismatch"``. See ``FieldComparisonView`` for the (deliberately
-    mismatch-leaning) semantics.
+    ``base_value`` is ``resources[0]``'s coalesced value; ``winner`` is the
+    highest-priority source value (``values[0]``). See ``FieldComparisonView``.
+    """
+    if base_value is None:
+        return "new" if winner is not None else "unchanged"
+    if winner != base_value:
+        return "mismatch"
+    if all(entry.value == base_value for entry in values):
+        return "match"
+    return "unchanged"
+
+
+def _build_comparison(
+    baseline: OGFieldDetailView | None,
+    sources_with_priority: Sequence[tuple[OGFieldSource, int]],
+) -> list[FieldComparisonView]:
+    """Per-field comparison across every contributing source in the candidate.
+
+    For each ``OilGasFieldBase`` field, list every source that carries a value
+    (winner-first by effective priority), then classify the merge outcome against
+    the baseline (``resources[0]``). See ``FieldComparisonView`` for the status
+    semantics. ``priority`` is the default source order, since a merge resets the
+    merged resource to default ordering.
+
+    The winner picked here is a best guess at the persisted merge result,
+    coalesced in Python; it is superseded once coalescing moves into the DB.
     """
     comparison: list[FieldComparisonView] = []
     for field_name in OilGasFieldBase.model_fields:
-        values = [
-            FieldValueView(
-                resource_id=resource.id,
-                value=getattr(resource.data, field_name),
+        values: list[OGFieldSourceValueView] = []
+        for source, priority in sources_with_priority:
+            if source.id is None:
+                continue
+            value = getattr(source, field_name, None)
+            if value is None or value == "":
+                continue
+            values.append(
+                OGFieldSourceValueView(
+                    source=source.source,
+                    id=source.id,
+                    value=value,
+                    priority=priority,
+                )
             )
-            for resource in resources
-        ]
-        first = values[0].value if values else None
-        status = "match" if all(v.value == first for v in values) else "mismatch"
+        values.sort(key=lambda entry: (entry.priority, entry.id))
+        winner = values[0].value if values else None
+        base_value = (
+            getattr(baseline.data, field_name, None) if baseline is not None else None
+        )
         comparison.append(
-            FieldComparisonView(field=field_name, status=status, values=values)
+            FieldComparisonView(
+                field=field_name,
+                status=_comparison_status(base_value, winner, values),
+                values=values,
+            )
         )
     return comparison
+
+
+async def _default_source_priority(session: AsyncSession) -> dict[str, int]:
+    """Global default source ordering (``source`` key -> priority, lower wins).
+
+    A merge resets the merged resource to this default order, so the comparison
+    ranks sources by it rather than by any per-resource override.
+    """
+    rows = await session.execute(
+        select(OGFieldSourcePriority.source, OGFieldSourcePriority.priority)
+    )
+    return {source: priority for source, priority in rows.all()}
 
 
 def _candidate_to_detail_view(
@@ -190,7 +245,18 @@ async def get_merge_candidate(
     # emptied originals. Freezing a snapshot at approve/deny time is deferred.
     by_id = await coalesce_resources(session, resource_ids, licensed_sources)
     resources = [resource_to_detail_view(by_id[rid]) for rid in resource_ids]
-    compare = _build_comparison(resources)
+
+    # Compare every contributing source against the baseline (resources[0]),
+    # ranked by the default source order the merged resource will use.
+    default_priority = await _default_source_priority(session)
+    fallback_priority = max(default_priority.values(), default=0) + 1
+    sources_with_priority = [
+        (source, default_priority.get(source.source, fallback_priority))
+        for rid in resource_ids
+        for source in by_id[rid].source_data
+    ]
+    baseline = resources[0] if resources else None
+    compare = _build_comparison(baseline, sources_with_priority)
 
     return _candidate_to_detail_view(candidate, resources, compare)
 
