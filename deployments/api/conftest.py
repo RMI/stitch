@@ -17,9 +17,9 @@ explicit process env above; real env vars still win via ``os.environ``.
 
 import os
 
-os.environ.setdefault("OTEL_TRACES_EXPORTER", "none")
+from stitch.api.settings import PostgresConfig, Settings, SqliteConfig
 
-from stitch.api.settings import PostgresConfig, Settings, SqliteConfig  # noqa: E402
+os.environ.setdefault("OTEL_TRACES_EXPORTER", "none")
 
 for _settings_cls in (Settings, PostgresConfig, SqliteConfig):
     _settings_cls.model_config["env_file"] = None
