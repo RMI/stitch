@@ -18,6 +18,7 @@ from stitch.api.entities import (
     MergeCandidateView,
     OGFieldQueryParams,
     PaginatedResponse,
+    SetFieldPriorityRequest,
 )
 
 from stitch.api.db import og_field_resource_actions as resource_actions
@@ -273,6 +274,48 @@ async def get_field_source_values(
         field=field,
         licensed_sources=licensed_sources(claims),
     )
+
+
+@router.put(
+    "/{id}/fields/{field}/sources/priority",
+    response_model=list[OGFieldSourceValueView],
+    dependencies=[Depends(require_permissions(RESOURCE_WRITE))],
+)
+async def set_field_source_priority(
+    *,
+    uow: UnitOfWorkDep,
+    user: CurrentUser,
+    claims: Claims,
+    id: int,
+    field: str,
+    request: SetFieldPriorityRequest,
+) -> list[OGFieldSourceValueView]:
+    try:
+        return await resource_actions.set_field_source_priority(
+            session=uow.session,
+            user=user,
+            id=id,
+            field=field,
+            ordered_source_pks=request.ordered_source_pks,
+            licensed_sources=licensed_sources(claims),
+        )
+    except (InvalidActionError, ResourceIntegrityError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ResourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(
+            "Error setting field-source priority for resource %s field %s: %s",
+            id,
+            field,
+            exc,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Internal error while setting field source priority",
+        )
 
 
 @router.post(

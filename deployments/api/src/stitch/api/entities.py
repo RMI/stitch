@@ -157,6 +157,17 @@ class MergeCandidateReviewRequest(BaseModel):
     review_notes: str | None = None
 
 
+class SetFieldPriorityRequest(BaseModel):
+    """New source ordering for one field, best-first.
+
+    ``ordered_source_pks`` must list *exactly* the source records that currently
+    carry a value for the field (same set the read endpoint returns), each once.
+    Index 0 becomes the coalesced winner.
+    """
+
+    ordered_source_pks: list[int]
+
+
 class MergeCandidateView(BaseModel):
     id: int
     resource_ids: list[int]

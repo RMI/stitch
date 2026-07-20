@@ -84,6 +84,33 @@ export async function getFieldSourceValues(
   return await response.json();
 }
 
+export async function updateFieldSourcePriority(
+  config,
+  id,
+  field,
+  orderedSourcePks,
+  fetcher,
+  endpoint = "oil-gas-fields",
+) {
+  const url = `${config.apiBaseUrl}/${endpoint}/${id}/fields/${encodeURIComponent(
+    field,
+  )}/sources/priority`;
+  const response = await fetcher(url, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ ordered_source_pks: orderedSourcePks }),
+  });
+  if (!response.ok) {
+    const error = new Error(`HTTP error! status: ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+  return await response.json();
+}
+
 export async function createLLMSuggestion(
   config,
   id,

@@ -99,13 +99,17 @@ def construct_base_query_statement(
     p = OGFieldSourcePriority
     o = OGFieldResourceSourcePriority
 
-    priority = func.coalesce(o.priority, p.priority)
     active_src = (
         select(
             r.id.label("resource_id"),
             m.source.label("source"),
             m.source_pk.label("source_pk"),
-            priority.label("priority"),
+            # Two columns, not a collapsed COALESCE: tiering (curated records above
+            # default ones) needs override_priority NULLS LAST as a distinct sort
+            # key. Absent an override row for the value, override_priority is NULL
+            # and only default_priority ranks the row (identical to no overrides).
+            o.priority.label("override_priority"),
+            p.priority.label("default_priority"),
             v.colname.label("colname"),
             v.value_text,
             v.value_num,
@@ -116,7 +120,16 @@ def construct_base_query_statement(
         .join(p, p.source == m.source)
         .join(s, and_(s.id == m.source_pk, s.source == m.source))
         .join(v, v.source_pk == m.source_pk)
-        .outerjoin(o, and_(o.resource_id == r.id, o.source == m.source))
+        # Override join at the value grain (source_pk, colname), matching v exactly,
+        # so at most one override row per value row -- no fan-out.
+        .outerjoin(
+            o,
+            and_(
+                o.resource_id == r.id,
+                o.source_pk == m.source_pk,
+                o.colname == v.colname,
+            ),
+        )
         .where(
             r.repointed_id.is_(None),
             m.status == MembershipStatus.ACTIVE,
@@ -162,22 +175,34 @@ def base_source_query(
     return stmt.order_by(*_build_sort_clauses(pivot_cte, params, "source_pk"))
 
 
-def add_ranking(base_cte: CTE) -> Select[tuple[Any, ...]]:
+def _ranked(base_cte: CTE) -> CTE:
+    """Attach the tiered coalesce rank ``rn`` to each candidate row.
+
+    Single source of truth for "who beats whom": the empty-text filter and the
+    tiered order key live here, shared by the winner cut (``add_ranking``) and the
+    per-field listing (``field_source_candidates``) so the two can't drift.
+
+    Empty-string text can't win coalescing, so those rows are dropped before the
+    window (a lower-priority non-empty source wins instead). Only text-kind
+    attributes populate ``value_text`` (``ck_source_value_exactly_one``), so this
+    leaves numeric/JSON untouched; if every source is empty/absent for a field, no
+    row survives and the field coalesces to NULL. ``rn == 1`` is the winner within
+    each ``(resource_id, colname)`` partition.
+    """
     cols = base_cte.c
-    ranked = (
+    return (
         select(base_cte)
-        # Empty text can't win coalescing: drop empty-string values before the
-        # window so a lower-priority non-empty source wins instead. Only
-        # text-kind attributes populate value_text (ck_source_value_exactly_one),
-        # so this leaves numeric/JSON untouched. If every source is empty/absent
-        # for a field, no row survives and the field coalesces to NULL.
         .where(or_(cols.value_text.is_(None), cols.value_text != ""))
         .add_columns(
             func.row_number()
             .over(
                 partition_by=(cols.resource_id, cols.colname),
+                # Tiered: curated records (override_priority NOT NULL) rank above
+                # default ones (NULLS LAST is the tier split), then global default
+                # priority, then source/source_pk tiebreaks.
                 order_by=(
-                    cols.priority.asc(),
+                    cols.override_priority.asc().nulls_last(),
+                    cols.default_priority.asc(),
                     cols.source.asc(),
                     cols.source_pk.asc(),
                 ),
@@ -186,6 +211,10 @@ def add_ranking(base_cte: CTE) -> Select[tuple[Any, ...]]:
         )
         .cte()
     )
+
+
+def add_ranking(base_cte: CTE) -> Select[tuple[Any, ...]]:
+    ranked = _ranked(base_cte)
     return select(ranked).where(ranked.c.rn == 1)
 
 
@@ -212,6 +241,38 @@ def coalesced_winner_rows(
         winners.c.value_json,
         winners.c.source,
         winners.c.source_pk,
+    )
+
+
+def field_source_candidates(
+    resource_id: int,
+    field: str,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> Select[tuple[Any, ...]]:
+    """Every source record's value for one field of one resource, winner-first.
+
+    The same tiered ranking as coalescing, sharing ``_ranked`` with
+    ``add_ranking`` -- this is that ranking *without* the ``rn == 1`` cut, so it
+    returns all candidate rows for the field ordered best-first (by ``rn``).
+    Empty-string text values are dropped by ``_ranked`` (they can't win), so the
+    row set is exactly the field's eligible sources. ``is_override`` is true when
+    a curator has re-ranked this record for the field (an override row exists).
+    Powers both the read endpoint and the write-path eligibility/no-op checks.
+    """
+    base = construct_base_query_statement(licensed_sources, resource_ids=[resource_id])
+    ranked = _ranked(base)
+    c = ranked.c
+    return (
+        select(
+            c.source,
+            c.source_pk,
+            c.value_text,
+            c.value_num,
+            c.value_json,
+            c.override_priority.is_not(None).label("is_override"),
+        )
+        .where(c.colname == field)
+        .order_by(c.rn)
     )
 
 

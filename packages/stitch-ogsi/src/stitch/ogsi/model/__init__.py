@@ -117,19 +117,23 @@ class OGFieldDetailView(OGFieldListItemView):
 
 
 class OGFieldSourceValueView(BaseModel):
-    """One source's value for a single field, with its effective priority.
+    """One source's value for a single field, in effective priority order.
 
-    Returned by the per-field source-values endpoint. ``priority`` is the
-    effective per-resource ranking (lower ``priority`` value = higher priority);
-    the winning value is the entry with the lowest ``priority`` value (ties
-    broken by ``id``). When priority becomes resource/field-scoped, only that
-    resolution changes -- this shape is stable.
+    Returned by the per-field source-values endpoint, winner-first. ``priority``
+    is the row's 0-based rank in that order (0 = coalesced winner); it is a rank
+    *position*, not the stored priority number, because per-field tiering means
+    the raw numbers are no longer a single cross-record total order. **Consumers
+    rely on list order**, which is authoritative. ``is_override`` marks a row a
+    curator has explicitly re-ranked for this field (tier 0); non-override rows
+    (tier 1) fall back to the global default priority and rank below every
+    curated row.
     """
 
     source: OGSISrcKey
     id: int
     value: Any
     priority: int
+    is_override: bool = False
 
 
 class OGFieldResource(Resource[int, OGFieldSource]):
