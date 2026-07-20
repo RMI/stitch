@@ -410,6 +410,24 @@ def test_build_comparison_flags_reverted_override_as_mismatch():
     assert _status_for(compare_default, "name") == "unchanged"
 
 
+def test_build_comparison_treats_empty_string_as_a_real_value():
+    # The coalescer excludes only None (empty strings can win the merge), so
+    # `compare` must keep "" too -- otherwise it disagrees with the persisted
+    # result. Here RMI's "" wins `basin`, matching the baseline.
+    baseline = OGFieldDetailView(
+        id=1, data=OilGasFieldBase(name=None, country="SAU", basin="")
+    )
+    src_rmi = SimpleNamespace(source="rmi", id=10, basin="")
+    src_gem = SimpleNamespace(source="gem", id=11, basin="Permian")
+
+    compare = mca._build_comparison(baseline, [(src_rmi, 1), (src_gem, 2)])
+
+    # "" is present in values (not filtered out) and is the merged winner
+    assert _values_for(compare, "basin") == [("rmi", 10, ""), ("gem", 11, "Permian")]
+    # winner "" == baseline "", a lower-priority source differs -> unchanged
+    assert _status_for(compare, "basin") == "unchanged"
+
+
 @pytest.mark.anyio
 async def test_get_merge_candidate_returns_detail_view_in_item_order(monkeypatch):
     candidate = FakeCandidate(

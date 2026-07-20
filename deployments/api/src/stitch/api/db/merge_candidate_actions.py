@@ -142,7 +142,12 @@ def _build_comparison(
             if source.id is None:
                 continue
             value = getattr(source, field_name, None)
-            if value is None or value == "":
+            # Mirror the coalescer (coalesce_og_field_resource excludes None
+            # only): an empty string is a real value that can win the merge, so
+            # it must appear here too or `compare` disagrees with the result.
+            # note: when moving coalescing into DB (PR 170) this also needs to
+            # be checked
+            if value is None:
                 continue
             values.append(
                 OGFieldSourceValueView(
