@@ -7,7 +7,7 @@ ENV PYTHONUNBUFFERED=1 \
     UV_PYTHON_DOWNLOADS=0 \
     UV_NO_DEV=1
 
-COPY --from=ghcr.io/astral-sh/uv:0.9.25 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11.30 /uv /uvx /bin/
 
 WORKDIR /app
 
