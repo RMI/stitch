@@ -345,80 +345,49 @@ def _values_for(compare, field):
     return [(v.resource_id, v.source, v.source_id, v.value) for v in entry.values]
 
 
-def test_build_comparison_classifies_each_field_against_baseline():
-    # baseline = resources[0]'s coalesced value; winner = highest-priority source
-    # (lowest priority number). Each source is tagged with its resource_id.
-    baseline = OilGasFieldBase(name="Ghawar", country="SAU", basin=None, region="R1")
-    src_rmi = SimpleNamespace(
-        source="rmi", id=10, name="Ghawar", country="SAU", basin="BasinX", region="R2"
-    )
-    src_gem = SimpleNamespace(source="gem", id=11, name="Burgan", country="SAU")
-    sources_with_priority = [(18, src_rmi, 1), (19, src_gem, 2)]
+def test_build_comparison_status_is_match_or_different_per_resource():
+    # status compares the resources' coalesced values (resource_views); values
+    # list every contributing source, tagged with its resource_id.
+    view_a = OilGasFieldBase(name="Ghawar", country="SAU", basin=None, region="R1")
+    view_b = OilGasFieldBase(name="Burgan", country="SAU", basin=None, region=None)
+    src_a = SimpleNamespace(source="rmi", id=10, name="Ghawar", country="SAU")
+    src_b = SimpleNamespace(source="rmi", id=11, name="Burgan", country="SAU")
+    sources_with_priority = [(18, src_a, 1), (19, src_b, 1)]
 
-    compare = mca._build_comparison(baseline, sources_with_priority)
+    compare = mca._build_comparison([view_a, view_b], sources_with_priority)
 
-    # winner (rmi "Ghawar") == baseline, but a lower-priority source disagrees
-    assert _status_for(compare, "name") == "unchanged"
-    # every contributing source agrees with the baseline
+    # resources disagree
+    assert _status_for(compare, "name") == "different"
+    # resources agree
     assert _status_for(compare, "country") == "match"
-    # baseline had no value; the merge introduces one
-    assert _status_for(compare, "basin") == "new"
-    # a higher-priority source overrides the baseline's value
-    assert _status_for(compare, "region") == "mismatch"
+    # both null -> agree
+    assert _status_for(compare, "basin") == "match"
+    # one resource has a value, the other is null -> different
+    assert _status_for(compare, "region") == "different"
 
     # values are per-source (winner-first), tagged with the attached resource_id
     assert _values_for(compare, "name") == [
         (18, "rmi", 10, "Ghawar"),
-        (19, "gem", 11, "Burgan"),
+        (19, "rmi", 11, "Burgan"),
     ]
-    assert _values_for(compare, "basin") == [(18, "rmi", 10, "BasinX")]
 
     # every OilGasFieldBase field is represented, once, in field order
     assert [c.field for c in compare] == list(OilGasFieldBase.model_fields)
 
 
-def test_build_comparison_flags_reverted_override_as_mismatch():
-    # A per-resource override on resources[0] made GEM win `name` (so the
-    # baseline is the GEM value). `compare` ranks by DEFAULT order (what the
-    # merged resource will use), where RMI wins -- so the merge would change the
-    # field, and it is flagged `mismatch`. Both sources are attached to res 18.
-    baseline = OilGasFieldBase(name="GEM-name", country="SAU")
-    src_rmi = SimpleNamespace(source="rmi", id=10, name="RMI-name")
-    src_gem = SimpleNamespace(source="gem", id=11, name="GEM-name")
-    sources_with_priority = [(18, src_rmi, 1), (18, src_gem, 2)]  # default order
-
-    compare = mca._build_comparison(baseline, sources_with_priority)
-
-    assert _status_for(compare, "name") == "mismatch"
-    assert _values_for(compare, "name") == [
-        (18, "rmi", 10, "RMI-name"),  # default winner
-        (18, "gem", 11, "GEM-name"),
-    ]
-
-    # Without the override, the baseline already matches the default winner, so
-    # merging changes nothing -> `unchanged` (GEM present at lower priority).
-    baseline_default = OilGasFieldBase(name="RMI-name", country="SAU")
-    compare_default = mca._build_comparison(baseline_default, sources_with_priority)
-    assert _status_for(compare_default, "name") == "unchanged"
-
-
 def test_build_comparison_treats_empty_string_as_a_real_value():
-    # The coalescer excludes only None (empty strings can win the merge), so
-    # `compare` must keep "" too -- otherwise it disagrees with the persisted
-    # result. Here RMI's "" wins `basin`, matching the baseline.
-    baseline = OilGasFieldBase(name=None, country="SAU", basin="")
-    src_rmi = SimpleNamespace(source="rmi", id=10, basin="")
-    src_gem = SimpleNamespace(source="gem", id=11, basin="Permian")
+    # The coalescer excludes only None (empty strings are real values), so
+    # `compare` must keep "" too. Both resources coalesce to "" -> match, and ""
+    # appears in `values` rather than being filtered out.
+    view_a = OilGasFieldBase(name=None, country="SAU", basin="")
+    view_b = OilGasFieldBase(name=None, country="SAU", basin="")
+    src_a = SimpleNamespace(source="rmi", id=10, basin="")
+    src_b = SimpleNamespace(source="rmi", id=11, basin="")
 
-    compare = mca._build_comparison(baseline, [(18, src_rmi, 1), (19, src_gem, 2)])
+    compare = mca._build_comparison([view_a, view_b], [(18, src_a, 1), (19, src_b, 1)])
 
-    # "" is present in values (not filtered out) and is the merged winner
-    assert _values_for(compare, "basin") == [
-        (18, "rmi", 10, ""),
-        (19, "gem", 11, "Permian"),
-    ]
-    # winner "" == baseline "", a lower-priority source differs -> unchanged
-    assert _status_for(compare, "basin") == "unchanged"
+    assert _values_for(compare, "basin") == [(18, "rmi", 10, ""), (19, "rmi", 11, "")]
+    assert _status_for(compare, "basin") == "match"
 
 
 @pytest.mark.anyio
@@ -505,6 +474,6 @@ async def test_get_merge_candidate_after_merge_yields_empty_compare(monkeypatch)
     view = await mca.get_merge_candidate(AsyncMock(), candidate_id=2)
 
     assert view.merged_resource_id == 31
-    # baseline null + no surviving sources -> nothing changes on any field
-    assert all(c.status == "unchanged" for c in view.compare)
+    # every resource is null on every field -> they all agree (match), no values
+    assert all(c.status == "match" for c in view.compare)
     assert all(c.values == [] for c in view.compare)

@@ -98,40 +98,30 @@ def _candidate_to_view(model: MergeCandidateModel) -> MergeCandidateView:
     )
 
 
-def _comparison_status(
-    base_value: Any,
-    winner: Any,
-    values: Sequence[ComparisonValueView],
-) -> str:
-    """Classify a field's merge outcome against the baseline resource value.
+def _comparison_status(resource_values: Sequence[Any]) -> str:
+    """``match`` if every resource resolves to the same value, else ``different``.
 
-    ``base_value`` is ``resources[0]``'s coalesced value; ``winner`` is the
-    highest-priority source value (``values[0]``). See ``FieldComparisonView``.
+    Compares each resource's coalesced value for a field. A value present on one
+    resource and null on another counts as ``different``; all-null counts as
+    ``match``. See ``FieldComparisonView``.
     """
-    if base_value is None:
-        return "new" if winner is not None else "unchanged"
-    if winner != base_value:
-        return "mismatch"
-    if all(entry.value == base_value for entry in values):
-        return "match"
-    return "unchanged"
+    first = resource_values[0] if resource_values else None
+    return "match" if all(value == first for value in resource_values) else "different"
 
 
 def _build_comparison(
-    baseline: OilGasFieldBase | None,
+    resource_views: Sequence[OilGasFieldBase],
     sources_with_priority: Sequence[tuple[int, OGFieldSource, int]],
 ) -> list[FieldComparisonView]:
-    """Per-field comparison across every contributing source in the candidate.
+    """Per-field comparison across the candidate's resources.
 
-    For each ``OilGasFieldBase`` field, list every source that carries a value
-    (winner-first by effective priority) tagged with the resource it is attached
-    to, then classify the merge outcome against the baseline (the coalesced value
-    of ``resources[0]``). See ``FieldComparisonView`` for the status semantics.
-    ``priority`` is the default source order, since a merge resets the merged
-    resource to default ordering.
+    For each ``OilGasFieldBase`` field, ``status`` compares the resources'
+    coalesced values (``resource_views``); ``values`` lists every source that
+    carries a value (winner-first by priority) tagged with the resource it is
+    attached to. See ``FieldComparisonView`` for the status semantics.
 
-    The winner picked here is a best guess at the persisted merge result,
-    coalesced in Python; it is superseded once coalescing moves into the DB.
+    Values are a best guess at the persisted merge result, coalesced in Python;
+    superseded once coalescing moves into the DB.
     """
     comparison: list[FieldComparisonView] = []
     for field_name in OilGasFieldBase.model_fields:
@@ -157,14 +147,11 @@ def _build_comparison(
                 )
             )
         values.sort(key=lambda entry: (entry.priority, entry.source_id))
-        winner = values[0].value if values else None
-        base_value = (
-            getattr(baseline, field_name, None) if baseline is not None else None
-        )
+        resource_values = [getattr(view, field_name, None) for view in resource_views]
         comparison.append(
             FieldComparisonView(
                 field=field_name,
-                status=_comparison_status(base_value, winner, values),
+                status=_comparison_status(resource_values),
                 values=values,
             )
         )
@@ -247,9 +234,9 @@ async def get_merge_candidate(
     # Freezing a snapshot at approve/deny time is deferred.
     by_id = await coalesce_resources(session, resource_ids, licensed_sources)
 
-    # Compare every contributing source (tagged with the resource it's attached
-    # to) against the baseline (resources[0]'s coalesced value), ranked by the
-    # default source order the merged resource will use.
+    # `status` compares the resources' coalesced values; `values` lists every
+    # contributing source tagged with the resource it's attached to, ranked by
+    # the default source order (winner-first).
     default_priority = await _default_source_priority(session)
     fallback_priority = max(default_priority.values(), default=0) + 1
     sources_with_priority = [
@@ -257,8 +244,8 @@ async def get_merge_candidate(
         for rid in resource_ids
         for source in by_id[rid].source_data
     ]
-    baseline = by_id[resource_ids[0]].view if resource_ids else None
-    compare = _build_comparison(baseline, sources_with_priority)
+    resource_views = [by_id[rid].view for rid in resource_ids]
+    compare = _build_comparison(resource_views, sources_with_priority)
 
     return _candidate_to_detail_view(candidate, compare)
 

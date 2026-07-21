@@ -186,36 +186,31 @@ class ComparisonValueView(OGFieldSourceValueView):
 
 
 class FieldComparisonView(BaseModel):
-    """One field across a merge candidate, per contributing source.
+    """One field compared across a merge candidate's resources.
 
     ``values`` lists every source (across all candidate resources) that carries a
-    value for the field, winner-first (lowest effective ``priority`` wins). The
-    merged winner is therefore ``values[0]``. Each entry carries the
-    ``resource_id`` it is attached to, so the client can group values by resource
-    without a separate per-resource payload.
+    value for the field, winner-first (lowest ``priority`` wins). Each entry
+    carries the ``resource_id`` it is attached to, so the client can group values
+    by resource without a separate per-resource payload.
 
-    ``status`` compares the merge outcome against the baseline -- the first
-    resource in the candidate (``resources[0]``), i.e. the resource being merged
-    into (``base`` = its coalesced value; ``winner`` = ``values[0].value``):
+    ``status`` compares the resources' coalesced values for the field:
 
-    - ``new`` -- baseline had no value; the merge introduces one.
-    - ``unchanged`` -- ``winner == base`` (a differing source, if any, is lower
-      priority and does not win).
-    - ``mismatch`` -- ``winner != base``: a higher-priority source overrides the
-      baseline's value (the merge changes this field).
-    - ``match`` -- every contributing source agrees with the baseline.
+    - ``match`` -- every resource resolves to the same value (all equal,
+      including the case where every resource is null).
+    - ``different`` -- the resources disagree, including when one resource has a
+      value and another is null.
 
-    Equality is Python ``==``, which errs toward showing changes (exact float
+    Equality is Python ``==``, which errs toward ``different`` (exact float
     equality; ordered ``owners``/``operators`` comparison).
 
     NOTE: ``values`` (and the derived ``status``) are a client-side best guess at
     what the merge will persist -- they are coalesced in Python from the current
-    source data and the default source order. Once coalescing moves entirely into
-    the database, the persisted result is authoritative and may differ here.
+    source data. Once coalescing moves entirely into the database, the persisted
+    result is authoritative and may differ here.
     """
 
     field: str
-    status: Literal["match", "mismatch", "new", "unchanged"]
+    status: Literal["match", "different"]
     values: list[ComparisonValueView]
 
 

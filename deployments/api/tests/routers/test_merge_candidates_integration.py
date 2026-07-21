@@ -84,11 +84,9 @@ class TestMergeCandidateDetailIntegration:
                 "resource_id",
             } <= set(entry)
 
-        # RMI (highest priority) carries the given names on both resources; the
-        # baseline resources[0]=A wins the RMI tie by id, so A's name stays put
-        # while B's differing name is present at lower precedence -> unchanged.
-        assert name_cmp["status"] == "unchanged"
-        assert name_cmp["values"][0]["value"] == "Ghawar"  # merged winner
+        # The two resources resolve `name` to different values -> different.
+        assert name_cmp["status"] == "different"
+        assert name_cmp["values"][0]["value"] == "Ghawar"  # winner-first by priority
         # each source is attributed to the resource it is attached to
         rmi_by_resource = {
             (v["resource_id"], v["value"])
@@ -125,10 +123,10 @@ class TestMergeCandidateDetailIntegration:
         assert body["resource_ids"] == [id_a, id_b]
         assert "resources" not in body
         # Live compute: originals are repointed with memberships INACTIVE, so no
-        # sources survive -> every field is unchanged with no values.
-        # (Freeze snapshot is deferred.)
+        # sources survive -> both resources are null everywhere, so every field
+        # matches with no values. (Freeze snapshot is deferred.)
         for entry in body["compare"]:
-            assert entry["status"] == "unchanged"
+            assert entry["status"] == "match"
             assert entry["values"] == []
 
     @pytest.mark.anyio
@@ -163,8 +161,7 @@ class TestMergeCandidateDetailIntegration:
             )
             await session.commit()
 
-        # The baseline (resources[0] = A) reflects the override: A's coalesced
-        # name is GEM's value.
+        # A's coalesced value reflects the override: its name resolves to GEM's.
         detail_a = await integration_client.get(f"/oil-gas-fields/{id_a}/detail")
         assert detail_a.status_code == 200, detail_a.text
         assert detail_a.json()["data"]["name"] == "GEM-name"  # override in effect
@@ -176,11 +173,11 @@ class TestMergeCandidateDetailIntegration:
         assert resp.status_code == 200, resp.text
         body = resp.json()
 
-        # The merge resets to default order (RMI wins), so the field changes
-        # against the override baseline -> mismatch, with RMI as the merged
-        # winner. Both of A's sources are attributed to resource A.
+        # A resolves `name` to its override value (GEM-name), B to B-name, so the
+        # resources differ. `values` is winner-first by default priority (RMI),
+        # and both of A's sources are attributed to resource A.
         name_cmp = next(c for c in body["compare"] if c["field"] == "name")
-        assert name_cmp["status"] == "mismatch"
+        assert name_cmp["status"] == "different"
         assert name_cmp["values"][0]["value"] == "RMI-name"
         a_values = {
             (v["source"], v["value"])
