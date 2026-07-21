@@ -18,7 +18,8 @@ DEFAULT_PRIORITIES = [
     {"source": "rmi", "priority": 1},
     {"source": "gem", "priority": 2},
     {"source": "wm", "priority": 3},
-    {"source": "llm", "priority": 4},
+    {"source": "ccr", "priority": 4},
+    {"source": "llm", "priority": 5},
 ]
 
 

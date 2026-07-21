@@ -4,9 +4,10 @@ GEMSrcKey = Literal["gem"]
 WMSrcKey = Literal["wm"]
 RMISrcKey = Literal["rmi"]
 LLMSrcKey = Literal["llm"]
+CCRSrcKey = Literal["ccr"]
 
 
-OGSISrcKey = Literal["gem", "wm", "rmi", "llm"]
+OGSISrcKey = Literal["gem", "wm", "rmi", "llm", "ccr"]
 
 LocationType = Literal["Onshore", "Offshore", "Unknown"]
 
