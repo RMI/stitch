@@ -20,8 +20,21 @@ from stitch.api.db.model import (
 from stitch.api.auth import get_current_user, get_token_claims
 from stitch.api.entities import User
 from stitch.api.main import app
+from stitch.api.settings import PostgresConfig, Settings, SqliteConfig, get_settings
 from .factories import OGFieldBaseFactory, ResourceFactory
 from .utils import make_create_resource, make_resource, make_source
+
+
+# The settings classes read a ``.env`` file relative to the working directory,
+# and ``make`` runs the suite from the repo root, so ``Settings()`` would
+# otherwise pick up a developer's local ``.env`` and mask the declared code
+# defaults that tests assert against. Disable dotenv loading here; real env vars
+# (e.g. OTEL_TRACES_EXPORTER, set in the rootdir conftest) still win. Importing
+# ``app`` above already built the cached settings singleton off ``.env``, so
+# clear it — the next read rebuilds it from defaults.
+for _settings_cls in (PostgresConfig, Settings, SqliteConfig):
+    _settings_cls.model_config["env_file"] = None
+get_settings.cache_clear()
 
 
 _ALL_LICENSED_CLAIMS = TokenClaims(
