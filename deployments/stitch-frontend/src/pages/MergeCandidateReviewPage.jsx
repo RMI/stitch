@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import Button from "../components/Button";
 import MergeSourceComparison from "../components/MergeSourceComparison";
 import MergedResourceView from "../components/MergedResourceView";
@@ -119,7 +120,17 @@ function CandidateFacts({ candidate }) {
       <div>
         <dt className="font-semibold text-ink-muted">Source resources</dt>
         <dd className="mt-1 break-words text-ink">
-          {candidate.resource_ids.join(", ")}
+          {candidate.resource_ids.map((id, index) => (
+            <span key={id}>
+              {index > 0 ? ", " : null}
+              <Link
+                to={`/${ENDPOINT}/${id}`}
+                className="text-primary underline"
+              >
+                {id}
+              </Link>
+            </span>
+          ))}
         </dd>
       </div>
       <div>

@@ -95,6 +95,19 @@ describe("MergeCandidateReviewPage", () => {
     expect(screen.getByText("Total")).toBeInTheDocument();
   });
 
+  it("links each source resource id to its detail page", () => {
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(screen.getByRole("link", { name: "101" })).toHaveAttribute(
+      "href",
+      "/oil-gas-fields/101",
+    );
+    expect(screen.getByRole("link", { name: "102" })).toHaveAttribute(
+      "href",
+      "/oil-gas-fields/102",
+    );
+  });
+
   it("shows the source comparison instead of the merged preview", () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
