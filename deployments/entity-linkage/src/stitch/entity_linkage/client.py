@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from stitch.client import AsyncStitchClient, env_bearer_token_headers_provider
+from stitch.client import AsyncStitchClient
 
 from stitch.entity_linkage.entities import FieldCandidate, FieldDetailCandidate
 from stitch.entity_linkage.settings import get_settings
@@ -15,11 +15,6 @@ def _get_api_base_url() -> str:
     return str(get_settings().api_base_url)
 
 
-def validate_downstream_auth_config_at_startup() -> None:
-    headers_provider = env_bearer_token_headers_provider()
-    headers_provider()
-
-
 class StitchApiClient:
     def __init__(
         self,
@@ -29,11 +24,12 @@ class StitchApiClient:
             self._client = client
             return
 
-        headers_provider = env_bearer_token_headers_provider()
-        self._client = AsyncStitchClient(
-            base_url=_get_api_base_url(),
+        # Auth mode is selected by the environment: Auth0 M2M when the
+        # STITCH_AUTH_* vars are present, otherwise no Authorization header
+        # (local AUTH_DISABLED path).
+        self._client = AsyncStitchClient.from_service_env(
+            api_base_url=_get_api_base_url(),
             timeout=30.0,
-            headers_provider=headers_provider,
         )
 
     async def __aenter__(self) -> "StitchApiClient":

@@ -79,6 +79,8 @@ on:
         required: false
       stitch-client-bearer-token:
         required: false
+      stitch-auth-client-secret:
+        required: false
       stitch-llm-azure-openai-api-key:
         required: false
       woodmac-api-key:
@@ -174,6 +176,7 @@ jobs:
         env:
           STITCH_APP_PASSWORD: ${{ secrets.stitch-app-password }}
           STITCH_CLIENT_BEARER_TOKEN: ${{ secrets.stitch-client-bearer-token }}
+          STITCH_AUTH_CLIENT_SECRET: ${{ secrets.stitch-auth-client-secret }}
           STITCH_LLM_AZURE_OPENAI_API_KEY: ${{ secrets.stitch-llm-azure-openai-api-key }}
           WOODMAC_API_KEY: ${{ secrets.woodmac-api-key }}
         run: |
@@ -182,8 +185,15 @@ jobs:
           if [ -n "${STITCH_APP_PASSWORD:-}" ]; then
             envvars="$envvars POSTGRES_PASSWORD=${STITCH_APP_PASSWORD}"
           fi
+          # Legacy manually-minted bearer (ETL only, until stitch-etl-poc migrates).
           if [ -n "${STITCH_CLIENT_BEARER_TOKEN:-}" ]; then
             envvars="$envvars STITCH_CLIENT_BEARER_TOKEN=${STITCH_CLIENT_BEARER_TOKEN}"
+          fi
+          # Auth0 M2M client secret. The non-secret STITCH_AUTH_CLIENT_ID /
+          # _AUDIENCE / _ISSUER_URL travel in the caller's environment-variables
+          # string; only the secret is injected here (same pattern as the bearer).
+          if [ -n "${STITCH_AUTH_CLIENT_SECRET:-}" ]; then
+            envvars="$envvars STITCH_AUTH_CLIENT_SECRET=${STITCH_AUTH_CLIENT_SECRET}"
           fi
           if [ -n "${STITCH_LLM_AZURE_OPENAI_API_KEY:-}" ]; then
             envvars="$envvars STITCH_LLM_AZURE_OPENAI_API_KEY=${STITCH_LLM_AZURE_OPENAI_API_KEY}"

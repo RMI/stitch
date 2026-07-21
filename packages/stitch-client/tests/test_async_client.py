@@ -14,8 +14,6 @@ from stitch.client import (
     StitchAPIError,
     StitchAuthError,
     StitchClientConfig,
-    STITCH_CLIENT_BEARER_TOKEN_ENV_VAR,
-    env_bearer_token_headers_provider,
 )
 
 
@@ -23,16 +21,12 @@ def make_client(
     handler,
     *,
     base_url: str = "http://example.test/api/v1",
-    headers_provider=None,
 ) -> tuple[AsyncStitchClient, httpx.AsyncClient]:
     raw_client = httpx.AsyncClient(
         transport=httpx.MockTransport(handler),
         base_url=base_url,
     )
-    client = AsyncStitchClient(
-        headers_provider=headers_provider,
-        client=raw_client,
-    )
+    client = AsyncStitchClient(client=raw_client)
     return client, raw_client
 
 
@@ -137,76 +131,6 @@ async def test_init_rejects_timeout_when_client_is_injected() -> None:
     )
 
     await raw_client.aclose()
-
-
-@pytest.mark.anyio
-async def test_headers_provider_is_applied_to_each_request() -> None:
-    calls = {"count": 0}
-    captured: list[str | None] = []
-
-    def headers_provider() -> dict[str, str]:
-        calls["count"] += 1
-        return {"X-Call": str(calls["count"])}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured.append(request.headers.get("X-Call"))
-        return httpx.Response(200, json={"items": [], "total_pages": 1})
-
-    client, raw_client = make_client(handler, headers_provider=headers_provider)
-
-    await client.list_oil_gas_fields_page()
-    await client.list_oil_gas_fields_page(page=2)
-
-    assert captured == ["1", "2"]
-
-    await raw_client.aclose()
-
-
-@pytest.mark.anyio
-async def test_env_bearer_token_mode_sends_token_on_requests(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "env-token-123")
-    captured: list[str | None] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured.append(request.headers.get("Authorization"))
-        return httpx.Response(200, json={"items": [], "total_pages": 1})
-
-    client, raw_client = make_client(
-        handler,
-        headers_provider=env_bearer_token_headers_provider(),
-    )
-
-    await client.list_oil_gas_fields_page()
-
-    assert captured == ["Bearer env-token-123"]
-
-    await raw_client.aclose()
-
-
-def test_env_bearer_token_headers_provider_rejects_missing_token(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, raising=False)
-    provider = env_bearer_token_headers_provider()
-
-    with pytest.raises(ValueError) as exc_info:
-        provider()
-
-    assert str(exc_info.value) == f"{STITCH_CLIENT_BEARER_TOKEN_ENV_VAR} must be set"
-
-
-def test_env_bearer_token_headers_provider_rejects_blank_token(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "   ")
-    provider = env_bearer_token_headers_provider()
-
-    with pytest.raises(ValueError) as exc_info:
-        provider()
-
-    assert str(exc_info.value) == f"{STITCH_CLIENT_BEARER_TOKEN_ENV_VAR} must be set"
 
 
 @pytest.mark.anyio
@@ -620,3 +544,58 @@ async def test_from_config_aclose_closes_owned_client() -> None:
     await client.aclose()
 
     assert raw.is_closed is True
+
+
+_M2M_AUTH_VARS = (
+    "STITCH_AUTH_CLIENT_ID",
+    "STITCH_AUTH_CLIENT_SECRET",
+    "STITCH_AUTH_AUDIENCE",
+    "STITCH_AUTH_ISSUER_URL",
+)
+
+
+def _clear_m2m_auth_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in (*_M2M_AUTH_VARS, "STITCH_API_BASE_URL"):
+        monkeypatch.delenv(var, raising=False)
+
+
+@pytest.mark.anyio
+async def test_from_service_env_uses_m2m_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_m2m_auth_env(monkeypatch)
+    for k, v in _M2M_ENV.items():
+        if k != "STITCH_API_BASE_URL":
+            monkeypatch.setenv(k, v)
+
+    client = AsyncStitchClient.from_service_env(api_base_url="http://service/api/v1")
+    try:
+        assert isinstance(client._client.auth, Auth0M2MAuth)
+        assert str(client._client.base_url).rstrip("/") == "http://service/api/v1"
+        assert client._owns_client is True
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.anyio
+async def test_from_service_env_no_header_when_unconfigured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_m2m_auth_env(monkeypatch)
+
+    client = AsyncStitchClient.from_service_env(api_base_url="http://service/api/v1")
+    try:
+        assert client._client.auth is None
+        assert str(client._client.base_url).rstrip("/") == "http://service/api/v1"
+    finally:
+        await client.aclose()
+
+
+def test_from_service_env_raises_on_partial_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_m2m_auth_env(monkeypatch)
+    monkeypatch.setenv("STITCH_AUTH_CLIENT_ID", "cid")
+
+    with pytest.raises(StitchAuthError):
+        AsyncStitchClient.from_service_env(api_base_url="http://service/api/v1")

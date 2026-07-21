@@ -57,9 +57,9 @@ jobs:
       STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS: ${{ vars.STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS }}
       GHCR_ETL_PULL_USERNAME: ${{ vars.GHCR_ETL_PULL_USERNAME }}
       ETL_STORAGE_NAME: ${{ vars.ETL_STORAGE_NAME }}
+      DEPLOYMENT_LANE: ${{ needs.resolve-context.outputs.deployment-lane }}
       STITCH_APP_PASSWORD: ${{ secrets.STITCH_APP_PASSWORD }}
       STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
-      STITCH_CLIENT_LLM_BEARER_TOKEN: ${{ secrets.STITCH_CLIENT_LLM_BEARER_TOKEN }}
       STITCH_LLM_AZURE_OPENAI_API_KEY: ${{ secrets.STITCH_LLM_AZURE_OPENAI_API_KEY }}
     steps:
       - name: Validate lane variables
@@ -73,8 +73,13 @@ jobs:
           : "${AUTH0_CLIENT_ID:?Missing required variable AUTH0_CLIENT_ID}"
           : "${AUTH0_AUDIENCE:?Missing required variable AUTH0_AUDIENCE}"
           : "${STITCH_APP_PASSWORD:?Missing required secret STITCH_APP_PASSWORD}"
-          : "${STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN:?Missing required secret STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN}"
-          : "${STITCH_CLIENT_LLM_BEARER_TOKEN:?Missing required secret STITCH_CLIENT_LLM_BEARER_TOKEN}"
+
+          # STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN is now ETL-only (seed and the
+          # entity-linkage / stitch-llm services moved to Auth0 M2M). ETL never
+          # deploys on the development lane, so only require it elsewhere.
+          if [ "${DEPLOYMENT_LANE}" != "development" ]; then
+            : "${STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN:?Missing required secret STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN (ETL, non-development lanes)}"
+          fi
 
           case "${AUTH_DISABLED}" in
             true|false) ;;
@@ -297,11 +302,14 @@ jobs:
       azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
       azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
       azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      stitch-client-bearer-token: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
+      stitch-auth-client-secret: ${{ secrets.ENTITY_LINKAGE_AUTH_CLIENT_SECRET }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       full-image-name: ${{ needs.build-entity-linkage-docker-image.outputs.digest-image-name }}
       container-app-name: ${{ format('{0}-entity-linkage', needs.resolve-context.outputs.deployment-name) }}
+      # STITCH_AUTH_CLIENT_ID is a repo variable (one M2M app, reused across all
+      # lanes); the audience/issuer reuse the API's own auth config for this lane
+      # (same tenant/API). The matching client secret rides the secrets block above.
       environment-variables: >-
         LOG_LEVEL=info
         AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
@@ -310,6 +318,9 @@ jobs:
         AUTH_ISSUER=${{ needs.lane-config-validate.outputs.auth-issuer }}
         AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
         AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
+        STITCH_AUTH_CLIENT_ID=${{ vars.ENTITY_LINKAGE_AUTH_CLIENT_ID }}
+        STITCH_AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
+        STITCH_AUTH_ISSUER_URL=${{ needs.lane-config-validate.outputs.auth-issuer }}
         ENTITY_LINKAGE_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
         ENTITY_LINKAGE_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
       deployment-label: entity-linkage
@@ -328,12 +339,15 @@ jobs:
       azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
       azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
       azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      stitch-client-bearer-token: ${{ secrets.STITCH_CLIENT_LLM_BEARER_TOKEN }}
+      stitch-auth-client-secret: ${{ secrets.STITCH_LLM_AUTH_CLIENT_SECRET }}
       stitch-llm-azure-openai-api-key: ${{ secrets.STITCH_LLM_AZURE_OPENAI_API_KEY }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       full-image-name: ${{ needs.build-stitch-llm-docker-image.outputs.digest-image-name }}
       container-app-name: ${{ format('{0}-stitch-llm', needs.resolve-context.outputs.deployment-name) }}
+      # STITCH_AUTH_CLIENT_ID is a repo variable (one M2M app, reused across all
+      # lanes); the audience/issuer reuse the API's own auth config for this lane
+      # (same tenant/API). The matching client secret rides the secrets block above.
       environment-variables: >-
         STITCH_LLM_LOG_LEVEL=info
         AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
@@ -342,6 +356,9 @@ jobs:
         AUTH_ISSUER=${{ needs.lane-config-validate.outputs.auth-issuer }}
         AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
         AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
+        STITCH_AUTH_CLIENT_ID=${{ vars.STITCH_LLM_AUTH_CLIENT_ID }}
+        STITCH_AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
+        STITCH_AUTH_ISSUER_URL=${{ needs.lane-config-validate.outputs.auth-issuer }}
         STITCH_LLM_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
         STITCH_LLM_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
         STITCH_LLM_AZURE_OPENAI_BASE_URL=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-base-url }}
@@ -395,14 +412,19 @@ jobs:
     name: "Run seed"
     # Seed only runs in development; non-development lanes use the ETL pipelines.
     if: ${{ needs.resolve-context.outputs.deployment-lane == 'development' && needs.deploy-db.outputs.database-created == 'true' }}
-    needs: [resolve-context, build-seed-docker-image, deploy-db, deploy-api]
+    needs: [resolve-context, lane-config-validate, build-seed-docker-image, deploy-db, deploy-api]
     uses: ./.github/workflows/run-seed.yml
     secrets:
-      stitch-client-bearer-token: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
+      stitch-auth-client-secret: ${{ secrets.SEED_AUTH_CLIENT_SECRET }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       full-image-name: ${{ needs.build-seed-docker-image.outputs.digest-image-name }}
       api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
+      # One M2M app for seed, reused across lanes; audience/issuer reuse the
+      # API's own auth config for this lane (same tenant/API).
+      stitch-auth-client-id: ${{ vars.SEED_AUTH_CLIENT_ID }}
+      stitch-auth-audience: ${{ needs.lane-config-validate.outputs.auth-audience }}
+      stitch-auth-issuer-url: ${{ needs.lane-config-validate.outputs.auth-issuer }}
 
   deploy-frontend:
     name: "Deploy frontend"

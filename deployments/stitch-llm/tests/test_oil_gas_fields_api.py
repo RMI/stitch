@@ -23,6 +23,10 @@ from stitch.ogsi.model.og_field import OilGasFieldBase
 from datetime import UTC, datetime
 
 
+async def _noop_downstream_validate(**_: object) -> None:
+    return None
+
+
 def make_detail_view(**data) -> OGFieldDetailView:
     return OGFieldDetailView(
         id=42,
@@ -137,7 +141,7 @@ def test_client(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(auth_module, "get_settings", lambda: test_settings)
     monkeypatch.setattr(route_module, "get_settings", lambda: test_settings)
     monkeypatch.setattr(
-        main_module, "validate_downstream_auth_config_at_startup", lambda: None
+        main_module, "validate_downstream_auth_at_startup", _noop_downstream_validate
     )
     app.dependency_overrides[get_current_user] = override_current_user
     app.dependency_overrides[get_token_claims] = override_token_claims
@@ -171,7 +175,7 @@ def test_get_suggestion_requires_service_permission(
     monkeypatch.setattr(auth_module, "get_settings", lambda: test_settings)
     monkeypatch.setattr(route_module, "get_settings", lambda: test_settings)
     monkeypatch.setattr(
-        main_module, "validate_downstream_auth_config_at_startup", lambda: None
+        main_module, "validate_downstream_auth_at_startup", _noop_downstream_validate
     )
     app.dependency_overrides[get_current_user] = override_current_user
     app.dependency_overrides[get_token_claims] = override_token_claims

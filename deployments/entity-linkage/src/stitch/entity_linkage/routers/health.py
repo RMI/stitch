@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from starlette.status import HTTP_200_OK, HTTP_503_SERVICE_UNAVAILABLE
 
-from stitch.client import StitchAPIError
+from stitch.client import StitchAPIError, StitchAuthError
 
 from stitch.entity_linkage.client import StitchApiClient
 from stitch.entity_linkage.settings import get_settings
@@ -26,12 +26,15 @@ def _uptime_seconds(value: object) -> float | None:
 
 
 def _downstream_error_fields(
-    exc: StitchAPIError | ValueError,
+    exc: StitchAPIError | StitchAuthError,
 ) -> dict[str, object]:
-    if isinstance(exc, ValueError):
+    if isinstance(exc, StitchAuthError):
+        # Failed to obtain an Auth0 M2M token (bad creds / Auth0 unreachable);
+        # we never reached stitch-api.
         return {
             "has_error": True,
-            "error_code": "missing_token",
+            "error_code": "auth_token_error",
+            "http_status": exc.status_code,
         }
 
     status_code = exc.status_code
@@ -70,7 +73,7 @@ async def check_health_details(request: Request):
     )
 
     downstream: dict[str, object] = {
-        "auth_mode": "env_bearer_token",
+        "auth_mode": settings.auth_mode,
         "startup_validated": downstream_auth_config_validated,
         "api_reachable": False,
         "token_accepted": False,
@@ -89,7 +92,7 @@ async def check_health_details(request: Request):
         downstream["api_reachable"] = True
         downstream["token_accepted"] = True
         downstream["ready"] = True
-    except (StitchAPIError, ValueError) as exc:
+    except (StitchAPIError, StitchAuthError) as exc:
         status = "degraded"
         ready = False
         status_code = HTTP_503_SERVICE_UNAVAILABLE

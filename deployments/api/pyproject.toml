@@ -35,6 +35,9 @@ dev = [
   "aiosqlite>=0.21.0",
   "httpx>=0.28.0",
   "polyfactory>=3.3.0",
+  # Test-only: the M2M end-to-end test drives the real client auth
+  # (Auth0M2MAuth / fetch_auth_jwt) against the ASGI app.
+  "stitch-client",
 ]
 
 [tool.pytest.ini_options]
@@ -46,5 +49,6 @@ addopts = ["-v", "--strict-markers", "--tb=short"]
 
 [tool.uv.sources]
 stitch-auth = { workspace = true }
+stitch-client = { workspace = true }
 stitch-models = { workspace = true }
 stitch-ogsi = { workspace = true }

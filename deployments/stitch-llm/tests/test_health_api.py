@@ -36,11 +36,15 @@ class FakeStitchApiClient(AbstractAsyncContextManager["FakeStitchApiClient"]):
         return self.auth_me_response
 
 
+async def _noop_downstream_validate(**_: object) -> None:
+    return None
+
+
 @pytest.fixture
 def test_client(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(main_module, "validate_auth_config_at_startup", lambda: None)
     monkeypatch.setattr(
-        main_module, "validate_downstream_auth_config_at_startup", lambda: None
+        main_module, "validate_downstream_auth_at_startup", _noop_downstream_validate
     )
 
     with TestClient(app) as client:

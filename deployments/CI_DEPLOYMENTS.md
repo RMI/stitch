@@ -305,6 +305,32 @@ named:
 - `AZURE_SUBSCRIPTION_ID`: Subscription for the target Azure resources
 - `AZURE_TENANT_ID`: Tenant for `GHActions-stitch-cicd`
 
+### Service-to-service auth (Auth0 M2M) — repo-level
+
+Internal services authenticate to `stitch-api` with Auth0 client-credentials
+(M2M) — one application per calling service, its single credential **reused
+across all lanes**. So these are **repo-level** (not environment-scoped): the
+same value applies to `development`, `staging`, and `dress-rehearsal`.
+
+Repo variables (client_id, not secret):
+
+- `SEED_AUTH_CLIENT_ID`
+- `ENTITY_LINKAGE_AUTH_CLIENT_ID`
+- `STITCH_LLM_AUTH_CLIENT_ID`
+
+Repo secrets (client_secret):
+
+- `SEED_AUTH_CLIENT_SECRET`
+- `ENTITY_LINKAGE_AUTH_CLIENT_SECRET`
+- `STITCH_LLM_AUTH_CLIENT_SECRET`
+
+The `STITCH_AUTH_AUDIENCE` / `STITCH_AUTH_ISSUER_URL` each service reads reuse
+the lane's existing `AUTH_AUDIENCE` / `AUTH_ISSUER` (same tenant/API), routed
+via the `lane-config-validate` `auth-audience` / `auth-issuer` outputs. Because
+the credential is shared across lanes, **rotate the Auth0 secret and update all
+three lanes' `*_AUTH_CLIENT_SECRET` atomically**. Full topology, one-time Auth0
+tenant setup, and troubleshooting live in `deployments/AUTH.md`.
+
 ### Environment variables
 
 - `AZURE_RESOURCE_GROUP` (example: `STITCH-DEV-RG`)
@@ -316,7 +342,10 @@ named:
 - `POSTGRES_DEFAULT_DB` (example: `postgres`)
 - `FRONTEND_PRODUCTION_URL` (example: `https://witty-mushroom-017a3dc1e.1.azurestaticapps.net`)
 - `FRONTEND_PREVIEW_URL_TEMPLATE` (example: `https://witty-mushroom-017a3dc1e-{name}.westus2.1.azurestaticapps.net`)
-- `AUTH_DISABLED` (example: `true` for `development`, `false` for `staging` / `dress-rehearsal`)
+- `AUTH_DISABLED` (example: `false` for every deployed lane — `development`,
+  `staging`, `dress-rehearsal`; `AUTH_DISABLED=true` is used only in local
+  docker-compose). When `false`, `AUTH_ISSUER` / `AUTH_AUDIENCE` / `AUTH_JWKS_URI`
+  must be set or `deploy-api` crash-loops at startup.
 - `AUTH_ISSUER` (example: `https://rmi-spd.us.auth0.com/`)
 - `AUTH_AUDIENCE` (example: `https://stitch-api.local`)
 - `AUTH_JWKS_URI` (example: `https://rmi-spd.us.auth0.com/.well-known/jwks.json`)
@@ -343,8 +372,10 @@ named:
 - `PGPASSWORD`
 - `STITCH_APP_PASSWORD`
 - `STITCH_MIGRATOR_PASSWORD`
-- `STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN`
-- `STITCH_CLIENT_LLM_BEARER_TOKEN`
+- `STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN` — **ETL-only** now (legacy hand-minted
+  bearer, pending `stitch-etl-poc` migration to M2M). seed / entity-linkage /
+  stitch-llm moved to Auth0 M2M (see repo-level vars/secrets above). Only needed
+  on `staging` / `dress-rehearsal` (ETL never deploys on `development`).
 - `STITCH_LLM_AZURE_OPENAI_API_KEY`
 - `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
 - `WOODMAC_API_KEY` — WoodMac API key for the `etl` Container App. Required for
@@ -368,8 +399,8 @@ Current validation behavior:
   - `AUTH0_CLIENT_ID`
   - `AUTH0_AUDIENCE`
   - `STITCH_APP_PASSWORD`
-  - `STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN`
-  - `STITCH_CLIENT_LLM_BEARER_TOKEN`
+  - `STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN` — only on non-`development` lanes
+    (ETL-only; ETL never deploys on `development`)
   - If any of `STITCH_LLM_AZURE_OPENAI_BASE_URL`, `STITCH_LLM_AZURE_OPENAI_MODEL`, or `STITCH_LLM_AZURE_OPENAI_API_KEY` are set, all three must be set
 - DB migrations validate `STITCH_MIGRATOR_PASSWORD`
 - frontend deploy validates `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`

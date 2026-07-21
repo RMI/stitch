@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 import httpx
 from stitch.ogsi.model import OGFieldResource
 
-from .errors import StitchAPIError
+from .errors import StitchAPIError, StitchAuthError
 
 if TYPE_CHECKING:
     from .config import StitchClientConfig
@@ -22,10 +22,8 @@ class AsyncStitchClient:
         base_url: str | None = None,
         *,
         timeout: float | None = None,
-        headers_provider: Callable[[], Mapping[str, str]] | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
-        self._headers_provider = headers_provider
         self._owns_client = client is None
         if client is not None:
             if base_url is not None:
@@ -74,6 +72,31 @@ class AsyncStitchClient:
 
         return cls.from_config(StitchClientConfig.from_env(), timeout=timeout)
 
+    @classmethod
+    def from_service_env(
+        cls,
+        *,
+        api_base_url: str,
+        timeout: float = 30.0,
+    ) -> "AsyncStitchClient":
+        """Build a client whose auth mode is selected by the environment.
+
+        This is what deployed services call. It uses the service's own base-url
+        (passed in), not ``STITCH_API_BASE_URL``:
+
+        - When the four ``STITCH_AUTH_*`` vars are present, returns an
+          Auth0 M2M client (short-lived tokens fetched on demand).
+        - When they are all absent, returns a plain client that attaches no
+          ``Authorization`` header (the local ``AUTH_DISABLED`` path).
+        - A partially-set M2M config raises ``StitchAuthError`` (fail loud).
+        """
+        from .config import StitchClientConfig
+
+        config = StitchClientConfig.from_partial_env(api_base_url=api_base_url)
+        if config is not None:
+            return cls.from_config(config, timeout=timeout)
+        return cls(base_url=api_base_url, timeout=timeout)
+
     async def __aenter__(self) -> "AsyncStitchClient":
         return self
 
@@ -96,7 +119,6 @@ class AsyncStitchClient:
             try:
                 response = await self._client.get(
                     "/health",
-                    headers=self._headers(),
                     timeout=request_timeout,
                 )
                 if response.is_success:
@@ -109,7 +131,11 @@ class AsyncStitchClient:
                     attempt,
                     retries,
                 )
-            except (httpx.HTTPError, OSError) as exc:
+            except (httpx.HTTPError, OSError, StitchAuthError) as exc:
+                # StitchAuthError: in the live-M2M posture the client's auth
+                # attaches a token even to the (unauthenticated) /health probe,
+                # so a transient Auth0 blip must be retried, not treated as a
+                # hard failure that aborts with zero retries.
                 logger.info(
                     "API not reachable (%s), attempt %s/%s",
                     exc,
@@ -216,11 +242,6 @@ class AsyncStitchClient:
         )
         return self._expect_dict(payload, "POST /oil-gas-fields/merge-candidates")
 
-    def _headers(self) -> dict[str, str]:
-        if self._headers_provider is None:
-            return {}
-        return dict(self._headers_provider())
-
     async def _request_json(
         self,
         *,
@@ -235,7 +256,6 @@ class AsyncStitchClient:
             path,
             params=params,
             json=json,
-            headers=self._headers(),
         )
         self._raise_for_status(response, operation)
         return response.json()

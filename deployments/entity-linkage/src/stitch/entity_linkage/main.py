@@ -1,9 +1,9 @@
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from fastapi import APIRouter, FastAPI
+from stitch.client import validate_downstream_auth_at_startup
 from .middleware import register_middlewares
 from .auth import validate_auth_config_at_startup
-from .client import validate_downstream_auth_config_at_startup
 from .settings import get_settings
 
 from .routers.health import router as health_router
@@ -21,7 +21,9 @@ async def lifespan(app: FastAPI):
     app.state.downstream_auth_config_validated = False
     validate_auth_config_at_startup()
     app.state.auth_config_validated = True
-    validate_downstream_auth_config_at_startup()
+    await validate_downstream_auth_at_startup(
+        api_base_url=str(get_settings().api_base_url)
+    )
     app.state.downstream_auth_config_validated = True
     yield
 

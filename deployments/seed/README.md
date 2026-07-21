@@ -9,4 +9,7 @@ model validation and POSTing Oil and Gas fields to the application.
 It reads static seed JSON files from `data`, and also generates objects for
 posting with `Faker`
 
-Downstream API auth is provided through `STITCH_CLIENT_BEARER_TOKEN`.
+Downstream Stitch API auth uses Auth0 M2M (client-credentials) via
+`stitch-client`: set `STITCH_AUTH_CLIENT_ID` / `_CLIENT_SECRET` / `_AUDIENCE` /
+`_ISSUER_URL`, or leave them unset to run against a local `AUTH_DISABLED` API
+with no `Authorization` header. See `deployments/AUTH.md`.

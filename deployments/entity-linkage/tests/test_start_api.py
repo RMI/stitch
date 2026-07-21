@@ -21,6 +21,10 @@ from stitch.entity_linkage.auth import get_request_auth_context, get_token_claim
 from stitch.entity_linkage import main as main_module
 
 
+async def _noop_downstream_validate(**_: object) -> None:
+    return None
+
+
 def make_auth_context(
     *,
     name: str = "Integration Tester",
@@ -166,7 +170,7 @@ def test_client(
 
     monkeypatch.setattr(main_module, "validate_auth_config_at_startup", lambda: None)
     monkeypatch.setattr(
-        main_module, "validate_downstream_auth_config_at_startup", lambda: None
+        main_module, "validate_downstream_auth_at_startup", _noop_downstream_validate
     )
     app.dependency_overrides[get_request_auth_context] = override_auth_context
     app.dependency_overrides[get_token_claims] = override_token_claims
@@ -189,7 +193,7 @@ def test_post_start_requires_service_permission(
 
     monkeypatch.setattr(main_module, "validate_auth_config_at_startup", lambda: None)
     monkeypatch.setattr(
-        main_module, "validate_downstream_auth_config_at_startup", lambda: None
+        main_module, "validate_downstream_auth_at_startup", _noop_downstream_validate
     )
     app.dependency_overrides[get_request_auth_context] = override_auth_context
     app.dependency_overrides[get_token_claims] = override_token_claims

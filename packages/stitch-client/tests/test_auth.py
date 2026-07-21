@@ -7,7 +7,12 @@ import json
 import httpx
 import pytest
 
-from stitch.client import Auth0M2MAuth, StitchAuthError, StitchClientConfig
+from stitch.client import (
+    Auth0M2MAuth,
+    StitchAuthError,
+    StitchClientConfig,
+    validate_downstream_auth_at_startup,
+)
 from stitch.client.auth import fetch_auth_jwt
 
 _ALL_VARS = {
@@ -18,10 +23,22 @@ _ALL_VARS = {
     "STITCH_API_BASE_URL": "https://api.test/v1",
 }
 
+_M2M_VARS = (
+    "STITCH_AUTH_CLIENT_ID",
+    "STITCH_AUTH_CLIENT_SECRET",
+    "STITCH_AUTH_AUDIENCE",
+    "STITCH_AUTH_ISSUER_URL",
+)
+
 
 def _set_all(monkeypatch: pytest.MonkeyPatch) -> None:
     for k, v in _ALL_VARS.items():
         monkeypatch.setenv(k, v)
+
+
+def _clear_m2m_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in (*_M2M_VARS, "STITCH_API_BASE_URL"):
+        monkeypatch.delenv(var, raising=False)
 
 
 def test_from_env_returns_config_when_all_vars_set(
@@ -313,3 +330,146 @@ async def test_auth_non_401_does_not_trigger_refetch() -> None:
 
     assert response.status_code == 500
     assert state["n"] == 1
+
+
+@pytest.mark.anyio
+async def test_auth_concurrent_401s_refetch_once() -> None:
+    """N in-flight requests that all 401 off one stale token → one refetch.
+
+    Guards the single-flight fix: without stale-token double-checking, each of
+    the N requests would force its own refetch (thundering herd).
+    """
+    seen_headers: list[str | None] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        auth = req.headers.get("Authorization")
+        seen_headers.append(auth)
+        # Only the very first token (tok-1) is rejected; the refetched token
+        # (tok-2) is accepted.
+        status = 401 if auth == "Bearer tok-1" else 200
+        return httpx.Response(status, json={})
+
+    state = {"n": 0}
+
+    async def fetcher() -> str:
+        state["n"] += 1
+        await asyncio.sleep(0)
+        return f"tok-{state['n']}"
+
+    auth = Auth0M2MAuth(fetcher)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://api.test",
+        auth=auth,
+    ) as client:
+        responses = await asyncio.gather(*(client.get("/x") for _ in range(5)))
+
+    assert all(r.status_code == 200 for r in responses)
+    # 1 initial fetch (tok-1) + exactly 1 refetch (tok-2), not 1-per-request.
+    assert state["n"] == 2
+
+
+# --- from_partial_env -------------------------------------------------------
+
+
+def test_from_partial_env_returns_none_when_all_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_m2m_env(monkeypatch)
+
+    assert (
+        StitchClientConfig.from_partial_env(api_base_url="http://api.test/v1") is None
+    )
+
+
+def test_from_partial_env_returns_config_using_supplied_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_m2m_env(monkeypatch)
+    for var in _M2M_VARS:
+        monkeypatch.setenv(var, _ALL_VARS[var])
+    # STITCH_API_BASE_URL is intentionally NOT read by from_partial_env.
+    monkeypatch.setenv("STITCH_API_BASE_URL", "https://should-be-ignored.test")
+
+    config = StitchClientConfig.from_partial_env(api_base_url="http://caller/api/v1")
+
+    assert config is not None
+    assert config.client_id == "cid"
+    assert config.client_secret == "csec"
+    assert config.audience == "https://api.test"
+    assert config.auth_issuer_url == "https://issuer.test"
+    assert config.api_base_url == "http://caller/api/v1"
+
+
+def test_from_partial_env_raises_when_partially_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_m2m_env(monkeypatch)
+    monkeypatch.setenv("STITCH_AUTH_CLIENT_ID", "cid")
+    monkeypatch.setenv("STITCH_AUTH_AUDIENCE", "https://api.test")
+
+    with pytest.raises(StitchAuthError) as exc_info:
+        StitchClientConfig.from_partial_env(api_base_url="http://api.test/v1")
+
+    message = str(exc_info.value)
+    assert "STITCH_AUTH_CLIENT_SECRET" in message
+    assert "STITCH_AUTH_ISSUER_URL" in message
+
+
+# --- validate_downstream_auth_at_startup ------------------------------------
+
+
+@pytest.mark.anyio
+async def test_validate_downstream_auth_noop_when_unconfigured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_m2m_env(monkeypatch)
+
+    calls = {"n": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json={"access_token": "tok"})
+
+    # No exception, and no token endpoint call (nothing to validate).
+    await validate_downstream_auth_at_startup(
+        api_base_url="http://api.test/v1",
+        transport=httpx.MockTransport(handler),
+    )
+    assert calls["n"] == 0
+
+
+@pytest.mark.anyio
+async def test_validate_downstream_auth_raises_on_bad_creds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_m2m_env(monkeypatch)
+    for var in _M2M_VARS:
+        monkeypatch.setenv(var, _ALL_VARS[var])
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"error": "access_denied"})
+
+    with pytest.raises(StitchAuthError):
+        await validate_downstream_auth_at_startup(
+            api_base_url="http://api.test/v1",
+            transport=httpx.MockTransport(handler),
+        )
+
+
+@pytest.mark.anyio
+async def test_validate_downstream_auth_succeeds_with_valid_creds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_m2m_env(monkeypatch)
+    for var in _M2M_VARS:
+        monkeypatch.setenv(var, _ALL_VARS[var])
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"access_token": "tok-abc"})
+
+    await validate_downstream_auth_at_startup(
+        api_base_url="http://api.test/v1",
+        transport=httpx.MockTransport(handler),
+    )

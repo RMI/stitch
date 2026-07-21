@@ -15,9 +15,24 @@ on:
         description: "Base API URL for the deployed API"
         required: true
         type: string
+      stitch-auth-client-id:
+        description: "Auth0 M2M client_id for the seed app (repo variable value). Empty => no-header (local AUTH_DISABLED) path."
+        required: false
+        default: ""
+        type: string
+      stitch-auth-audience:
+        description: "Auth0 API audience/identifier (same tenant/API as the lane)."
+        required: false
+        default: ""
+        type: string
+      stitch-auth-issuer-url:
+        description: "Auth0 issuer URL, e.g. https://<tenant>/"
+        required: false
+        default: ""
+        type: string
     secrets:
-      stitch-client-bearer-token:
-        required: true
+      stitch-auth-client-secret:
+        required: false
 
 jobs:
   run-seed:
@@ -47,7 +62,13 @@ jobs:
           SEED_SOURCE: "mixed"
           NULL_PROBABILITY: "0.3"
           STATIC_PAYLOAD_DIR: "/mnt/data"
-          STITCH_CLIENT_BEARER_TOKEN: ${{ secrets.stitch-client-bearer-token }}
+          # Auth0 M2M client credentials. All four empty => seed attaches no
+          # Authorization header (works against a local AUTH_DISABLED API); all
+          # four set => client-credentials; a partial set fails loud in-container.
+          STITCH_AUTH_CLIENT_ID: ${{ inputs.stitch-auth-client-id }}
+          STITCH_AUTH_CLIENT_SECRET: ${{ secrets.stitch-auth-client-secret }}
+          STITCH_AUTH_AUDIENCE: ${{ inputs.stitch-auth-audience }}
+          STITCH_AUTH_ISSUER_URL: ${{ inputs.stitch-auth-issuer-url }}
         run: |
           set -euo pipefail
 
@@ -59,7 +80,10 @@ jobs:
             -e SEED_SOURCE \
             -e NULL_PROBABILITY \
             -e STATIC_PAYLOAD_DIR \
-            -e STITCH_CLIENT_BEARER_TOKEN \
+            -e STITCH_AUTH_CLIENT_ID \
+            -e STITCH_AUTH_CLIENT_SECRET \
+            -e STITCH_AUTH_AUDIENCE \
+            -e STITCH_AUTH_ISSUER_URL \
             -v "$GITHUB_WORKSPACE/deployments/seed/data:/mnt/data:ro" \
             "${{ inputs.full-image-name }}"
 
@@ -79,7 +103,7 @@ jobs:
             --arg job "seed" \
             --arg api_url '`${{ inputs.api-url }}`' \
             --arg image '`${{ inputs.full-image-name }}`' \
-            --arg auth_mode '`stitch-client-bearer-token`' \
+            --arg auth_mode '`m2m`' \
             '{
               "section": $section,
               "kind": $kind,

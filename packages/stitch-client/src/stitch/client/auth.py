@@ -2,17 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator, Awaitable, Callable
-import os
-
-
 from typing import Any
 
 import httpx
 
 from .config import StitchClientConfig
 from .errors import StitchAuthError
-
-STITCH_CLIENT_BEARER_TOKEN_ENV_VAR = "STITCH_CLIENT_BEARER_TOKEN"
 
 
 async def fetch_auth_jwt(
@@ -61,6 +56,28 @@ async def fetch_auth_jwt(
     return token
 
 
+async def validate_downstream_auth_at_startup(
+    *,
+    api_base_url: str,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> None:
+    """Fail fast at boot if Auth0 M2M credentials are present but broken.
+
+    No-op when the service is unconfigured for M2M (``from_partial_env`` returns
+    ``None`` → the no-header path). When configured, performs one
+    client-credentials token fetch so bad ``STITCH_AUTH_*`` credentials surface
+    as a clear ``StitchAuthError`` at startup rather than as an opaque 401 on
+    the first real request.
+
+    ``transport`` is a test seam (forwarded to ``fetch_auth_jwt``); callers pass
+    only ``api_base_url``.
+    """
+    config = StitchClientConfig.from_partial_env(api_base_url=api_base_url)
+    if config is None:
+        return
+    await fetch_auth_jwt(config, transport=transport)
+
+
 TokenFetcher = Callable[[], Awaitable[str]]
 
 
@@ -72,9 +89,19 @@ class Auth0M2MAuth(httpx.Auth):
         self._token: str | None = None
         self._lock = asyncio.Lock()
 
-    async def _ensure_token(self, *, force: bool = False) -> str:
+    async def _ensure_token(self, *, force_if_stale: str | None = None) -> str:
+        """Return a cached token, fetching a new one only when necessary.
+
+        Double-checked locking keyed on the stale token the caller observed:
+        refetch only if there is no token yet, or the cached token still equals
+        the stale one the caller saw. When N in-flight requests all 401 off the
+        same stale token, the first refetch rotates the cache and the rest
+        observe the fresh token — so the token endpoint is hit once, not N
+        times (no thundering herd).
+        """
         async with self._lock:
-            if force or self._token is None:
+            is_stale = force_if_stale is not None and self._token == force_if_stale
+            if self._token is None or is_stale:
                 self._token = await self._token_fetcher()
             return self._token
 
@@ -89,23 +116,9 @@ class Auth0M2MAuth(httpx.Auth):
             return
 
         await response.aread()
-        token = await self._ensure_token(force=True)
+        token = await self._ensure_token(force_if_stale=token)
         request.headers["Authorization"] = f"Bearer {token}"
         yield request
 
     def sync_auth_flow(self, request: httpx.Request) -> Any:  # pragma: no cover
         raise RuntimeError("Auth0M2MAuth only supports async usage")
-
-
-def env_bearer_token_headers_provider() -> Callable[[], dict[str, str]]:
-    """
-    Build a headers provider backed by STITCH_CLIENT_BEARER_TOKEN.
-    """
-
-    def provider() -> dict[str, str]:
-        token = os.getenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "").strip()
-        if not token:
-            raise ValueError(f"{STITCH_CLIENT_BEARER_TOKEN_ENV_VAR} must be set")
-        return {"Authorization": f"Bearer {token}"}
-
-    return provider

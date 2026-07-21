@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from stitch.client import STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, StitchAPIError
+from stitch.client import StitchAPIError
 from stitch.seed import __main__ as seed_main
 from stitch.seed.config import SeedConfig
 
@@ -10,15 +10,13 @@ from stitch.seed.config import SeedConfig
 class FakeAsyncStitchClient:
     def __init__(
         self,
-        base_url: str,
         *,
+        api_base_url: str,
         timeout: float = 30.0,
-        headers_provider=None,
         create_error: Exception | None = None,
     ) -> None:
-        self.base_url = base_url
+        self.api_base_url = api_base_url
         self.timeout = timeout
-        self.headers_provider = headers_provider
         self.create_error = create_error
         self.wait_calls: list[tuple[int, float]] = []
         self.create_calls: list[dict] = []
@@ -52,43 +50,64 @@ def make_config() -> SeedConfig:
     )
 
 
+def _install_fakes(
+    monkeypatch: pytest.MonkeyPatch,
+    created: list[FakeAsyncStitchClient],
+    *,
+    create_error: Exception | None = None,
+) -> list[dict]:
+    """Patch seed __main__ to record the built client and the auth validator.
+
+    Seed now builds its client via ``AsyncStitchClient.from_service_env`` (auth
+    mode selected by the environment) and awaits the shared
+    ``validate_downstream_auth_at_startup`` before connecting.
+    """
+    validate_calls: list[dict] = []
+
+    async def fake_validate(*, api_base_url: str) -> None:
+        validate_calls.append({"api_base_url": api_base_url})
+
+    class FakeClientFactory:
+        @classmethod
+        def from_service_env(
+            cls, *, api_base_url: str, timeout: float = 30.0
+        ) -> FakeAsyncStitchClient:
+            client = FakeAsyncStitchClient(
+                api_base_url=api_base_url,
+                timeout=timeout,
+                create_error=create_error,
+            )
+            created.append(client)
+            return client
+
+    monkeypatch.setattr(seed_main, "configure_logging", lambda: None)
+    monkeypatch.setattr(seed_main, "load_config", make_config)
+    monkeypatch.setattr(seed_main, "AsyncStitchClient", FakeClientFactory)
+    monkeypatch.setattr(seed_main, "validate_downstream_auth_at_startup", fake_validate)
+    return validate_calls
+
+
 @pytest.mark.anyio
 async def test_run_waits_for_health_and_posts_all_payloads(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "seed-token")
-    created_clients: list[FakeAsyncStitchClient] = []
+    created: list[FakeAsyncStitchClient] = []
+    validate_calls = _install_fakes(monkeypatch, created)
     payloads = [
         {"id": None, "source_data": []},
         {"id": 1, "source_data": []},
     ]
-
-    def fake_client_factory(
-        base_url: str,
-        *,
-        timeout: float = 30.0,
-        headers_provider=None,
-    ):
-        client = FakeAsyncStitchClient(
-            base_url,
-            timeout=timeout,
-            headers_provider=headers_provider,
-        )
-        created_clients.append(client)
-        return client
-
-    monkeypatch.setattr(seed_main, "configure_logging", lambda: None)
-    monkeypatch.setattr(seed_main, "load_config", make_config)
     monkeypatch.setattr(seed_main, "iter_payloads", lambda **kwargs: payloads)
-    monkeypatch.setattr(seed_main, "AsyncStitchClient", fake_client_factory)
 
     await seed_main.run()
 
-    assert len(created_clients) == 1
-    client = created_clients[0]
-    assert client.base_url == "http://example.test/api/v1"
+    # Startup validator ran first, against the configured base URL.
+    assert validate_calls == [{"api_base_url": "http://example.test/api/v1"}]
+
+    assert len(created) == 1
+    client = created[0]
+    assert client.api_base_url == "http://example.test/api/v1"
     assert client.timeout == 12.5
-    assert callable(client.headers_provider)
     assert client.wait_calls == [(30, 2.0)]
     assert client.create_calls == payloads
     assert client.closed is True
@@ -98,35 +117,20 @@ async def test_run_waits_for_health_and_posts_all_payloads(
 async def test_run_propagates_shared_client_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "seed-token")
-    created_clients: list[FakeAsyncStitchClient] = []
-
-    def fake_client_factory(
-        base_url: str,
-        *,
-        timeout: float = 30.0,
-        headers_provider=None,
-    ):
-        client = FakeAsyncStitchClient(
-            base_url,
-            timeout=timeout,
-            headers_provider=headers_provider,
-            create_error=StitchAPIError("POST /oil-gas-fields/ failed with status 500"),
-        )
-        created_clients.append(client)
-        return client
-
-    monkeypatch.setattr(seed_main, "configure_logging", lambda: None)
-    monkeypatch.setattr(seed_main, "load_config", make_config)
+    created: list[FakeAsyncStitchClient] = []
+    _install_fakes(
+        monkeypatch,
+        created,
+        create_error=StitchAPIError("POST /oil-gas-fields/ failed with status 500"),
+    )
     monkeypatch.setattr(
         seed_main,
         "iter_payloads",
         lambda **kwargs: [{"id": None, "source_data": []}],
     )
-    monkeypatch.setattr(seed_main, "AsyncStitchClient", fake_client_factory)
 
     with pytest.raises(StitchAPIError):
         await seed_main.run()
 
-    assert len(created_clients) == 1
-    assert created_clients[0].create_calls == [{"id": None, "source_data": []}]
+    assert len(created) == 1
+    assert created[0].create_calls == [{"id": None, "source_data": []}]

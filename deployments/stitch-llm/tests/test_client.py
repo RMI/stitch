@@ -3,12 +3,21 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from stitch.client import AsyncStitchClient, STITCH_CLIENT_BEARER_TOKEN_ENV_VAR
-from stitch.llm.client import (
-    StitchApiClient,
-    validate_downstream_auth_config_at_startup,
-)
+from stitch.client import AsyncStitchClient, Auth0M2MAuth, StitchAuthError
+from stitch.llm.client import StitchApiClient
 from stitch.llm.settings import Settings
+
+_M2M_VARS = {
+    "STITCH_AUTH_CLIENT_ID": "cid",
+    "STITCH_AUTH_CLIENT_SECRET": "csec",
+    "STITCH_AUTH_AUDIENCE": "https://api.test",
+    "STITCH_AUTH_ISSUER_URL": "https://issuer.test",
+}
+
+
+def _clear_m2m_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in (*_M2M_VARS, "STITCH_API_BASE_URL"):
+        monkeypatch.delenv(var, raising=False)
 
 
 def test_settings_treat_blank_optional_values_as_unset() -> None:
@@ -60,7 +69,7 @@ async def test_stitch_api_client_validates_detail_payload() -> None:
 async def test_stitch_api_client_uses_injected_settings_for_base_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "llm-token")
+    _clear_m2m_env(monkeypatch)
     settings = Settings(
         auth_disabled=True,
         api_base_url="http://injected.example/api/v1",
@@ -69,15 +78,30 @@ async def test_stitch_api_client_uses_injected_settings_for_base_url(
     client = StitchApiClient(settings=settings)
 
     assert str(client._client._client.base_url) == "http://injected.example/api/v1/"
+    assert client._client._client.auth is None
     await client.aclose()
 
 
-def test_stitch_api_client_requires_env_bearer_token(
+@pytest.mark.anyio
+async def test_stitch_api_client_uses_m2m_when_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, raising=False)
+    _clear_m2m_env(monkeypatch)
+    for var, value in _M2M_VARS.items():
+        monkeypatch.setenv(var, value)
 
-    with pytest.raises(ValueError) as exc_info:
-        validate_downstream_auth_config_at_startup()
+    client = StitchApiClient(settings=Settings(auth_disabled=False))
+    try:
+        assert isinstance(client._client._client.auth, Auth0M2MAuth)
+    finally:
+        await client.aclose()
 
-    assert str(exc_info.value) == f"{STITCH_CLIENT_BEARER_TOKEN_ENV_VAR} must be set"
+
+def test_stitch_api_client_partial_m2m_config_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_m2m_env(monkeypatch)
+    monkeypatch.setenv("STITCH_AUTH_CLIENT_ID", "cid")
+
+    with pytest.raises(StitchAuthError):
+        StitchApiClient(settings=Settings(auth_disabled=False))
