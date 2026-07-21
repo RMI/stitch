@@ -23,4 +23,4 @@ stitch-auth = { workspace = true }
 stitch-client = { workspace = true }
 
 [dependency-groups]
-dev = ["pytest>=8.4.2", "ruff>=0.14.2"]
+dev = ["pytest>=9.1.1", "ruff>=0.15.22"]
