@@ -3,6 +3,7 @@ import {
   getResource,
   getResources,
   getResourceDetail,
+  getFieldSourceValues,
   getMergeCandidates,
   getMergeCandidate,
   getMergeCandidatePreview,
@@ -32,6 +33,11 @@ export const resourceKeys = {
   detail: (endpoint = "resources", id) => [
     ...resourceKeys.details(endpoint),
     id,
+  ],
+  fieldSources: (endpoint = "oil-gas-fields", id, field) => [
+    ...resourceKeys.detail(endpoint, id),
+    "field-sources",
+    field,
   ],
   views: (endpoint = "resources") => [...resourceKeys.all(endpoint), "view"],
   view: (endpoint = "resources", id) => [...resourceKeys.views(endpoint), id],
@@ -98,6 +104,14 @@ export const resourceQueries = {
     queryKey: resourceKeys.detail(endpoint, id),
     queryFn: (fetcher) => getResourceDetail(config, id, fetcher, endpoint),
     enabled: false,
+  }),
+
+  fieldSources: (config, endpoint = "oil-gas-fields", id, field) => ({
+    queryKey: resourceKeys.fieldSources(endpoint, id, field),
+    queryFn: (fetcher) =>
+      getFieldSourceValues(config, id, field, fetcher, endpoint),
+    enabled: false,
+    staleTime: DEFAULT_STALE_TIME,
   }),
 
   view: (config, endpoint = "resources", id) => ({

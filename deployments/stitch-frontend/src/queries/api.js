@@ -65,6 +65,25 @@ export async function getResourceDetail(
   return data;
 }
 
+export async function getFieldSourceValues(
+  config,
+  id,
+  field,
+  fetcher,
+  endpoint = "oil-gas-fields",
+) {
+  const url = `${config.apiBaseUrl}/${endpoint}/${id}/fields/${encodeURIComponent(
+    field,
+  )}/sources`;
+  const response = await fetcher(url);
+  if (!response.ok) {
+    const error = new Error(`HTTP error! status: ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+  return await response.json();
+}
+
 export async function createLLMSuggestion(
   config,
   id,
