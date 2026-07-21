@@ -180,7 +180,17 @@ class MergeCandidateView(BaseModel):
 
 class ComparisonValueView(OGFieldSourceValueView):
     """A source's value in a merge comparison, tagged with ``resource_id`` --
-    the candidate resource the source is currently attached to."""
+    the candidate resource the source is currently attached to.
+
+    NOTE: unlike the base ``OGFieldSourceValueView`` (whose ``priority`` is the
+    *effective per-resource* ranking used by the source-values endpoint), the
+    ``priority`` here is the *default global* source order -- the order the
+    merged resource will use -- so it does not reflect any per-resource
+    override. As a result the winner-ordering of these values can disagree with
+    ``FieldComparisonView.status``, which compares each resource's effective
+    coalesced value. CLEANUP: reconcile once coalescing moves into the DB
+    (PR 170; see ``_build_comparison``).
+    """
 
     resource_id: int
 

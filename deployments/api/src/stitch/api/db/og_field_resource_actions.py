@@ -157,6 +157,11 @@ async def field_source_values(
     by_id = await ResourceModel.source_data_by_resource_id(
         session, [id], licensed_sources
     )
+    # CLEANUP (coalescer->DB, PR 170): this drops empty strings (`value != ""`),
+    # but the coalescer keeps "" (it excludes only None), and the merge-candidate
+    # `compare` path was aligned to the coalescer. So this endpoint currently
+    # disagrees with both on empty-string values. Reconcile when coalescing moves
+    # into the DB.
     values = [
         OGFieldSourceValueView(
             source=src.source, source_id=src.id, value=value, priority=priority

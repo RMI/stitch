@@ -147,6 +147,12 @@ def _build_comparison(
                 )
             )
         values.sort(key=lambda entry: (entry.priority, entry.source_id))
+        # CLEANUP (coalescer->DB, PR 170): `values` are ranked by the DEFAULT
+        # source order (the merged resource's predicted winner) while `status`
+        # below is derived from each resource's EFFECTIVE coalesced value. Under
+        # a per-resource priority override these disagree (values[0] is the
+        # default winner, not what that resource currently resolves to).
+        # Reconcile the two priority bases when coalescing moves into the DB.
         resource_values = [getattr(view, field_name, None) for view in resource_views]
         comparison.append(
             FieldComparisonView(
@@ -222,6 +228,12 @@ async def get_merge_candidate(
     # Computed live: repointed (post-merge) resources coalesce to a null-shell
     # here, so an APPROVED candidate's `compare` reflects the emptied originals.
     # Freezing a snapshot at approve/deny time is deferred.
+    #
+    # Invariant: every resource_id still exists -- merge_candidate_items FK to
+    # og_field_resources and resources are never hard-deleted (merges repoint,
+    # never delete). So a null-shell view always means "emptied by a merge",
+    # never "missing"; no existence check is needed here. Revisit if a resource
+    # hard-delete path is ever added.
     by_id = await coalesce_resources(session, resource_ids, licensed_sources)
 
     # `status` compares the resources' coalesced values; `values` lists every
