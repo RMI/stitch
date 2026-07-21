@@ -174,20 +174,10 @@ def _candidate_to_detail_view(
     model: MergeCandidateModel,
     compare: Sequence[FieldComparisonView],
 ) -> MergeCandidateDetailView:
+    # MergeCandidateDetailView is MergeCandidateView + `compare`; reuse the base
+    # mapping so the shared fields stay defined in one place.
     return MergeCandidateDetailView(
-        id=model.id,
-        resource_ids=[
-            item.resource_id for item in sorted(model.items, key=lambda i: i.position)
-        ],
-        status=model.status,
-        review_notes=model.review_notes,
-        merged_resource_id=model.merged_resource_id,
-        created=model.created,
-        updated=model.updated,
-        created_by_id=model.created_by_id,
-        last_updated_by_id=model.last_updated_by_id,
-        reviewed_at=model.reviewed_at,
-        reviewed_by_id=model.reviewed_by_id,
+        **_candidate_to_view(model).model_dump(),
         compare=list(compare),
     )
 
