@@ -12,10 +12,10 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Download comment JSON artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: comment-json-*
           path: .comment-artifacts
@@ -41,7 +41,7 @@ jobs:
           echo "comment-body-path=.comment-body.md" >> "$GITHUB_OUTPUT"
 
       - name: Create or update summary comment
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@v5
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body-path: ${{ steps.build-comment.outputs.comment-body-path }}
