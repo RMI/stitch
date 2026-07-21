@@ -3,6 +3,7 @@ import { useAuth0 } from "@auth0/auth0-react";
 import { useQueryClient } from "@tanstack/react-query";
 import Button from "../components/Button";
 import MergeSourceComparison from "../components/MergeSourceComparison";
+import MergedResourceView from "../components/MergedResourceView";
 import { useMergeCandidates, useMergeCandidate } from "../hooks/useResources";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { reviewMergeCandidate } from "../queries/api";
@@ -281,10 +282,17 @@ function CandidateDecisionPanel({
         ) : null}
       </div>
 
-      <MergeSourceComparison
-        endpoint={ENDPOINT}
-        resourceIds={candidate.resource_ids}
-      />
+      {candidate.merged_resource_id ? (
+        <MergedResourceView
+          endpoint={ENDPOINT}
+          resourceId={candidate.merged_resource_id}
+        />
+      ) : (
+        <MergeSourceComparison
+          endpoint={ENDPOINT}
+          resourceIds={candidate.resource_ids}
+        />
+      )}
 
       {candidate.status === "PENDING" ? (
         <DecisionControls

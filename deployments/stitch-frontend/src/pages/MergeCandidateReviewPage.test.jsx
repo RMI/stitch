@@ -22,6 +22,10 @@ vi.mock("../components/MergeSourceComparison", () => ({
   ),
 }));
 
+vi.mock("../components/MergedResourceView", () => ({
+  default: ({ resourceId }) => <div>Merged resource {resourceId}</div>,
+}));
+
 const candidates = [
   {
     id: 11,
@@ -218,6 +222,25 @@ describe("MergeCandidateReviewPage", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/could not be refreshed/)).toBeInTheDocument();
     expect(screen.getByText(/detail boom/)).toBeInTheDocument();
+  });
+
+  it("shows the merged resource instead of the source comparison once merged_resource_id is set", () => {
+    const mergedCandidate = candidates[1];
+    vi.mocked(useMergeCandidates).mockReturnValue({
+      ...defaultHookReturn,
+      data: [mergedCandidate],
+    });
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: mergedCandidate,
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(screen.getByText("Merged resource 301")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Source comparison for 201, 202"),
+    ).not.toBeInTheDocument();
   });
 
   it("blocks with an error when the detail query fails and the queue has no item", () => {
