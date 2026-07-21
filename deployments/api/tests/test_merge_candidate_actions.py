@@ -375,6 +375,29 @@ def test_build_comparison_status_is_match_or_different_per_resource():
     assert [c.field for c in compare] == list(OilGasFieldBase.model_fields)
 
 
+def test_build_comparison_matches_when_per_resource_winners_agree():
+    # Composite resource A resolves basin to "Foo" (its RMI winner), with a
+    # lower-priority GEM source "Bar" also in play. Resource B resolves basin to
+    # "Foo". Three sources in play, but both resources' *winners* agree -> match:
+    # status compares the resources' coalesced values, not every raw source.
+    view_a = OilGasFieldBase(name=None, country="SAU", basin="Foo")
+    view_b = OilGasFieldBase(name=None, country="SAU", basin="Foo")
+    src_a_win = SimpleNamespace(source="rmi", id=10, basin="Foo")
+    src_a_lose = SimpleNamespace(source="gem", id=11, basin="Bar")
+    src_b = SimpleNamespace(source="rmi", id=12, basin="Foo")
+    sources_with_priority = [(18, src_a_win, 1), (18, src_a_lose, 2), (19, src_b, 1)]
+
+    compare = mca._build_comparison([view_a, view_b], sources_with_priority)
+
+    assert _status_for(compare, "basin") == "match"
+    # all three sources are listed (the losing "Bar" is not dropped), winner-first
+    assert _values_for(compare, "basin") == [
+        (18, "rmi", 10, "Foo"),
+        (19, "rmi", 12, "Foo"),
+        (18, "gem", 11, "Bar"),
+    ]
+
+
 def test_build_comparison_treats_empty_string_as_a_real_value():
     # The coalescer excludes only None (empty strings are real values), so
     # `compare` must keep "" too. Both resources coalesce to "" -> match, and ""

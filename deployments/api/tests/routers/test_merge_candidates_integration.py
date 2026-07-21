@@ -208,3 +208,46 @@ class TestMergeCandidateDetailIntegration:
                 )
             ).all()
         assert overrides == []
+
+    @pytest.mark.anyio
+    async def test_composite_resource_matches_when_winners_agree(
+        self,
+        integration_client: AsyncClient,
+        og_field_resource_factory,
+        source_maker,
+    ):
+        # Resource A is "composite": two basin sources, RMI (winner) = "Foo" and
+        # GEM = "Bar", so A resolves basin to "Foo".
+        id_a = await _create_resource_with_sources(
+            integration_client,
+            og_field_resource_factory,
+            [
+                source_maker(source="rmi", managed=False, basin="Foo"),
+                source_maker(source="gem", managed=False, basin="Bar"),
+            ],
+        )
+        # Resource B has a single basin source = "Foo".
+        id_b = await _create_resource_with_sources(
+            integration_client,
+            og_field_resource_factory,
+            [source_maker(source="rmi", managed=False, basin="Foo")],
+        )
+
+        candidate_id = await _create_candidate(integration_client, [id_a, id_b])
+        resp = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_id}"
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+
+        basin = next(c for c in body["compare"] if c["field"] == "basin")
+        # Both resources resolve basin to "Foo" (A's RMI winner beats its GEM
+        # "Bar"), so despite three sources in play the field matches.
+        assert basin["status"] == "match"
+        assert {
+            (v["resource_id"], v["source"], v["value"]) for v in basin["values"]
+        } == {
+            (id_a, "rmi", "Foo"),
+            (id_a, "gem", "Bar"),
+            (id_b, "rmi", "Foo"),
+        }
