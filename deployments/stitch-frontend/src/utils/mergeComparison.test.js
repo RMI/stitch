@@ -10,8 +10,9 @@ describe("getRowStatus", () => {
     expect(getRowStatus(["Burgan", "Bergan"])).toBe("differs");
   });
 
-  it("compares exactly: case differences differ", () => {
-    expect(getRowStatus(["Kuwait", "kuwait"])).toBe("differs");
+  it("returns match when strings are identical except for case", () => {
+    expect(getRowStatus(["Kuwait", "kuwait"])).toBe("match");
+    expect(getRowStatus(["KUWAIT", "Kuwait", "kuwait"])).toBe("match");
   });
 
   it("compares exactly: number and numeric string differ", () => {

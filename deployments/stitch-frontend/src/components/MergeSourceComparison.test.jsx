@@ -92,11 +92,11 @@ describe("MergeSourceComparison", () => {
     expect(within(row).getAllByText("Match")).toHaveLength(2);
   });
 
-  it("marks case-different values as differing (exact matching)", async () => {
+  it("marks case-different string values as matches", async () => {
     renderComparison();
 
     const row = await screen.findByRole("group", { name: "Country" });
-    expect(within(row).getAllByText("Differs")).toHaveLength(2);
+    expect(within(row).getAllByText("Match")).toHaveLength(2);
   });
 
   it("grays the empty cell and marks the populated one as differing", async () => {
