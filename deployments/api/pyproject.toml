@@ -7,7 +7,7 @@ authors = [{ name = "Michael Barlow", email = "mbarlow@rmi.org" }]
 requires-python = ">=3.12.12"
 dependencies = [
   "alembic>=1.17.1",
-  "fastapi[standard-no-fastapi-cloud-cli]>=0.135.1",
+  "fastapi[standard-no-fastapi-cloud-cli]>=0.139.2",
   "greenlet>=3.3.0",
   "psycopg[binary]>=3.3.4",
   "opentelemetry-sdk>=1.30.0",
