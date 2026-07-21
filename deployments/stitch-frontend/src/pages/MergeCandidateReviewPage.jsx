@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import Button from "../components/Button";
 import MergeSourceComparison from "../components/MergeSourceComparison";
 import MergedResourceView from "../components/MergedResourceView";
+import { useMergeCandidateName } from "../hooks/useMergeCandidateName";
 import { useMergeCandidates, useMergeCandidate } from "../hooks/useResources";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { reviewMergeCandidate } from "../queries/api";
@@ -36,12 +37,36 @@ function StatusBadge({ status }) {
   );
 }
 
+// Marks a PENDING item as a CANDIDATE resource, alongside the
+// PENDING/APPROVED/DENIED status badge.
+function PendingBadge() {
+  return (
+    <span className="rounded-full border border-line bg-surface px-2.5 py-1 text-xs font-semibold text-ink-muted">
+      Candidate
+    </span>
+  );
+}
+
+// Resource and merged ids aren't shown as list text, but stay one hover away
+// via the title attribute (and remain visible in the detail view facts).
+function candidateSourcesTitle(candidate) {
+  const parts = [`Source resources: ${candidate.resource_ids.join(", ")}`];
+  if (candidate.merged_resource_id) {
+    parts.push(`Merged resource: ${candidate.merged_resource_id}`);
+  }
+  return parts.join(" · ");
+}
+
 function CandidateQueueItem({ candidate, isSelected, onSelect }) {
+  const name = useMergeCandidateName(ENDPOINT, candidate.resource_ids);
+  const displayName = name ?? `Candidate #${candidate.id}`;
+
   return (
     <button
       type="button"
       onClick={() => onSelect(candidate.id)}
       aria-pressed={isSelected}
+      title={candidateSourcesTitle(candidate)}
       className={`w-full rounded-md border px-3 py-3 text-left transition ${
         isSelected
           ? "border-primary bg-primary-soft"
@@ -49,19 +74,14 @@ function CandidateQueueItem({ candidate, isSelected, onSelect }) {
       } focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2`}
     >
       <span className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-semibold text-ink">
-          Candidate #{candidate.id}
+        <span className="break-words font-semibold text-ink">
+          {displayName}
         </span>
-        <StatusBadge status={candidate.status} />
-      </span>
-      <span className="mt-2 block break-words text-sm text-ink-muted">
-        Resources {candidate.resource_ids.join(", ")}
-      </span>
-      {candidate.merged_resource_id ? (
-        <span className="mt-1 block break-words text-sm text-ink-muted">
-          Merged {candidate.merged_resource_id}
+        <span className="flex items-center gap-1.5">
+          {candidate.status === "PENDING" ? <PendingBadge /> : null}
+          <StatusBadge status={candidate.status} />
         </span>
-      ) : null}
+      </span>
     </button>
   );
 }
@@ -225,6 +245,7 @@ function CandidateDecisionPanel({
   } = candidateQuery;
 
   const candidate = detailCandidate ?? listCandidate;
+  const name = useMergeCandidateName(ENDPOINT, candidate?.resource_ids);
 
   if (!selectedId) {
     return (
@@ -268,13 +289,16 @@ function CandidateDecisionPanel({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-2xl font-semibold text-ink">
-              Candidate #{candidate.id}
+              {name ?? `Candidate #${candidate.id}`}
             </h2>
             <p className="mt-1 text-sm text-ink-muted">
               Decide whether these resources should become one curated record.
             </p>
           </div>
-          <StatusBadge status={candidate.status} />
+          <span className="flex items-center gap-1.5">
+            {candidate.status === "PENDING" ? <PendingBadge /> : null}
+            <StatusBadge status={candidate.status} />
+          </span>
         </div>
 
         <CandidateFacts candidate={candidate} />
