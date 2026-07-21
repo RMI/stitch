@@ -290,14 +290,14 @@ export default function EtlPage() {
         <EtlPanel
           title="GEM"
           description="Load GEM oil & gas data from the configured spreadsheet and post it to Stitch."
-          baseUrl={config.etlGemBaseUrl}
+          baseUrl={`${config.etlBaseUrl}/gem`}
           fields={GEM_FIELDS}
           getToken={getToken}
         />
         <EtlPanel
           title="WoodMac"
           description="Fetch WoodMac query results and post them to Stitch."
-          baseUrl={config.etlWoodmacBaseUrl}
+          baseUrl={`${config.etlBaseUrl}/wm`}
           fields={WOODMAC_FIELDS}
           getToken={getToken}
         />

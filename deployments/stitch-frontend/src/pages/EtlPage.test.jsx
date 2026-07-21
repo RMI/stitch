@@ -65,7 +65,7 @@ describe("EtlPage", () => {
       authorizationParams: { audience: "https://stitch-api.local" },
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:8101/api/v1/start",
+      "http://localhost:8100/api/v1/etl/gem/start",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
@@ -126,7 +126,7 @@ describe("EtlPage", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:8102/api/v1/status",
+      "http://localhost:8100/api/v1/etl/wm/status",
     );
   });
 });
