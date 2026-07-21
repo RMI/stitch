@@ -27,13 +27,8 @@ on:
         description: "Base stitch-llm URL to inject into runtime config"
         required: true
         type: string
-      etl-gem-url:
-        description: "Base ETL GEM URL to inject into runtime config (empty when not deployed)"
-        required: false
-        default: ''
-        type: string
-      etl-woodmac-url:
-        description: "Base ETL WoodMac URL to inject into runtime config (empty when not deployed)"
+      etl-url:
+        description: "Base ETL URL to inject into runtime config (empty when not deployed)"
         required: false
         default: ''
         type: string
@@ -128,8 +123,7 @@ jobs:
             "apiUrl": "${{ inputs.api-url }}",
             "entityLinkageUrl": "${{ inputs.entity-linkage-url }}",
             "stitchLlmUrl": "${{ inputs.stitch-llm-url }}",
-            "etlGemUrl": "${{ inputs.etl-gem-url }}",
-            "etlWoodmacUrl": "${{ inputs.etl-woodmac-url }}",
+            "etlUrl": "${{ inputs.etl-url }}",
             "auth0Domain": "${{ inputs.auth0-domain }}",
             "auth0ClientId": "${{ inputs.auth0-client-id }}",
             "auth0Audience": "${{ inputs.auth0-audience }}",
