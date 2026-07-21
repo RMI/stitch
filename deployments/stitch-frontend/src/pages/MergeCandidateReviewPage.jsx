@@ -27,22 +27,17 @@ function getStatusClasses(status) {
   return "border-line bg-surface text-ink";
 }
 
+// PENDING reads as "CANDIDATE": it isn't a real merged resource yet.
+function getStatusLabel(status) {
+  return status === "PENDING" ? "CANDIDATE" : status;
+}
+
 function StatusBadge({ status }) {
   return (
     <span
-      className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusClasses(status)}`}
+      className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${getStatusClasses(status)}`}
     >
-      {status}
-    </span>
-  );
-}
-
-// Marks a PENDING item as a CANDIDATE resource, alongside the
-// PENDING/APPROVED/DENIED status badge.
-function PendingBadge() {
-  return (
-    <span className="rounded-full border border-line bg-surface px-2.5 py-1 text-xs font-semibold text-ink-muted">
-      Candidate
+      {getStatusLabel(status)}
     </span>
   );
 }
@@ -73,14 +68,11 @@ function CandidateQueueItem({ candidate, isSelected, onSelect }) {
           : "border-transparent bg-panel hover:border-line hover:bg-surface"
       } focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2`}
     >
-      <span className="flex flex-wrap items-center justify-between gap-2">
-        <span className="break-words font-semibold text-ink">
+      <span className="flex items-start justify-between gap-2">
+        <span className="min-w-0 break-words font-semibold text-ink">
           {displayName}
         </span>
-        <span className="flex items-center gap-1.5">
-          {candidate.status === "PENDING" ? <PendingBadge /> : null}
-          <StatusBadge status={candidate.status} />
-        </span>
+        <StatusBadge status={candidate.status} />
       </span>
     </button>
   );
@@ -286,19 +278,16 @@ function CandidateDecisionPanel({
       ) : null}
 
       <div className="space-y-4 px-5 py-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-2xl font-semibold text-ink">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="break-words text-2xl font-semibold text-ink">
               {name ?? `Candidate #${candidate.id}`}
             </h2>
             <p className="mt-1 text-sm text-ink-muted">
               Decide whether these resources should become one curated record.
             </p>
           </div>
-          <span className="flex items-center gap-1.5">
-            {candidate.status === "PENDING" ? <PendingBadge /> : null}
-            <StatusBadge status={candidate.status} />
-          </span>
+          <StatusBadge status={candidate.status} />
         </div>
 
         <CandidateFacts candidate={candidate} />

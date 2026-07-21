@@ -127,18 +127,17 @@ describe("MergeCandidateReviewPage", () => {
     expect(screen.getAllByText("Candidate #11").length).toBeGreaterThan(0);
   });
 
-  it('shows a "Candidate" badge for pending items but not approved ones', async () => {
+  it('labels a pending item\'s status badge "CANDIDATE" instead of "PENDING"', async () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
     const pendingItem = await screen.findByRole("button", { name: /Burgan/ });
-    expect(within(pendingItem).getByText("Candidate")).toBeInTheDocument();
+    expect(within(pendingItem).getByText("CANDIDATE")).toBeInTheDocument();
+    expect(within(pendingItem).queryByText("PENDING")).not.toBeInTheDocument();
 
     const approvedItem = await screen.findByRole("button", {
       name: /Arabian Consolidated/,
     });
-    expect(
-      within(approvedItem).queryByText("Candidate"),
-    ).not.toBeInTheDocument();
+    expect(within(approvedItem).getByText("APPROVED")).toBeInTheDocument();
   });
 
   it("shows the resolved name in the detail panel heading, with the merged resource id still visible in the facts", async () => {
