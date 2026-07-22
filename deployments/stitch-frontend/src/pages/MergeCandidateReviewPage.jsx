@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -359,12 +359,13 @@ export default function MergeCandidateReviewPage() {
     error: listErrorObj,
   } = useMergeCandidates(ENDPOINT, true);
 
-  useEffect(() => {
-    if (!selectedId && candidates?.length) {
-      const firstPending = candidates.find((c) => c.status === "PENDING");
-      setSelectedId(firstPending?.id ?? candidates[0].id);
-    }
-  }, [candidates, selectedId]);
+  // Default to the first pending candidate once the list loads. Done during
+  // render (not in an effect) so the selection is set before the first paint
+  // and without triggering a cascading re-render.
+  if (!selectedId && candidates?.length) {
+    const firstPending = candidates.find((c) => c.status === "PENDING");
+    setSelectedId(firstPending?.id ?? candidates[0].id);
+  }
 
   const candidateQuery = useMergeCandidate(
     ENDPOINT,
