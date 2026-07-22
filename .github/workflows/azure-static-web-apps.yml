@@ -27,13 +27,8 @@ on:
         description: "Base stitch-llm URL to inject into runtime config"
         required: true
         type: string
-      etl-gem-url:
-        description: "Base ETL GEM URL to inject into runtime config (empty when not deployed)"
-        required: false
-        default: ''
-        type: string
-      etl-woodmac-url:
-        description: "Base ETL WoodMac URL to inject into runtime config (empty when not deployed)"
+      etl-url:
+        description: "Base ETL URL to inject into runtime config (empty when not deployed)"
         required: false
         default: ''
         type: string
@@ -77,13 +72,13 @@ jobs:
           set -euo pipefail
           : "${AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN:?Missing required secret AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN}"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           submodules: true
           lfs: false
 
       - name: Download frontend artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.artifact-name }}
           path: .artifact-download
@@ -128,8 +123,7 @@ jobs:
             "apiUrl": "${{ inputs.api-url }}",
             "entityLinkageUrl": "${{ inputs.entity-linkage-url }}",
             "stitchLlmUrl": "${{ inputs.stitch-llm-url }}",
-            "etlGemUrl": "${{ inputs.etl-gem-url }}",
-            "etlWoodmacUrl": "${{ inputs.etl-woodmac-url }}",
+            "etlUrl": "${{ inputs.etl-url }}",
             "auth0Domain": "${{ inputs.auth0-domain }}",
             "auth0ClientId": "${{ inputs.auth0-client-id }}",
             "auth0Audience": "${{ inputs.auth0-audience }}",
@@ -203,7 +197,7 @@ jobs:
 
       - name: Upload comment JSON artifact
         if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: comment-json-frontend
           path: /tmp/comment-json/*.json

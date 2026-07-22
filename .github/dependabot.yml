@@ -1,0 +1,29 @@
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      python-dependencies:
+        patterns: ["*"]
+  - package-ecosystem: "npm"
+    directory: "/deployments/stitch-frontend"
+    schedule:
+      interval: "weekly"
+    groups:
+      npm-dependencies:
+        patterns: ["*"]
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
+    ignore:
+      # v2 emits the update-only `--replace-env-vars` flag on `az containerapp
+      # create`, breaking first (create) deploys of per-PR preview apps. Stay on
+      # v1 until a fixed v2.x ships. See deploy-container.yml for details.
+      - dependency-name: "azure/container-apps-deploy-action"
+        update-types: ["version-update:semver-major"]

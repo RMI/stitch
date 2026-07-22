@@ -11,8 +11,7 @@ const OPTIONAL_STRING_CONFIG_KEYS = [
   "apiUrl",
   "entityLinkageUrl",
   "stitchLlmUrl",
-  "etlGemUrl",
-  "etlWoodmacUrl",
+  "etlUrl",
 ];
 
 const DEFAULT_CONFIG_PATH = "/config.json";
@@ -63,9 +62,7 @@ function freezeConfig(runtimeConfig) {
       runtimeConfig.entityLinkageUrl || "http://localhost:8001/api/v1",
     stitchLlmBaseUrl:
       runtimeConfig.stitchLlmUrl || "http://localhost:8002/api/v1",
-    etlGemBaseUrl: runtimeConfig.etlGemUrl || "http://localhost:8101/api/v1",
-    etlWoodmacBaseUrl:
-      runtimeConfig.etlWoodmacUrl || "http://localhost:8102/api/v1",
+    etlBaseUrl: runtimeConfig.etlUrl || "http://localhost:8100/api/v1/etl",
   });
 }
 
