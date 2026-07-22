@@ -53,8 +53,8 @@ describe("ResourceFieldCard", () => {
     const user = userEvent.setup();
     useFieldSourceValues.mockReturnValue({
       data: [
-        { source: "wm", id: 20, value: "Foo Basin", priority: 1 },
-        { source: "gem", id: 10, value: "Bar Basin", priority: 2 },
+        { source: "wm", source_id: 20, value: "Foo Basin", priority: 1 },
+        { source: "gem", source_id: 10, value: "Bar Basin", priority: 2 },
       ],
       isLoading: false,
       isError: false,
@@ -79,8 +79,8 @@ describe("ResourceFieldCard", () => {
     const user = userEvent.setup();
     useFieldSourceValues.mockReturnValue({
       data: [
-        { source: "wm", id: 20, value: "Foo Basin", priority: 1 },
-        { source: "gem", id: 10, value: "Bar Basin", priority: 2 },
+        { source: "wm", source_id: 20, value: "Foo Basin", priority: 1 },
+        { source: "gem", source_id: 10, value: "Bar Basin", priority: 2 },
       ],
       isLoading: false,
       isError: false,

@@ -8,19 +8,34 @@ on:
 
 jobs:
   # This pipeline deploys per-PR preview environments and needs repository
-  # secrets. On the pull_request event those secrets are withheld from two kinds
-  # of PR: authors without write access (e.g. Dependabot, which runs as
-  # CONTRIBUTOR) and PRs opened from a fork (secrets never flow to fork PRs,
-  # regardless of the author's association). Gate on both so such PRs skip the
-  # pipeline instead of failing. Every job transitively needs resolve-context,
-  # so skipping it here skips the rest -- except deploy-frontend and
-  # comment-summary, whose always()/!failure() conditions ignore skipped
-  # dependencies and so repeat this guard explicitly.
+  # secrets, which the pull_request event withholds from two kinds of PR: PRs
+  # opened from a fork (secrets never flow to forks) and bot-authored PRs
+  # (Dependabot in particular always runs without secrets, and other bots can't
+  # be reliably told apart from it). Gate on both so those PRs skip the pipeline
+  # instead of failing: require the PR to originate from this repo (not a fork)
+  # and to be authored by a human -- user.type == 'User' excludes every bot,
+  # current or future, with no denylist to maintain.
+  #
+  # NB: author_association is deliberately NOT used. It reports MEMBER only for
+  # *public* org members, so our private-membership humans surface as
+  # CONTRIBUTOR -- indistinguishable from Dependabot -- which silently skips
+  # every internal PR.
+  #
+  # Future option: to let a human opt a specific bot PR into deploying, add a
+  # label trigger (on.pull_request.types: [..., labeled]) and OR a label check
+  # into these guards, e.g.
+  # contains(github.event.pull_request.labels.*.name, 'deploy-preview').
+  # (Dependabot PRs still receive no secrets even when labeled; those need a
+  # human to re-push the branch under their own PR.)
+  #
+  # Every job transitively needs resolve-context, so skipping it here skips the
+  # rest -- except deploy-frontend and comment-summary, whose always()/!failure()
+  # conditions ignore skipped dependencies and so repeat this guard explicitly.
   resolve-context:
     if: >-
       ${{ github.event_name != 'pull_request'
       || (github.event.pull_request.head.repo.full_name == github.repository
-      && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)) }}
+      && github.event.pull_request.user.type == 'User') }}
     uses: ./.github/workflows/resolve-deployment-context.yml
 
   lane-config-validate:
@@ -430,13 +445,13 @@ jobs:
     name: "Deploy frontend"
     # ETL deploys are skipped in the development lane; gate on no-failure rather
     # than all-success so the frontend still deploys when they are skipped.
-    # The author-association clause repeats the resolve-context guard because
+    # The human-author clause repeats the resolve-context guard because
     # !failure() also passes when upstream jobs were skipped by that guard.
     if: >-
       ${{ (!failure() && !cancelled())
       && (github.event_name != 'pull_request'
       || (github.event.pull_request.head.repo.full_name == github.repository
-      && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association))) }}
+      && github.event.pull_request.user.type == 'User')) }}
     needs: [resolve-context, lane-config-validate, build-frontend, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl]
     uses: ./.github/workflows/azure-static-web-apps.yml
     secrets:
@@ -459,7 +474,7 @@ jobs:
     if: >-
       ${{ always() && github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.full_name == github.repository
-      && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association) }}
+      && github.event.pull_request.user.type == 'User' }}
     uses: ./.github/workflows/comment-pr-summary.yml
     secrets: inherit
     needs: [resolve-context, build-api-docker-image, build-entity-linkage-docker-image, build-stitch-llm-docker-image, build-seed-docker-image, deploy-db, run-db-migrations, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl, run-seed, deploy-frontend]

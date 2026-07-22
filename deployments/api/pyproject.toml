@@ -6,14 +6,14 @@ readme = "README.md"
 authors = [{ name = "Michael Barlow", email = "mbarlow@rmi.org" }]
 requires-python = ">=3.12.12"
 dependencies = [
-  "alembic>=1.17.1",
+  "alembic>=1.18.5",
   "fastapi[standard-no-fastapi-cloud-cli]>=0.139.2",
   "greenlet>=3.3.0",
   "psycopg[binary]>=3.3.4",
   "opentelemetry-sdk>=1.30.0",
   "opentelemetry-exporter-otlp-proto-grpc>=1.30.0",
-  "opentelemetry-instrumentation-fastapi>=0.51b0",
-  "opentelemetry-instrumentation-sqlalchemy>=0.51b0",
+  "opentelemetry-instrumentation-fastapi>=0.65b0",
+  "opentelemetry-instrumentation-sqlalchemy>=0.65b0",
   "pydantic-settings>=2.12.0",
   "sqlalchemy>=2.0.44",
   "stitch-auth",
@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.9.16,<0.10.0"]
+requires = ["uv_build>=0.11.30,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]

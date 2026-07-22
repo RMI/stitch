@@ -119,15 +119,16 @@ class OGFieldDetailView(OGFieldListItemView):
 class OGFieldSourceValueView(BaseModel):
     """One source's value for a single field, with its effective priority.
 
-    Returned by the per-field source-values endpoint. ``priority`` is the
+    Returned by the per-field source-values endpoint. ``source_id`` is the id of
+    the source record (distinct from any resource id). ``priority`` is the
     effective per-resource ranking (lower ``priority`` value = higher priority);
     the winning value is the entry with the lowest ``priority`` value (ties
-    broken by ``id``). When priority becomes resource/field-scoped, only that
-    resolution changes -- this shape is stable.
+    broken by ``source_id``). When priority becomes resource/field-scoped, only
+    that resolution changes -- this shape is stable.
     """
 
     source: OGSISrcKey
-    id: int
+    source_id: int
     value: Any
     priority: int
 
