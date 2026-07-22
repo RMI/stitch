@@ -7,9 +7,14 @@ requires-python = ">=3.12"
 dependencies = [
   "opentelemetry-sdk>=1.30.0",
   "opentelemetry-exporter-otlp-proto-grpc>=1.30.0",
-  "opentelemetry-instrumentation-fastapi>=0.51b0",
-  "opentelemetry-instrumentation-sqlalchemy>=0.51b0",
-  "opentelemetry-instrumentation-httpx>=0.51b0",
+  # >=0.65b0: pre-0.65 opentelemetry-instrumentation-fastapi crashed on a
+  # partial route match (CORS preflight) under FastAPI >=0.137, reading `.path`
+  # on an `_IncludedRouter` node and 500-ing the request before CORS could
+  # attach its headers (surfaced in the browser as "Failed to fetch"). The whole
+  # instrumentation set is kept aligned since these packages release in lockstep.
+  "opentelemetry-instrumentation-fastapi>=0.65b0",
+  "opentelemetry-instrumentation-sqlalchemy>=0.65b0",
+  "opentelemetry-instrumentation-httpx>=0.65b0",
   "pydantic-settings>=2.11.0",
 ]
 
