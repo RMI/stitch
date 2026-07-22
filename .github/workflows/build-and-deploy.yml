@@ -380,7 +380,7 @@ jobs:
       registry-password: ${{ secrets.GHCR_ETL_PULL_TOKEN }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      full-image-name: ghcr.io/rmi/stitch-etl-poc:${{ vars.ETL_IMAGE_TAG || 'main' }}
+      full-image-name: ghcr.io/rmi/stitch-etl-poc:pr-16
       container-app-name: ${{ format('{0}-etl', needs.resolve-context.outputs.deployment-name) }}
       registry-server: ghcr.io
       registry-username: ${{ needs.lane-config-validate.outputs.ghcr-etl-pull-username }}
