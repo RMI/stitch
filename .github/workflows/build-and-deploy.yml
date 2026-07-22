@@ -316,7 +316,10 @@ jobs:
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       full-image-name: ${{ needs.build-entity-linkage-docker-image.outputs.digest-image-name }}
-      container-app-name: ${{ format('{0}-entity-linkage', needs.resolve-context.outputs.deployment-name) }}
+      # Demo-only: the long `demo/integrate-ccr` deployment-name + `-entity-linkage`
+      # (33 chars) exceeds Azure Container Apps' 32-char name limit, so shorten the
+      # suffix on this branch. The app URL is read back downstream, so this is self-contained.
+      container-app-name: ${{ format('{0}-entity-link', needs.resolve-context.outputs.deployment-name) }}
       environment-variables: >-
         LOG_LEVEL=info
         AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
