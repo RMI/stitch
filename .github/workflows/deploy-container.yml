@@ -196,7 +196,15 @@ jobs:
           echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Build and deploy Container App
-        uses: azure/container-apps-deploy-action@v2
+        # Pinned to v1 deliberately. v2 chooses the env-var flag from an
+        # ingress/credentials heuristic instead of from whether the app exists:
+        # creating a NEW app without registry credentials makes it emit the
+        # update-only `--replace-env-vars` flag on `az containerapp create`,
+        # which fails with "unrecognized arguments". This breaks every first
+        # (create) deploy of a per-PR preview app (e.g. the API). v1 keys the
+        # flag on app existence and is correct. No fixed v2.x point release
+        # exists yet -- revisit when Azure/container-apps-deploy-action ships one.
+        uses: azure/container-apps-deploy-action@v1
         with:
           imageToDeploy: ${{ inputs.full-image-name }}
           resourceGroup: ${{ vars.AZURE_RESOURCE_GROUP }}
