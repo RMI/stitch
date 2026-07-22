@@ -5,7 +5,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field, computed_field
 
-from stitch.ogsi.model import CCR_SRC, GEM_SRC, LLM_SRC, RMI_SRC, WM_SRC
+from stitch.ogsi.model import (
+    CCR_SRC,
+    GEM_SRC,
+    LLM_SRC,
+    RMI_SRC,
+    WM_SRC,
+    OGFieldSourceValueView,
+)
 from stitch.ogsi.model.types import (
     FieldStatus,
     LocationType,
@@ -176,6 +183,56 @@ class MergeCandidateView(BaseModel):
     last_updated_by_id: int
     reviewed_at: datetime | None = None
     reviewed_by_id: int | None = None
+
+
+class ComparisonValueView(OGFieldSourceValueView):
+    """A source's value in a merge comparison, tagged with ``resource_id`` --
+    the candidate resource the source is currently attached to.
+
+    NOTE: unlike the base ``OGFieldSourceValueView`` (whose ``priority`` is the
+    *effective per-resource* ranking used by the source-values endpoint), the
+    ``priority`` here is the *default global* source order -- the order the
+    merged resource will use -- so it does not reflect any per-resource
+    override. As a result the winner-ordering of these values can disagree with
+    ``FieldComparisonView.status``, which compares each resource's effective
+    coalesced value. CLEANUP: reconcile once coalescing moves into the DB
+    (PR 170; see ``_build_comparison``).
+    """
+
+    resource_id: int
+
+
+class FieldComparisonView(BaseModel):
+    """One field compared across a merge candidate's resources.
+
+    ``values`` lists every source (across all candidate resources) that carries a
+    value for the field, winner-first (lowest ``priority`` wins). Each entry
+    carries the ``resource_id`` it is attached to, so the client can group values
+    by resource without a separate per-resource payload.
+
+    ``status`` compares the resources' coalesced values for the field:
+
+    - ``match`` -- every resource resolves to the same value (all equal,
+      including the case where every resource is null).
+    - ``different`` -- the resources disagree, including when one resource has a
+      value and another is null.
+
+    Equality is Python ``==``, which errs toward ``different`` (exact float
+    equality; ordered ``owners``/``operators`` comparison).
+
+    NOTE: ``values`` (and the derived ``status``) are a client-side best guess at
+    what the merge will persist -- they are coalesced in Python from the current
+    source data. Once coalescing moves entirely into the database, the persisted
+    result is authoritative and may differ here.
+    """
+
+    field: str
+    status: Literal["match", "different"]
+    values: list[ComparisonValueView]
+
+
+class MergeCandidateDetailView(MergeCandidateView):
+    compare: list[FieldComparisonView]
 
 
 class OGFieldMergePreviewView(BaseModel):
