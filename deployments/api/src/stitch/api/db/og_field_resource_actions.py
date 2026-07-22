@@ -157,16 +157,21 @@ async def field_source_values(
     by_id = await ResourceModel.source_data_by_resource_id(
         session, [id], licensed_sources
     )
+    # CLEANUP (coalescer->DB, PR 170): this drops empty strings (`value != ""`),
+    # but the coalescer keeps "" (it excludes only None), and the merge-candidate
+    # `compare` path was aligned to the coalescer. So this endpoint currently
+    # disagrees with both on empty-string values. Reconcile when coalescing moves
+    # into the DB.
     values = [
         OGFieldSourceValueView(
-            source=src.source, id=src.id, value=value, priority=priority
+            source=src.source, source_id=src.id, value=value, priority=priority
         )
         for src, priority in by_id.get(id, [])
         if src.id is not None
         and (value := getattr(src, field)) is not None
         and value != ""
     ]
-    values.sort(key=lambda v: (v.priority, v.id))
+    values.sort(key=lambda v: (v.priority, v.source_id))
     return values
 
 
@@ -233,6 +238,13 @@ async def apply_resource_merge(
         )
 
     # all ids exist, none have already been repointed
+    #
+    # The merge target is a brand-new resource with no rows in
+    # og_field_resource_source_priority, so it resolves fields in the default
+    # global source order. Any per-field/per-resource priority overrides on the
+    # originals are intentionally NOT carried over -- merging resets ordering to
+    # default. (No-op reset today since the target is fresh; a later PR handles
+    # an explicit reset if merge semantics ever preserve an existing resource.)
     new_resource = ResourceModel.create(created_by=user)
     session.add(new_resource)
     await session.flush()
