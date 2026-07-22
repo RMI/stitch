@@ -32,9 +32,10 @@ async def lifespan(app: FastAPI):
     app.state.auth_config_validated = True
     yield
     await dispose_engine()
-    if _tracer_provider is not None:
+    tracer_provider = getattr(app.state, "tracer_provider", None)
+    if tracer_provider is not None:
         # Flush any buffered spans (BatchSpanProcessor) before exit.
-        _tracer_provider.shutdown()
+        tracer_provider.shutdown()
 
 
 def create_app(
@@ -52,6 +53,9 @@ def create_app(
     module-level ``app`` runs uninstrumented under the test env.
     """
     application = FastAPI(lifespan=lifespan)
+    # Stash the provider on the app so lifespan can shut down the one this
+    # instance was actually built with, rather than a module-level global.
+    application.state.tracer_provider = tracer_provider
     register_middlewares(application=application, settings=settings)
     if tracer_provider is not None:
         instrument_fastapi(application)
