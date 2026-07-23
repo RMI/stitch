@@ -40,6 +40,27 @@ async def create_source(
     return model.as_entity()
 
 
+async def _get_attachable_resource(
+    session: AsyncSession, resource_id: int
+) -> ResourceModel:
+    """Fetch a resource that is a valid attachment target.
+
+    Raises:
+        ResourceNotFoundError: if no resource exists for ``resource_id``.
+        ResourceIntegrityError: if the resource has been merged (repointed);
+            memberships on it would never surface in coalescing/queries.
+    """
+    resource = await session.get(ResourceModel, resource_id)
+    if resource is None:
+        raise ResourceNotFoundError(f"No resource found for id: {resource_id}")
+    if resource.repointed_id is not None:
+        raise ResourceIntegrityError(
+            f"Cannot attach sources to a resource that has been merged "
+            f"(id: `{resource_id}`, repointed to: `{resource.repointed_id}`)."
+        )
+    return resource
+
+
 async def create_and_attach_source(
     session: AsyncSession,
     user: User,
@@ -64,15 +85,20 @@ async def create_and_attach_source(
     Raises:
         SourceIntegrityError: if ``source`` carries a non-None id.
         ResourceNotFoundError: if ``resource_id`` does not exist.
+        ResourceIntegrityError: if the resource has been merged (repointed).
     """
     if source.id is not None:
         raise SourceIntegrityError(
             f"Cannot create a source with a client-supplied id: {source.id}"
         )
+    # Fail fast: validate the target before creating the source, so an invalid
+    # resource_id doesn't require rolling back a source insert. (attach re-checks
+    # via the identity map, so this adds no extra query.)
+    await _get_attachable_resource(session, resource_id)
 
     created = await create_source(session=session, user=user, source=source)
     # `created` now carries its assigned id, so attach resolves it as existing
-    # and only creates the membership (reusing the resource-existence check).
+    # and only creates the membership.
     await attach_sources_to_resource(
         session=session, resource_id=resource_id, source_rows=[created], user=user
     )
@@ -139,17 +165,7 @@ async def attach_sources_to_resource(
     user: User,
 ) -> OGFieldResource:
     """Link an OG field source to a resource via membership."""
-    resource = await session.get(ResourceModel, resource_id)
-    if resource is None:
-        raise ResourceNotFoundError(f"No resource found for id: {resource_id}")
-    if resource.repointed_id is not None:
-        # A repointed resource has been merged away; memberships on it would
-        # never surface in coalescing/queries, so refuse rather than silently
-        # orphan the source.
-        raise ResourceIntegrityError(
-            f"Cannot attach sources to a resource that has been merged "
-            f"(id: `{resource_id}`, repointed to: `{resource.repointed_id}`)."
-        )
+    resource = await _get_attachable_resource(session, resource_id)
     if len(source_rows) < 1:
         raise ResourceIntegrityError(
             f"Must pass at least 1 source row to attach to resource (id: `{resource_id}`)."
