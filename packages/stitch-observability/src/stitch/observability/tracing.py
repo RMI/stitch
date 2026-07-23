@@ -77,11 +77,6 @@ def _truncate_attributes(attributes: dict) -> dict:
     return {key: _truncate_value(value) for key, value in attributes.items()}
 
 
-def get_tracer(name: str) -> trace.Tracer:
-    """Return a tracer from the global provider (no-op when tracing is off)."""
-    return trace.get_tracer(name)
-
-
 class LoggingSpanExporter(SpanExporter):
     """Export finished spans as structured log records instead of shipping them
     to a collector.
