@@ -8,9 +8,9 @@ from sqlalchemy.exc import OperationalError
 from starlette.status import HTTP_503_SERVICE_UNAVAILABLE
 from stitch.observability import (
     configure_logging,
+    configure_tracing,
     instrument_fastapi,
     resource_attributes_from_env,
-    setup_fastapi_tracing,
     shutdown_tracing,
 )
 from .middleware import register_middlewares
@@ -48,10 +48,25 @@ async def lifespan(app: FastAPI):
     shutdown_tracing(_tracer_provider)
 
 
+# Global exception handler
+# - this will catch all exceptions of this type, incl. things like db constraint
+#   violations
+# - we can refine and narrow the scope at a later point
+async def db_unavailable_handler(_request: Request, _exc: OperationalError):
+    return JSONResponse(
+        status_code=HTTP_503_SERVICE_UNAVAILABLE,
+        content={"detail": "Database unavailable."},
+    )
+
+
 def create_app(
     settings: Settings, *, tracer_provider: TracerProvider | None
 ) -> FastAPI:
-    """Assemble the FastAPI application: middlewares, instrumentation, routers.
+    """Assemble the FastAPI application: middlewares, instrumentation, routers,
+    exception handlers.
+
+    Single source of truth for app assembly — both the module-level singleton
+    and the instrumentation tests build through here, so the two can't drift.
 
     ``tracer_provider`` mirrors the return of the shared tracing setup (``None``
     when tracing is disabled); when set, the app is auto-instrumented via
@@ -59,16 +74,13 @@ def create_app(
     wraps its ASGI middleware *around the whole user middleware stack* (CORS
     included), so the order of the calls below does not affect the
     OpenTelemetry-vs-CORS layering.
-
-    Extracted as a factory so tests can build an instrumented app. The shared
-    module-level ``app`` is instrumented in place by :func:`setup_fastapi_tracing`
-    and runs uninstrumented under the test env (``OTEL_TRACES_EXPORTER=none``).
     """
     application = FastAPI(lifespan=lifespan)
     register_middlewares(application=application, settings=settings)
     if tracer_provider is not None:
         instrument_fastapi(application)
     application.include_router(base_router)
+    application.add_exception_handler(OperationalError, db_unavailable_handler)
     return application
 
 
@@ -83,33 +95,25 @@ configure_logging(
     # OTEL_RESOURCE_ATTRIBUTES / OTEL_SERVICE_NAME env.
     resource_attributes=resource_attributes_from_env(),
 )
-app = FastAPI(lifespan=lifespan)
 
-register_middlewares(application=app, settings=settings)
-
-# Configure tracing and instrument server spans, after the app + middleware are
-# built. instrument_outbound_httpx is off: the API is the terminal service and
-# makes no downstream httpx calls. version/environment are stamped as resource
-# attributes; SQLAlchemy per-query spans are instrumented separately in
-# db/config.py, since the engine is created lazily.
-_tracer_provider = setup_fastapi_tracing(
-    app,
+# Unlike entity-linkage / stitch-llm (which call the shared ``setup_fastapi_tracing``
+# one-shot), the API splits tracing *configuration* from app *assembly*: configure
+# the global provider here, then let ``create_app`` own ``instrument_fastapi``. That
+# keeps a single app-assembly path — shared with the instrumentation tests, which
+# pass their own provider — and avoids double-instrumenting. We also skip
+# ``instrument_httpx`` entirely: the API is the terminal service and makes no
+# outbound httpx calls that would need ``traceparent`` propagation. SQLAlchemy
+# per-query spans are set up separately in db/config.py, since the engine is
+# created lazily.
+_tracer_provider = configure_tracing(
     service_name="stitch-api",
-    settings=settings,
-    instrument_outbound_httpx=False,
+    enabled=settings.otel_enabled,
+    exporter=settings.otel_traces_exporter,
+    otlp_endpoint=settings.otel_exporter_otlp_endpoint,
+    sample_ratio=settings.otel_sample_ratio,
+    # None (not "unknown") when unset, so an env-provided service.version via
+    # OTEL_RESOURCE_ATTRIBUTES isn't clobbered by a placeholder.
     version=settings.app_version,
     environment=settings.environment_name,
 )
-
-app.include_router(base_router)
-
-
-# Global exception handler
-# - this will catch all exceptions of this type, incl. things like db constraint violations
-# - we can refine and narrow the scope at a a later point
-@app.exception_handler(OperationalError)
-async def db_unavailable_handler(_request: Request, _exc: OperationalError):
-    return JSONResponse(
-        status_code=HTTP_503_SERVICE_UNAVAILABLE,
-        content={"detail": "Database unavailable."},
-    )
+app = create_app(settings, tracer_provider=_tracer_provider)
