@@ -162,9 +162,24 @@ def base_source_query(
     return stmt.order_by(*_build_sort_clauses(pivot_cte, params, "source_pk"))
 
 
-def add_ranking(base_cte: CTE) -> Select[tuple[Any, ...]]:
+def _ranked(base_cte: CTE) -> CTE:
+    """Attach the coalesce rank ``rn`` to every candidate row (no winner cut).
+
+    The single definition of the coalescing order, shared by the winner cut
+    (``add_ranking`` -> ``rn == 1``) and the all-candidates detail hydration
+    (``coalesced_candidate_rows``) so the two can't drift. ``rn == 1`` is the
+    winner within each ``(resource_id, colname)`` partition.
+
+    MERGE(174): 174 introduces this same ``_ranked`` split, but with tiered
+    per-field override ranking (``override_priority`` NULLS LAST, then
+    ``default_priority``, then source/source_pk). On merge keep 174's richer
+    ``order_by`` -- this branch differs there only because per-field overrides
+    don't exist here yet. BUT drop 174's ``.where(value_text != "")`` empty-text
+    filter: this branch makes empty strings impossible at write time + a DB
+    CHECK (see ``model.oil_gas_field_source_value``), so that filter is now dead.
+    """
     cols = base_cte.c
-    ranked = (
+    return (
         select(base_cte)
         .add_columns(
             func.row_number()
@@ -180,6 +195,10 @@ def add_ranking(base_cte: CTE) -> Select[tuple[Any, ...]]:
         )
         .cte()
     )
+
+
+def add_ranking(base_cte: CTE) -> Select[tuple[Any, ...]]:
+    ranked = _ranked(base_cte)
     return select(ranked).where(ranked.c.rn == 1)
 
 
@@ -206,6 +225,55 @@ def coalesced_winner_rows(
         winners.c.value_json,
         winners.c.source,
         winners.c.source_pk,
+    )
+
+
+def coalesced_candidate_rows(
+    resource_ids: Collection[int],
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> Select[tuple[Any, ...]]:
+    """Every ranked candidate value row for the given resources, winner-first.
+
+    ``coalesced_winner_rows`` *without* the ``rn == 1`` cut: it keeps all
+    candidate rows (each tagged with ``rn``) and joins each source header for
+    ``source_record``. This lets the detail path build both the coalesced view +
+    provenance (the ``rn == 1`` rows) and the raw ``source_data`` (all rows,
+    grouped by ``source_pk``) from a SINGLE query, replacing the former
+    winner-query + ``source_data_by_resource_id`` pair (see
+    ``utils.resource_model_to_entity``). Rows are ordered
+    ``(priority, source, source_pk, colname)`` so grouping by source yields
+    sources best-priority-first, matching the old source ordering.
+
+    ``source_record`` repeats per value row -- bounded (one resource's handful of
+    sources), needed to rebuild the source entities, and dropped again by the
+    source *view*.
+
+    MERGE(174): rides on 174's tiered ``_ranked`` unchanged. If the lazy
+    field-source endpoint is later folded into the detail payload, this is the
+    query it would build on.
+    """
+    base = construct_base_query_statement(licensed_sources, resource_ids=resource_ids)
+    ranked = _ranked(base)
+    s = OilGasFieldSourceModel
+    return (
+        select(
+            ranked.c.resource_id,
+            ranked.c.colname,
+            ranked.c.value_text,
+            ranked.c.value_num,
+            ranked.c.value_json,
+            ranked.c.source,
+            ranked.c.source_pk,
+            ranked.c.rn,
+            s.source_record,
+        )
+        .join(s, s.id == ranked.c.source_pk)
+        .order_by(
+            ranked.c.priority,
+            ranked.c.source,
+            ranked.c.source_pk,
+            ranked.c.colname,
+        )
     )
 
 

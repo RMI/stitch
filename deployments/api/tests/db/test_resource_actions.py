@@ -1391,6 +1391,85 @@ class TestResourceDetailCoalescing:
         ]
         assert result.provenance["operators"][1] == "rmi"
 
+    @pytest.mark.anyio
+    async def test_detail_reconstructs_source_data_from_single_query(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """Detail builds the winner view *and* raw source_data from one query.
+
+        Both projections come from the same ranked-candidate rows: the winner
+        view/provenance (rn == 1) and source_data (all rows, grouped by source,
+        best-priority first). Each source keeps its own per-field values.
+        """
+        session = seeded_integration_session
+        rid = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "rmi", "name": "RMI Name", "country": "USA"},
+            {"source": "gem", "name": "GEM Name", "basin": "GEM Basin"},
+        )
+
+        result = await resource_actions.get(session, rid)
+
+        # Winner view: rmi outranks gem for shared fields; gem fills basin.
+        assert result.view.name == "RMI Name"
+        assert result.view.country == "USA"
+        assert result.view.basin == "GEM Basin"
+        assert result.provenance["basin"][1] == "gem"
+
+        # source_data: both sources, best-priority first, each with its own values.
+        assert [s.source for s in result.source_data] == ["rmi", "gem"]
+        by_source = {s.source: s for s in result.source_data}
+        assert by_source["rmi"].name == "RMI Name"
+        assert by_source["rmi"].basin is None
+        assert by_source["gem"].basin == "GEM Basin"
+        assert by_source["gem"].country is None
+
+    @pytest.mark.anyio
+    async def test_detail_hydration_round_trips_constant_in_source_count(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """get() costs a fixed number of round-trips regardless of source count.
+
+        The view + source_data come from a single ranked query (no separate
+        source-listing query, no per-source N+1), so a 4-source resource costs
+        the same as a 1-source one.
+        """
+        one = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "Only GEM", "country": "USA"},
+        )
+        many = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            *[
+                {"source": src, "name": f"{src} Name", "country": "USA"}
+                for src in ("rmi", "gem", "wm", "llm")
+            ],
+        )
+        sync_engine = seeded_integration_session.bind.sync_engine
+
+        async def _count(rid):
+            executions = 0
+
+            def _inc(conn, cursor, statement, parameters, context, executemany):
+                nonlocal executions
+                executions += 1
+
+            event.listen(sync_engine, "before_cursor_execute", _inc)
+            try:
+                await resource_actions.get(seeded_integration_session, rid)
+            finally:
+                event.remove(sync_engine, "before_cursor_execute", _inc)
+            return executions
+
+        assert await _count(one) == await _count(many)
+
 
 class TestBatchedSourceData:
     """ResourceModel.source_data_by_resource_id groups + licensed-filters."""
