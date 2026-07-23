@@ -653,6 +653,43 @@ describe("ResourceDetailPage", () => {
     expect(createSourceSpy).not.toHaveBeenCalled();
   });
 
+  it("hides the add-to-resource action when the user has only one of the two write permissions", async () => {
+    // source:write granted but resource:write missing -> action stays hidden
+    // (attach needs both).
+    vi.mocked(useHasPermission).mockImplementation(
+      (permission) => permission === "source:write",
+    );
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    const createSourceSpy = vi.spyOn(apiModule, "createSourceForResource");
+    vi.spyOn(apiModule, "createLLMSuggestion").mockResolvedValue({
+      resource_id: 1,
+      field: "basin",
+      value: "Songliao",
+      citations: [],
+      query_succeeded: true,
+      model: "test-model",
+      rationale: "Supported.",
+      observed_at: "2026-05-13T12:00:00Z",
+      foundry_request: {},
+      foundry_response: {},
+    });
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(
+      screen.getByRole("button", { name: /generate suggestion/i }),
+    );
+
+    expect(await screen.findByText("Songliao")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /add to resource/i }),
+    ).not.toBeInTheDocument();
+    expect(createSourceSpy).not.toHaveBeenCalled();
+  });
+
   it("disables resubmission after a successful attach for the current suggestion", async () => {
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,
