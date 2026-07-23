@@ -70,8 +70,9 @@ async def create_and_attach_source(
     """Create a new source and attach it to an existing resource.
 
     A source is always created (never resolved by id here), then linked to
-    ``resource_id`` via an ACTIVE membership. Both steps run in the caller's
-    unit of work, so the whole operation rolls back if the resource is missing.
+    ``resource_id`` via an ACTIVE membership, both within the caller's unit of
+    work. The resource is validated first, so an invalid target fails before any
+    source is written.
 
     Args:
         session: db session (transaction context)
@@ -92,17 +93,12 @@ async def create_and_attach_source(
             f"Cannot create a source with a client-supplied id: {source.id}"
         )
     # Fail fast: validate the target before creating the source, so an invalid
-    # resource_id doesn't require rolling back a source insert. (attach re-checks
-    # via the identity map, so this adds no extra query.)
-    await _get_attachable_resource(session, resource_id)
+    # resource_id never leaves a source insert to roll back.
+    resource = await _get_attachable_resource(session, resource_id)
 
-    created = await create_source(session=session, user=user, source=source)
-    # `created` now carries its assigned id, so attach resolves it as existing
-    # and only creates the membership.
-    await attach_sources_to_resource(
-        session=session, resource_id=resource_id, source_rows=[created], user=user
-    )
-    return created
+    [model] = await _create_source_models(session, user, [source])
+    await _attach_source_models(session, resource, [model], user)
+    return model.as_entity()
 
 
 async def get_or_create_sources(
@@ -158,6 +154,26 @@ async def _get_source_models(
     return (await session.scalars(stmt)).all()
 
 
+async def _attach_source_models(
+    session: AsyncSession,
+    resource: ResourceModel,
+    src_models: Sequence[OilGasFieldSourceModel],
+    user: User,
+) -> None:
+    """Create ACTIVE memberships linking each source model to ``resource``."""
+    memberships = [
+        MembershipModel.create(
+            created_by=user,
+            resource_id=resource.id,
+            source=src.source,
+            source_pk=src.id,
+        )
+        for src in src_models
+    ]
+    session.add_all(memberships)
+    await session.flush()
+
+
 async def attach_sources_to_resource(
     session: AsyncSession,
     resource_id: int,
@@ -172,21 +188,7 @@ async def attach_sources_to_resource(
         )
 
     src_models = await _get_or_create_source_models(session, user, source_rows)
-
-    # flush the session, new ids are added
-    await session.flush()
-
-    memberships = [
-        MembershipModel.create(
-            created_by=user,
-            resource_id=resource.id,
-            source=src.source,
-            source_pk=src.id,
-        )
-        for src in src_models
-    ]
-    session.add_all(memberships)
-    await session.flush()
+    await _attach_source_models(session, resource, src_models, user)
     return await resource_model_to_entity(session, resource)
 
 
