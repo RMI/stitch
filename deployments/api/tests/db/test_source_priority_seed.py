@@ -1,9 +1,9 @@
 """Guard against drift between the seeded priority table and SOURCE_PRIORITY.
 
-The integration test DB seeds ``og_field_source_priority`` via
-``metadata.create_all`` -> ``after_create`` -> ``DEFAULT_PRIORITIES`` (derived
-from the canonical ``SOURCE_PRIORITY``). Asserting the seeded rows equal the
-constant keeps the seed path aligned with the single source of truth.
+The integration test DB seeds ``og_field_source_priority`` from the canonical
+``SOURCE_PRIORITY`` constant in the ``integration_engine`` conftest fixture.
+Asserting the seeded rows equal the constant keeps that seed path aligned with
+the single source of truth.
 """
 
 from __future__ import annotations
