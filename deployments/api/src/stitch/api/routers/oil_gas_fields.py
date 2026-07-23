@@ -8,6 +8,7 @@ from stitch.auth.permissions import (
     MERGE_CANDIDATE_REVIEW,
     RESOURCE_READ,
     RESOURCE_WRITE,
+    SOURCE_WRITE,
 )
 
 from stitch.api.entities import (
@@ -23,11 +24,13 @@ from stitch.api.entities import (
 
 from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db import merge_candidate_actions
+from stitch.api.db import og_field_source_actions
 from stitch.api.db.config import UnitOfWorkDep
 from stitch.api.db.errors import (
     InvalidActionError,
     ResourceNotFoundError,
     ResourceIntegrityError,
+    SourceIntegrityError,
 )
 from stitch.api.auth import Claims, CurrentUser, require_permissions
 from stitch.api.db.utils import (
@@ -41,7 +44,9 @@ from stitch.ogsi.model import (
     OGFieldListItemView,
     OGFieldResource,
     OGFieldResourceView,
+    OGFieldSource,
     OGFieldSourceValueView,
+    OGFieldSourceView,
     OGFieldView,
 )
 
@@ -288,3 +293,27 @@ async def create_resource(
     return await resource_actions.create(
         session=uow.session, user=user, resource=resource_in
     )
+
+
+@router.post(
+    "/{id}/sources",
+    response_model=OGFieldSourceView,
+    dependencies=[Depends(require_permissions(RESOURCE_WRITE, SOURCE_WRITE))],
+)
+async def create_and_attach_source(
+    *, uow: UnitOfWorkDep, user: CurrentUser, id: int, source: OGFieldSource
+) -> OGFieldSourceView:
+    """Create a new source and attach it to resource ``id`` in one step.
+
+    The source body must not carry an ``id`` (it is always created). Requires
+    both ``source:write`` (creating the source) and ``resource:write``
+    (managing the attachment).
+    """
+    try:
+        return await og_field_source_actions.create_and_attach_source(
+            session=uow.session, user=user, source=source, resource_id=id
+        )
+    except ResourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except SourceIntegrityError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))

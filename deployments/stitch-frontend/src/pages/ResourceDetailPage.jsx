@@ -4,11 +4,8 @@ import { useParams, useNavigate } from "react-router";
 import { useResourceDetail, useSourceDetail } from "../hooks/useResources";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { useConfig } from "../config/useConfig";
-import {
-  createLLMSuggestion,
-  createMergeCandidate,
-  createResource,
-} from "../queries/api";
+import { createLLMSuggestion, createSourceForResource } from "../queries/api";
+import { useHasPermission } from "../hooks/usePermissions";
 import SourceMixBar from "../components/SourceMixBar";
 import SectionHeader from "../components/SectionHeader";
 import { FieldCard, FieldGrid } from "../components/FieldCard";
@@ -68,35 +65,28 @@ function buildSuggestionAuditPayload({ resourceId, result, persistIntentId }) {
   };
 }
 
-function buildLLMResourcePayload({ resourceId, result, persistIntentId }) {
+function buildLLMSourcePayload({ resourceId, result, persistIntentId }) {
   const auditPayload = buildSuggestionAuditPayload({
     resourceId,
     result,
     persistIntentId,
   });
 
+  // A bare source (no `id`) to be created and attached to the target resource.
+  // `name`/`country` are required keys on the field model (null when unknown).
   return {
     id: null,
-    repointed_to: null,
-    constituents: [],
-    provenance: {},
-    view: null,
-    source_data: [
-      {
-        id: null,
-        source: "llm",
-        name: null,
-        country: null,
-        [result.field]: result.value,
-        source_record: {
-          record_id: persistIntentId,
-          run_id: null,
-          observed_at: result.observed_at,
-          producer: LLM_AUDIT_PRODUCER,
-          payload: auditPayload,
-        },
-      },
-    ],
+    source: "llm",
+    name: null,
+    country: null,
+    [result.field]: result.value,
+    source_record: {
+      record_id: persistIntentId,
+      run_id: null,
+      observed_at: result.observed_at,
+      producer: LLM_AUDIT_PRODUCER,
+      payload: auditPayload,
+    },
   };
 }
 
@@ -178,7 +168,7 @@ function SuggestionResult({ result }) {
   );
 }
 
-function AISuggestionPanel({ endpoint, resourceId }) {
+function AISuggestionPanel({ endpoint, resourceId, onAttached }) {
   const config = useConfig();
   const { getAccessTokenSilently } = useAuth0();
   const fetcher = createAuthenticatedFetcher(config, getAccessTokenSilently);
@@ -189,6 +179,11 @@ function AISuggestionPanel({ endpoint, resourceId }) {
   const [isPersisting, setIsPersisting] = useState(false);
   const [persistState, setPersistState] = useState(null);
 
+  // Creating + attaching a source needs both the source and resource writes.
+  // Call both hooks unconditionally (rules-of-hooks) before combining.
+  const canWriteSource = useHasPermission("source:write");
+  const canWriteResource = useHasPermission("resource:write");
+  const canAttach = canWriteSource && canWriteResource;
   const canPersist = result?.value != null;
   const isPersistedCurrentSuggestion =
     result &&
@@ -224,7 +219,7 @@ function AISuggestionPanel({ endpoint, resourceId }) {
     setError("");
 
     const persistIntentId = createPersistIntentId();
-    const resourcePayload = buildLLMResourcePayload({
+    const sourcePayload = buildLLMSourcePayload({
       resourceId,
       result,
       persistIntentId,
@@ -232,39 +227,24 @@ function AISuggestionPanel({ endpoint, resourceId }) {
     const suggestionKey = getSuggestionSubmissionKey(result);
 
     try {
-      const createdResource = await createResource(
+      const createdSource = await createSourceForResource(
         config,
-        resourcePayload,
+        resourceId,
+        sourcePayload,
         fetcher,
         endpoint,
       );
-
-      try {
-        const mergeCandidate = await createMergeCandidate(
-          config,
-          [resourceId, createdResource.id],
-          fetcher,
-          endpoint,
-        );
-        setPersistState({
-          status: "success",
-          resourceId: createdResource.id,
-          candidateId: mergeCandidate.id,
-          suggestionKey,
-        });
-      } catch {
-        setPersistState({
-          status: "partial",
-          resourceId: createdResource.id,
-          suggestionKey,
-        });
-        setError(
-          `Suggestion saved as resource ${createdResource.id}, but the merge draft was not created.`,
-        );
-      }
+      setPersistState({
+        status: "success",
+        sourceId: createdSource.id,
+        suggestionKey,
+      });
+      // Refresh the resource so the newly attached source (and any change to
+      // the coalesced winning value) shows immediately.
+      onAttached?.();
     } catch (err) {
       setPersistState(null);
-      setError(err.message || "Failed to persist suggestion.");
+      setError(err.message || "Failed to add suggestion to resource.");
     } finally {
       setIsPersisting(false);
     }
@@ -310,7 +290,7 @@ function AISuggestionPanel({ endpoint, resourceId }) {
 
         {result && <SuggestionResult result={result} />}
 
-        {canPersist && (
+        {canPersist && canAttach && (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <Button
               onClick={handlePersistSuggestion}
@@ -327,7 +307,7 @@ function AISuggestionPanel({ endpoint, resourceId }) {
             {persistState?.status === "success" &&
               isPersistedCurrentSuggestion && (
                 <p className="text-sm text-green-700">
-                  Suggestion saved and queued for later merge review.
+                  Source added to resource.
                 </p>
               )}
           </div>
@@ -616,7 +596,11 @@ export default function ResourceDetailPage() {
             </FieldGrid>
           </section>
 
-          <AISuggestionPanel endpoint={endpoint} resourceId={numericId} />
+          <AISuggestionPanel
+            endpoint={endpoint}
+            resourceId={numericId}
+            onAttached={refetch}
+          />
 
           <SourcesSection sources={detailView.source_data} />
         </div>

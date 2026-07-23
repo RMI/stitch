@@ -40,6 +40,45 @@ async def create_source(
     return model.as_entity()
 
 
+async def create_and_attach_source(
+    session: AsyncSession,
+    user: User,
+    source: OGFieldSource,
+    resource_id: int,
+) -> OGFieldSource:
+    """Create a new source and attach it to an existing resource.
+
+    A source is always created (never resolved by id here), then linked to
+    ``resource_id`` via an ACTIVE membership. Both steps run in the caller's
+    unit of work, so the whole operation rolls back if the resource is missing.
+
+    Args:
+        session: db session (transaction context)
+        user: the logged in User (recorded as creator)
+        source: raw source data; must not carry an ``id``
+        resource_id: the resource to attach the new source to
+
+    Returns:
+        The created OGFieldSource with its assigned id.
+
+    Raises:
+        SourceIntegrityError: if ``source`` carries a non-None id.
+        ResourceNotFoundError: if ``resource_id`` does not exist.
+    """
+    if source.id is not None:
+        raise SourceIntegrityError(
+            f"Cannot create a source with a client-supplied id: {source.id}"
+        )
+
+    created = await create_source(session=session, user=user, source=source)
+    # `created` now carries its assigned id, so attach resolves it as existing
+    # and only creates the membership (reusing the resource-existence check).
+    await attach_sources_to_resource(
+        session=session, resource_id=resource_id, source_rows=[created], user=user
+    )
+    return created
+
+
 async def get_or_create_sources(
     session: AsyncSession,
     user: User,

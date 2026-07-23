@@ -83,6 +83,21 @@ def _source_payload() -> dict:
             SOURCE_WRITE,
             _source_payload(),
         ),
+        # create-and-attach requires BOTH source:write and resource:write
+        (
+            "post",
+            "/oil-gas-fields/1/sources",
+            (SOURCE_WRITE,),
+            RESOURCE_WRITE,
+            _source_payload(),
+        ),
+        (
+            "post",
+            "/oil-gas-fields/1/sources",
+            (RESOURCE_WRITE,),
+            SOURCE_WRITE,
+            _source_payload(),
+        ),
     ],
 )
 async def test_route_returns_403_when_required_permission_missing(
