@@ -10,6 +10,7 @@ from stitch.observability import (
     configure_logging,
     configure_tracing,
     instrument_fastapi,
+    instrument_httpx,
     resource_attributes_from_env,
     shutdown_tracing,
 )
@@ -100,11 +101,8 @@ configure_logging(
 # one-shot), the API splits tracing *configuration* from app *assembly*: configure
 # the global provider here, then let ``create_app`` own ``instrument_fastapi``. That
 # keeps a single app-assembly path — shared with the instrumentation tests, which
-# pass their own provider — and avoids double-instrumenting. We also skip
-# ``instrument_httpx`` entirely: the API is the terminal service and makes no
-# outbound httpx calls that would need ``traceparent`` propagation. SQLAlchemy
-# per-query spans are set up separately in db/config.py, since the engine is
-# created lazily.
+# pass their own provider — and avoids double-instrumenting. SQLAlchemy per-query
+# spans are set up separately in db/config.py, since the engine is created lazily.
 _tracer_provider = configure_tracing(
     service_name="stitch-api",
     enabled=settings.otel_enabled,
@@ -117,3 +115,12 @@ _tracer_provider = configure_tracing(
     environment=settings.environment_name,
 )
 app = create_app(settings, tracer_provider=_tracer_provider)
+
+# Instrument outbound httpx as a process-global step (kept out of ``create_app``
+# so the instrumentation tests, which build through it with a real provider,
+# don't patch httpx for their test client). The API makes few/no outbound httpx
+# calls today, so this is close to a no-op — but when it does make one (e.g. a
+# JWKS fetch, or a future downstream call), it's captured as a client span and
+# carries ``traceparent`` for free, rather than being a silent gap in the trace.
+if _tracer_provider is not None:
+    instrument_httpx()
