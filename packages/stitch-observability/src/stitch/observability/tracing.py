@@ -15,7 +15,7 @@ header) and only samples independently when it is the root of a trace.
 """
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, get_args
 
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
@@ -46,6 +46,12 @@ _span_logger = logging.getLogger("stitch.observability.trace")
 # per-string cap mirrors query_timing._normalize_statement's 2000-char limit.
 _MAX_ATTR_CHARS = 2000
 _MAX_ATTR_ITEMS = 100
+
+# Accepted exporter modes. `OTelSettings.otel_traces_exporter` mirrors this Literal
+# for the settings-based path; configure_tracing re-checks at runtime so a direct
+# caller that bypasses OTelSettings still fails fast on a bad value.
+ExporterMode = Literal["console", "otlp", "none"]
+_VALID_EXPORTERS = get_args(ExporterMode)
 
 
 def _truncate_str(value: str) -> str:
@@ -142,7 +148,7 @@ def configure_tracing(
     *,
     service_name: str,
     enabled: bool = True,
-    exporter: str = "console",
+    exporter: ExporterMode = "console",
     otlp_endpoint: str | None = None,
     sample_ratio: float = 1.0,
     version: str | None = None,
@@ -152,8 +158,17 @@ def configure_tracing(
     """Install the global tracer provider, or return ``None`` if disabled.
 
     Call once at startup, before the first span is created. Idempotency is not
-    guaranteed — ``set_tracer_provider`` warns if called twice.
+    guaranteed — ``set_tracer_provider`` warns if called twice. Raises
+    ``ValueError`` on an unknown ``exporter`` or a ``sample_ratio`` outside
+    ``[0.0, 1.0]``; the settings-based path is already guarded by ``OTelSettings``,
+    so this protects direct callers that bypass it.
     """
+    if exporter not in _VALID_EXPORTERS:
+        raise ValueError(
+            f"exporter must be one of {_VALID_EXPORTERS}, got {exporter!r}"
+        )
+    if not 0.0 <= sample_ratio <= 1.0:
+        raise ValueError(f"sample_ratio must be in [0.0, 1.0], got {sample_ratio!r}")
     if not enabled or exporter == "none":
         return None
 
@@ -180,7 +195,7 @@ def configure_tracing(
         provider.add_span_processor(
             BatchSpanProcessor(OTLPSpanExporter(endpoint=otlp_endpoint))
         )
-    else:  # "console" — log spans to stdout, no sidecar required.
+    else:  # "console" (validated above) — log spans to stdout, no sidecar.
         # SimpleSpanProcessor exports each span synchronously on the request
         # thread. Kept for immediate dev visibility (the otlp/cloud path already
         # batches); switch to BatchSpanProcessor if this hot-path cost matters.
