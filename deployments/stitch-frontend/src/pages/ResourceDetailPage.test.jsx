@@ -619,8 +619,31 @@ describe("ResourceDetailPage", () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
+  it("hides the entire AI Suggestion panel when the user cannot run LLM suggestions", async () => {
+    // No service:llm:suggest -> the whole panel is gone (even with write perms).
+    vi.mocked(useHasPermission).mockImplementation(
+      (permission) => permission !== "service:llm:suggest",
+    );
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(
+      screen.queryByRole("heading", { name: /ai suggestion/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /generate suggestion/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("hides the add-to-resource action when the user lacks write permissions", async () => {
-    vi.mocked(useHasPermission).mockReturnValue(false);
+    // Can run LLM (panel shows) but has neither write permission.
+    vi.mocked(useHasPermission).mockImplementation(
+      (permission) => permission === "service:llm:suggest",
+    );
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,
       data: mockDetailView,
@@ -654,10 +677,11 @@ describe("ResourceDetailPage", () => {
   });
 
   it("hides the add-to-resource action when the user has only one of the two write permissions", async () => {
-    // source:write granted but resource:write missing -> action stays hidden
-    // (attach needs both).
+    // Can run LLM + source:write granted, but resource:write missing -> action
+    // stays hidden (attach needs both).
     vi.mocked(useHasPermission).mockImplementation(
-      (permission) => permission === "source:write",
+      (permission) =>
+        permission === "service:llm:suggest" || permission === "source:write",
     );
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,

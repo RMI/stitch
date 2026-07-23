@@ -178,6 +178,8 @@ function AISuggestionPanel({ endpoint, resourceId, onAttached }) {
   const [isPersisting, setIsPersisting] = useState(false);
   const [persistState, setPersistState] = useState(null);
 
+  // The whole panel is only useful to users who can run LLM suggestions.
+  const canRunLlm = useHasPermission("service:llm:suggest");
   // Creating + attaching a source needs both the source and resource writes.
   // Call both hooks unconditionally (rules-of-hooks) before combining.
   const canWriteSource = useHasPermission("source:write");
@@ -248,6 +250,9 @@ function AISuggestionPanel({ endpoint, resourceId, onAttached }) {
       setIsPersisting(false);
     }
   }
+
+  // Hide the entire panel from users who can't run LLM suggestions.
+  if (!canRunLlm) return null;
 
   return (
     <section>
