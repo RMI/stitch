@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Analyze Stitch observability logs to find slow / frequent queries.
 
-Reads the structured JSON events emitted by ``stitch.api.observability`` (one
-JSON object per line) and prints two reports:
+Reads the structured JSON events emitted by the Stitch observability loggers —
+request summaries on ``stitch.observability.request`` and slow-query events on
+``stitch.api.observability.query`` (one JSON object per line) — and prints two
+reports:
 
   * QUERIES  - grouped by SQL statement: how often each runs and how much total
                time it costs. The query at the top of the "total time" ranking

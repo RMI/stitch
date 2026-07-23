@@ -31,11 +31,6 @@ base_router.include_router(ogfield_resource_router)
 base_router.include_router(ogfield_source_router)
 
 
-# Assigned below once settings are loaded; declared here so `lifespan` (which
-# reads it) can't NameError if an import between here and the assignment fails.
-_tracer_provider = None
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.started_at = datetime.now(UTC)
@@ -44,9 +39,11 @@ async def lifespan(app: FastAPI):
     app.state.auth_config_validated = True
     yield
     await dispose_engine()
-    # Flush any buffered spans (BatchSpanProcessor) before exit; no-op if tracing
-    # is disabled (provider is None).
-    shutdown_tracing(_tracer_provider)
+    # Flush any buffered spans (BatchSpanProcessor) before exit, using the
+    # provider this app was built with (attached in create_app), so a
+    # factory-built app shuts down its own provider rather than a module global.
+    # No-op if tracing is disabled (provider is None).
+    shutdown_tracing(getattr(app.state, "tracer_provider", None))
 
 
 # Global exception handler
@@ -71,12 +68,14 @@ def create_app(
 
     ``tracer_provider`` mirrors the return of the shared tracing setup (``None``
     when tracing is disabled); when set, the app is auto-instrumented via
-    :func:`instrument_fastapi`. Note that ``FastAPIInstrumentor.instrument_app``
-    wraps its ASGI middleware *around the whole user middleware stack* (CORS
-    included), so the order of the calls below does not affect the
-    OpenTelemetry-vs-CORS layering.
+    :func:`instrument_fastapi`. It is also stored on ``app.state.tracer_provider``
+    so ``lifespan`` flushes the provider this app was built with rather than a
+    module global. Note that ``FastAPIInstrumentor.instrument_app`` wraps its ASGI
+    middleware *around the whole user middleware stack* (CORS included), so the
+    order of the calls below does not affect the OpenTelemetry-vs-CORS layering.
     """
     application = FastAPI(lifespan=lifespan)
+    application.state.tracer_provider = tracer_provider
     register_middlewares(application=application, settings=settings)
     if tracer_provider is not None:
         instrument_fastapi(application)
