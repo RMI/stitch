@@ -9,7 +9,7 @@ import {
   useSourceDetail,
   useFieldSourceValues,
 } from "../hooks/useResources";
-import { useHasPermission, usePermissions } from "../hooks/usePermissions";
+import { usePermissions } from "../hooks/usePermissions";
 import * as apiModule from "../queries/api";
 
 vi.mock("../hooks/useResources");
@@ -91,9 +91,11 @@ beforeEach(() => {
     isLoading: false,
     isError: false,
   });
-  // Default: permissions resolved, caller has every permission checked.
-  vi.mocked(usePermissions).mockReturnValue({ isLoading: false });
-  vi.mocked(useHasPermission).mockReturnValue(true);
+  // Default: permissions resolved, caller has every permission the panel checks.
+  vi.mocked(usePermissions).mockReturnValue({
+    data: ["service:llm:suggest", "source:write", "resource:write"],
+    isLoading: false,
+  });
   vi.stubGlobal("crypto", {
     randomUUID: () => "persist-uuid-123",
   });
@@ -621,8 +623,8 @@ describe("ResourceDetailPage", () => {
   });
 
   it("holds a placeholder (no controls) while permissions are still loading", () => {
+    // Still loading: no permission data yet, so the placeholder wins.
     vi.mocked(usePermissions).mockReturnValue({ isLoading: true });
-    // Even though useHasPermission would report true, loading wins.
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,
       data: mockDetailView,
@@ -638,9 +640,10 @@ describe("ResourceDetailPage", () => {
 
   it("hides the entire AI Suggestion panel when the user cannot run LLM suggestions", async () => {
     // No service:llm:suggest -> the whole panel is gone (even with write perms).
-    vi.mocked(useHasPermission).mockImplementation(
-      (permission) => permission !== "service:llm:suggest",
-    );
+    vi.mocked(usePermissions).mockReturnValue({
+      data: ["source:write", "resource:write"],
+      isLoading: false,
+    });
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,
       data: mockDetailView,
@@ -658,9 +661,10 @@ describe("ResourceDetailPage", () => {
 
   it("hides the add-to-resource action when the user lacks write permissions", async () => {
     // Can run LLM (panel shows) but has neither write permission.
-    vi.mocked(useHasPermission).mockImplementation(
-      (permission) => permission === "service:llm:suggest",
-    );
+    vi.mocked(usePermissions).mockReturnValue({
+      data: ["service:llm:suggest"],
+      isLoading: false,
+    });
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,
       data: mockDetailView,
@@ -696,10 +700,10 @@ describe("ResourceDetailPage", () => {
   it("hides the add-to-resource action when the user has only one of the two write permissions", async () => {
     // Can run LLM + source:write granted, but resource:write missing -> action
     // stays hidden (attach needs both).
-    vi.mocked(useHasPermission).mockImplementation(
-      (permission) =>
-        permission === "service:llm:suggest" || permission === "source:write",
-    );
+    vi.mocked(usePermissions).mockReturnValue({
+      data: ["service:llm:suggest", "source:write"],
+      isLoading: false,
+    });
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,
       data: mockDetailView,

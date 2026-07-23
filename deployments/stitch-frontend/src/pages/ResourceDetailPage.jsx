@@ -5,7 +5,7 @@ import { useResourceDetail, useSourceDetail } from "../hooks/useResources";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { useConfig } from "../config/useConfig";
 import { createLLMSuggestion, createSourceForResource } from "../queries/api";
-import { useHasPermission, usePermissions } from "../hooks/usePermissions";
+import { usePermissions } from "../hooks/usePermissions";
 import SourceMixBar from "../components/SourceMixBar";
 import SectionHeader from "../components/SectionHeader";
 import { FieldCard, FieldGrid } from "../components/FieldCard";
@@ -178,16 +178,16 @@ function AISuggestionPanel({ endpoint, resourceId, onAttached }) {
   const [isPersisting, setIsPersisting] = useState(false);
   const [persistState, setPersistState] = useState(null);
 
+  // Read the cached /auth/me permissions once. `isLoading` lets us hold a
+  // placeholder instead of flashing the panel in once it loads.
+  const { data: permissions, isLoading: permissionsLoading } = usePermissions();
+  const hasPermission = (permission) =>
+    Array.isArray(permissions) && permissions.includes(permission);
   // The whole panel is only useful to users who can run LLM suggestions.
-  // `isLoading` is the same cached /auth/me query useHasPermission reads, used
-  // below to hold a placeholder instead of flashing the panel in once it loads.
-  const { isLoading: permissionsLoading } = usePermissions();
-  const canRunLlm = useHasPermission("service:llm:suggest");
+  const canRunLlm = hasPermission("service:llm:suggest");
   // Creating + attaching a source needs both the source and resource writes.
-  // Call both hooks unconditionally (rules-of-hooks) before combining.
-  const canWriteSource = useHasPermission("source:write");
-  const canWriteResource = useHasPermission("resource:write");
-  const canAttach = canWriteSource && canWriteResource;
+  const canAttach =
+    hasPermission("source:write") && hasPermission("resource:write");
   const canPersist = result?.value != null;
   const isPersistedCurrentSuggestion =
     result &&
