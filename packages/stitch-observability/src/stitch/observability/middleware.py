@@ -25,7 +25,7 @@ from opentelemetry import trace
 try:
     from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.routing import Match
-except ModuleNotFoundError as exc:  # pragma: no cover - only hit without Starlette
+except ModuleNotFoundError as exc:
     # Starlette is an optional extra (see pyproject `asgi`), not a hard dep, so
     # the tracing/logging core stays framework-free. Fail with a clear pointer
     # rather than a bare import error when this ASGI-only module is imported.

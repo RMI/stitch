@@ -1,4 +1,6 @@
+import importlib
 import logging
+import sys
 
 import pytest
 from fastapi import FastAPI
@@ -108,3 +110,23 @@ def test_context_vars_reset_when_a_hook_raises(raising_hook) -> None:
     assert mw.request_id_var.get() is None
     assert mw.route_var.get() is None
     assert mw.scenario_var.get() is None
+
+
+def test_middleware_import_without_starlette_points_at_asgi_extra(monkeypatch) -> None:
+    # Starlette is an optional `asgi` extra, guarded at the middleware's top-level
+    # import. Simulate a consumer that installed stitch-observability WITHOUT the
+    # extra and assert the import fails with a message naming the extra, not a
+    # bare ModuleNotFoundError. All sys.modules edits go through monkeypatch so
+    # they're restored at teardown and the suite stays order-independent.
+
+    # Force the guarded imports to run again on re-import.
+    monkeypatch.delitem(sys.modules, "stitch.observability.middleware", raising=False)
+    # Make `import starlette` fail: drop cached submodules and point the parent at
+    # None — the canonical way to make an installed package look absent.
+    for name in list(sys.modules):
+        if name == "starlette" or name.startswith("starlette."):
+            monkeypatch.delitem(sys.modules, name, raising=False)
+    monkeypatch.setitem(sys.modules, "starlette", None)
+
+    with pytest.raises(ModuleNotFoundError, match=r"stitch-observability\[asgi\]"):
+        importlib.import_module("stitch.observability.middleware")
