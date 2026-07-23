@@ -166,12 +166,6 @@ def add_ranking(base_cte: CTE) -> Select[tuple[Any, ...]]:
     cols = base_cte.c
     ranked = (
         select(base_cte)
-        # Empty text can't win coalescing: drop empty-string values before the
-        # window so a lower-priority non-empty source wins instead. Only
-        # text-kind attributes populate value_text (ck_source_value_exactly_one),
-        # so this leaves numeric/JSON untouched. If every source is empty/absent
-        # for a field, no row survives and the field coalesces to NULL.
-        .where(or_(cols.value_text.is_(None), cols.value_text != ""))
         .add_columns(
             func.row_number()
             .over(

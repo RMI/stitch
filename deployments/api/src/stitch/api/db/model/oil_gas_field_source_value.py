@@ -139,6 +139,13 @@ class OilGasFieldSourceValueModel(Base):
             "colname IN (" + ", ".join(f"'{n}'" for n in ATTRIBUTE_NAMES) + ")",
             name="ck_source_value_colname",
         ),
+        # Empty text is never persisted: NULL/absent is the single "unset"
+        # sentinel, so coalescing never has to treat "" as a candidate value.
+        # (NULL passes -- the check only rejects the empty string.)
+        CheckConstraint(
+            "value_text <> ''",
+            name="ck_source_value_text_nonempty",
+        ),
         # Exact-match + DISTINCT listing across text attributes.
         Index("ix_source_value_colname_text", "colname", "value_text"),
         # Numerically-correct ordered scans (lat/long/years).

@@ -4,6 +4,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.dialects import postgresql
 from sqlalchemy import event, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from stitch.api.db import og_field_resource_actions as resource_actions
@@ -12,6 +13,7 @@ from stitch.api.db.model import (
     MembershipModel,
     MembershipStatus,
     OGFieldResourceSourcePriority,
+    OilGasFieldSourceValueModel,
     ResourceModel,
 )
 from stitch.api.entities import (
@@ -293,9 +295,9 @@ class TestResourceQueryAction:
         seeded_integration_session: AsyncSession,
         test_user: User,
     ):
-        # Highest-priority source (rmi) carries an empty-string basin; coalescing
-        # must fall through to the lower-priority non-empty value instead of
-        # letting the empty string win.
+        # Highest-priority source (rmi) supplies an empty-string basin. It is
+        # dropped on write (empty == unset), so it never becomes a value row and
+        # coalescing falls through to the lower-priority non-empty value.
         resource_id = await _create_resource_with_sources(
             seeded_integration_session,
             test_user,
@@ -315,12 +317,34 @@ class TestResourceQueryAction:
         assert items[0].data.basin == "GEM Basin"
         assert items[0].provenance["basin"] == "gem"
 
-        # The all-sources view omits the empty value, so its winner-first order
-        # agrees with the coalesced winner.
+        # The empty value was never persisted, so the all-sources view lists
+        # only gem and its winner-first order agrees with the coalesced winner.
         values = await resource_actions.field_source_values(
             seeded_integration_session, resource_id, "basin"
         )
         assert [v.source for v in values] == ["gem"]
+
+    @pytest.mark.anyio
+    async def test_empty_string_value_row_rejected_by_db_constraint(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        # Defense in depth: even if a caller bypasses the write-path skip, the
+        # DB refuses to persist an empty-string value row.
+        source = make_source_model(
+            source="rmi", created_by_id=test_user.id, name="RMI Name"
+        )
+        seeded_integration_session.add(source)
+        await seeded_integration_session.flush()
+
+        empty = OilGasFieldSourceValueModel.from_attribute("basin", "")
+        empty.source_pk = source.id
+        seeded_integration_session.add(empty)
+
+        with pytest.raises(IntegrityError):
+            await seeded_integration_session.flush()
+        await seeded_integration_session.rollback()
 
     @pytest.mark.anyio
     async def test_no_redaction_uses_priority_coalesced_owner_operator_lists(

@@ -102,12 +102,7 @@ async def filter_options(
     ranked = add_ranking(filtered).cte("ranked")
     value_col = getattr(ranked.c, value_attr_for(params.field))
     labeled = value_col.label("value")
-    stmt = (
-        select(labeled)
-        .where(value_col.is_not(None), value_col != "")
-        .distinct()
-        .order_by(labeled)
-    )
+    stmt = select(labeled).where(value_col.is_not(None)).distinct().order_by(labeled)
     values = await session.scalars(stmt)
     return list(values.all())
 
@@ -141,7 +136,7 @@ async def field_source_values(
 ) -> list[OGFieldSourceValueView]:
     """Every source's value for one field of a resource, best-priority first.
 
-    Returns only sources that carry a value for ``field`` (empty/null omitted),
+    Returns only sources that carry a value for ``field`` (unset omitted),
     each with its effective per-resource priority. The first entry is the
     coalesced winner. Licensing is applied. Priority is source-scoped today; the
     contract is unchanged when it becomes resource/field-scoped.
@@ -158,8 +153,9 @@ async def field_source_values(
 
     # source_data_by_resource_id returns rows best-priority-first (ordered in
     # SQL by the same (priority, source, source_pk) as the coalesce ranking), so
-    # filtering out empty/null values preserves winner-first order -- the first
-    # entry is the coalesced winner.
+    # dropping sources with no value for the field preserves winner-first order
+    # -- the first entry is the coalesced winner. Empty strings are never
+    # persisted (absent == unset), so a null check alone is enough.
     by_id = await ResourceModel.source_data_by_resource_id(
         session, [id], licensed_sources
     )
@@ -168,9 +164,7 @@ async def field_source_values(
             source=src.source, id=src.id, value=value, priority=priority
         )
         for src, priority in by_id.get(id, [])
-        if src.id is not None
-        and (value := getattr(src, field)) is not None
-        and value != ""
+        if src.id is not None and (value := getattr(src, field)) is not None
     ]
 
 
