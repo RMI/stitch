@@ -317,3 +317,13 @@ async def create_and_attach_source(
         raise HTTPException(status_code=404, detail=str(exc))
     except (ResourceIntegrityError, SourceIntegrityError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(
+            "Error while creating and attaching source to resource %s: %s", id, exc
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Internal error during source creation and attachment",
+        )

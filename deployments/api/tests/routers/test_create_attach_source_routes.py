@@ -299,6 +299,30 @@ class TestCreateAndAttachSource:
             assert sources == []
 
     @pytest.mark.anyio
+    async def test_unexpected_error_returns_500(
+        self,
+        writer_client: AsyncClient,
+        integration_session_factory: async_sessionmaker[AsyncSession],
+        test_user: User,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        resource_id = await _seed_empty_resource(integration_session_factory, test_user)
+
+        async def _boom(*args, **kwargs):
+            raise RuntimeError("kaboom")
+
+        monkeypatch.setattr(
+            "stitch.api.db.og_field_source_actions.create_and_attach_source", _boom
+        )
+
+        response = await writer_client.post(
+            f"/oil-gas-fields/{resource_id}/sources",
+            json=_source_body("rmi", name="RMI Name"),
+        )
+        assert response.status_code == 500
+        assert "Internal error" in response.json()["detail"]
+
+    @pytest.mark.anyio
     async def test_rejects_client_supplied_source_id(
         self,
         writer_client: AsyncClient,
