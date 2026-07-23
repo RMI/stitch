@@ -152,7 +152,7 @@
 
 <!-- description -->
 
-**Request Body:** Body
+**Request Body:** MergeCandidateReviewRequest | null
 
 
 **Response:** `200`
@@ -175,7 +175,7 @@
 
 <!-- description -->
 
-**Request Body:** Body
+**Request Body:** MergeCandidateReviewRequest | null
 
 
 **Response:** `200`
@@ -249,7 +249,7 @@
 
 <!-- description -->
 
-**Request Body:** Body
+**Request Body:** GemSource-Input | WoodMacSource-Input | RMISource-Input | LLMSource-Input
 
 
 **Response:** `200`
@@ -264,7 +264,7 @@
 
 <!-- description -->
 
-**Request Body:** Body
+**Request Body:** GemSource-Input | WoodMacSource-Input | RMISource-Input | LLMSource-Input
 
 
 **Response:** `200`
