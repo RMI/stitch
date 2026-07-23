@@ -5,7 +5,7 @@ import { useResourceDetail, useSourceDetail } from "../hooks/useResources";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { useConfig } from "../config/useConfig";
 import { createLLMSuggestion, createSourceForResource } from "../queries/api";
-import { useHasPermission } from "../hooks/usePermissions";
+import { useHasPermission, usePermissions } from "../hooks/usePermissions";
 import SourceMixBar from "../components/SourceMixBar";
 import SectionHeader from "../components/SectionHeader";
 import { FieldCard, FieldGrid } from "../components/FieldCard";
@@ -179,6 +179,9 @@ function AISuggestionPanel({ endpoint, resourceId, onAttached }) {
   const [persistState, setPersistState] = useState(null);
 
   // The whole panel is only useful to users who can run LLM suggestions.
+  // `isLoading` is the same cached /auth/me query useHasPermission reads, used
+  // below to hold a placeholder instead of flashing the panel in once it loads.
+  const { isLoading: permissionsLoading } = usePermissions();
   const canRunLlm = useHasPermission("service:llm:suggest");
   // Creating + attaching a source needs both the source and resource writes.
   // Call both hooks unconditionally (rules-of-hooks) before combining.
@@ -249,6 +252,19 @@ function AISuggestionPanel({ endpoint, resourceId, onAttached }) {
     } finally {
       setIsPersisting(false);
     }
+  }
+
+  // Hold a placeholder until permissions resolve, so the panel doesn't flash
+  // in (or briefly appear then vanish) once /auth/me loads.
+  if (permissionsLoading) {
+    return (
+      <section aria-hidden="true">
+        <div
+          data-testid="ai-suggestion-loading"
+          className="h-28 animate-pulse rounded-md border border-line bg-surface"
+        />
+      </section>
+    );
   }
 
   // Hide the entire panel from users who can't run LLM suggestions.

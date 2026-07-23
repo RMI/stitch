@@ -9,7 +9,7 @@ import {
   useSourceDetail,
   useFieldSourceValues,
 } from "../hooks/useResources";
-import { useHasPermission } from "../hooks/usePermissions";
+import { useHasPermission, usePermissions } from "../hooks/usePermissions";
 import * as apiModule from "../queries/api";
 
 vi.mock("../hooks/useResources");
@@ -91,7 +91,8 @@ beforeEach(() => {
     isLoading: false,
     isError: false,
   });
-  // Default: caller has both source:write and resource:write.
+  // Default: permissions resolved, caller has every permission checked.
+  vi.mocked(usePermissions).mockReturnValue({ isLoading: false });
   vi.mocked(useHasPermission).mockReturnValue(true);
   vi.stubGlobal("crypto", {
     randomUUID: () => "persist-uuid-123",
@@ -617,6 +618,22 @@ describe("ResourceDetailPage", () => {
 
     expect(await screen.findByText("attach failed")).toBeInTheDocument();
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("holds a placeholder (no controls) while permissions are still loading", () => {
+    vi.mocked(usePermissions).mockReturnValue({ isLoading: true });
+    // Even though useHasPermission would report true, loading wins.
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(screen.getByTestId("ai-suggestion-loading")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /generate suggestion/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("hides the entire AI Suggestion panel when the user cannot run LLM suggestions", async () => {
