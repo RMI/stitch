@@ -1,7 +1,7 @@
 """Coalescing priority tests for the CCR source.
 
-CCR must rank between ``wm`` and ``llm``:
-    rmi (1) > gem (2) > wm (3) > ccr (4) > llm (5)
+CCR must rank between ``wm`` and ``gem``:
+    rmi (1) > wm (2) > ccr (3) > gem (4) > llm (5)
 so a higher-priority source's value wins a contested field.
 """
 
@@ -10,7 +10,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from stitch.api.coalesce import coalesce_og_field_resource
-from stitch.ogsi.model import CCRSource, LLMSource, SourceRecord, WoodMacSource
+from stitch.ogsi.model import (
+    CCRSource,
+    GemSource,
+    LLMSource,
+    SourceRecord,
+    WoodMacSource,
+)
 
 
 def _record() -> SourceRecord:
@@ -38,6 +44,19 @@ def test_wm_outranks_ccr():
     coalesced, provenance = coalesce_og_field_resource(
         [
             CCRSource(id=1, name="from-ccr", country=None, source_record=_record()),
+            WoodMacSource(id=2, name="from-wm", country=None, source_record=_record()),
+        ]
+    )
+
+    assert coalesced.name == "from-wm"
+    assert provenance["name"] is not None
+    assert provenance["name"][1] == "wm"
+
+
+def test_wm_outranks_gem():
+    coalesced, provenance = coalesce_og_field_resource(
+        [
+            GemSource(id=1, name="from-gem", country=None, source_record=_record()),
             WoodMacSource(id=2, name="from-wm", country=None, source_record=_record()),
         ]
     )

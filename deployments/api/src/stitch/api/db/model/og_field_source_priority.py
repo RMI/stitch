@@ -2,7 +2,7 @@
 
 from sqlalchemy import Integer, String, event, insert
 from sqlalchemy.orm import Mapped, mapped_column
-from stitch.ogsi.model import OGSISrcKey
+from stitch.ogsi.model import SOURCE_PRIORITY, OGSISrcKey
 
 from .common import Base
 
@@ -15,11 +15,7 @@ class OGFieldSourcePriority(Base):
 
 
 DEFAULT_PRIORITIES = [
-    {"source": "rmi", "priority": 1},
-    {"source": "gem", "priority": 2},
-    {"source": "wm", "priority": 3},
-    {"source": "ccr", "priority": 4},
-    {"source": "llm", "priority": 5},
+    {"source": source, "priority": i + 1} for i, source in enumerate(SOURCE_PRIORITY)
 ]
 
 

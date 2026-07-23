@@ -2,17 +2,11 @@ from collections.abc import Sequence
 from functools import reduce
 from typing import Any
 from stitch.ogsi.model import (
-    CCR_SRC,
-    GEM_SRC,
-    LLM_SRC,
-    RMI_SRC,
-    WM_SRC,
+    SOURCE_PRIORITY,
     OGFieldSource,
 )
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
-
-SRC_PRIORITY = (RMI_SRC, GEM_SRC, WM_SRC, CCR_SRC, LLM_SRC)
 
 
 type ProvAttrs = dict[str, tuple[Any, OGSISrcKey, int] | None]
@@ -20,7 +14,7 @@ type ProvAttrs = dict[str, tuple[Any, OGSISrcKey, int] | None]
 
 def coalesce_og_field_resource(
     source_data: Sequence[OGFieldSource],
-    priorities: Sequence[OGSISrcKey] = SRC_PRIORITY,
+    priorities: Sequence[OGSISrcKey] = SOURCE_PRIORITY,
 ) -> tuple[OilGasFieldBase, ProvAttrs]:
     """
     Coalesce all source payloads into a single `OGFieldView`.

@@ -41,6 +41,7 @@ __all__ = [
     "OilGasOwner",
     "OilGasOperator",
     "OGSISrcKey",
+    "SOURCE_PRIORITY",
 ]
 
 
@@ -49,6 +50,16 @@ GEM_SRC: Final[GEMSrcKey] = "gem"
 RMI_SRC: Final[RMISrcKey] = "rmi"
 WM_SRC: Final[WMSrcKey] = "wm"
 CCR_SRC: Final[CCRSrcKey] = "ccr"
+
+# Canonical source coalescing priority (highest first). Single source of truth
+# for the coalescer, the query-param default, and the DB seed.
+SOURCE_PRIORITY: Final[tuple[OGSISrcKey, ...]] = (
+    RMI_SRC,
+    WM_SRC,
+    CCR_SRC,
+    GEM_SRC,
+    LLM_SRC,
+)
 
 
 class GemSource(Source[int, GEMSrcKey], OilGasFieldBase):
