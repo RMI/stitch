@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import Button from "../components/Button";
 import MergeSourceComparison from "../components/MergeSourceComparison";
 import MergedResourceView from "../components/MergedResourceView";
+import { useMergeCandidateName } from "../hooks/useMergeCandidateName";
 import { useMergeCandidates, useMergeCandidate } from "../hooks/useResources";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { reviewMergeCandidate } from "../queries/api";
@@ -26,42 +27,53 @@ function getStatusClasses(status) {
   return "border-line bg-surface text-ink";
 }
 
+// PENDING reads as "CANDIDATE": it isn't a real merged resource yet.
+function getStatusLabel(status) {
+  return status === "PENDING" ? "CANDIDATE" : status;
+}
+
 function StatusBadge({ status }) {
   return (
     <span
-      className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusClasses(status)}`}
+      className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${getStatusClasses(status)}`}
     >
-      {status}
+      {getStatusLabel(status)}
     </span>
   );
 }
 
+// Resource and merged ids aren't shown as list text, but stay one hover away
+// via the title attribute (and remain visible in the detail view facts).
+function candidateSourcesTitle(candidate) {
+  const parts = [`Source resources: ${candidate.resource_ids.join(", ")}`];
+  if (candidate.merged_resource_id) {
+    parts.push(`Merged resource: ${candidate.merged_resource_id}`);
+  }
+  return parts.join(" · ");
+}
+
 function CandidateQueueItem({ candidate, isSelected, onSelect }) {
+  const name = useMergeCandidateName(ENDPOINT, candidate.resource_ids);
+  const displayName = name ?? `Candidate #${candidate.id}`;
+
   return (
     <button
       type="button"
       onClick={() => onSelect(candidate.id)}
       aria-pressed={isSelected}
+      title={candidateSourcesTitle(candidate)}
       className={`w-full rounded-md border px-3 py-3 text-left transition ${
         isSelected
           ? "border-primary bg-primary-soft"
           : "border-transparent bg-panel hover:border-line hover:bg-surface"
       } focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2`}
     >
-      <span className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-semibold text-ink">
-          Candidate #{candidate.id}
+      <span className="flex items-start justify-between gap-2">
+        <span className="min-w-0 break-words font-semibold text-ink">
+          {displayName}
         </span>
         <StatusBadge status={candidate.status} />
       </span>
-      <span className="mt-2 block break-words text-sm text-ink-muted">
-        Resources {candidate.resource_ids.join(", ")}
-      </span>
-      {candidate.merged_resource_id ? (
-        <span className="mt-1 block break-words text-sm text-ink-muted">
-          Merged {candidate.merged_resource_id}
-        </span>
-      ) : null}
     </button>
   );
 }
@@ -225,6 +237,7 @@ function CandidateDecisionPanel({
   } = candidateQuery;
 
   const candidate = detailCandidate ?? listCandidate;
+  const name = useMergeCandidateName(ENDPOINT, candidate?.resource_ids);
 
   if (!selectedId) {
     return (
@@ -265,10 +278,10 @@ function CandidateDecisionPanel({
       ) : null}
 
       <div className="space-y-4 px-5 py-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-2xl font-semibold text-ink">
-              Candidate #{candidate.id}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="break-words text-2xl font-semibold text-ink">
+              {name ?? `Candidate #${candidate.id}`}
             </h2>
             <p className="mt-1 text-sm text-ink-muted">
               Decide whether these resources should become one curated record.
