@@ -21,8 +21,18 @@ from uuid import uuid4
 import logging
 
 from opentelemetry import trace
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.routing import Match
+
+try:
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.routing import Match
+except ModuleNotFoundError as exc:  # pragma: no cover - only hit without Starlette
+    # Starlette is an optional extra (see pyproject `asgi`), not a hard dep, so
+    # the tracing/logging core stays framework-free. Fail with a clear pointer
+    # rather than a bare import error when this ASGI-only module is imported.
+    raise ModuleNotFoundError(
+        "stitch.observability.middleware requires Starlette; "
+        "install it via the extra: stitch-observability[asgi]"
+    ) from exc
 
 if TYPE_CHECKING:
     from starlette.requests import Request

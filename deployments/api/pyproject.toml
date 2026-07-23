@@ -19,7 +19,7 @@ dependencies = [
   "sqlalchemy>=2.0.44",
   "stitch-auth",
   "stitch-models",
-  "stitch-observability",
+  "stitch-observability[asgi]",
   "stitch-ogsi",
 ]
 

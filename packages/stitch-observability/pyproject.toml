@@ -18,6 +18,13 @@ dependencies = [
   "pydantic-settings>=2.11.0",
 ]
 
+[project.optional-dependencies]
+# The `middleware` submodule is Starlette middleware (BaseHTTPMiddleware +
+# routing.Match), so it needs Starlette at import time. It's an optional extra
+# rather than a hard dependency so the tracing/logging core stays framework-free;
+# a consumer that uses RequestContextMiddleware installs stitch-observability[asgi].
+asgi = ["starlette>=0.40"]
+
 [build-system]
 requires = ["uv_build>=0.9.30,<0.10.0"]
 build-backend = "uv_build"
@@ -33,7 +40,7 @@ python_functions = ["test_*"]
 addopts = ["-v", "--strict-markers", "--tb=short"]
 
 [dependency-groups]
-# fastapi + httpx are test-only: RequestContextMiddleware is Starlette
-# middleware (in the `middleware` submodule, kept out of the top-level package
-# import so tracing/logging stay framework-free), exercised via TestClient.
+# fastapi + httpx are test-only. fastapi also pulls in Starlette (the `asgi`
+# extra's dependency), so the middleware tests exercise the real import path
+# without the suite needing to install the extra explicitly.
 dev = ["pytest>=9.0.2", "fastapi[standard-no-fastapi-cloud-cli]>=0.135.1", "httpx>=0.28.0"]

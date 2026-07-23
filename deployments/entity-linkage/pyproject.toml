@@ -12,7 +12,7 @@ dependencies = [
   "stitch-auth",
   "stitch-client",
   "stitch-models",
-  "stitch-observability",
+  "stitch-observability[asgi]",
   "stitch-ogsi",
 ]
 

@@ -1262,7 +1262,7 @@ dependencies = [
     { name = "sqlalchemy" },
     { name = "stitch-auth" },
     { name = "stitch-models" },
-    { name = "stitch-observability" },
+    { name = "stitch-observability", extra = ["asgi"] },
     { name = "stitch-ogsi" },
 ]
 
@@ -1286,7 +1286,7 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0.44" },
     { name = "stitch-auth", editable = "packages/stitch-auth" },
     { name = "stitch-models", editable = "packages/stitch-models" },
-    { name = "stitch-observability", editable = "packages/stitch-observability" },
+    { name = "stitch-observability", extras = ["asgi"], editable = "packages/stitch-observability" },
     { name = "stitch-ogsi", editable = "packages/stitch-ogsi" },
 ]
 
@@ -1366,7 +1366,7 @@ dependencies = [
     { name = "stitch-auth" },
     { name = "stitch-client" },
     { name = "stitch-models" },
-    { name = "stitch-observability" },
+    { name = "stitch-observability", extra = ["asgi"] },
     { name = "stitch-ogsi" },
 ]
 
@@ -1387,7 +1387,7 @@ requires-dist = [
     { name = "stitch-auth", editable = "packages/stitch-auth" },
     { name = "stitch-client", editable = "packages/stitch-client" },
     { name = "stitch-models", editable = "packages/stitch-models" },
-    { name = "stitch-observability", editable = "packages/stitch-observability" },
+    { name = "stitch-observability", extras = ["asgi"], editable = "packages/stitch-observability" },
     { name = "stitch-ogsi", editable = "packages/stitch-ogsi" },
 ]
 
@@ -1411,7 +1411,7 @@ dependencies = [
     { name = "stitch-auth" },
     { name = "stitch-client" },
     { name = "stitch-models" },
-    { name = "stitch-observability" },
+    { name = "stitch-observability", extra = ["asgi"] },
     { name = "stitch-ogsi" },
 ]
 
@@ -1430,7 +1430,7 @@ requires-dist = [
     { name = "stitch-auth", editable = "packages/stitch-auth" },
     { name = "stitch-client", editable = "packages/stitch-client" },
     { name = "stitch-models", editable = "packages/stitch-models" },
-    { name = "stitch-observability", editable = "packages/stitch-observability" },
+    { name = "stitch-observability", extras = ["asgi"], editable = "packages/stitch-observability" },
     { name = "stitch-ogsi", editable = "packages/stitch-ogsi" },
 ]
 
@@ -1473,6 +1473,11 @@ dependencies = [
     { name = "pydantic-settings" },
 ]
 
+[package.optional-dependencies]
+asgi = [
+    { name = "starlette" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "fastapi", extra = ["standard-no-fastapi-cloud-cli"] },
@@ -1488,7 +1493,9 @@ requires-dist = [
     { name = "opentelemetry-instrumentation-sqlalchemy", specifier = ">=0.65b0" },
     { name = "opentelemetry-sdk", specifier = ">=1.30.0" },
     { name = "pydantic-settings", specifier = ">=2.11.0" },
+    { name = "starlette", marker = "extra == 'asgi'", specifier = ">=0.40" },
 ]
+provides-extras = ["asgi"]
 
 [package.metadata.requires-dev]
 dev = [
