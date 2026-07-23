@@ -1,7 +1,7 @@
 """per-field per-source-record priority overrides
 
 Revision ID: a3f5c2e9b1d4
-Revises: f3fb36006ce6
+Revises: 790b2078d706
 Create Date: 2026-07-20 00:00:00.000000
 
 Re-key ``og_field_resource_source_priority`` from the per-``(resource, source)``
@@ -21,7 +21,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "a3f5c2e9b1d4"
-down_revision = "f3fb36006ce6"
+down_revision = "790b2078d706"
 branch_labels = None
 depends_on = None
 

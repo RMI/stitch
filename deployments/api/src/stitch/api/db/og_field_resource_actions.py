@@ -112,12 +112,7 @@ async def filter_options(
     ranked = add_ranking(filtered).cte("ranked")
     value_col = getattr(ranked.c, value_attr_for(params.field))
     labeled = value_col.label("value")
-    stmt = (
-        select(labeled)
-        .where(value_col.is_not(None), value_col != "")
-        .distinct()
-        .order_by(labeled)
-    )
+    stmt = select(labeled).where(value_col.is_not(None)).distinct().order_by(labeled)
     values = await session.scalars(stmt)
     return list(values.all())
 
@@ -151,10 +146,10 @@ async def field_source_values(
 ) -> list[OGFieldSourceValueView]:
     """Every source's value for one field of a resource, winner-first.
 
-    Returns only sources that carry a value for ``field`` (empty/null omitted),
-    in the same tiered per-field ranking coalescing uses -- curated (overridden)
-    records first by override priority, then the rest by global default priority.
-    The first entry is the coalesced winner. Licensing is applied. Each view's
+    Returns only sources that carry a value for ``field`` (unset omitted), in the
+    same tiered per-field ranking coalescing uses -- curated (overridden) records
+    first by override priority, then the rest by global default priority. The
+    first entry is the coalesced winner. Licensing is applied. Each view's
     ``priority`` is its 0-based rank position (list order is authoritative);
     ``is_override`` flags the curated rows.
     """
@@ -169,15 +164,15 @@ async def field_source_values(
         )
 
     # field_source_candidates ranks in SQL by the same tiered key as the coalesce
-    # winner and drops empty text, so the row order is winner-first and rank is
-    # just the enumerate index.
+    # winner, so the row order is winner-first and rank is just the enumerate
+    # index. Empty text can't be persisted, so every returned row is a real value.
     rows = (
         await session.execute(field_source_candidates(id, field, licensed_sources))
     ).all()
     return [
         OGFieldSourceValueView(
             source=row.source,
-            id=row.source_pk,
+            source_id=row.source_pk,
             value=materialize_value(
                 field,
                 value_text=row.value_text,
@@ -333,6 +328,13 @@ async def apply_resource_merge(
         )
 
     # all ids exist, none have already been repointed
+    #
+    # The merge target is a brand-new resource with no rows in
+    # og_field_resource_source_priority, so it resolves fields in the default
+    # global source order. Any per-field/per-resource priority overrides on the
+    # originals are intentionally NOT carried over -- merging resets ordering to
+    # default. (No-op reset today since the target is fresh; a later PR handles
+    # an explicit reset if merge semantics ever preserve an existing resource.)
     new_resource = ResourceModel.create(created_by=user)
     session.add(new_resource)
     await session.flush()

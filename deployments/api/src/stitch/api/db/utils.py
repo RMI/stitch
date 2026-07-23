@@ -1,4 +1,4 @@
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from functools import reduce
 from typing import Any, Protocol
 
@@ -8,6 +8,7 @@ from stitch.ogsi.model import (
     OGFieldDetailView,
     OGFieldListItemView,
     OGFieldResource,
+    OGFieldSource,
     OGFieldSourceView,
     OGFieldView,
     OGSISrcKey,
@@ -17,14 +18,86 @@ from stitch.api.db.errors import ResourceIntegrityError
 
 from .model import ResourceModel
 from .model.oil_gas_field_source_value import ATTRIBUTE_NAMES, materialize_value
-from .queries import coalesced_winner_rows
+from .queries import coalesced_candidate_rows, coalesced_winner_rows
 
 # Per-field coalesced provenance: field -> (winning value, source key, source id),
 # or None when no source carries a value for the field.
 type ProvMap = dict[str, tuple[Any, OGSISrcKey, int] | None]
 
+# One flat ``rn == 1`` winner row: (colname, value_text, value_num, value_json,
+# source, source_pk). The ranking is done in SQL; these carry the chosen value.
+type WinnerRow = tuple[str, Any, Any, Any, OGSISrcKey, int]
+
 
 OG_FIELD_SOURCE_VIEW_ADAPTER = TypeAdapter(OGFieldSourceView)
+OG_FIELD_SOURCE_ADAPTER = TypeAdapter(OGFieldSource)
+
+
+def _view_and_provenance(
+    winner_rows: Iterable[WinnerRow],
+) -> tuple[OilGasFieldBase, ProvMap]:
+    """Build the coalesced view + provenance from already-ranked winner rows.
+
+    ``winner_rows`` is the ``rn == 1`` set (one row per field). The ranking --
+    the coalescing decision -- already happened in SQL; this only materializes
+    the typed value and records the winning source as provenance. Fields with no
+    winning row stay ``None``.
+    """
+    provenance: ProvMap = {colname: None for colname in ATTRIBUTE_NAMES}
+    for colname, value_text, value_num, value_json, source, source_pk in winner_rows:
+        provenance[colname] = (
+            materialize_value(
+                colname,
+                value_text=value_text,
+                value_num=value_num,
+                value_json=value_json,
+            ),
+            source,
+            source_pk,
+        )
+    view = OilGasFieldBase(
+        **{
+            colname: (None if prov is None else prov[0])
+            for colname, prov in provenance.items()
+        }
+    )
+    return view, provenance
+
+
+def _source_data_from_rows(rows: Sequence[Any]) -> list[OGFieldSource]:
+    """Rebuild the raw per-source entities from ranked candidate rows.
+
+    Groups the flat rows by ``source_pk`` (rank ignored -- every candidate row is
+    kept, not just winners) and reassembles each source's ``{field: value}`` plus
+    its ``source``/``source_record`` header. Rows arrive best-priority-first, so
+    the result is source-priority-ordered, matching the old listing.
+
+    A source carrying no value rows never appears here (it contributes no rows);
+    that matches "unset == absent" and differs only for the degenerate case of a
+    source with zero values.
+    """
+    by_source: dict[int, dict[str, Any]] = {}
+    for r in rows:
+        entry = by_source.get(r.source_pk)
+        if entry is None:
+            # Dense shape: seed every attribute to None (the long table is sparse,
+            # and the entity requires each field present), then fill what exists.
+            entry = {colname: None for colname in ATTRIBUTE_NAMES}
+            entry.update(
+                id=r.source_pk,
+                source=r.source,
+                source_record=r.source_record,
+            )
+            by_source[r.source_pk] = entry
+        entry[r.colname] = materialize_value(
+            r.colname,
+            value_text=r.value_text,
+            value_num=r.value_num,
+            value_json=r.value_json,
+        )
+    return [
+        OG_FIELD_SOURCE_ADAPTER.validate_python(entry) for entry in by_source.values()
+    ]
 
 
 class Identified(Protocol):
@@ -45,19 +118,66 @@ def partition_by_id_none[T: Identified](
     return reduce(_reducer, items, ([], []))
 
 
+async def coalesce_resources_with_sources(
+    session: AsyncSession,
+    resource_ids: Collection[int],
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> dict[int, OGFieldResource]:
+    """Detail-grade hydration for many resources in a SINGLE query.
+
+    Like ``coalesce_resources`` but also populates ``source_data``. One
+    ``coalesced_candidate_rows`` query returns every ranked value row (joined to
+    its source header) for all requested ids; per resource we derive the
+    coalesced view + provenance (the ``rn == 1`` rows) and the raw ``source_data``
+    (all rows grouped by source). The SQL ranking stays the only coalescer -- the
+    ``rn == 1`` cut is a filter on a rank SQL already computed, not a second
+    coalesce.
+
+    Used wherever the raw per-source rows are needed: the single-resource detail
+    path (``resource_model_to_entity``) and the merge-candidate ``compare`` view.
+    The list path uses ``coalesce_resources`` (no ``source_data``), which never
+    pays to hydrate the raw rows.
+    """
+    ids = list(dict.fromkeys(resource_ids))
+    rows_by_id: dict[int, list[Any]] = {rid: [] for rid in ids}
+    if ids:
+        result = await session.execute(coalesced_candidate_rows(ids, licensed_sources))
+        for row in result.all():
+            rows_by_id[row.resource_id].append(row)
+
+    out: dict[int, OGFieldResource] = {}
+    for rid in ids:
+        rows = rows_by_id[rid]
+        winner_rows: list[WinnerRow] = [
+            (r.colname, r.value_text, r.value_num, r.value_json, r.source, r.source_pk)
+            for r in rows
+            if r.rn == 1
+        ]
+        view, provenance = _view_and_provenance(winner_rows)
+        out[rid] = OGFieldResource(
+            id=rid,
+            view=view,
+            provenance=provenance,
+            source_data=_source_data_from_rows(rows),
+            constituents=frozenset(),
+        )
+    return out
+
+
 async def resource_model_to_entity(
     session: AsyncSession,
     model: ResourceModel,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> OGFieldResource:
-    base = (await coalesce_resources(session, [model.id], licensed_sources))[model.id]
+    """Build the full detail entity for one resource.
 
-    # coalesce_resources builds only the coalesced view + provenance (SQL-side).
-    # Detail views also expose the raw per-source rows, so fetch them here.
-    rows_by_id = await ResourceModel.source_data_by_resource_id(
-        session, [model.id], licensed_sources
-    )
-    sources = [src for src, _ in rows_by_id.get(model.id, [])]
+    Hydrates view + provenance + ``source_data`` in a single query via
+    ``coalesce_resources_with_sources``, then layers on the model-derived
+    ``constituents`` and ``repointed_to``.
+    """
+    base = (
+        await coalesce_resources_with_sources(session, [model.id], licensed_sources)
+    )[model.id]
 
     constituent_models = await ResourceModel.get_constituents_by_root_id(
         session, model.id
@@ -71,11 +191,7 @@ async def resource_model_to_entity(
         repointed_to = rep_model.id if rep_model else None
 
     return base.model_copy(
-        update={
-            "source_data": sources,
-            "repointed_to": repointed_to,
-            "constituents": constituents,
-        }
+        update={"repointed_to": repointed_to, "constituents": constituents}
     )
 
 
@@ -86,41 +202,29 @@ async def coalesce_resources(
 ) -> dict[int, OGFieldResource]:
     """Coalesce many resources into one entity each -- coalescing done in SQL.
 
-    The single coalescer behind both the detail and list paths. The winning
-    value + provenance for every ``(resource, field)`` is chosen by the SQL
-    ranking (``coalesced_winner_rows``); Python only materializes the typed
-    value and reads the winning source as provenance -- no priority logic here.
-    Returns an entry for every requested id; ids with no active/licensed source
-    data (including repointed resources, which the query filters out) yield a
-    null-shell view + all-``None`` provenance.
+    The list-path coalescer: the winning value + provenance for every
+    ``(resource, field)`` is chosen by the SQL ranking (``coalesced_winner_rows``);
+    Python only materializes the typed value and reads the winning source as
+    provenance -- no priority logic here. Returns an entry for every requested id;
+    ids with no active/licensed source data (including repointed resources, which
+    the query filters out) yield a null-shell view + all-``None`` provenance.
 
-    ``source_data`` is left empty: the coalesced view carries everything the
-    list needs, and the detail path attaches raw sources separately (see
-    ``resource_model_to_entity``).
+    ``source_data`` is left empty: the list only needs the coalesced view, so it
+    never pays to hydrate the raw rows. The detail path builds view *and*
+    ``source_data`` from one query instead (see ``resource_model_to_entity``).
     """
     ids = list(dict.fromkeys(resource_ids))
-    provenance_by_id: dict[int, ProvMap] = {
-        rid: {colname: None for colname in ATTRIBUTE_NAMES} for rid in ids
-    }
+    winners_by_id: dict[int, list[WinnerRow]] = {rid: [] for rid in ids}
     if ids:
         rows = await session.execute(coalesced_winner_rows(ids, licensed_sources))
         for rid, colname, value_text, value_num, value_json, source, source_pk in rows:
-            value = materialize_value(
-                colname,
-                value_text=value_text,
-                value_num=value_num,
-                value_json=value_json,
+            winners_by_id[rid].append(
+                (colname, value_text, value_num, value_json, source, source_pk)
             )
-            provenance_by_id[rid][colname] = (value, source, source_pk)
 
     out: dict[int, OGFieldResource] = {}
-    for rid, provenance in provenance_by_id.items():
-        view = OilGasFieldBase(
-            **{
-                colname: (None if prov is None else prov[0])
-                for colname, prov in provenance.items()
-            }
-        )
+    for rid in ids:
+        view, provenance = _view_and_provenance(winners_by_id[rid])
         out[rid] = OGFieldResource(
             id=rid,
             source_data=[],

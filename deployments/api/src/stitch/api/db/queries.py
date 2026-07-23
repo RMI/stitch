@@ -176,23 +176,24 @@ def base_source_query(
 
 
 def _ranked(base_cte: CTE) -> CTE:
-    """Attach the tiered coalesce rank ``rn`` to each candidate row.
+    """Attach the tiered coalesce rank ``rn`` to every candidate row (no cut).
 
-    Single source of truth for "who beats whom": the empty-text filter and the
-    tiered order key live here, shared by the winner cut (``add_ranking``) and the
-    per-field listing (``field_source_candidates``) so the two can't drift.
+    Single source of truth for "who beats whom", shared by the winner cut
+    (``add_ranking`` -> ``rn == 1``), the per-field listing
+    (``field_source_candidates``), and the all-candidates detail hydration
+    (``coalesced_candidate_rows``) so they can't drift. ``rn == 1`` is the winner
+    within each ``(resource_id, colname)`` partition.
 
-    Empty-string text can't win coalescing, so those rows are dropped before the
-    window (a lower-priority non-empty source wins instead). Only text-kind
-    attributes populate ``value_text`` (``ck_source_value_exactly_one``), so this
-    leaves numeric/JSON untouched; if every source is empty/absent for a field, no
-    row survives and the field coalesces to NULL. ``rn == 1`` is the winner within
-    each ``(resource_id, colname)`` partition.
+    The order is tiered: curated records (an override row exists for the value, so
+    ``override_priority`` is NOT NULL) rank above default ones (``NULLS LAST`` is
+    the tier split), then global default priority, then source/source_pk
+    tiebreaks. No empty-string handling is needed here: empty text can't be
+    persisted (write-path skip + DB CHECK ``ck_source_value_text_nonempty``, see
+    ``model.oil_gas_field_source_value``).
     """
     cols = base_cte.c
     return (
         select(base_cte)
-        .where(or_(cols.value_text.is_(None), cols.value_text != ""))
         .add_columns(
             func.row_number()
             .over(
@@ -254,9 +255,9 @@ def field_source_candidates(
     The same tiered ranking as coalescing, sharing ``_ranked`` with
     ``add_ranking`` -- this is that ranking *without* the ``rn == 1`` cut, so it
     returns all candidate rows for the field ordered best-first (by ``rn``).
-    Empty-string text values are dropped by ``_ranked`` (they can't win), so the
-    row set is exactly the field's eligible sources. ``is_override`` is true when
-    a curator has re-ranked this record for the field (an override row exists).
+    Empty text can't be persisted (write-path skip + DB CHECK), so the row set is
+    exactly the field's eligible sources. ``is_override`` is true when a curator
+    has re-ranked this record for the field (an override row exists).
     Powers both the read endpoint and the write-path eligibility/no-op checks.
     """
     base = construct_base_query_statement(licensed_sources, resource_ids=[resource_id])
@@ -273,6 +274,58 @@ def field_source_candidates(
         )
         .where(c.colname == field)
         .order_by(c.rn)
+    )
+
+
+def coalesced_candidate_rows(
+    resource_ids: Collection[int],
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> Select[tuple[Any, ...]]:
+    """Every ranked candidate value row for the given resources, winner-first.
+
+    ``coalesced_winner_rows`` *without* the ``rn == 1`` cut: it keeps all
+    candidate rows (each tagged with ``rn``) and joins each source header for
+    ``source_record``. This lets the detail path build both the coalesced view +
+    provenance (the ``rn == 1`` rows) and the raw ``source_data`` (all rows,
+    grouped by ``source_pk``) from a SINGLE query, replacing the former
+    winner-query + ``source_data_by_resource_id`` pair (see
+    ``utils.resource_model_to_entity``). Rows are ordered
+    ``(default_priority, source, source_pk, colname)`` so grouping by source
+    yields sources best-priority-first, matching the old source ordering.
+
+    ``source_record`` repeats per value row -- bounded (one resource's handful of
+    sources), needed to rebuild the source entities, and dropped again by the
+    source *view*.
+
+    If the lazy field-source endpoint is later folded into the detail payload,
+    this is the query it would build on.
+    """
+    base = construct_base_query_statement(licensed_sources, resource_ids=resource_ids)
+    ranked = _ranked(base)
+    s = OilGasFieldSourceModel
+    return (
+        select(
+            ranked.c.resource_id,
+            ranked.c.colname,
+            ranked.c.value_text,
+            ranked.c.value_num,
+            ranked.c.value_json,
+            ranked.c.source,
+            ranked.c.source_pk,
+            ranked.c.rn,
+            s.source_record,
+        )
+        .join(s, s.id == ranked.c.source_pk)
+        # source_data grouping (utils._source_data_from_rows) relies on each
+        # source's rows being contiguous, so order by the source's global default
+        # priority -- per-field override_priority varies within a source and would
+        # fragment the grouping. rn (not this order) picks the per-field winner.
+        .order_by(
+            ranked.c.default_priority,
+            ranked.c.source,
+            ranked.c.source_pk,
+            ranked.c.colname,
+        )
     )
 
 

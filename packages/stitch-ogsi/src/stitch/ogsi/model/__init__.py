@@ -119,7 +119,8 @@ class OGFieldDetailView(OGFieldListItemView):
 class OGFieldSourceValueView(BaseModel):
     """One source's value for a single field, in effective priority order.
 
-    Returned by the per-field source-values endpoint, winner-first. ``priority``
+    Returned by the per-field source-values endpoint, winner-first. ``source_id``
+    is the id of the source record (distinct from any resource id). ``priority``
     is the row's 0-based rank in that order (0 = coalesced winner); it is a rank
     *position*, not the stored priority number, because per-field tiering means
     the raw numbers are no longer a single cross-record total order. **Consumers
@@ -130,7 +131,7 @@ class OGFieldSourceValueView(BaseModel):
     """
 
     source: OGSISrcKey
-    id: int
+    source_id: int
     value: Any
     priority: int
     is_override: bool = False

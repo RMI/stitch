@@ -19,10 +19,16 @@ vi.mock("../queries/api", () => ({
 }));
 
 const TWO_SOURCES = [
-  { source: "wm", id: 20, value: "Foo Basin", priority: 0, is_override: false },
+  {
+    source: "wm",
+    source_id: 20,
+    value: "Foo Basin",
+    priority: 0,
+    is_override: false,
+  },
   {
     source: "gem",
-    id: 10,
+    source_id: 10,
     value: "Bar Basin",
     priority: 1,
     is_override: false,

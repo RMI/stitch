@@ -104,7 +104,7 @@ describe("MergeCandidateReviewPage", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Merged preview")).toBeInTheDocument();
     expect(
-      screen.getByText("Merge preview is temporarily unavailable."),
+      screen.getByText("Merge preview is unavailable."),
     ).toBeInTheDocument();
     expect(previewHeading.compareDocumentPosition(decisionNotes)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,

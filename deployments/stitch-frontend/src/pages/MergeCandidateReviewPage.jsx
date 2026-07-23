@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useQueryClient } from "@tanstack/react-query";
 import ResourceView from "../components/ResourceView";
@@ -201,7 +201,7 @@ function PreviewPanel({ candidate }) {
       <h3 className="text-base font-semibold text-ink">Merged preview</h3>
 
       <div className="mt-3 space-y-2 text-sm text-ink-muted">
-        <p>Merge preview is temporarily unavailable.</p>
+        <p>Merge preview is unavailable.</p>
         {candidate.merged_resource_id ? (
           <p>Merged resource: {candidate.merged_resource_id}</p>
         ) : null}
@@ -377,12 +377,13 @@ export default function MergeCandidateReviewPage() {
     error: listErrorObj,
   } = useMergeCandidates(ENDPOINT, true);
 
-  useEffect(() => {
-    if (!selectedId && candidates?.length) {
-      const firstPending = candidates.find((c) => c.status === "PENDING");
-      setSelectedId(firstPending?.id ?? candidates[0].id);
-    }
-  }, [candidates, selectedId]);
+  // Default to the first pending candidate once the list loads. Done during
+  // render (not in an effect) so the selection is set before the first paint
+  // and without triggering a cascading re-render.
+  if (!selectedId && candidates?.length) {
+    const firstPending = candidates.find((c) => c.status === "PENDING");
+    setSelectedId(firstPending?.id ?? candidates[0].id);
+  }
 
   const candidateQuery = useMergeCandidate(
     ENDPOINT,

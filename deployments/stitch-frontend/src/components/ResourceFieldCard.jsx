@@ -25,7 +25,7 @@ function arraysEqual(a, b) {
 function SourceValueRow({
   source,
   value,
-  id,
+  sourceId,
   isWinner,
   isOverride,
   editControls,
@@ -33,7 +33,9 @@ function SourceValueRow({
   const barColor = SOURCE_COLORS[source] ?? DEFAULT_FIELD_COLOR;
   const sourceLabel = SOURCE_LABELS[source] ?? UNKNOWN_SOURCE_LABEL;
   const meta =
-    id !== null && id !== undefined ? `${sourceLabel} · #${id}` : sourceLabel;
+    sourceId !== null && sourceId !== undefined
+      ? `${sourceLabel} · #${sourceId}`
+      : sourceLabel;
   // Quote strings to set text values apart; render numbers/booleans bare.
   const display = typeof value === "string" ? `"${value}"` : String(value);
 
@@ -103,9 +105,12 @@ function FieldSourcesPanel({
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
-  const originalOrder = useMemo(() => sources.map((row) => row.id), [sources]);
+  const originalOrder = useMemo(
+    () => sources.map((row) => row.source_id),
+    [sources],
+  );
   const sourcesById = useMemo(
-    () => new Map(sources.map((row) => [row.id, row])),
+    () => new Map(sources.map((row) => [row.source_id, row])),
     [sources],
   );
 
@@ -220,10 +225,10 @@ function FieldSourcesPanel({
               (top of the working order) modes. */}
           {displayRows.map((row, idx) => (
             <SourceValueRow
-              key={`${row.source}-${row.id}`}
+              key={`${row.source}-${row.source_id}`}
               source={row.source}
               value={row.value}
-              id={row.id}
+              sourceId={row.source_id}
               isWinner={idx === 0}
               isOverride={!isEditing && row.is_override}
               editControls={
