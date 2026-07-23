@@ -42,8 +42,8 @@ function renderCard(props = {}) {
 }
 
 const TWO_SOURCES = [
-  { source: "wm", id: 20, value: "Foo Basin", priority: 1 },
-  { source: "gem", id: 10, value: "Bar Basin", priority: 2 },
+  { source: "wm", source_id: 20, value: "Foo Basin", priority: 1 },
+  { source: "gem", source_id: 10, value: "Bar Basin", priority: 2 },
 ];
 
 describe("ResourceFieldCard", () => {

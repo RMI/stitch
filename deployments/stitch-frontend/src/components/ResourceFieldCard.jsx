@@ -21,7 +21,7 @@ const RESOURCE_WRITE = "resource:write";
 function SourceValueRow({
   source,
   value,
-  id,
+  sourceId,
   isWinner,
   isEditing,
   isFirst,
@@ -32,7 +32,9 @@ function SourceValueRow({
   const barColor = SOURCE_COLORS[source] ?? DEFAULT_FIELD_COLOR;
   const sourceLabel = SOURCE_LABELS[source] ?? UNKNOWN_SOURCE_LABEL;
   const meta =
-    id !== null && id !== undefined ? `${sourceLabel} · #${id}` : sourceLabel;
+    sourceId !== null && sourceId !== undefined
+      ? `${sourceLabel} · #${sourceId}`
+      : sourceLabel;
   // Quote strings to set text values apart; render numbers/booleans bare.
   const display = typeof value === "string" ? `"${value}"` : String(value);
 
@@ -147,10 +149,10 @@ function FieldSourcesPanel({
           {/* Best-priority first, so index 0 is the winner. */}
           {sources.map((row, idx) => (
             <SourceValueRow
-              key={`${row.source}-${row.id}`}
+              key={`${row.source}-${row.source_id}`}
               source={row.source}
               value={row.value}
-              id={row.id}
+              sourceId={row.source_id}
               isWinner={idx === 0}
               isEditing={isEditing}
               isFirst={idx === 0}
@@ -166,7 +168,10 @@ function FieldSourcesPanel({
 }
 
 function sameOrder(a, b) {
-  return a.length === b.length && a.every((row, idx) => row.id === b[idx].id);
+  return (
+    a.length === b.length &&
+    a.every((row, idx) => row.source_id === b[idx].source_id)
+  );
 }
 
 // A FieldCard for the resource detail page: clicking a populated value lazily
@@ -239,7 +244,7 @@ export default function ResourceFieldCard({
         config,
         resourceId,
         fieldKey,
-        workingOrder.map((row) => row.id),
+        workingOrder.map((row) => row.source_id),
         fetcher,
         endpoint,
       );

@@ -183,7 +183,10 @@ async def field_source_values(
             (
                 sort_key,
                 OGFieldSourceValueView(
-                    source=src.source, id=src.id, value=value, priority=effective
+                    source=src.source,
+                    source_id=src.id,
+                    value=value,
+                    priority=effective,
                 ),
             )
         )
@@ -229,7 +232,7 @@ async def set_field_source_priority(
     # Eligible = records with a value for this field (active + licensed). This one
     # check subsumes "active member" and "has a value"; source keys come from it.
     current = await field_source_values(session, id, field, licensed_sources)
-    eligible = {v.id: v.source for v in current}
+    eligible = {v.source_id: v.source for v in current}
     requested = set(ordered_source_pks)
     if requested != set(eligible):
         missing = sorted(set(eligible) - requested)
@@ -240,7 +243,7 @@ async def set_field_source_priority(
         )
 
     # No-op when the requested order reproduces the current effective order.
-    if [v.id for v in current] == list(ordered_source_pks):
+    if [v.source_id for v in current] == list(ordered_source_pks):
         return current
 
     await session.execute(
@@ -329,6 +332,13 @@ async def apply_resource_merge(
         )
 
     # all ids exist, none have already been repointed
+    #
+    # The merge target is a brand-new resource with no rows in
+    # og_field_resource_source_priority, so it resolves fields in the default
+    # global source order. Any per-field/per-resource priority overrides on the
+    # originals are intentionally NOT carried over -- merging resets ordering to
+    # default. (No-op reset today since the target is fresh; a later PR handles
+    # an explicit reset if merge semantics ever preserve an existing resource.)
     new_resource = ResourceModel.create(created_by=user)
     session.add(new_resource)
     await session.flush()

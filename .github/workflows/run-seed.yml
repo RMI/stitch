@@ -36,7 +36,7 @@ jobs:
         run: docker pull "${{ inputs.full-image-name }}"
 
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Run seed job
         env:
@@ -98,7 +98,7 @@ jobs:
 
       - name: Upload comment JSON artifact
         if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: comment-json-seed
           path: /tmp/comment-json/*.json

@@ -119,15 +119,17 @@ class OGFieldDetailView(OGFieldListItemView):
 class OGFieldSourceValueView(BaseModel):
     """One source record's value for a single field, with its effective priority.
 
-    Returned by the per-field source-values endpoint, best-first. ``priority`` is
-    the effective per-field priority (an override value if the record is pinned,
-    otherwise the source's global default). Because overridden records always
-    outrank non-overridden ones for a field, ``priority`` is not a total order
-    across records -- rely on list order, not on comparing ``priority`` ints.
+    Returned by the per-field source-values endpoint, best-first. ``source_id``
+    is the id of the source record (distinct from any resource id). ``priority``
+    is the effective per-field priority (an override value if the record is
+    pinned, otherwise the source's global default). Because overridden records
+    always outrank non-overridden ones for a field, ``priority`` is not a total
+    order across records -- rely on list order, not on comparing ``priority``
+    ints.
     """
 
     source: OGSISrcKey
-    id: int
+    source_id: int
     value: Any
     priority: int
 
