@@ -300,6 +300,8 @@ jobs:
         POSTGRES_DB=${{ needs.deploy-db.outputs.postgres-db }}
         POSTGRES_USER=${{ needs.deploy-db.outputs.postgres-user }}
         PGSSLMODE=${{ needs.deploy-db.outputs.postgres-sslmode }}
+        OTEL_SERVICE_NAME=stitch-api
+        OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: api
       # Keep staging / dress-rehearsal always-on; development scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
@@ -330,6 +332,8 @@ jobs:
         AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
         ENTITY_LINKAGE_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
         ENTITY_LINKAGE_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
+        OTEL_SERVICE_NAME=stitch-entity-linkage
+        OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: entity-linkage
       # Keep staging / dress-rehearsal always-on; development scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
@@ -365,6 +369,8 @@ jobs:
         STITCH_LLM_AZURE_OPENAI_BASE_URL=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-base-url }}
         STITCH_LLM_AZURE_OPENAI_MODEL=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-model }}
         STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-timeout-seconds }}
+        OTEL_SERVICE_NAME=stitch-llm
+        OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: stitch-llm
       # Keep staging / dress-rehearsal always-on; development scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}

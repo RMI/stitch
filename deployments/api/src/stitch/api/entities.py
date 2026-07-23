@@ -6,11 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, EmailStr, Field, computed_field
 
 from stitch.ogsi.model import (
-    CCR_SRC,
-    GEM_SRC,
-    LLM_SRC,
-    RMI_SRC,
-    WM_SRC,
+    SOURCE_PRIORITY,
     OGFieldSourceValueView,
 )
 from stitch.ogsi.model.types import (
@@ -22,13 +18,7 @@ from stitch.ogsi.model.types import (
 )
 from stitch.ogsi.model.og_field import OilGasFieldBase
 
-OGSI_SOURCE_DEFAULT: tuple[OGSISrcKey, ...] = (
-    RMI_SRC,
-    GEM_SRC,
-    WM_SRC,
-    CCR_SRC,
-    LLM_SRC,
-)
+OGSI_SOURCE_DEFAULT: tuple[OGSISrcKey, ...] = SOURCE_PRIORITY
 
 
 class Timestamped(BaseModel):
