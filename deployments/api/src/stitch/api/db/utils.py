@@ -118,31 +118,66 @@ def partition_by_id_none[T: Identified](
     return reduce(_reducer, items, ([], []))
 
 
+async def coalesce_resources_with_sources(
+    session: AsyncSession,
+    resource_ids: Collection[int],
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> dict[int, OGFieldResource]:
+    """Detail-grade hydration for many resources in a SINGLE query.
+
+    Like ``coalesce_resources`` but also populates ``source_data``. One
+    ``coalesced_candidate_rows`` query returns every ranked value row (joined to
+    its source header) for all requested ids; per resource we derive the
+    coalesced view + provenance (the ``rn == 1`` rows) and the raw ``source_data``
+    (all rows grouped by source). The SQL ranking stays the only coalescer -- the
+    ``rn == 1`` cut is a filter on a rank SQL already computed, not a second
+    coalesce.
+
+    Used wherever the raw per-source rows are needed: the single-resource detail
+    path (``resource_model_to_entity``) and the merge-candidate ``compare`` view.
+    The list path uses ``coalesce_resources`` (no ``source_data``), which never
+    pays to hydrate the raw rows.
+    """
+    ids = list(dict.fromkeys(resource_ids))
+    rows_by_id: dict[int, list[Any]] = {rid: [] for rid in ids}
+    if ids:
+        result = await session.execute(coalesced_candidate_rows(ids, licensed_sources))
+        for row in result.all():
+            rows_by_id[row.resource_id].append(row)
+
+    out: dict[int, OGFieldResource] = {}
+    for rid in ids:
+        rows = rows_by_id[rid]
+        winner_rows: list[WinnerRow] = [
+            (r.colname, r.value_text, r.value_num, r.value_json, r.source, r.source_pk)
+            for r in rows
+            if r.rn == 1
+        ]
+        view, provenance = _view_and_provenance(winner_rows)
+        out[rid] = OGFieldResource(
+            id=rid,
+            view=view,
+            provenance=provenance,
+            source_data=_source_data_from_rows(rows),
+            constituents=frozenset(),
+        )
+    return out
+
+
 async def resource_model_to_entity(
     session: AsyncSession,
     model: ResourceModel,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> OGFieldResource:
-    """Build the full detail entity for one resource in a SINGLE query.
+    """Build the full detail entity for one resource.
 
-    ``coalesced_candidate_rows`` returns every ranked value row for the resource
-    (winner-first) joined to its source header. From that one result we derive
-    both the coalesced view + provenance (the ``rn == 1`` rows) and the raw
-    ``source_data`` (all rows, grouped by source). This replaces the former
-    winner-query + ``source_data_by_resource_id`` pair: one DB round-trip, and
-    the SQL ranking stays the only coalescer -- the ``rn == 1`` cut is a filter
-    on a rank SQL already computed, not a second coalesce.
+    Hydrates view + provenance + ``source_data`` in a single query via
+    ``coalesce_resources_with_sources``, then layers on the model-derived
+    ``constituents`` and ``repointed_to``.
     """
-    rows = (
-        await session.execute(coalesced_candidate_rows([model.id], licensed_sources))
-    ).all()
-    winner_rows: list[WinnerRow] = [
-        (r.colname, r.value_text, r.value_num, r.value_json, r.source, r.source_pk)
-        for r in rows
-        if r.rn == 1
-    ]
-    view, provenance = _view_and_provenance(winner_rows)
-    source_data = _source_data_from_rows(rows)
+    base = (
+        await coalesce_resources_with_sources(session, [model.id], licensed_sources)
+    )[model.id]
 
     constituent_models = await ResourceModel.get_constituents_by_root_id(
         session, model.id
@@ -155,13 +190,8 @@ async def resource_model_to_entity(
         rep_model = await session.get(ResourceModel, model.repointed_id)
         repointed_to = rep_model.id if rep_model else None
 
-    return OGFieldResource(
-        id=model.id,
-        view=view,
-        provenance=provenance,
-        source_data=source_data,
-        repointed_to=repointed_to,
-        constituents=constituents,
+    return base.model_copy(
+        update={"repointed_to": repointed_to, "constituents": constituents}
     )
 
 

@@ -14,6 +14,7 @@ from stitch.api.entities import (
     OGFieldFilterOptionsParams,
     OGFieldFilterOptionsResponse,
     MergeCandidateCreateRequest,
+    MergeCandidateDetailView,
     MergeCandidateReviewRequest,
     MergeCandidateView,
     OGFieldQueryParams,
@@ -104,16 +105,17 @@ async def list_merge_candidates(
 
 @router.get(
     "/merge-candidates/{id}",
-    response_model=MergeCandidateView,
+    response_model=MergeCandidateDetailView,
     dependencies=[Depends(require_permissions(MERGE_CANDIDATE_READ))],
 )
 async def get_merge_candidate(
-    *, uow: UnitOfWorkDep, _user: CurrentUser, id: int
-) -> MergeCandidateView:
+    *, uow: UnitOfWorkDep, _user: CurrentUser, claims: Claims, id: int
+) -> MergeCandidateDetailView:
     try:
         return await merge_candidate_actions.get_merge_candidate(
             session=uow.session,
             candidate_id=id,
+            licensed_sources=licensed_sources(claims),
         )
     except ResourceNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

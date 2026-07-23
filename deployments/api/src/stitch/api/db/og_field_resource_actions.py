@@ -161,7 +161,7 @@ async def field_source_values(
     )
     return [
         OGFieldSourceValueView(
-            source=src.source, id=src.id, value=value, priority=priority
+            source=src.source, source_id=src.id, value=value, priority=priority
         )
         for src, priority in by_id.get(id, [])
         if src.id is not None and (value := getattr(src, field)) is not None
@@ -231,6 +231,13 @@ async def apply_resource_merge(
         )
 
     # all ids exist, none have already been repointed
+    #
+    # The merge target is a brand-new resource with no rows in
+    # og_field_resource_source_priority, so it resolves fields in the default
+    # global source order. Any per-field/per-resource priority overrides on the
+    # originals are intentionally NOT carried over -- merging resets ordering to
+    # default. (No-op reset today since the target is fresh; a later PR handles
+    # an explicit reset if merge semantics ever preserve an existing resource.)
     new_resource = ResourceModel.create(created_by=user)
     session.add(new_resource)
     await session.flush()
