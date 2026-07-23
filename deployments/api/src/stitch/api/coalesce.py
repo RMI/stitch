@@ -67,10 +67,10 @@ def coalesce_og_field_resource(
             if src.id is None:
                 continue
             value = getattr(src, field)
-            # Skip absent values; ``""`` is treated as absent to match the
-            # per-field source-values endpoint (which filters ``value != ""``),
-            # so the coalesced winner never disagrees with the "All sources" list.
-            if value is None or value == "":
+            # Skip absent values. Empty text is never persisted (the write path
+            # drops it and the DB's ck_source_value_text_nonempty CHECK enforces
+            # it), so NULL/absent is the single "unset" sentinel here.
+            if value is None:
                 continue
             key = sort_key(field, src, src.id)
             if best is None or key < best[0]:

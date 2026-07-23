@@ -89,19 +89,6 @@ def test_same_source_records_ranked_individually():
     assert prov["basin"][2] == 2  # winning record id
 
 
-def test_empty_string_is_skipped_like_the_read_endpoint():
-    # gem(2) has an empty basin; the coalescer must fall through to wm(3), matching
-    # the field-source-values endpoint which filters value != "".
-    sources = [
-        _gem(id=2, name="GEM Name", country="USA", basin=""),
-        _wm(id=3, name="WM Name", country="CAN", basin="Beta"),
-    ]
-    view, prov = coalesce_og_field_resource(sources)
-
-    assert view.basin == "Beta"
-    assert prov["basin"][1] == "wm"
-
-
 def test_none_and_empty_overrides_match_default_order():
     sources = [
         _gem(id=2, name="GEM", country="USA", basin="Alpha"),

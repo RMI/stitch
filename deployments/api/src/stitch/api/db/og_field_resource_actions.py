@@ -101,12 +101,7 @@ async def filter_options(
     ranked = add_ranking(filtered).cte("ranked")
     value_col = getattr(ranked.c, value_attr_for(params.field))
     labeled = value_col.label("value")
-    stmt = (
-        select(labeled)
-        .where(value_col.is_not(None), value_col != "")
-        .distinct()
-        .order_by(labeled)
-    )
+    stmt = select(labeled).where(value_col.is_not(None)).distinct().order_by(labeled)
     values = await session.scalars(stmt)
     return list(values.all())
 
@@ -140,7 +135,7 @@ async def field_source_values(
 ) -> list[OGFieldSourceValueView]:
     """Every source record's value for one field of a resource, best-first.
 
-    Returns only records that carry a value for ``field`` (empty/null omitted),
+    Returns only records that carry a value for ``field`` (unset records omitted),
     each with its effective per-field priority. The first entry is the coalesced
     winner. Licensing is applied. Ordering is the same tiering the coalescer uses:
     records pinned by a per-field override rank ahead of non-overridden records,
@@ -173,7 +168,7 @@ async def field_source_values(
         if src.id is None:
             continue
         value = getattr(src, field)
-        if value is None or value == "":
+        if value is None:
             continue
         override = field_overrides.get(src.id)
         tier = 0 if override is not None else 1
