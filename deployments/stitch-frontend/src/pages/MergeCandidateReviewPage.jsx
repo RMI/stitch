@@ -201,7 +201,7 @@ function PreviewPanel({ candidate }) {
       <h3 className="text-base font-semibold text-ink">Merged preview</h3>
 
       <div className="mt-3 space-y-2 text-sm text-ink-muted">
-        <p>Merge preview is temporarily unavailable.</p>
+        <p>Merge preview is unavailable.</p>
         {candidate.merged_resource_id ? (
           <p>Merged resource: {candidate.merged_resource_id}</p>
         ) : null}
