@@ -1,18 +1,15 @@
 import { useMemo, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useQueryClient } from "@tanstack/react-query";
-import ResourceView from "../components/ResourceView";
+import { Link } from "react-router-dom";
 import Button from "../components/Button";
-import {
-  useMergeCandidates,
-  useMergeCandidate,
-  useMergeCandidatePreview,
-} from "../hooks/useResources";
+import MergeSourceComparison from "../components/MergeSourceComparison";
+import MergedResourceView from "../components/MergedResourceView";
+import { useMergeCandidates, useMergeCandidate } from "../hooks/useResources";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { reviewMergeCandidate } from "../queries/api";
 import { useConfig } from "../config/useConfig";
 import { resourceKeys } from "../queries/resources";
-import StructuredDataView from "../components/StructuredDataView";
 
 const ENDPOINT = "oil-gas-fields";
 
@@ -123,7 +120,17 @@ function CandidateFacts({ candidate }) {
       <div>
         <dt className="font-semibold text-ink-muted">Source resources</dt>
         <dd className="mt-1 break-words text-ink">
-          {candidate.resource_ids.join(", ")}
+          {candidate.resource_ids.map((id, index) => (
+            <span key={id}>
+              {index > 0 ? ", " : null}
+              <Link
+                to={`/${ENDPOINT}/${id}`}
+                className="text-primary underline"
+              >
+                {id}
+              </Link>
+            </span>
+          ))}
         </dd>
       </div>
       <div>
@@ -200,89 +207,9 @@ function DecisionControls({
   );
 }
 
-function PreviewPanel({
-  candidate,
-  shouldShowPreview,
-  preview,
-  isLoading,
-  isError,
-  error,
-}) {
-  return (
-    <section className="border-t border-line px-5 py-5">
-      <h3 className="text-base font-semibold text-ink">Merged preview</h3>
-
-      <div className="mt-3">
-        {shouldShowPreview ? (
-          isLoading ? (
-            <p className="text-sm text-ink-muted">Loading preview…</p>
-          ) : isError ? (
-            <p className="text-sm text-danger">
-              {error?.message ?? "Failed to load preview."}
-            </p>
-          ) : preview?.data ? (
-            <div className="space-y-3">
-              <p className="text-sm text-ink-muted">
-                Created from resources {preview.resource_ids.join(", ")}.
-              </p>
-              <div className="rounded-md border border-line bg-surface p-3">
-                <StructuredDataView
-                  data={preview.data}
-                  label="Merged preview data"
-                />
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-ink-muted">No preview available.</p>
-          )
-        ) : (
-          <div className="space-y-2 text-sm text-ink-muted">
-            <p>Preview is available only while a candidate is pending.</p>
-            {candidate.merged_resource_id ? (
-              <p>Merged resource: {candidate.merged_resource_id}</p>
-            ) : null}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function SourceResources({ resourceIds, isOpen, onToggle }) {
-  if (!resourceIds?.length) return null;
-
-  return (
-    <details
-      open={isOpen}
-      onToggle={(event) => onToggle(event.currentTarget.open)}
-      className="border-t border-line px-5 py-4"
-    >
-      <summary className="cursor-pointer text-sm font-semibold text-ink">
-        Source resources ({resourceIds.length})
-      </summary>
-
-      {isOpen ? (
-        <div className="mt-4 grid gap-4 xl:grid-cols-2">
-          {resourceIds.map((resourceId) => (
-            <section
-              key={resourceId}
-              className="min-w-0 rounded-md border border-line bg-panel p-4"
-            >
-              <ResourceView
-                endpoint={ENDPOINT}
-                initialID={resourceId}
-                showControls={false}
-              />
-            </section>
-          ))}
-        </div>
-      ) : null}
-    </details>
-  );
-}
-
 function CandidateDecisionPanel({
   selectedId,
+  listCandidate,
   candidateQuery,
   reviewNotes,
   onReviewNotesChange,
@@ -290,23 +217,14 @@ function CandidateDecisionPanel({
   actionError,
   actionLoading,
   activeReviewAction,
-  shouldShowPreview,
-  previewQuery,
-  showSourceResources,
-  onToggleSourceResources,
 }) {
   const {
-    data: candidate,
-    isLoading: candidateLoading,
+    data: detailCandidate,
     isError: candidateError,
     error: candidateErrorObj,
   } = candidateQuery;
-  const {
-    data: preview,
-    isLoading: previewLoading,
-    isError: previewError,
-    error: previewErrorObj,
-  } = previewQuery;
+
+  const candidate = detailCandidate ?? listCandidate;
 
   if (!selectedId) {
     return (
@@ -316,15 +234,10 @@ function CandidateDecisionPanel({
     );
   }
 
-  if (candidateLoading) {
-    return (
-      <section className="rounded-md border border-line bg-panel p-5">
-        <p className="text-sm text-ink-muted">Loading candidate…</p>
-      </section>
-    );
-  }
-
-  if (candidateError) {
+  // A detail error only blocks when there is nothing to show. When the queue
+  // item is present it carries every field the panel renders, so the panel
+  // degrades to a banner rather than disappearing.
+  if (candidateError && !candidate) {
     return (
       <section className="rounded-md border border-line bg-panel p-5">
         <p className="text-sm text-danger">
@@ -344,6 +257,13 @@ function CandidateDecisionPanel({
 
   return (
     <article className="min-w-0 overflow-hidden rounded-md border border-line bg-panel">
+      {candidateError ? (
+        <p className="border-b border-danger/25 bg-danger-soft px-5 py-4 text-sm text-danger">
+          These details could not be refreshed and may be out of date.{" "}
+          {candidateErrorObj?.message ?? "Failed to load candidate."}
+        </p>
+      ) : null}
+
       <div className="space-y-4 px-5 py-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -373,14 +293,17 @@ function CandidateDecisionPanel({
         ) : null}
       </div>
 
-      <PreviewPanel
-        candidate={candidate}
-        shouldShowPreview={shouldShowPreview}
-        preview={preview}
-        isLoading={previewLoading}
-        isError={previewError}
-        error={previewErrorObj}
-      />
+      {candidate.merged_resource_id ? (
+        <MergedResourceView
+          endpoint={ENDPOINT}
+          resourceId={candidate.merged_resource_id}
+        />
+      ) : (
+        <MergeSourceComparison
+          endpoint={ENDPOINT}
+          resourceIds={candidate.resource_ids}
+        />
+      )}
 
       {candidate.status === "PENDING" ? (
         <DecisionControls
@@ -397,12 +320,6 @@ function CandidateDecisionPanel({
           {actionError}
         </p>
       ) : null}
-
-      <SourceResources
-        resourceIds={candidate.resource_ids}
-        isOpen={showSourceResources}
-        onToggle={onToggleSourceResources}
-      />
     </article>
   );
 }
@@ -421,7 +338,6 @@ export default function MergeCandidateReviewPage() {
   const [actionError, setActionError] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [activeReviewAction, setActiveReviewAction] = useState(null);
-  const [showSourceResources, setShowSourceResources] = useState(false);
 
   const {
     data: candidates,
@@ -443,15 +359,12 @@ export default function MergeCandidateReviewPage() {
     selectedId,
     Boolean(selectedId),
   );
-  const candidate = candidateQuery.data;
-
-  const shouldShowPreview = candidate?.status === "PENDING";
-
-  const previewQuery = useMergeCandidatePreview(
-    ENDPOINT,
-    selectedId,
-    Boolean(selectedId) && shouldShowPreview,
-  );
+  // The list and detail endpoints return the same schema, so the already-loaded
+  // queue item stands in until the detail query lands. Without this, review
+  // actions dead-click while the detail is in flight.
+  const listCandidate =
+    candidates?.find((item) => item.id === selectedId) ?? null;
+  const candidate = candidateQuery.data ?? listCandidate;
 
   const pendingCount =
     candidates?.filter((c) => c.status === "PENDING").length ?? 0;
@@ -463,7 +376,6 @@ export default function MergeCandidateReviewPage() {
     setSelectedId(id);
     setReviewNotes("");
     setActionError(null);
-    setShowSourceResources(false);
   }
 
   async function handleReview(action) {
@@ -490,9 +402,6 @@ export default function MergeCandidateReviewPage() {
         queryClient.invalidateQueries({
           queryKey: resourceKeys.mergeCandidate(ENDPOINT, candidate.id),
         }),
-        queryClient.invalidateQueries({
-          queryKey: resourceKeys.preview(ENDPOINT, candidate.id),
-        }),
       ]);
 
       const nextPending = candidates?.find(
@@ -502,7 +411,6 @@ export default function MergeCandidateReviewPage() {
         setSelectedId(nextPending.id);
       }
       setReviewNotes("");
-      setShowSourceResources(false);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -557,6 +465,7 @@ export default function MergeCandidateReviewPage() {
 
         <CandidateDecisionPanel
           selectedId={selectedId}
+          listCandidate={listCandidate}
           candidateQuery={candidateQuery}
           reviewNotes={reviewNotes}
           onReviewNotesChange={setReviewNotes}
@@ -564,10 +473,6 @@ export default function MergeCandidateReviewPage() {
           actionError={actionError}
           actionLoading={actionLoading}
           activeReviewAction={activeReviewAction}
-          shouldShowPreview={shouldShowPreview}
-          previewQuery={previewQuery}
-          showSourceResources={showSourceResources}
-          onToggleSourceResources={setShowSourceResources}
         />
       </div>
     </div>
