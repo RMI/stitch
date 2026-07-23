@@ -142,6 +142,14 @@ async def attach_sources_to_resource(
     resource = await session.get(ResourceModel, resource_id)
     if resource is None:
         raise ResourceNotFoundError(f"No resource found for id: {resource_id}")
+    if resource.repointed_id is not None:
+        # A repointed resource has been merged away; memberships on it would
+        # never surface in coalescing/queries, so refuse rather than silently
+        # orphan the source.
+        raise ResourceIntegrityError(
+            f"Cannot attach sources to a resource that has been merged "
+            f"(id: `{resource_id}`, repointed to: `{resource.repointed_id}`)."
+        )
     if len(source_rows) < 1:
         raise ResourceIntegrityError(
             f"Must pass at least 1 source row to attach to resource (id: `{resource_id}`)."

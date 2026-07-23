@@ -125,6 +125,23 @@ async def _seed_resource_with_source(
         return resource_id
 
 
+async def _seed_repointed_resource(
+    session_factory: async_sessionmaker[AsyncSession], user: User
+) -> int:
+    """Create a resource that has been merged away (repointed elsewhere)."""
+    async with session_factory() as session:
+        canonical = ResourceModel.create(created_by=user)
+        session.add(canonical)
+        await session.flush()
+        merged = ResourceModel.create(created_by=user)
+        merged.repointed_id = canonical.id
+        session.add(merged)
+        await session.flush()
+        merged_id = merged.id
+        await session.commit()
+        return merged_id
+
+
 def _source_body(source: str = "rmi", **attrs) -> dict:
     # `name` and `country` are required keys on OilGasFieldBase (nullable values).
     body = {
@@ -242,6 +259,44 @@ class TestCreateAndAttachSource:
             json=_source_body("rmi", name="RMI Name"),
         )
         assert response.status_code == 404
+
+    @pytest.mark.anyio
+    async def test_merged_resource_returns_400_and_attaches_nothing(
+        self,
+        writer_client: AsyncClient,
+        integration_session_factory: async_sessionmaker[AsyncSession],
+        test_user: User,
+    ):
+        # Attaching to a merged (repointed) resource would orphan the source,
+        # so it must be rejected without persisting anything.
+        resource_id = await _seed_repointed_resource(
+            integration_session_factory, test_user
+        )
+
+        response = await writer_client.post(
+            f"/oil-gas-fields/{resource_id}/sources",
+            json=_source_body("rmi", name="RMI Name"),
+        )
+        assert response.status_code == 400
+
+        # no membership created and no source row leaked (rolled back)
+        async with integration_session_factory() as session:
+            memberships = (
+                (
+                    await session.execute(
+                        select(MembershipModel).where(
+                            MembershipModel.resource_id == resource_id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert memberships == []
+            sources = (
+                (await session.execute(select(OilGasFieldSourceModel))).scalars().all()
+            )
+            assert sources == []
 
     @pytest.mark.anyio
     async def test_rejects_client_supplied_source_id(

@@ -315,5 +315,5 @@ async def create_and_attach_source(
         )
     except ResourceNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-    except SourceIntegrityError as exc:
+    except (ResourceIntegrityError, SourceIntegrityError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
