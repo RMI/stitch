@@ -244,8 +244,13 @@ function AISuggestionPanel({ endpoint, resourceId, onAttached }) {
         suggestionKey,
       });
       // Refresh the resource so the newly attached source (and any change to
-      // the coalesced winning value) shows immediately.
-      onAttached?.();
+      // the coalesced winning value) shows immediately. Best-effort: a failed
+      // refresh must not turn a successful attach into an error.
+      try {
+        await onAttached?.();
+      } catch {
+        // ignore refresh failures
+      }
     } catch (err) {
       setPersistState(null);
       setError(err.message || "Failed to add suggestion to resource.");
