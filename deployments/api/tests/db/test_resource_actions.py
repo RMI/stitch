@@ -4,6 +4,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.dialects import postgresql
 from sqlalchemy import event, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from stitch.api.db import og_field_resource_actions as resource_actions
@@ -18,6 +19,7 @@ from stitch.api.db.model import (
     MembershipStatus,
     OGFieldResourceSourcePriority,
     OilGasFieldSourceModel,
+    OilGasFieldSourceValueModel,
     ResourceModel,
 )
 from stitch.api.entities import (
@@ -151,6 +153,28 @@ class TestCreateResourceActionIntegration:
         assert db_resource is not None
         # DB ResourceModel may store `.name`; tolerate either while refactor settles.
         assert getattr(db_resource, "name", None) in (None, "Test Label")
+
+    @pytest.mark.anyio
+    async def test_empty_string_value_row_rejected_by_db_constraint(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        # Defense in depth: even if a caller bypasses the write-path skip, the
+        # DB refuses to persist an empty-string value row.
+        source = make_source_model(
+            source="rmi", created_by_id=test_user.id, name="RMI Name"
+        )
+        seeded_integration_session.add(source)
+        await seeded_integration_session.flush()
+
+        empty = OilGasFieldSourceValueModel.from_attribute("basin", "")
+        empty.source_pk = source.id
+        seeded_integration_session.add(empty)
+
+        with pytest.raises(IntegrityError):
+            await seeded_integration_session.flush()
+        await seeded_integration_session.rollback()
 
 
 class TestGetResourceActionIntegration:
