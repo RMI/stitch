@@ -75,7 +75,6 @@ function buildLLMSourcePayload({ resourceId, result, persistIntentId }) {
   // A bare source (no `id`) to be created and attached to the target resource.
   // `name`/`country` are required keys on the field model (null when unknown).
   return {
-    id: null,
     source: "llm",
     name: null,
     country: null,

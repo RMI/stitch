@@ -497,7 +497,6 @@ describe("ResourceDetailPage", () => {
       }),
       1,
       {
-        id: null,
         source: "llm",
         name: null,
         country: null,
