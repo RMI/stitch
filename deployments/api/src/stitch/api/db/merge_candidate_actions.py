@@ -141,10 +141,12 @@ def _build_comparison(
             )
         values.sort(key=lambda entry: (entry.priority, entry.source_id))
         # `values` rank by the DEFAULT global source order (what the merged
-        # resource will use) while `status` reflects each resource's current
-        # coalesced winner. These agree today; once per-field overrides exist
-        # (PR #174) a resource's current winner can differ from the default --
-        # expected, since a merge resets to the default order.
+        # resource will use -- a merge drops per-resource overrides), while
+        # `status` reflects each resource's current effective coalesced value.
+        # These can already differ whenever a per-resource priority override is
+        # active (the coalescer uses COALESCE(override, default)): values[0] is
+        # the post-merge winner, not necessarily the resource's current one.
+        # Expected, not a bug.
         resource_values = [getattr(view, field_name, None) for view in resource_views]
         comparison.append(
             FieldComparisonView(

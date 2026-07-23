@@ -181,9 +181,13 @@ class ComparisonValueView(OGFieldSourceValueView):
     """A source's value in a merge comparison, tagged with ``resource_id`` --
     the candidate resource the source is currently attached to.
 
-    Both ``priority`` here and ``FieldComparisonView.status`` are now derived
-    from the same DB coalescing order, so the winner-ordering of these values
-    agrees with the comparison status.
+    ``priority`` here is the *default global* source order -- the order the
+    merged resource will use, since a merge drops per-resource priority
+    overrides -- not the effective per-resource ranking. So the winner-ordering
+    of these values can differ from ``FieldComparisonView.status`` (each
+    resource's current effective coalesced value) whenever a per-resource
+    override is active. That divergence is expected: ``values`` predicts the
+    post-merge winner, ``status`` describes the current state.
     """
 
     resource_id: int

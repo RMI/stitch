@@ -166,17 +166,14 @@ def _ranked(base_cte: CTE) -> CTE:
     """Attach the coalesce rank ``rn`` to every candidate row (no winner cut).
 
     The single definition of the coalescing order, shared by the winner cut
-    (``add_ranking`` -> ``rn == 1``) and the all-candidates detail hydration
+    (``add_ranking`` -> ``rn == 1``) and the all-candidates hydration
     (``coalesced_candidate_rows``) so the two can't drift. ``rn == 1`` is the
     winner within each ``(resource_id, colname)`` partition.
 
-    MERGE(174): 174 introduces this same ``_ranked`` split, but with tiered
-    per-field override ranking (``override_priority`` NULLS LAST, then
-    ``default_priority``, then source/source_pk). On merge keep 174's richer
-    ``order_by`` -- this branch differs there only because per-field overrides
-    don't exist here yet. BUT drop 174's ``.where(value_text != "")`` empty-text
-    filter: this branch makes empty strings impossible at write time + a DB
-    CHECK (see ``model.oil_gas_field_source_value``), so that filter is now dead.
+    The order key is ``(priority, source, source_pk)``, where ``priority`` is the
+    per-resource-overridable ``COALESCE(override, default)`` from the base CTE.
+    No empty-string handling is needed here: empty text can't be persisted
+    (write-path skip + DB CHECK, see ``model.oil_gas_field_source_value``).
     """
     cols = base_cte.c
     return (
@@ -248,9 +245,8 @@ def coalesced_candidate_rows(
     sources), needed to rebuild the source entities, and dropped again by the
     source *view*.
 
-    MERGE(174): rides on 174's tiered ``_ranked`` unchanged. If the lazy
-    field-source endpoint is later folded into the detail payload, this is the
-    query it would build on.
+    If the lazy field-source endpoint is later folded into the detail payload,
+    this is the query it would build on.
     """
     base = construct_base_query_statement(licensed_sources, resource_ids=resource_ids)
     ranked = _ranked(base)
