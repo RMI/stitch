@@ -7,7 +7,7 @@ import {
 } from "../constants/sourceMeta";
 
 // Used to display a single field value in a card, as seen in the ResourceDetailPage.
-// Pass `source` (one of "gem" | "wm" | "ccr" | "rmi" | "llm") to tint the left border by data source.
+// Pass `source` (one of "gem" | "wm" | "ccr" | "bc" | "alb" | "rmi" | "llm") to tint the left border by data source.
 // Pass `expandable` + `isOpen` + `onToggle` to make the value a toggle button; `children`
 // (e.g. an "All sources" panel) render below the box while open. The card is presentational:
 // the parent owns open state and any data fetching.

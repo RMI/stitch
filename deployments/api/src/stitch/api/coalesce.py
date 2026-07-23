@@ -2,6 +2,8 @@ from collections.abc import Sequence
 from functools import reduce
 from typing import Any
 from stitch.ogsi.model import (
+    ALB_SRC,
+    BC_SRC,
     CCR_SRC,
     GEM_SRC,
     LLM_SRC,
@@ -12,7 +14,7 @@ from stitch.ogsi.model import (
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
 
-SRC_PRIORITY = (RMI_SRC, GEM_SRC, WM_SRC, CCR_SRC, LLM_SRC)
+SRC_PRIORITY = (RMI_SRC, WM_SRC, CCR_SRC, BC_SRC, ALB_SRC, GEM_SRC, LLM_SRC)
 
 
 type ProvAttrs = dict[str, tuple[Any, OGSISrcKey, int] | None]

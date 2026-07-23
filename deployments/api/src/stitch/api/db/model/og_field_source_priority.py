@@ -16,10 +16,12 @@ class OGFieldSourcePriority(Base):
 
 DEFAULT_PRIORITIES = [
     {"source": "rmi", "priority": 1},
-    {"source": "gem", "priority": 2},
-    {"source": "wm", "priority": 3},
-    {"source": "ccr", "priority": 4},
-    {"source": "llm", "priority": 5},
+    {"source": "wm", "priority": 2},
+    {"source": "ccr", "priority": 3},
+    {"source": "bc", "priority": 4},
+    {"source": "alb", "priority": 5},
+    {"source": "gem", "priority": 6},
+    {"source": "llm", "priority": 7},
 ]
 
 

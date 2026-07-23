@@ -10,6 +10,8 @@ from stitch.models import (
 
 from .og_field import OilGasFieldBase, OilGasOwner, OilGasOperator
 from .types import (
+    ALBSrcKey,
+    BCSrcKey,
     CCRSrcKey,
     GEMSrcKey,
     LLMSrcKey,
@@ -36,6 +38,10 @@ __all__ = [
     "GemSourceView",
     "CCRSource",
     "CCRSourceView",
+    "ALBSource",
+    "ALBSourceView",
+    "BCSource",
+    "BCSourceView",
     "SourceRecord",
     "LocationType",
     "OilGasOwner",
@@ -49,6 +55,8 @@ GEM_SRC: Final[GEMSrcKey] = "gem"
 RMI_SRC: Final[RMISrcKey] = "rmi"
 WM_SRC: Final[WMSrcKey] = "wm"
 CCR_SRC: Final[CCRSrcKey] = "ccr"
+ALB_SRC: Final[ALBSrcKey] = "alb"
+BC_SRC: Final[BCSrcKey] = "bc"
 
 
 class GemSource(Source[int, GEMSrcKey], OilGasFieldBase):
@@ -65,6 +73,22 @@ class CCRSource(Source[int, CCRSrcKey], OilGasFieldBase):
 
 class CCRSourceView(SourceView[int, CCRSrcKey], OilGasFieldBase):
     source: CCRSrcKey = CCR_SRC
+
+
+class ALBSource(Source[int, ALBSrcKey], OilGasFieldBase):
+    source: ALBSrcKey = ALB_SRC
+
+
+class ALBSourceView(SourceView[int, ALBSrcKey], OilGasFieldBase):
+    source: ALBSrcKey = ALB_SRC
+
+
+class BCSource(Source[int, BCSrcKey], OilGasFieldBase):
+    source: BCSrcKey = BC_SRC
+
+
+class BCSourceView(SourceView[int, BCSrcKey], OilGasFieldBase):
+    source: BCSrcKey = BC_SRC
 
 
 class WoodMacSource(Source[int, WMSrcKey], OilGasFieldBase):
@@ -92,12 +116,18 @@ class LLMSourceView(SourceView[int, LLMSrcKey], OilGasFieldBase):
 
 
 OGFieldSource = Annotated[
-    GemSource | WoodMacSource | RMISource | LLMSource | CCRSource,
+    GemSource | WoodMacSource | RMISource | LLMSource | CCRSource | ALBSource | BCSource,
     Field(discriminator="source"),
 ]
 
 OGFieldSourceView = Annotated[
-    GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView,
+    GemSourceView
+    | WoodMacSourceView
+    | RMISourceView
+    | LLMSourceView
+    | CCRSourceView
+    | ALBSourceView
+    | BCSourceView,
     Field(discriminator="source"),
 ]
 

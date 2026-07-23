@@ -12,6 +12,8 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 from stitch.ogsi.model import (
+    ALBSource,
+    BCSource,
     CCRSource,
     GemSource,
     LLMSource,
@@ -111,6 +113,10 @@ def make_source(
             return GemSource(**kwargs)
         case "ccr":
             return CCRSource(**kwargs)
+        case "alb":
+            return ALBSource(**kwargs)
+        case "bc":
+            return BCSource(**kwargs)
 
 
 def make_resource(

@@ -6,6 +6,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, EmailStr, Field, computed_field
 
 from stitch.ogsi.model import (
+    ALB_SRC,
+    BC_SRC,
     CCR_SRC,
     GEM_SRC,
     LLM_SRC,
@@ -24,9 +26,11 @@ from stitch.ogsi.model.og_field import OilGasFieldBase
 
 OGSI_SOURCE_DEFAULT: tuple[OGSISrcKey, ...] = (
     RMI_SRC,
-    GEM_SRC,
     WM_SRC,
     CCR_SRC,
+    BC_SRC,
+    ALB_SRC,
+    GEM_SRC,
     LLM_SRC,
 )
 

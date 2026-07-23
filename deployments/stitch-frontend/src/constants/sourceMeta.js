@@ -1,9 +1,11 @@
-export const SOURCES = ["gem", "wm", "ccr", "rmi", "llm"];
+export const SOURCES = ["gem", "wm", "ccr", "alb", "bc", "rmi", "llm"];
 
 export const SOURCE_COLORS = {
   gem: "#45cfcc", // energy teal
   wm: "#7b76ad", // RMI purple
   ccr: "#f2994a", // amber
+  alb: "#eb5757", // red
+  bc: "#27ae60", // green
   rmi: "#ffcb00", // solar
   llm: "#529cba", // RMI blue
 };
@@ -13,6 +15,8 @@ export const SOURCE_LABELS = {
   gem: "GEM Database",
   wm: "Woodmac Database",
   ccr: "C&C Reservoirs",
+  alb: "Alberta Energy Regulator",
+  bc: "BC Energy Regulator",
   rmi: "User Generated",
 };
 

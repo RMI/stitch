@@ -39,6 +39,38 @@ const CCR_FIELDS = [
   },
 ];
 
+const BC_FIELDS = [
+  {
+    key: "payload_limit",
+    label: "Payload limit",
+    type: "number",
+    help: "Optional cap on payloads posted this run. Leave blank to post all.",
+  },
+  {
+    key: "xlsx_sheet",
+    label: "BC xlsx sheet",
+    type: "text",
+    placeholder: "Reservoirs",
+    help: "Excel sheet name to load. Leave blank to use the configured default.",
+  },
+];
+
+const ALB_FIELDS = [
+  {
+    key: "payload_limit",
+    label: "Payload limit",
+    type: "number",
+    help: "Optional cap on payloads posted this run. Leave blank to post all.",
+  },
+  {
+    key: "xlsx_sheet",
+    label: "Alberta xlsx sheet",
+    type: "text",
+    placeholder: "Reservoirs",
+    help: "Excel sheet name to load. Leave blank to use the configured default.",
+  },
+];
+
 const WOODMAC_FIELDS = [
   {
     key: "payload_limit",
@@ -322,6 +354,20 @@ export default function EtlPage() {
           description="Load C&C Reservoirs field data from the configured spreadsheet and post it to Stitch."
           baseUrl={`${config.etlBaseUrl}/ccr`}
           fields={CCR_FIELDS}
+          getToken={getToken}
+        />
+        <EtlPanel
+          title="BC"
+          description="Load BC Energy Regulator field data from the configured spreadsheet and post it to Stitch."
+          baseUrl={`${config.etlBaseUrl}/bc`}
+          fields={BC_FIELDS}
+          getToken={getToken}
+        />
+        <EtlPanel
+          title="Alberta"
+          description="Load Alberta Energy Regulator field data from the configured spreadsheet and post it to Stitch."
+          baseUrl={`${config.etlBaseUrl}/alb`}
+          fields={ALB_FIELDS}
           getToken={getToken}
         />
       </div>
