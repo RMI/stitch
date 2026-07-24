@@ -1,4 +1,4 @@
-export const SOURCES = ["gem", "wm", "ccr", "alb", "bc", "rmi", "llm"];
+export const SOURCES = ["rmi", "wm", "ccr", "bc", "alb", "gem", "llm"];
 
 export const SOURCE_COLORS = {
   gem: "#45cfcc", // energy teal

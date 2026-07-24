@@ -1087,9 +1087,7 @@ class TestResourcePriorityOverride:
         )
         await session.flush()
 
-        assert (
-            await resource_actions.get(session, overridden)
-        ).view.name == "GEM Name"
+        assert (await resource_actions.get(session, overridden)).view.name == "GEM Name"
         # The other resource keeps the default ranking.
         assert (await resource_actions.get(session, untouched)).view.name == "WM Name"
 

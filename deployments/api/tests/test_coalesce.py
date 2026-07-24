@@ -105,3 +105,16 @@ def test_gem_outranks_llm():
     assert coalesced.name == "from-gem"
     assert provenance["name"] is not None
     assert provenance["name"][1] == "gem"
+
+
+def test_wm_outranks_gem():
+    coalesced, provenance = coalesce_og_field_resource(
+        [
+            GemSource(id=1, name="from-gem", country=None, source_record=_record()),
+            WoodMacSource(id=2, name="from-wm", country=None, source_record=_record()),
+        ]
+    )
+
+    assert coalesced.name == "from-wm"
+    assert provenance["name"] is not None
+    assert provenance["name"][1] == "wm"

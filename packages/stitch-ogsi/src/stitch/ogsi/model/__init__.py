@@ -47,6 +47,7 @@ __all__ = [
     "OilGasOwner",
     "OilGasOperator",
     "OGSISrcKey",
+    "SOURCE_PRIORITY",
 ]
 
 
@@ -57,6 +58,18 @@ WM_SRC: Final[WMSrcKey] = "wm"
 CCR_SRC: Final[CCRSrcKey] = "ccr"
 ALB_SRC: Final[ALBSrcKey] = "alb"
 BC_SRC: Final[BCSrcKey] = "bc"
+
+# Canonical source coalescing priority (highest first). Single source of truth
+# for the coalescer, the query-param default, and the DB seed.
+SOURCE_PRIORITY: Final[tuple[OGSISrcKey, ...]] = (
+    RMI_SRC,
+    WM_SRC,
+    CCR_SRC,
+    BC_SRC,
+    ALB_SRC,
+    GEM_SRC,
+    LLM_SRC,
+)
 
 
 class GemSource(Source[int, GEMSrcKey], OilGasFieldBase):
@@ -116,7 +129,13 @@ class LLMSourceView(SourceView[int, LLMSrcKey], OilGasFieldBase):
 
 
 OGFieldSource = Annotated[
-    GemSource | WoodMacSource | RMISource | LLMSource | CCRSource | ALBSource | BCSource,
+    GemSource
+    | WoodMacSource
+    | RMISource
+    | LLMSource
+    | CCRSource
+    | ALBSource
+    | BCSource,
     Field(discriminator="source"),
 ]
 
