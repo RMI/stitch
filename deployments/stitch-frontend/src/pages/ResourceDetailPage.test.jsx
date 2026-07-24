@@ -358,6 +358,70 @@ describe("ResourceDetailPage", () => {
     expect(screen.getByText("run-1")).toBeInTheDocument();
   });
 
+  it("shows the curator note from the source payload in the source details", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    vi.mocked(useSourceDetail).mockReturnValue({
+      ...defaultSourceDetailHookReturn,
+      data: {
+        id: 11,
+        source: "rmi",
+        name: "Burgan Source",
+        source_record: {
+          producer: "stitch-frontend",
+          observed_at: "2026-05-13T12:00:00Z",
+          record_id: null,
+          run_id: null,
+          payload: {
+            action: "field_overwrite",
+            field: "basin",
+            value: "Arabian",
+            note: "Confirmed with the survey team.",
+          },
+        },
+      },
+    });
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(screen.getByRole("button", { name: /^view$/i }));
+
+    expect(screen.getByText("Note")).toBeInTheDocument();
+    expect(
+      screen.getByText("Confirmed with the survey team."),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the Note block when the source payload has no note", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    vi.mocked(useSourceDetail).mockReturnValue({
+      ...defaultSourceDetailHookReturn,
+      data: {
+        id: 11,
+        source: "gem",
+        name: "Burgan Source",
+        source_record: {
+          producer: "stitch-seed@0.1.0",
+          observed_at: "2026-05-13T12:00:00Z",
+          record_id: "abc",
+          run_id: "run-1",
+          payload: { name: "Burgan Source" },
+        },
+      },
+    });
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(screen.getByRole("button", { name: /^view$/i }));
+
+    expect(screen.queryByText("Note")).not.toBeInTheDocument();
+  });
+
   it("generates and renders an AI suggestion preview", async () => {
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,

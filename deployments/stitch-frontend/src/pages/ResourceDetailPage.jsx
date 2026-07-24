@@ -428,6 +428,17 @@ function SourceRow({ source }) {
 
   const sourceLabel = SOURCE_LABELS[source.source] ?? source.source;
   const sourceRecord = sourceDetail?.source_record ?? null;
+  // A curator's overwrite note, when this source was created via the field
+  // overwrite action. Payload is arbitrary JSON, so guard the shape before use.
+  const payload = sourceRecord?.payload;
+  const overrideNote =
+    payload &&
+    typeof payload === "object" &&
+    !Array.isArray(payload) &&
+    typeof payload.note === "string" &&
+    payload.note.trim()
+      ? payload.note
+      : null;
 
   let metaLine;
   if (sourceRecord) {
@@ -501,6 +512,16 @@ function SourceRow({ source }) {
                 />
                 <FieldCard label="Source row ID" value={source.id} />
               </FieldGrid>
+              {overrideNote && (
+                <div className="rounded-md border border-line bg-surface p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                    Note
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-sm text-ink">
+                    {overrideNote}
+                  </p>
+                </div>
+              )}
               <TechnicalImportRecord sourceRecord={sourceRecord} />
             </>
           )}
