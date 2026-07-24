@@ -121,12 +121,17 @@ def construct_base_query_statement(
         .join(s, and_(s.id == m.source_pk, s.source == m.source))
         .join(v, v.source_pk == m.source_pk)
         # Override join at the value grain (source_pk, colname), matching v exactly,
-        # so at most one override row per value row -- no fan-out.
+        # so at most one override row per value row -- no fan-out. o.source ==
+        # m.source is the same dual-key guard as the header join above: source_pk
+        # and source aren't FK-tied, so matching source_pk alone could apply a
+        # stray override with a mismatched (source, source_pk) pair to the wrong
+        # membership. Requiring both fails safe to the default instead.
         .outerjoin(
             o,
             and_(
                 o.resource_id == r.id,
                 o.source_pk == m.source_pk,
+                o.source == m.source,
                 o.colname == v.colname,
             ),
         )
