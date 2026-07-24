@@ -142,7 +142,8 @@ async def field_source_values(
     so a record added after a reorder (no override row) sorts last. ``priority``
     is the effective per-field priority for display; because of the tier split it
     is not a total order across records -- rely on list order, not on comparing
-    ``priority`` ints.
+    ``priority`` ints. ``is_override`` flags the records a curator has pinned for
+    this field (the tier-0 rows).
     """
     if field not in ATTRIBUTE_NAMES:
         raise HTTPException(
@@ -182,6 +183,7 @@ async def field_source_values(
                     source_id=src.id,
                     value=value,
                     priority=effective,
+                    is_override=override is not None,
                 ),
             )
         )

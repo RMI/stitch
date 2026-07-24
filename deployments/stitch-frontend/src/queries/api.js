@@ -97,11 +97,15 @@ export async function updateFieldSourcePriority(
   )}/sources/priority`;
   const response = await fetcher(url, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
     body: JSON.stringify({ ordered_source_pks: orderedSourcePks }),
   });
   if (!response.ok) {
-    const error = new Error(`HTTP error! status: ${response.status}`);
+    const detail = await getErrorDetail(response);
+    const error = new Error(detail);
     error.status = response.status;
     throw error;
   }

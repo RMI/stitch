@@ -125,13 +125,15 @@ class OGFieldSourceValueView(BaseModel):
     pinned, otherwise the source's global default). Because overridden records
     always outrank non-overridden ones for a field, ``priority`` is not a total
     order across records -- rely on list order, not on comparing ``priority``
-    ints.
+    ints. ``is_override`` marks a record a curator has explicitly re-ranked for
+    this field (tier 0); non-override records fall back to the global default.
     """
 
     source: OGSISrcKey
     source_id: int
     value: Any
     priority: int
+    is_override: bool = False
 
 
 class OGFieldResource(Resource[int, OGFieldSource]):

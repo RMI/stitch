@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { FieldCard } from "./FieldCard";
@@ -18,16 +18,17 @@ import {
 
 const RESOURCE_WRITE = "resource:write";
 
+function arraysEqual(a, b) {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
 function SourceValueRow({
   source,
   value,
   sourceId,
   isWinner,
-  isEditing,
-  isFirst,
-  isLast,
-  onMoveUp,
-  onMoveDown,
+  isOverride,
+  editControls,
 }) {
   const barColor = SOURCE_COLORS[source] ?? DEFAULT_FIELD_COLOR;
   const sourceLabel = SOURCE_LABELS[source] ?? UNKNOWN_SOURCE_LABEL;
@@ -47,30 +48,41 @@ function SourceValueRow({
     >
       <div className="min-w-0 flex-1">
         <div className="break-words text-sm text-ink">{display}</div>
-        <div className="mt-0.5 text-xs text-ink-muted">{meta}</div>
-      </div>
-      {isEditing && (
-        <div className="flex shrink-0 flex-col gap-0.5">
-          <button
-            type="button"
-            aria-label={`Move ${sourceLabel} up`}
-            disabled={isFirst}
-            onClick={onMoveUp}
-            className="rounded border border-line px-1.5 text-xs leading-4 text-ink-muted hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            ▲
-          </button>
-          <button
-            type="button"
-            aria-label={`Move ${sourceLabel} down`}
-            disabled={isLast}
-            onClick={onMoveDown}
-            className="rounded border border-line px-1.5 text-xs leading-4 text-ink-muted hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            ▼
-          </button>
+        <div className="mt-0.5 text-xs text-ink-muted">
+          {meta}
+          {isOverride && (
+            <span className="ml-1.5 rounded bg-rmiblue-100 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-bluespruce">
+              curated
+            </span>
+          )}
         </div>
-      )}
+      </div>
+      {editControls}
+    </div>
+  );
+}
+
+function MoveButtons({ onMoveUp, onMoveDown, canMoveUp, canMoveDown, label }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <button
+        type="button"
+        onClick={onMoveUp}
+        disabled={!canMoveUp}
+        aria-label={`Move ${label} up`}
+        className="rounded border border-line px-1.5 text-xs leading-4 text-ink-muted hover:bg-rmiblue-100 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        ↑
+      </button>
+      <button
+        type="button"
+        onClick={onMoveDown}
+        disabled={!canMoveDown}
+        aria-label={`Move ${label} down`}
+        className="rounded border border-line px-1.5 text-xs leading-4 text-ink-muted hover:bg-rmiblue-100 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        ↓
+      </button>
     </div>
   );
 }
@@ -79,141 +91,36 @@ function FieldSourcesPanel({
   isLoading,
   isError,
   sources,
-  canEdit,
-  isEditing,
-  onStartEdit,
-  onCancelEdit,
-  onSave,
-  onMove,
-  isChanged,
-  isSaving,
-  saveError,
-}) {
-  const hasSources = !isLoading && !isError && sources.length > 0;
-  // Editing only makes sense when there is more than one source to order.
-  const canReorder = canEdit && sources.length > 1;
-
-  return (
-    <div className="mt-2 space-y-2 rounded-md border border-line bg-panel p-3">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-          All sources
-        </p>
-        {hasSources && canReorder && !isEditing && (
-          <Button
-            variant="ghost"
-            className="min-h-0 px-2 py-1"
-            onClick={onStartEdit}
-          >
-            Edit
-          </Button>
-        )}
-        {isEditing && (
-          <div className="flex items-center gap-1.5">
-            <Button
-              variant="ghost"
-              className="min-h-0 px-2 py-1"
-              onClick={onCancelEdit}
-              disabled={isSaving}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              className="min-h-0 px-2 py-1"
-              onClick={onSave}
-              disabled={!isChanged || isSaving}
-            >
-              {isSaving ? "Saving…" : "Save"}
-            </Button>
-          </div>
-        )}
-      </div>
-      {isEditing && (
-        <p className="text-xs text-ink-muted">
-          Reorder sources; the top source wins. Save to apply for everyone.
-        </p>
-      )}
-      {saveError && <p className="text-sm text-danger">{saveError}</p>}
-      {isLoading && <p className="text-sm text-ink-muted">Loading sources…</p>}
-      {isError && (
-        <p className="text-sm text-danger">Failed to load source values.</p>
-      )}
-      {!isLoading && !isError && sources.length === 0 && (
-        <p className="text-sm text-ink-muted">
-          No source values for this field.
-        </p>
-      )}
-      {hasSources && (
-        <div className="space-y-1.5">
-          {/* Best-priority first, so index 0 is the winner. */}
-          {sources.map((row, idx) => (
-            <SourceValueRow
-              key={`${row.source}-${row.source_id}`}
-              source={row.source}
-              value={row.value}
-              sourceId={row.source_id}
-              isWinner={idx === 0}
-              isEditing={isEditing}
-              isFirst={idx === 0}
-              isLast={idx === sources.length - 1}
-              onMoveUp={() => onMove(idx, -1)}
-              onMoveDown={() => onMove(idx, 1)}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function sameOrder(a, b) {
-  return (
-    a.length === b.length &&
-    a.every((row, idx) => row.source_id === b[idx].source_id)
-  );
-}
-
-// A FieldCard for the resource detail page: clicking a populated value lazily
-// fetches every source's value for that field and shows them in priority order.
-// With `resource:write`, a curator can reorder the sources and persist the order.
-export default function ResourceFieldCard({
   endpoint,
   resourceId,
   fieldKey,
-  label,
-  value,
-  source,
 }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [workingOrder, setWorkingOrder] = useState([]);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
-
-  const expandable = value !== null && value !== undefined && value !== "";
   const canEdit = useHasPermission(RESOURCE_WRITE);
   const config = useConfig();
   const { getAccessTokenSilently } = useAuth0();
   const queryClient = useQueryClient();
 
-  const { data, isLoading, isError } = useFieldSourceValues(
-    endpoint,
-    resourceId,
-    fieldKey,
-    isOpen && expandable,
+  const [isEditing, setIsEditing] = useState(false);
+  const [workingOrder, setWorkingOrder] = useState([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+
+  const originalOrder = useMemo(
+    () => sources.map((row) => row.source_id),
+    [sources],
   );
-  const sources = data ?? [];
+  const sourcesById = useMemo(
+    () => new Map(sources.map((row) => [row.source_id, row])),
+    [sources],
+  );
 
-  function closePanel() {
-    setIsEditing(false);
-    setSaveError("");
-    setIsOpen((current) => !current);
-  }
+  // Nothing to reorder with fewer than two sources.
+  const canReorder = canEdit && sources.length > 1;
+  const changed = isEditing && !arraysEqual(workingOrder, originalOrder);
 
-  function startEdit() {
+  function beginEdit() {
+    setWorkingOrder(originalOrder);
     setSaveError("");
-    setWorkingOrder([...sources]);
     setIsEditing(true);
   }
 
@@ -223,16 +130,16 @@ export default function ResourceFieldCard({
   }
 
   function move(index, delta) {
-    const target = index + delta;
-    if (target < 0 || target >= workingOrder.length) return;
     setWorkingOrder((current) => {
+      const target = index + delta;
+      if (target < 0 || target >= current.length) return current;
       const next = [...current];
       [next[index], next[target]] = [next[target], next[index]];
       return next;
     });
   }
 
-  async function save() {
+  async function handleSave() {
     setIsSaving(true);
     setSaveError("");
     try {
@@ -244,11 +151,12 @@ export default function ResourceFieldCard({
         config,
         resourceId,
         fieldKey,
-        workingOrder.map((row) => row.source_id),
+        workingOrder,
         fetcher,
         endpoint,
       );
-      // Refresh this field's source list and the coalesced detail winner.
+      // Refresh both the per-field ranking and the resource detail (its coalesced
+      // winner / collapsed value may have changed).
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: resourceKeys.fieldSources(endpoint, resourceId, fieldKey),
@@ -259,14 +167,108 @@ export default function ResourceFieldCard({
       ]);
       setIsEditing(false);
     } catch (err) {
-      setSaveError(err.message || "Failed to save source priority.");
+      setSaveError(err.message || "Failed to save source order.");
     } finally {
       setIsSaving(false);
     }
   }
 
-  const displayedSources = isEditing ? workingOrder : sources;
-  const isChanged = isEditing && !sameOrder(workingOrder, sources);
+  const displayRows = isEditing
+    ? workingOrder.map((id) => sourcesById.get(id)).filter(Boolean)
+    : sources;
+
+  return (
+    <div className="mt-2 space-y-2 rounded-md border border-line bg-panel p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          All sources
+        </p>
+        {canReorder && !isEditing && (
+          <Button variant="ghost" className="px-2 py-1" onClick={beginEdit}>
+            Edit
+          </Button>
+        )}
+        {isEditing && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              className="px-2 py-1"
+              onClick={cancelEdit}
+              disabled={isSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              className="px-2 py-1"
+              onClick={handleSave}
+              disabled={!changed || isSaving}
+            >
+              {isSaving ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        )}
+      </div>
+      {saveError && <p className="text-sm text-danger">{saveError}</p>}
+      {isLoading && <p className="text-sm text-ink-muted">Loading sources…</p>}
+      {isError && (
+        <p className="text-sm text-danger">Failed to load source values.</p>
+      )}
+      {!isLoading && !isError && sources.length === 0 && (
+        <p className="text-sm text-ink-muted">
+          No source values for this field.
+        </p>
+      )}
+      {!isLoading && !isError && sources.length > 0 && (
+        <div className="space-y-1.5">
+          {/* Index 0 is the winner in both read (best-first from the API) and edit
+              (top of the working order) modes. */}
+          {displayRows.map((row, idx) => (
+            <SourceValueRow
+              key={`${row.source}-${row.source_id}`}
+              source={row.source}
+              value={row.value}
+              sourceId={row.source_id}
+              isWinner={idx === 0}
+              isOverride={!isEditing && row.is_override}
+              editControls={
+                isEditing ? (
+                  <MoveButtons
+                    label={SOURCE_LABELS[row.source] ?? UNKNOWN_SOURCE_LABEL}
+                    canMoveUp={idx > 0}
+                    canMoveDown={idx < displayRows.length - 1}
+                    onMoveUp={() => move(idx, -1)}
+                    onMoveDown={() => move(idx, 1)}
+                  />
+                ) : null
+              }
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A FieldCard for the resource detail page: clicking a populated value lazily
+// fetches every source's value for that field and shows them in priority order.
+// With `resource:write`, the panel also allows reordering sources for the field.
+export default function ResourceFieldCard({
+  endpoint,
+  resourceId,
+  fieldKey,
+  label,
+  value,
+  source,
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const expandable = value !== null && value !== undefined && value !== "";
+  const { data, isLoading, isError } = useFieldSourceValues(
+    endpoint,
+    resourceId,
+    fieldKey,
+    isOpen && expandable,
+  );
 
   return (
     <FieldCard
@@ -275,21 +277,15 @@ export default function ResourceFieldCard({
       source={source}
       expandable={expandable}
       isOpen={isOpen}
-      onToggle={closePanel}
+      onToggle={() => setIsOpen((current) => !current)}
     >
       <FieldSourcesPanel
         isLoading={isLoading}
         isError={isError}
-        sources={displayedSources}
-        canEdit={canEdit}
-        isEditing={isEditing}
-        onStartEdit={startEdit}
-        onCancelEdit={cancelEdit}
-        onSave={save}
-        onMove={move}
-        isChanged={isChanged}
-        isSaving={isSaving}
-        saveError={saveError}
+        sources={data ?? []}
+        endpoint={endpoint}
+        resourceId={resourceId}
+        fieldKey={fieldKey}
       />
     </FieldCard>
   );

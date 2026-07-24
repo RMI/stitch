@@ -1211,6 +1211,8 @@ class TestFieldSourceValues:
             ("llm", "LLM Name"),
         ]
         assert [r.priority for r in rows] == sorted(r.priority for r in rows)
+        # No overrides seeded, so nothing is flagged as curated.
+        assert all(r.is_override is False for r in rows)
 
     @pytest.mark.anyio
     async def test_override_reorders_field_values(
@@ -1233,6 +1235,8 @@ class TestFieldSourceValues:
             ("wm", "Beta"),
             ("gem", "Alpha"),
         ]
+        # The (resource, basin) override snapshot pinned both records.
+        assert [r.is_override for r in rows] == [True, True]
 
     @pytest.mark.anyio
     async def test_omits_sources_without_a_value(
