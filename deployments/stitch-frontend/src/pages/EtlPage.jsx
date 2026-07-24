@@ -39,37 +39,16 @@ const CCR_FIELDS = [
   },
 ];
 
-const BC_FIELDS = [
-  {
-    key: "payload_limit",
-    label: "Payload limit",
-    type: "number",
-    help: "Optional cap on payloads posted this run. Leave blank to post all.",
-  },
-  {
-    key: "xlsx_sheet",
-    label: "BC xlsx sheet",
-    type: "text",
-    placeholder: "Reservoirs",
-    help: "Excel sheet name to load. Leave blank to use the configured default.",
-  },
-];
+// No run parameters yet: the BC dataset hasn't been added to stitch-etl-poc,
+// so the real request-body shape is unknown. Leave empty (no inputs, empty
+// body) until the dataset lands and the fields can be defined to match it.
+const BC_FIELDS = [];
 
-const ALB_FIELDS = [
-  {
-    key: "payload_limit",
-    label: "Payload limit",
-    type: "number",
-    help: "Optional cap on payloads posted this run. Leave blank to post all.",
-  },
-  {
-    key: "xlsx_sheet",
-    label: "Alberta xlsx sheet",
-    type: "text",
-    placeholder: "Reservoirs",
-    help: "Excel sheet name to load. Leave blank to use the configured default.",
-  },
-];
+// No run parameters yet: the Alberta dataset hasn't been added to
+// stitch-etl-poc, so the real request-body shape is unknown. Leave empty (no
+// inputs, empty body) until the dataset lands and the fields can be defined to
+// match it.
+const ALB_FIELDS = [];
 
 const WOODMAC_FIELDS = [
   {
