@@ -12,6 +12,7 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 from stitch.ogsi.model import (
+    CCRSource,
     GemSource,
     LLMSource,
     OGSISrcKey,
@@ -108,6 +109,8 @@ def make_source(
             return WoodMacSource(**kwargs)
         case "gem":
             return GemSource(**kwargs)
+        case "ccr":
+            return CCRSource(**kwargs)
 
 
 def make_resource(

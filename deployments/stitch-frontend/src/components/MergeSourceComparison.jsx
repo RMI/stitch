@@ -1,7 +1,5 @@
 import { useState } from "react";
-import { useConfig } from "../config/useConfig";
-import { useAuthenticatedQuery } from "../hooks/useAuthenticatedQuery";
-import { getResourceDetail } from "../queries/api";
+import { useMergeSourceDetails } from "../hooks/useMergeSourceDetails";
 import {
   FIELD_META,
   MERGE_COMPARISON_CORE_FIELDS,
@@ -179,7 +177,6 @@ function OtherAttributesAccordion({ details }) {
 // One aggregate query fetches every resource detail so all columns arrive
 // (and error) together.
 export default function MergeSourceComparison({ endpoint, resourceIds }) {
-  const config = useConfig();
   const ids = resourceIds ?? [];
   const hasEnoughSources = ids.length >= 2;
 
@@ -188,14 +185,7 @@ export default function MergeSourceComparison({ endpoint, resourceIds }) {
     isLoading,
     isError,
     error,
-  } = useAuthenticatedQuery({
-    queryKey: [endpoint, "merge-source-details", ...ids],
-    queryFn: (fetcher) =>
-      Promise.all(
-        ids.map((id) => getResourceDetail(config, id, fetcher, endpoint)),
-      ),
-    enabled: hasEnoughSources,
-  });
+  } = useMergeSourceDetails(endpoint, ids, hasEnoughSources);
 
   return (
     <section className="border-t border-line px-5 py-5">

@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useAuth0 } from "@auth0/auth0-react";
 import { auth0TestDefaults, renderWithQueryClient } from "../test/utils";
 import MergeCandidateReviewPage from "./MergeCandidateReviewPage";
 import { useMergeCandidates, useMergeCandidate } from "../hooks/useResources";
-import { reviewMergeCandidate } from "../queries/api";
+import { reviewMergeCandidate, getResourceDetail } from "../queries/api";
 
 vi.mock("../hooks/useResources", () => ({
   useMergeCandidates: vi.fn(),
@@ -14,6 +14,7 @@ vi.mock("../hooks/useResources", () => ({
 
 vi.mock("../queries/api", () => ({
   reviewMergeCandidate: vi.fn(),
+  getResourceDetail: vi.fn(),
 }));
 
 vi.mock("../components/MergeSourceComparison", () => ({
@@ -57,6 +58,13 @@ const defaultHookReturn = {
   refetch: vi.fn(),
 };
 
+const resourceDetailsById = {
+  101: { data: { name: "Burgan" }, provenance: { name: "gem" } },
+  102: { data: { name: "Bergan" }, provenance: { name: "wm" } },
+  201: { data: { name: "Arabian Consolidated" }, provenance: { name: "rmi" } },
+  202: { data: { name: "Arabian Duplicate" }, provenance: { name: "gem" } },
+};
+
 beforeEach(() => {
   vi.mocked(useAuth0).mockReturnValue(auth0TestDefaults);
   vi.mocked(useMergeCandidates).mockReturnValue({
@@ -70,6 +78,9 @@ beforeEach(() => {
     refetch: vi.fn(),
   });
   vi.mocked(reviewMergeCandidate).mockResolvedValue({});
+  vi.mocked(getResourceDetail).mockImplementation((_config, id) =>
+    Promise.resolve(resourceDetailsById[id]),
+  );
 });
 
 describe("MergeCandidateReviewPage", () => {
@@ -93,6 +104,48 @@ describe("MergeCandidateReviewPage", () => {
     expect(screen.getByText("Pending")).toBeInTheDocument();
     expect(screen.getByText("Reviewed")).toBeInTheDocument();
     expect(screen.getByText("Total")).toBeInTheDocument();
+  });
+
+  it("shows the resolved candidate name in the queue, hiding raw resource ids", async () => {
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    const queueItem = await screen.findByRole("button", { name: /Burgan/ });
+    expect(within(queueItem).queryByText(/101/)).not.toBeInTheDocument();
+    expect(within(queueItem).queryByText(/Resources/)).not.toBeInTheDocument();
+    expect(within(queueItem).queryByText(/Merged/)).not.toBeInTheDocument();
+    expect(queueItem).toHaveAttribute("title", "Source resources: 101, 102");
+  });
+
+  it("falls back to the candidate id when no source resource has a name", async () => {
+    vi.mocked(getResourceDetail).mockResolvedValue({
+      data: { name: null },
+      provenance: {},
+    });
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    await waitFor(() => expect(getResourceDetail).toHaveBeenCalled());
+    expect(screen.getAllByText("Candidate #11").length).toBeGreaterThan(0);
+  });
+
+  it('labels a pending item\'s status badge "CANDIDATE" instead of "PENDING"', async () => {
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    const pendingItem = await screen.findByRole("button", { name: /Burgan/ });
+    expect(within(pendingItem).getByText("CANDIDATE")).toBeInTheDocument();
+    expect(within(pendingItem).queryByText("PENDING")).not.toBeInTheDocument();
+
+    const approvedItem = await screen.findByRole("button", {
+      name: /Arabian Consolidated/,
+    });
+    expect(within(approvedItem).getByText("APPROVED")).toBeInTheDocument();
+  });
+
+  it("shows the resolved name in the detail panel heading, with the merged resource id still visible in the facts", async () => {
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Burgan" }),
+    ).toBeInTheDocument();
   });
 
   it("links each source resource id to its detail page", () => {

@@ -7,13 +7,16 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 from polyfactory.pytest_plugin import register_fixture
+from sqlalchemy import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from stitch.auth import TokenClaims
 from stitch.auth.permissions import ALL_PERMISSIONS
+from stitch.ogsi.model import SOURCE_PRIORITY
 
 from stitch.api.db.config import UnitOfWork, get_uow
 from stitch.api.db.model import (
+    OGFieldSourcePriority,
     StitchBase,
     UserModel,
 )
@@ -146,6 +149,16 @@ async def integration_engine():
     )
     async with engine.begin() as conn:
         await conn.run_sync(StitchBase.metadata.create_all, tables=non_view_tables)
+        # Production seeds og_field_source_priority via Alembic; the test schema
+        # is built with create_all, so seed the priority order here from the
+        # canonical SOURCE_PRIORITY constant.
+        await conn.execute(
+            insert(OGFieldSourcePriority),
+            [
+                {"source": source, "priority": i + 1}
+                for i, source in enumerate(SOURCE_PRIORITY)
+            ],
+        )
     yield engine
     await engine.dispose()
 
