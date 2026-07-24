@@ -136,7 +136,16 @@ function CandidateFacts({ candidate }) {
       <div>
         <dt className="font-semibold text-ink-muted">Merged resource</dt>
         <dd className="mt-1 break-words text-ink">
-          {candidate.merged_resource_id ?? "Not created"}
+          {candidate.merged_resource_id ? (
+            <Link
+              to={`/${ENDPOINT}/${candidate.merged_resource_id}`}
+              className="text-primary underline"
+            >
+              {candidate.merged_resource_id}
+            </Link>
+          ) : (
+            "Not created"
+          )}
         </dd>
       </div>
     </dl>
