@@ -106,3 +106,9 @@ For packages, APIs, frameworks, cloud services, security topics, and operational
 
 * Verify current documentation rather than relying solely on memory.
 * Prefer official documentation, release notes, maintainers, and primary sources.
+
+## Project Docs
+
+@ARCHITECTURE.md
+@HACKING.md
+@CONTRIBUTING.md
