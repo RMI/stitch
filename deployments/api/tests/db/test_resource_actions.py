@@ -914,7 +914,7 @@ class TestResourceFilterOptionsAction:
         labeled = value_col.label("value")
         stmt = (
             resource_actions.select(labeled)
-            .where(value_col.is_not(None), value_col != "")
+            .where(value_col.is_not(None))
             .distinct()
             .order_by(labeled)
         )

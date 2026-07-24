@@ -130,11 +130,10 @@ def _build_comparison(
             if source.id is None:
                 continue
             value = getattr(source, field_name, None)
-            # Mirror the coalescer (coalesce_og_field_resource excludes None
-            # only): an empty string is a real value that can win the merge, so
-            # it must appear here too or `compare` disagrees with the result.
-            # note: when moving coalescing into DB (PR 170) this also needs to
-            # be checked
+            # Exclude only None, matching the coalescer. Empty strings never
+            # reach here: they are dropped on write and rejected by the DB's
+            # ck_source_value_text_nonempty CHECK, so NULL/absent is the only
+            # "unset" case to skip.
             if value is None:
                 continue
             values.append(

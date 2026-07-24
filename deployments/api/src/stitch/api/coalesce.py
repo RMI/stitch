@@ -34,7 +34,7 @@ def coalesce_og_field_resource(
     """Coalesce all source payloads into a single ``OGFieldView``.
 
     For each field independently, pick the source record with the smallest sort
-    key among records carrying a non-empty value for that field. The sort key
+    key among records carrying a value for that field. The sort key
     places any record pinned by a ``field_overrides`` entry (tier 0, ordered by
     the override priority) ahead of every non-pinned record (tier 1, ordered by
     the source's global default priority). So a source added *after* a curator
