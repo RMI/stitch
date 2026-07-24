@@ -104,7 +104,8 @@ export async function updateFieldSourcePriority(
     body: JSON.stringify({ ordered_source_pks: orderedSourcePks }),
   });
   if (!response.ok) {
-    const error = new Error(`HTTP error! status: ${response.status}`);
+    const detail = await getErrorDetail(response);
+    const error = new Error(detail);
     error.status = response.status;
     throw error;
   }
