@@ -61,10 +61,10 @@ function SourceValueRow({ source, value, sourceId, isWinner }) {
   );
 }
 
-// The add-a-value form shown at the top of the panel while editing. Lets a
-// curator enter a new "User Generated" value (with an optional note) for this
-// field; on submit it creates and attaches an rmi source to the resource.
-function AddSourceForm({ endpoint, resourceId, fieldKey, onAdded }) {
+// The value entry form, revealed after the curator clicks "+". Lets them enter a
+// new "User Generated" value (with an optional note) for this field; on Save it
+// creates and attaches an rmi source to the resource.
+function AddSourceForm({ endpoint, resourceId, fieldKey, onSaved }) {
   const config = useConfig();
   const { getAccessTokenSilently } = useAuth0();
   const queryClient = useQueryClient();
@@ -76,7 +76,7 @@ function AddSourceForm({ endpoint, resourceId, fieldKey, onAdded }) {
 
   const trimmedValue = value.trim();
 
-  async function handleAdd() {
+  async function handleSave() {
     if (!trimmedValue || isSaving) return;
     setIsSaving(true);
     setSaveError("");
@@ -106,7 +106,7 @@ function AddSourceForm({ endpoint, resourceId, fieldKey, onAdded }) {
           queryKey: resourceKeys.detail(endpoint, resourceId),
         }),
       ]);
-      onAdded();
+      onSaved();
     } catch (err) {
       setSaveError(err.message || "Failed to add value.");
     } finally {
@@ -133,11 +133,10 @@ function AddSourceForm({ endpoint, resourceId, fieldKey, onAdded }) {
       <div className="flex items-center gap-2">
         <Button
           variant="primary"
-          onClick={handleAdd}
+          onClick={handleSave}
           disabled={!trimmedValue || isSaving}
-          aria-label="Add value"
         >
-          {isSaving ? "Adding…" : "+"}
+          {isSaving ? "Saving…" : "Save"}
         </Button>
       </div>
       {saveError && <p className="text-sm text-danger">{saveError}</p>}
@@ -149,17 +148,19 @@ function FieldSourcesPanel({
   isLoading,
   isError,
   sources,
+  canEdit,
   endpoint,
   resourceId,
   fieldKey,
 }) {
-  // Creating + attaching a source needs both the source and resource writes,
-  // matching POST /oil-gas-fields/{id}/sources. Call both hooks unconditionally.
-  const canWriteSource = useHasPermission("source:write");
-  const canWriteResource = useHasPermission("resource:write");
-  const canEdit = canWriteSource && canWriteResource;
-
   const [isEditing, setIsEditing] = useState(false);
+  // Keep the value form hidden until the curator clicks "+", to reduce clutter.
+  const [isAdding, setIsAdding] = useState(false);
+
+  function stopEditing() {
+    setIsEditing(false);
+    setIsAdding(false);
+  }
 
   return (
     <div className="mt-2 space-y-2 rounded-md border border-line bg-panel p-3">
@@ -169,7 +170,7 @@ function FieldSourcesPanel({
         </p>
         {canEdit &&
           (isEditing ? (
-            <Button variant="ghost" onClick={() => setIsEditing(false)}>
+            <Button variant="ghost" onClick={stopEditing}>
               Cancel
             </Button>
           ) : (
@@ -178,14 +179,23 @@ function FieldSourcesPanel({
             </Button>
           ))}
       </div>
-      {isEditing && (
-        <AddSourceForm
-          endpoint={endpoint}
-          resourceId={resourceId}
-          fieldKey={fieldKey}
-          onAdded={() => setIsEditing(false)}
-        />
-      )}
+      {isEditing &&
+        (isAdding ? (
+          <AddSourceForm
+            endpoint={endpoint}
+            resourceId={resourceId}
+            fieldKey={fieldKey}
+            onSaved={stopEditing}
+          />
+        ) : (
+          <Button
+            variant="secondary"
+            onClick={() => setIsAdding(true)}
+            aria-label="Add value"
+          >
+            +
+          </Button>
+        ))}
       {isLoading && <p className="text-sm text-ink-muted">Loading sources…</p>}
       {isError && (
         <p className="text-sm text-danger">Failed to load source values.</p>
@@ -215,6 +225,8 @@ function FieldSourcesPanel({
 
 // A FieldCard for the resource detail page: clicking a populated value lazily
 // fetches every source's value for that field and shows them in priority order.
+// Curators (source:write + resource:write) can also expand a field that has no
+// values yet, to add the first one.
 export default function ResourceFieldCard({
   endpoint,
   resourceId,
@@ -224,7 +236,15 @@ export default function ResourceFieldCard({
   source,
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const expandable = value !== null && value !== undefined && value !== "";
+  // Creating + attaching a source needs both writes, matching
+  // POST /oil-gas-fields/{id}/sources. Call both hooks unconditionally.
+  const canWriteSource = useHasPermission("source:write");
+  const canWriteResource = useHasPermission("resource:write");
+  const canEdit = canWriteSource && canWriteResource;
+
+  const hasValue = value !== null && value !== undefined && value !== "";
+  // Editors can also open empty fields to add the first value.
+  const expandable = hasValue || canEdit;
   const { data, isLoading, isError } = useFieldSourceValues(
     endpoint,
     resourceId,
@@ -245,6 +265,7 @@ export default function ResourceFieldCard({
         isLoading={isLoading}
         isError={isError}
         sources={data ?? []}
+        canEdit={canEdit}
         endpoint={endpoint}
         resourceId={resourceId}
         fieldKey={fieldKey}

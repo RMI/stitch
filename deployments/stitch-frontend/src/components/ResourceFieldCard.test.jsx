@@ -138,6 +138,30 @@ describe("ResourceFieldCard", () => {
     ).toBeInTheDocument();
   });
 
+  it("lets an editor expand a field that has no values to add the first one", async () => {
+    const user = userEvent.setup();
+    grantWritePermissions();
+    useFieldSourceValues.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+    });
+    renderCard({ value: null });
+
+    await user.click(screen.getByRole("button"));
+
+    expect(useFieldSourceValues).toHaveBeenLastCalledWith(
+      "oil-gas-fields",
+      42,
+      "basin",
+      true,
+    );
+    expect(
+      screen.getByText("No source values for this field."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
+  });
+
   describe("overwrite action", () => {
     beforeEach(() => {
       useFieldSourceValues.mockReturnValue({
@@ -161,21 +185,31 @@ describe("ResourceFieldCard", () => {
       ).not.toBeInTheDocument();
     });
 
-    it("reveals value + note inputs when Edit is clicked, and Cancel hides them", async () => {
+    it("keeps the value form hidden until '+' is clicked, and Cancel resets", async () => {
       const user = userEvent.setup();
       grantWritePermissions();
       renderCard();
       await user.click(screen.getByRole("button")); // open panel
 
       await user.click(screen.getByRole("button", { name: /^edit$/i }));
+      // Only the "+" affordance shows; the fields stay hidden until it's clicked.
+      expect(
+        screen.getByRole("button", { name: /add value/i }),
+      ).toBeInTheDocument();
+      expect(screen.queryByLabelText("New value")).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: /add value/i }));
       expect(screen.getByLabelText("New value")).toBeInTheDocument();
       expect(screen.getByLabelText("Note")).toBeInTheDocument();
       expect(
-        screen.getByRole("button", { name: /add value/i }),
+        screen.getByRole("button", { name: /^save$/i }),
       ).toBeInTheDocument();
 
       await user.click(screen.getByRole("button", { name: /^cancel$/i }));
       expect(screen.queryByLabelText("New value")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /add value/i }),
+      ).not.toBeInTheDocument();
     });
 
     it("creates an rmi source with only this field populated, plus the note, and refreshes", async () => {
@@ -190,9 +224,10 @@ describe("ResourceFieldCard", () => {
 
       await user.click(screen.getByRole("button")); // open panel
       await user.click(screen.getByRole("button", { name: /^edit$/i }));
+      await user.click(screen.getByRole("button", { name: /add value/i }));
       await user.type(screen.getByLabelText("New value"), "Deep Basin");
       await user.type(screen.getByLabelText("Note"), "checked the map");
-      await user.click(screen.getByRole("button", { name: /add value/i }));
+      await user.click(screen.getByRole("button", { name: /^save$/i }));
 
       expect(createSpy).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -244,8 +279,9 @@ describe("ResourceFieldCard", () => {
       renderCard();
       await user.click(screen.getByRole("button"));
       await user.click(screen.getByRole("button", { name: /^edit$/i }));
-      await user.type(screen.getByLabelText("New value"), "Deep Basin");
       await user.click(screen.getByRole("button", { name: /add value/i }));
+      await user.type(screen.getByLabelText("New value"), "Deep Basin");
+      await user.click(screen.getByRole("button", { name: /^save$/i }));
 
       expect(createSpy).toHaveBeenCalledWith(
         expect.anything(),
@@ -270,25 +306,27 @@ describe("ResourceFieldCard", () => {
       renderCard();
       await user.click(screen.getByRole("button"));
       await user.click(screen.getByRole("button", { name: /^edit$/i }));
-      await user.type(screen.getByLabelText("New value"), "Deep Basin");
       await user.click(screen.getByRole("button", { name: /add value/i }));
+      await user.type(screen.getByLabelText("New value"), "Deep Basin");
+      await user.click(screen.getByRole("button", { name: /^save$/i }));
 
       expect(await screen.findByText("overwrite failed")).toBeInTheDocument();
       // Draft is preserved so the user can retry.
       expect(screen.getByLabelText("New value")).toHaveValue("Deep Basin");
     });
 
-    it("keeps the Add button disabled until a value is entered", async () => {
+    it("keeps the Save button disabled until a value is entered", async () => {
       const user = userEvent.setup();
       grantWritePermissions();
       renderCard();
       await user.click(screen.getByRole("button"));
       await user.click(screen.getByRole("button", { name: /^edit$/i }));
+      await user.click(screen.getByRole("button", { name: /add value/i }));
 
-      expect(screen.getByRole("button", { name: /add value/i })).toBeDisabled();
+      expect(screen.getByRole("button", { name: /^save$/i })).toBeDisabled();
       await user.type(screen.getByLabelText("New value"), "Deep Basin");
       expect(
-        screen.getByRole("button", { name: /add value/i }),
+        screen.getByRole("button", { name: /^save$/i }),
       ).not.toBeDisabled();
     });
   });
