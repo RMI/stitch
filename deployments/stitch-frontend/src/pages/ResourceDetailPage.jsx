@@ -437,7 +437,7 @@ function SourceRow({ source }) {
     !Array.isArray(payload) &&
     typeof payload.note === "string" &&
     payload.note.trim()
-      ? payload.note
+      ? payload.note.trim()
       : null;
 
   let metaLine;
