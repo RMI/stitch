@@ -309,6 +309,25 @@ describe("MergeCandidateReviewPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("links the merged resource id to its detail page", () => {
+    const mergedCandidate = candidates[1];
+    vi.mocked(useMergeCandidates).mockReturnValue({
+      ...defaultHookReturn,
+      data: [mergedCandidate],
+    });
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: mergedCandidate,
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(screen.getByRole("link", { name: "301" })).toHaveAttribute(
+      "href",
+      "/oil-gas-fields/301",
+    );
+  });
+
   it("blocks with an error when the detail query fails and the queue has no item", () => {
     vi.mocked(useMergeCandidates).mockReturnValue({
       ...defaultHookReturn,
