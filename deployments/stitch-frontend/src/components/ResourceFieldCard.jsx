@@ -106,10 +106,11 @@ function AddSourceForm({ endpoint, resourceId, fieldKey, onSaved }) {
           queryKey: resourceKeys.detail(endpoint, resourceId),
         }),
       ]);
+      // Success unmounts this form (parent exits edit mode), so there is no
+      // `isSaving` to reset — only the error path below keeps the form mounted.
       onSaved();
     } catch (err) {
       setSaveError(err.message || "Failed to add value.");
-    } finally {
       setIsSaving(false);
     }
   }
