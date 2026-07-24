@@ -1,28 +1,24 @@
-"""Performance instrumentation and tracing for the Stitch API.
+"""Performance instrumentation for the Stitch API.
 
-Two complementary layers:
+The generic machinery — tracing setup, structured logging, and the
+``RequestContextMiddleware`` that establishes per-request context and tags the
+active span — lives in the shared ``stitch.observability`` package and is wired
+up directly in :mod:`stitch.api.main` / :mod:`stitch.api.db.config`. This
+subpackage holds the API-specific pieces layered on top:
 
-* Structured-log timing — a SQLAlchemy event listener at the single engine
-  chokepoint (:mod:`query_timing`) and a request-timing middleware
-  (:mod:`request_logging`), both emitting through :mod:`sinks` to stdout, where
+* Structured-log query timing — a SQLAlchemy event listener at the single engine
+  chokepoint (:mod:`query_timing`) emitting through :mod:`sinks` to stdout, where
   Azure Container Apps forwards it to Log Analytics. Always on, independent of
   trace sampling.
-* OpenTelemetry tracing (:mod:`tracing`) — FastAPI / SQLAlchemy
-  auto-instrumentation producing spans, exported over OTLP to a collector or
-  logged to stdout (``OTEL_TRACES_EXPORTER``). The request middleware copies the
-  request id / scenario onto the active span so the two layers correlate.
+* Per-request DB aggregates — :mod:`request_logging` extends the shared
+  ``RequestContextMiddleware`` to add this request's query count / time to the
+  request-summary log event.
 """
 
-from .logging_config import configure_logging
 from .query_timing import register_query_timing
 from .request_logging import RequestTimingMiddleware
-from .tracing import configure_tracing, instrument_fastapi, instrument_sqlalchemy
 
 __all__ = [
-    "configure_logging",
     "register_query_timing",
     "RequestTimingMiddleware",
-    "configure_tracing",
-    "instrument_fastapi",
-    "instrument_sqlalchemy",
 ]

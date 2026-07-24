@@ -16,6 +16,7 @@ members = [
     "stitch-entity-linkage",
     "stitch-llm",
     "stitch-models",
+    "stitch-observability",
     "stitch-ogsi",
     "stitch-seed",
 ]
@@ -683,6 +684,22 @@ wheels = [
 ]
 
 [[package]]
+name = "opentelemetry-instrumentation-httpx"
+version = "0.65b0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-instrumentation" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "opentelemetry-util-http" },
+    { name = "wrapt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/61/03/a529140241addd4d0acc73bafbd6f74691651b92fc0ae9b4513cf80f07fa/opentelemetry_instrumentation_httpx-0.65b0.tar.gz", hash = "sha256:4627aa9c6bb99bf4462c8b565b0ef6aeb9ffad95c6c92868be1ef7895de112ee", size = 26309, upload-time = "2026-07-16T15:26:07.973Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9d/0f/c6144096b4914bbf44b43ba21c962e8f333ff045770b50a3e79ed8bd455f/opentelemetry_instrumentation_httpx-0.65b0-py3-none-any.whl", hash = "sha256:400f1b78afa4ee2332b5debe58e1ed1b317913d58812c952576be76660aeadb1", size = 17436, upload-time = "2026-07-16T15:25:15.772Z" },
+]
+
+[[package]]
 name = "opentelemetry-instrumentation-sqlalchemy"
 version = "0.65b0"
 source = { registry = "https://pypi.org/simple" }
@@ -1239,15 +1256,13 @@ dependencies = [
     { name = "alembic" },
     { name = "fastapi", extra = ["standard-no-fastapi-cloud-cli"] },
     { name = "greenlet" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc" },
-    { name = "opentelemetry-instrumentation-fastapi" },
-    { name = "opentelemetry-instrumentation-sqlalchemy" },
     { name = "opentelemetry-sdk" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
     { name = "sqlalchemy" },
     { name = "stitch-auth" },
     { name = "stitch-models" },
+    { name = "stitch-observability", extra = ["asgi"] },
     { name = "stitch-ogsi" },
 ]
 
@@ -1265,15 +1280,13 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.18.5" },
     { name = "fastapi", extras = ["standard-no-fastapi-cloud-cli"], specifier = ">=0.139.2" },
     { name = "greenlet", specifier = ">=3.3.0" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.30.0" },
-    { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.65b0" },
-    { name = "opentelemetry-instrumentation-sqlalchemy", specifier = ">=0.65b0" },
     { name = "opentelemetry-sdk", specifier = ">=1.30.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
     { name = "sqlalchemy", specifier = ">=2.0.44" },
     { name = "stitch-auth", editable = "packages/stitch-auth" },
     { name = "stitch-models", editable = "packages/stitch-models" },
+    { name = "stitch-observability", extras = ["asgi"], editable = "packages/stitch-observability" },
     { name = "stitch-ogsi", editable = "packages/stitch-ogsi" },
 ]
 
@@ -1353,6 +1366,7 @@ dependencies = [
     { name = "stitch-auth" },
     { name = "stitch-client" },
     { name = "stitch-models" },
+    { name = "stitch-observability", extra = ["asgi"] },
     { name = "stitch-ogsi" },
 ]
 
@@ -1373,6 +1387,7 @@ requires-dist = [
     { name = "stitch-auth", editable = "packages/stitch-auth" },
     { name = "stitch-client", editable = "packages/stitch-client" },
     { name = "stitch-models", editable = "packages/stitch-models" },
+    { name = "stitch-observability", extras = ["asgi"], editable = "packages/stitch-observability" },
     { name = "stitch-ogsi", editable = "packages/stitch-ogsi" },
 ]
 
@@ -1396,6 +1411,7 @@ dependencies = [
     { name = "stitch-auth" },
     { name = "stitch-client" },
     { name = "stitch-models" },
+    { name = "stitch-observability", extra = ["asgi"] },
     { name = "stitch-ogsi" },
 ]
 
@@ -1414,6 +1430,7 @@ requires-dist = [
     { name = "stitch-auth", editable = "packages/stitch-auth" },
     { name = "stitch-client", editable = "packages/stitch-client" },
     { name = "stitch-models", editable = "packages/stitch-models" },
+    { name = "stitch-observability", extras = ["asgi"], editable = "packages/stitch-observability" },
     { name = "stitch-ogsi", editable = "packages/stitch-ogsi" },
 ]
 
@@ -1442,6 +1459,50 @@ requires-dist = [{ name = "pydantic", specifier = ">=2.12.5" }]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=9.1.1" }]
+
+[[package]]
+name = "stitch-observability"
+version = "0.1.0"
+source = { editable = "packages/stitch-observability" }
+dependencies = [
+    { name = "opentelemetry-exporter-otlp-proto-grpc" },
+    { name = "opentelemetry-instrumentation-fastapi" },
+    { name = "opentelemetry-instrumentation-httpx" },
+    { name = "opentelemetry-instrumentation-sqlalchemy" },
+    { name = "opentelemetry-sdk" },
+    { name = "pydantic-settings" },
+]
+
+[package.optional-dependencies]
+asgi = [
+    { name = "starlette" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "fastapi", extra = ["standard-no-fastapi-cloud-cli"] },
+    { name = "httpx" },
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.30.0" },
+    { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.65b0" },
+    { name = "opentelemetry-instrumentation-httpx", specifier = ">=0.65b0" },
+    { name = "opentelemetry-instrumentation-sqlalchemy", specifier = ">=0.65b0" },
+    { name = "opentelemetry-sdk", specifier = ">=1.30.0" },
+    { name = "pydantic-settings", specifier = ">=2.11.0" },
+    { name = "starlette", marker = "extra == 'asgi'", specifier = ">=0.40" },
+]
+provides-extras = ["asgi"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "fastapi", extras = ["standard-no-fastapi-cloud-cli"], specifier = ">=0.135.1" },
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "pytest", specifier = ">=9.0.2" },
+]
 
 [[package]]
 name = "stitch-ogsi"

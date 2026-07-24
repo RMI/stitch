@@ -8,11 +8,13 @@ import pytest
 
 from stitch.api.entities import (
     MergeCandidateCreateRequest,
+    MergeCandidateDetailView,
     MergeCandidateReviewRequest,
     MergeCandidateStatus,
 )
 from stitch.api.db.errors import InvalidActionError, ResourceNotFoundError
 from stitch.api.db import merge_candidate_actions as mca
+from stitch.ogsi.model.og_field import OilGasFieldBase
 
 from datetime import datetime, timezone
 
@@ -332,3 +334,169 @@ async def test_deny_merge_candidate_updates_candidate(monkeypatch, user):
     assert session.flush_calls == 1
     assert view.status == MergeCandidateStatus.DENIED
     assert view.review_notes == "do not merge"
+
+
+def _status_for(compare, field):
+    return next(c.status for c in compare if c.field == field)
+
+
+def _values_for(compare, field):
+    entry = next(c for c in compare if c.field == field)
+    return [(v.resource_id, v.source, v.source_id, v.value) for v in entry.values]
+
+
+def test_build_comparison_status_is_match_or_different_per_resource():
+    # status compares the resources' coalesced values (resource_views); values
+    # list every contributing source, tagged with its resource_id.
+    view_a = OilGasFieldBase(name="Ghawar", country="SAU", basin=None, region="R1")
+    view_b = OilGasFieldBase(name="Burgan", country="SAU", basin=None, region=None)
+    src_a = SimpleNamespace(source="rmi", id=10, name="Ghawar", country="SAU")
+    src_b = SimpleNamespace(source="rmi", id=11, name="Burgan", country="SAU")
+    sources_with_priority = [(18, src_a, 1), (19, src_b, 1)]
+
+    compare = mca._build_comparison([view_a, view_b], sources_with_priority)
+
+    # resources disagree
+    assert _status_for(compare, "name") == "different"
+    # resources agree
+    assert _status_for(compare, "country") == "match"
+    # both null -> agree
+    assert _status_for(compare, "basin") == "match"
+    # one resource has a value, the other is null -> different
+    assert _status_for(compare, "region") == "different"
+
+    # values are per-source (winner-first), tagged with the attached resource_id
+    assert _values_for(compare, "name") == [
+        (18, "rmi", 10, "Ghawar"),
+        (19, "rmi", 11, "Burgan"),
+    ]
+
+    # every OilGasFieldBase field is represented, once, in field order
+    assert [c.field for c in compare] == list(OilGasFieldBase.model_fields)
+
+
+def test_build_comparison_matches_when_per_resource_winners_agree():
+    # Composite resource A resolves basin to "Foo" (its RMI winner), with a
+    # lower-priority GEM source "Bar" also in play. Resource B resolves basin to
+    # "Foo". Three sources in play, but both resources' *winners* agree -> match:
+    # status compares the resources' coalesced values, not every raw source.
+    view_a = OilGasFieldBase(name=None, country="SAU", basin="Foo")
+    view_b = OilGasFieldBase(name=None, country="SAU", basin="Foo")
+    src_a_win = SimpleNamespace(source="rmi", id=10, basin="Foo")
+    src_a_lose = SimpleNamespace(source="gem", id=11, basin="Bar")
+    src_b = SimpleNamespace(source="rmi", id=12, basin="Foo")
+    sources_with_priority = [(18, src_a_win, 1), (18, src_a_lose, 2), (19, src_b, 1)]
+
+    compare = mca._build_comparison([view_a, view_b], sources_with_priority)
+
+    assert _status_for(compare, "basin") == "match"
+    # all three sources are listed (the losing "Bar" is not dropped), winner-first
+    assert _values_for(compare, "basin") == [
+        (18, "rmi", 10, "Foo"),
+        (19, "rmi", 12, "Foo"),
+        (18, "gem", 11, "Bar"),
+    ]
+
+
+def test_build_comparison_treats_empty_string_as_a_real_value():
+    # The coalescer excludes only None (empty strings are real values), so
+    # `compare` must keep "" too. Both resources coalesce to "" -> match, and ""
+    # appears in `values` rather than being filtered out.
+    view_a = OilGasFieldBase(name=None, country="SAU", basin="")
+    view_b = OilGasFieldBase(name=None, country="SAU", basin="")
+    src_a = SimpleNamespace(source="rmi", id=10, basin="")
+    src_b = SimpleNamespace(source="rmi", id=11, basin="")
+
+    compare = mca._build_comparison([view_a, view_b], [(18, src_a, 1), (19, src_b, 1)])
+
+    assert _values_for(compare, "basin") == [(18, "rmi", 10, ""), (19, "rmi", 11, "")]
+    assert _status_for(compare, "basin") == "match"
+
+
+@pytest.mark.anyio
+async def test_get_merge_candidate_returns_detail_view_in_item_order(monkeypatch):
+    candidate = FakeCandidate(
+        id=1,
+        status=MergeCandidateStatus.PENDING,
+        items=[
+            FakeItem(resource_id=19, position=1),
+            FakeItem(resource_id=18, position=0),
+        ],
+    )
+
+    async def fake_load_candidate_model(session_arg, candidate_id):
+        assert candidate_id == 1
+        return candidate
+
+    async def fake_coalesce(session_arg, resource_ids, licensed):
+        # ordered by item position
+        assert resource_ids == [18, 19]
+        assert licensed == ["gem"]
+        return {
+            rid: SimpleNamespace(
+                source_data=[SimpleNamespace(source="rmi", id=rid, name=f"name-{rid}")],
+                view=OilGasFieldBase(name=f"name-{rid}", country="USA"),
+            )
+            for rid in resource_ids
+        }
+
+    async def fake_default_priority(session_arg):
+        return {"rmi": 1, "gem": 2, "wm": 3, "llm": 4}
+
+    monkeypatch.setattr(mca, "_load_candidate_model", fake_load_candidate_model)
+    monkeypatch.setattr(mca, "coalesce_resources", fake_coalesce)
+    monkeypatch.setattr(mca, "_default_source_priority", fake_default_priority)
+
+    view = await mca.get_merge_candidate(
+        AsyncMock(), candidate_id=1, licensed_sources=["gem"]
+    )
+
+    assert isinstance(view, MergeCandidateDetailView)
+    assert view.resource_ids == [18, 19]
+    # resources detail objects are gone; compare carries the per-source values
+    assert not hasattr(view, "resources")
+    assert [c.field for c in view.compare] == list(OilGasFieldBase.model_fields)
+    # each source value is tagged with the resource it is attached to
+    name_values = next(c for c in view.compare if c.field == "name").values
+    assert {(v.resource_id, v.value) for v in name_values} == {
+        (18, "name-18"),
+        (19, "name-19"),
+    }
+
+
+@pytest.mark.anyio
+async def test_get_merge_candidate_after_merge_yields_empty_compare(monkeypatch):
+    # Live behavior for an APPROVED candidate: originals are repointed with
+    # memberships INACTIVE, so coalesce_resources returns null-shell views with
+    # no surviving source data.
+    candidate = FakeCandidate(
+        id=2,
+        status=MergeCandidateStatus.APPROVED,
+        items=[FakeItem(18, 0), FakeItem(19, 1)],
+        merged_resource_id=31,
+    )
+
+    async def fake_load_candidate_model(session_arg, candidate_id):
+        return candidate
+
+    async def fake_coalesce(session_arg, resource_ids, licensed):
+        return {
+            rid: SimpleNamespace(
+                source_data=[], view=OilGasFieldBase(name=None, country=None)
+            )
+            for rid in resource_ids
+        }
+
+    async def fake_default_priority(session_arg):
+        return {"rmi": 1, "gem": 2, "wm": 3, "llm": 4}
+
+    monkeypatch.setattr(mca, "_load_candidate_model", fake_load_candidate_model)
+    monkeypatch.setattr(mca, "coalesce_resources", fake_coalesce)
+    monkeypatch.setattr(mca, "_default_source_priority", fake_default_priority)
+
+    view = await mca.get_merge_candidate(AsyncMock(), candidate_id=2)
+
+    assert view.merged_resource_id == 31
+    # every resource is null on every field -> they all agree (match), no values
+    assert all(c.status == "match" for c in view.compare)
+    assert all(c.values == [] for c in view.compare)
