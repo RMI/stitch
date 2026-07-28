@@ -24,3 +24,9 @@ stitch-client = { workspace = true }
 
 [dependency-groups]
 dev = ["pytest>=9.1.1", "ruff>=0.16.0"]
+
+[tool.ruff.lint]
+# Ruff 0.16.0 expanded the default rule set from 59 to 413 rules. Pin the
+# pre-0.16 default selection here so this dependency bump preserves existing
+# lint behavior. Adopting the new defaults is tracked separately (STIT-XXX).
+select = ["E4", "E7", "E9", "F"]
