@@ -11,14 +11,14 @@ from stitch.entity_linkage.entities import (
     MatchGroup,
     RequestAuthContext,
     User,
+    normalize_country,
+    user_label,
 )
 from stitch.entity_linkage.errors import StitchAPIError
 from stitch.entity_linkage.routers import start as start_module
 from stitch.entity_linkage.routers.start import (
     StartRequest,
-    _extract_user_label,
     _group_duplicate_names,
-    _normalize_country,
     _resolve_match_groups,
     start,
 )
@@ -114,23 +114,20 @@ class FakeStitchApiClient(AbstractAsyncContextManager["FakeStitchApiClient"]):
     ],
 )
 def test_normalize_country(country: str | None, expected: str | None) -> None:
-    assert _normalize_country(country) == expected
+    assert normalize_country(country) == expected
 
 
-def test_extract_user_label_prefers_name_then_email_then_sub() -> None:
+def test_user_label_prefers_name_then_email_then_sub() -> None:
     assert (
-        _extract_user_label(
-            User(id=1, sub="sub-1", email="a@example.com", name="Alice")
-        )
+        user_label(User(id=1, sub="sub-1", email="a@example.com", name="Alice"))
         == "Alice"
     )
     assert (
-        _extract_user_label(User(id=1, sub="sub-2", email="b@example.com", name=""))
+        user_label(User(id=1, sub="sub-2", email="b@example.com", name=""))
         == "b@example.com"
     )
     assert (
-        _extract_user_label(User(id=1, sub="sub-3", email="c@example.com", name=""))
-        != "sub-3"
+        user_label(User(id=1, sub="sub-3", email="c@example.com", name="")) != "sub-3"
     )
 
 

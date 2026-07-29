@@ -278,6 +278,152 @@ async def test_list_oil_gas_fields_page_sends_expected_request() -> None:
 
 
 @pytest.mark.anyio
+async def test_list_oil_gas_fields_page_sends_filter_params() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["query"] = dict(request.url.params)
+        return httpx.Response(200, json={"items": [], "total_pages": 1})
+
+    client, raw_client = make_client(handler)
+
+    await client.list_oil_gas_fields_page(
+        page=1,
+        page_size=50,
+        q="Ghawar",
+        name="Ghawar",
+        country="Saudi Arabia",
+    )
+
+    assert captured["query"] == {
+        "page": "1",
+        "page_size": "50",
+        "q": "Ghawar",
+        "name": "Ghawar",
+        "country": "Saudi Arabia",
+    }
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_list_oil_gas_fields_page_omits_unset_filters() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["query"] = request.url.query.decode("utf-8")
+        return httpx.Response(200, json={"items": [], "total_pages": 1})
+
+    client, raw_client = make_client(handler)
+
+    await client.list_oil_gas_fields_page(q="Ghawar")
+
+    assert captured["query"] == "page=1&page_size=50&q=Ghawar"
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_iter_oil_gas_fields_streams_items_across_pages() -> None:
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        page = int(request.url.params["page"])
+        calls.append(page)
+        payloads = {
+            1: {
+                "items": [
+                    {"id": 1, "data": {"name": "Alpha"}},
+                    {"id": 2, "data": {"name": "Beta"}},
+                ],
+                "total_pages": 2,
+            },
+            2: {
+                "items": [{"id": 3, "data": {"name": "Gamma"}}],
+                "total_pages": 2,
+            },
+        }
+        return httpx.Response(200, json=payloads[page])
+
+    client, raw_client = make_client(handler)
+
+    collected = [item["id"] async for item in client.iter_oil_gas_fields(page_size=2)]
+
+    assert calls == [1, 2]
+    assert collected == [1, 2, 3]
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_iter_oil_gas_fields_respects_max_pages_and_forwards_q() -> None:
+    captured_q: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_q.append(request.url.params.get("q"))
+        page = int(request.url.params["page"])
+        return httpx.Response(
+            200,
+            json={
+                "items": [{"id": page * 10 + 1}, {"id": page * 10 + 2}],
+                "total_pages": 50,
+            },
+        )
+
+    client, raw_client = make_client(handler)
+
+    collected = [
+        item["id"]
+        async for item in client.iter_oil_gas_fields(
+            start_page=1, page_size=2, max_pages=2, q="Alpha"
+        )
+    ]
+
+    assert collected == [11, 12, 21, 22]
+    assert captured_q == ["Alpha", "Alpha"]
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_list_merge_candidates_sends_expected_request() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["method"] = request.method
+        captured["path"] = request.url.path
+        return httpx.Response(
+            200,
+            json=[{"id": 1, "resource_ids": [1, 2], "status": "PENDING"}],
+        )
+
+    client, raw_client = make_client(handler)
+
+    candidates = await client.list_merge_candidates()
+
+    assert candidates == [{"id": 1, "resource_ids": [1, 2], "status": "PENDING"}]
+    assert captured == {
+        "method": "GET",
+        "path": "/api/v1/oil-gas-fields/merge-candidates",
+    }
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_list_merge_candidates_rejects_non_array_payload() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"not": "a-list"})
+
+    client, raw_client = make_client(handler)
+
+    with pytest.raises(StitchAPIError):
+        await client.list_merge_candidates()
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
 async def test_collect_oil_gas_fields_follows_total_pages() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         page = int(request.url.params["page"])

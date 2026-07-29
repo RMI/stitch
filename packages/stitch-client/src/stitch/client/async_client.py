@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from typing import Any
 
 import httpx
@@ -97,14 +97,77 @@ class AsyncStitchClient:
         *,
         page: int = 1,
         page_size: int = 50,
+        q: str | None = None,
+        name: str | None = None,
+        country: str | None = None,
     ) -> dict[str, Any]:
+        params: dict[str, Any] = {"page": page, "page_size": page_size}
+        if q is not None:
+            params["q"] = q
+        if name is not None:
+            params["name"] = name
+        if country is not None:
+            params["country"] = country
         payload = await self._request_json(
             method="GET",
             path="/oil-gas-fields/",
             operation="GET /oil-gas-fields/",
-            params={"page": page, "page_size": page_size},
+            params=params,
         )
         return self._expect_dict(payload, "GET /oil-gas-fields/")
+
+    async def iter_oil_gas_fields(
+        self,
+        *,
+        start_page: int = 1,
+        page_size: int = 50,
+        max_pages: int | None = None,
+        q: str | None = None,
+        name: str | None = None,
+        country: str | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Yield oil-gas-field items one page at a time.
+
+        Bounded-memory counterpart to :meth:`collect_oil_gas_fields`: only a
+        single page is held in memory at once, so callers can stream the whole
+        result set without materializing it. Page-termination logic mirrors
+        ``collect_oil_gas_fields``.
+        """
+        pages_fetched = 0
+        page = start_page
+
+        while True:
+            if max_pages is not None and pages_fetched >= max_pages:
+                return
+
+            payload = await self.list_oil_gas_fields_page(
+                page=page,
+                page_size=page_size,
+                q=q,
+                name=name,
+                country=country,
+            )
+            raw_item_count = self._item_count(payload)
+            page_items = self._extract_items(payload)
+            pages_fetched += 1
+
+            if raw_item_count == 0:
+                return
+
+            for item in page_items:
+                yield item
+
+            total_pages = payload.get("total_pages")
+            if isinstance(total_pages, int) and page >= total_pages:
+                return
+
+            if not isinstance(total_pages, int) and not page_items:
+                return
+
+            if raw_item_count < page_size:
+                return
+
+            page += 1
 
     async def collect_oil_gas_fields(
         self,
@@ -112,6 +175,9 @@ class AsyncStitchClient:
         start_page: int = 1,
         page_size: int = 50,
         max_pages: int | None = None,
+        q: str | None = None,
+        name: str | None = None,
+        country: str | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
         items: list[dict[str, Any]] = []
         pages_fetched = 0
@@ -124,6 +190,9 @@ class AsyncStitchClient:
             payload = await self.list_oil_gas_fields_page(
                 page=page,
                 page_size=page_size,
+                q=q,
+                name=name,
+                country=country,
             )
             raw_item_count = self._item_count(payload)
             page_items = self._extract_items(payload)
@@ -186,6 +255,14 @@ class AsyncStitchClient:
         )
         return self._expect_dict(payload, "POST /oil-gas-fields/merge-candidates")
 
+    async def list_merge_candidates(self) -> list[dict[str, Any]]:
+        payload = await self._request_json(
+            method="GET",
+            path="/oil-gas-fields/merge-candidates",
+            operation="GET /oil-gas-fields/merge-candidates",
+        )
+        return self._expect_list(payload, "GET /oil-gas-fields/merge-candidates")
+
     def _headers(self) -> dict[str, str]:
         if self._headers_provider is None:
             return {}
@@ -215,6 +292,12 @@ class AsyncStitchClient:
         if isinstance(payload, dict):
             return payload
         raise StitchAPIError(f"{operation} returned non-object JSON payload")
+
+    @staticmethod
+    def _expect_list(payload: Any, operation: str) -> list[dict[str, Any]]:
+        if isinstance(payload, list):
+            return [item for item in payload if isinstance(item, dict)]
+        raise StitchAPIError(f"{operation} returned non-array JSON payload")
 
     @staticmethod
     def _extract_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
