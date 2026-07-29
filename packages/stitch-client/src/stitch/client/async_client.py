@@ -295,9 +295,13 @@ class AsyncStitchClient:
 
     @staticmethod
     def _expect_list(payload: Any, operation: str) -> list[dict[str, Any]]:
-        if isinstance(payload, list):
-            return [item for item in payload if isinstance(item, dict)]
-        raise StitchAPIError(f"{operation} returned non-array JSON payload")
+        if not isinstance(payload, list):
+            raise StitchAPIError(f"{operation} returned non-array JSON payload")
+        if not all(isinstance(item, dict) for item in payload):
+            raise StitchAPIError(
+                f"{operation} returned an array with non-object elements"
+            )
+        return payload
 
     @staticmethod
     def _extract_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
