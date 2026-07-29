@@ -1,8 +1,8 @@
 """Bounded, per-resource entity-linkage matching.
 
-This is the memory-safe replacement for the whole-dataset ``/start`` pass. Where
-``/start`` loads every resource into memory and groups it there, this module
-matches one resource at a time:
+This is the memory-safe matcher. Rather than loading every resource into memory
+and grouping it there (the original whole-dataset pass), this module matches one
+resource at a time:
 
 1. fetch the seed resource's detail (name + country);
 2. search the API for a *superset* of same-name candidates using the
