@@ -3,11 +3,24 @@ name: Close CI environment
 
 on:
   pull_request:
-    types: [closed]
+    # 'closed' tears the environment down when the PR ends. 'labeled' handles the
+    # 'no-deploy' opt-out: adding that label mid-life should turn off whatever the
+    # CD pipeline (build-and-deploy.yml) has running. Removing the label is handled
+    # over there via its 'unlabeled' trigger, which redeploys -- no teardown needed
+    # here, so 'unlabeled' is deliberately absent.
+    types: [closed, labeled]
   workflow_call:
 
 jobs:
+  # 'labeled' fires for every label, so gate teardown to the two cases that want
+  # it: the PR closing, or the 'no-deploy' label specifically being added. All
+  # other jobs need resolve-context, so skipping it here skips the whole teardown.
+  # Non-pull_request events (workflow_call / dispatch) are left to run as before.
   resolve-context:
+    if: >-
+      ${{ (github.event_name != 'pull_request')
+      || (github.event.action == 'closed')
+      || (github.event.action == 'labeled' && github.event.label.name == 'no-deploy') }}
     uses: ./.github/workflows/resolve-deployment-context.yml
 
   drop-db:
