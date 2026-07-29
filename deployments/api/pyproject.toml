@@ -7,7 +7,7 @@ authors = [{ name = "Michael Barlow", email = "mbarlow@rmi.org" }]
 requires-python = ">=3.12.12"
 dependencies = [
   "alembic>=1.18.5",
-  "fastapi[standard-no-fastapi-cloud-cli]>=0.139.2",
+  "fastapi[standard-no-fastapi-cloud-cli]>=0.140.7",
   "greenlet>=3.3.0",
   "psycopg[binary]>=3.3.4",
   # opentelemetry-sdk stays: the API imports `opentelemetry.trace` directly
