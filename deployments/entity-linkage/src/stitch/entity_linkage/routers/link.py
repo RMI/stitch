@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from starlette.status import HTTP_502_BAD_GATEWAY
+from starlette.status import (
+    HTTP_202_ACCEPTED,
+    HTTP_404_NOT_FOUND,
+    HTTP_409_CONFLICT,
+    HTTP_502_BAD_GATEWAY,
+)
 from stitch.auth.permissions import SERVICE_ENTITY_LINKAGE_RUN
 
 from stitch.entity_linkage import matching
@@ -14,6 +21,12 @@ from stitch.entity_linkage.entities import (
     user_label,
 )
 from stitch.entity_linkage.errors import StitchAPIError
+from stitch.entity_linkage.jobs import (
+    JobAlreadyRunningError,
+    JobRecord,
+    JobState,
+    get_job_manager,
+)
 
 router = APIRouter(tags=["entity-linkage"])
 
@@ -44,35 +57,71 @@ class BulkLinkRequest(BaseModel):
     )
 
 
+class LinkAllStartResponse(BaseModel):
+    job_id: str
+    state: JobState
+    started_at: datetime
+    initiated_by: str
+
+
 @router.post(
     "/oil-gas-fields/link",
-    response_model=BulkLinkResponse,
+    status_code=HTTP_202_ACCEPTED,
+    response_model=LinkAllStartResponse,
     dependencies=[Depends(require_permissions(SERVICE_ENTITY_LINKAGE_RUN))],
 )
-async def link_all(
+async def start_link_all(
     request: BulkLinkRequest,
     auth_context: AuthContext,
-) -> BulkLinkResponse:
-    """Bounded-memory linkage pass over every resource.
+) -> LinkAllStartResponse:
+    """Launch a full linkage pass in the background. Poll GET /oil-gas-fields/link/status.
 
     Streams resources one page at a time and links each against its duplicates,
-    replacing the whole-dataset in-memory ``/start`` pass. Still runs
-    synchronously in-request: this addresses memory, not wall-time (the queued
-    execution model is tracked separately).
+    replacing the whole-dataset in-memory ``/start`` pass. Running as a background
+    job keeps the pass non-blocking and pollable at production scale; downstream
+    failures are captured on the job record rather than surfaced here.
     """
-    try:
+    initiated_by = user_label(auth_context.user)
+
+    async def run() -> BulkLinkResponse:
         async with StitchApiClient() as client:
             return await matching.link_all(
                 client,
                 apply_merges=request.apply_merges,
                 page_size=request.page_size,
-                initiated_by=user_label(auth_context.user),
+                initiated_by=initiated_by,
             )
-    except StitchAPIError as exc:
+
+    try:
+        record = await get_job_manager().start(request, run)
+    except JobAlreadyRunningError as exc:
         raise HTTPException(
-            status_code=HTTP_502_BAD_GATEWAY,
+            status_code=HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
+
+    return LinkAllStartResponse(
+        job_id=record.job_id,
+        state=record.state,
+        started_at=record.started_at,
+        initiated_by=initiated_by,
+    )
+
+
+@router.get(
+    "/oil-gas-fields/link/status",
+    response_model=JobRecord,
+    dependencies=[Depends(require_permissions(SERVICE_ENTITY_LINKAGE_RUN))],
+)
+async def link_all_status() -> JobRecord:
+    """Return the most recent linkage pass's state and result."""
+    record = get_job_manager().current()
+    if record is None:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail="No linkage run has been started yet.",
+        )
+    return record
 
 
 @router.post(

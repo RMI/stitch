@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from contextlib import AbstractAsyncContextManager
 
 import pytest
@@ -16,8 +17,18 @@ from stitch.entity_linkage.entities import (
     User,
 )
 from stitch.entity_linkage.errors import StitchAPIError
+from stitch.entity_linkage.jobs import reset_manager
 from stitch.entity_linkage.main import app
 from stitch.entity_linkage.routers import link as link_module
+
+STATUS_URL = "/api/v1/oil-gas-fields/link/status"
+
+
+@pytest.fixture(autouse=True)
+def _reset_job_manager():
+    reset_manager()
+    yield
+    reset_manager()
 
 
 def make_auth_context() -> RequestAuthContext:
@@ -40,11 +51,13 @@ class FakeStitchApiClient(AbstractAsyncContextManager["FakeStitchApiClient"]):
         details_by_id: dict[int, FieldDetailCandidate] | None = None,
         existing_candidates: list[dict] | None = None,
         detail_error: Exception | None = None,
+        list_error: Exception | None = None,
     ) -> None:
         self.items = items or []
         self.details_by_id = details_by_id or {}
         self.existing_candidates = existing_candidates or []
         self.detail_error = detail_error
+        self.list_error = list_error
         self.create_calls: list[list[int]] = []
 
     async def __aenter__(self) -> "FakeStitchApiClient":
@@ -94,6 +107,8 @@ class FakeStitchApiClient(AbstractAsyncContextManager["FakeStitchApiClient"]):
         return {"ok": True, "resource_ids": list(resource_ids)}
 
     async def list_merge_candidates(self) -> list[dict]:
+        if self.list_error is not None:
+            raise self.list_error
         return self.existing_candidates
 
 
@@ -220,7 +235,17 @@ def test_link_one_translates_stitch_api_error_to_502(
     }
 
 
-def test_link_all_returns_summary(test_client, install_client) -> None:
+def _poll_status(client: TestClient, *, timeout: float = 5.0) -> dict:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        body = client.get(STATUS_URL).json()
+        if body["state"] != "running":
+            return body
+        time.sleep(0.02)
+    raise AssertionError("linkage job did not finish within timeout")
+
+
+def test_link_all_launches_job_and_status_succeeds(test_client, install_client) -> None:
     fake = install_client(
         items=[
             FieldCandidate(id=1, name="Alpha", country="US"),
@@ -238,11 +263,75 @@ def test_link_all_returns_summary(test_client, install_client) -> None:
         "/api/v1/oil-gas-fields/link", json={"apply_merges": True}
     )
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["initiated_by"] == "Integration Tester"
-    assert body["resources_scanned"] == 3
-    assert body["match_groups"] == [[1, 2]]
-    assert body["merge_candidates_created"] == 1
-    assert body["merge_candidates_skipped"] == 0
+    assert response.status_code == 202
+    start_body = response.json()
+    assert start_body["state"] == "running"
+    assert start_body["initiated_by"] == "Integration Tester"
+    job_id = start_body["job_id"]
+
+    final = _poll_status(test_client)
+    assert final["job_id"] == job_id
+    assert final["state"] == "succeeded"
+    assert final["error"] is None
+    assert final["finished_at"] is not None
+    result = final["result"]
+    assert result["resources_scanned"] == 3
+    assert result["match_groups"] == [[1, 2]]
+    assert result["merge_candidates_created"] == 1
+    assert result["merge_candidates_skipped"] == 0
     assert fake.create_calls == [[1, 2]]
+
+
+def test_link_all_records_downstream_failure_in_status(
+    test_client, install_client
+) -> None:
+    install_client(
+        list_error=StitchAPIError(
+            "GET /oil-gas-fields/merge-candidates failed with status 500: boom",
+            status_code=500,
+        ),
+    )
+
+    response = test_client.post("/api/v1/oil-gas-fields/link", json={})
+    assert response.status_code == 202
+
+    final = _poll_status(test_client)
+    assert final["state"] == "failed"
+    assert "boom" in final["error"]
+    assert final["result"] is None
+
+
+def test_link_all_rejects_concurrent_run_with_409(
+    test_client, install_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_client()
+
+    async def slow_link_all(client, *, apply_merges, page_size, initiated_by):
+        import asyncio
+
+        await asyncio.sleep(0.5)
+        from stitch.entity_linkage.entities import BulkLinkResponse
+
+        return BulkLinkResponse(
+            initiated_by=initiated_by,
+            apply_merges=apply_merges,
+            resources_scanned=0,
+            match_groups=[],
+            merge_candidates_created=0,
+            merge_candidates_skipped=0,
+        )
+
+    monkeypatch.setattr(link_module.matching, "link_all", slow_link_all)
+
+    first = test_client.post("/api/v1/oil-gas-fields/link", json={})
+    assert first.status_code == 202
+
+    second = test_client.post("/api/v1/oil-gas-fields/link", json={})
+    assert second.status_code == 409
+    assert first.json()["job_id"] in second.json()["detail"]
+
+    _poll_status(test_client)
+
+
+def test_link_all_status_returns_404_when_no_run_started(test_client) -> None:
+    assert test_client.get(STATUS_URL).status_code == 404
