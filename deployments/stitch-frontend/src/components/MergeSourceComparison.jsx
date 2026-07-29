@@ -1,14 +1,18 @@
 import { useState } from "react";
-import { useMergeSourceDetails } from "../hooks/useMergeSourceDetails";
 import {
   FIELD_META,
   MERGE_COMPARISON_CORE_FIELDS,
   MERGE_COMPARISON_OTHER_FIELDS,
 } from "../constants/fieldMeta";
-import { getRowStatus, isEmptyValue } from "../utils/mergeComparison";
+import {
+  compareEntry,
+  valueEntryForResource,
+} from "../utils/candidateCompare";
 
 // Color is never the only signal: each status pairs its strip color with an
-// icon (aria-hidden) and a text label.
+// icon (aria-hidden) and a text label. "match"/"different" mirror the backend
+// status values; "empty" is local to the UI for cells and rows where no
+// source has a value.
 const STATUS_META = {
   match: {
     borderClass: "border-l-success",
@@ -16,7 +20,7 @@ const STATUS_META = {
     icon: "✓",
     label: "Match",
   },
-  differs: {
+  different: {
     borderClass: "border-l-warning",
     cueClass: "text-warning",
     icon: "≠",
@@ -39,16 +43,22 @@ function gridColumnsStyle(count) {
   return { gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))` };
 }
 
-function ComparisonCell({ value, status }) {
+// The backend omits null values entirely, so a missing valueEntry means the
+// resource has no value ("empty" status). An empty string is a real value
+// with a real status; it just has nothing visible to print, so the dash for
+// it is display-only.
+function ComparisonCell({ valueEntry, status }) {
   const meta = STATUS_META[status];
+  const value = valueEntry?.value;
+  const hasVisibleValue = value != null && value !== "";
 
   return (
     <div className={`${CELL_BOX_CLASSES} ${meta.borderClass}`}>
       <div className="break-words text-sm text-ink">
-        {isEmptyValue(value) ? (
-          <span className="text-ink-muted">—</span>
-        ) : (
+        {hasVisibleValue ? (
           String(value)
+        ) : (
+          <span className="text-ink-muted">—</span>
         )}
       </div>
       <div className={`mt-1 text-xs font-medium ${meta.cueClass}`}>
@@ -59,9 +69,8 @@ function ComparisonCell({ value, status }) {
   );
 }
 
-function ComparisonRow({ fieldKey, details }) {
-  const values = details.map((detail) => detail?.data?.[fieldKey]);
-  const rowStatus = getRowStatus(values);
+function ComparisonRow({ fieldKey, entry, resourceIds }) {
+  const isEmptyRow = !entry || entry.values.length === 0;
 
   return (
     <div
@@ -72,14 +81,19 @@ function ComparisonRow({ fieldKey, details }) {
       <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">
         {FIELD_META[fieldKey].label}
       </p>
-      <div className="grid gap-3" style={gridColumnsStyle(values.length)}>
-        {values.map((value, index) => (
-          <ComparisonCell
-            key={index}
-            value={value}
-            status={isEmptyValue(value) ? "empty" : rowStatus}
-          />
-        ))}
+      <div className="grid gap-3" style={gridColumnsStyle(resourceIds.length)}>
+        {resourceIds.map((id) => {
+          const valueEntry = isEmptyRow
+            ? null
+            : valueEntryForResource(entry, id);
+          return (
+            <ComparisonCell
+              key={id}
+              valueEntry={valueEntry}
+              status={valueEntry ? entry.status : "empty"}
+            />
+          );
+        })}
       </div>
     </div>
   );
@@ -146,7 +160,7 @@ function ComparisonSkeleton({ resourceIds }) {
   );
 }
 
-function OtherAttributesAccordion({ details }) {
+function OtherAttributesAccordion({ compare, resourceIds }) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -164,7 +178,8 @@ function OtherAttributesAccordion({ details }) {
             <ComparisonRow
               key={fieldKey}
               fieldKey={fieldKey}
-              details={details}
+              entry={compareEntry(compare, fieldKey)}
+              resourceIds={resourceIds}
             />
           ))}
         </div>
@@ -173,19 +188,20 @@ function OtherAttributesAccordion({ details }) {
   );
 }
 
-// Read-only, side-by-side comparison of a merge candidate's source resources.
-// One aggregate query fetches every resource detail so all columns arrive
-// (and error) together.
-export default function MergeSourceComparison({ endpoint, resourceIds }) {
+// Read-only, side-by-side comparison of a merge candidate's source resources,
+// rendered from the backend `compare` object on the candidate detail response.
+// Statuses come verbatim from the backend; this component performs no value
+// comparison of its own. Loading and error state belong to the caller's
+// detail query.
+export default function MergeSourceComparison({
+  resourceIds,
+  compare,
+  isLoading,
+  isError,
+  error,
+}) {
   const ids = resourceIds ?? [];
   const hasEnoughSources = ids.length >= 2;
-
-  const {
-    data: details,
-    isLoading,
-    isError,
-    error,
-  } = useMergeSourceDetails(endpoint, ids, hasEnoughSources);
 
   return (
     <section className="border-t border-line px-5 py-5">
@@ -198,14 +214,14 @@ export default function MergeSourceComparison({ endpoint, resourceIds }) {
           </p>
         ) : isLoading ? (
           <div aria-busy="true">
-            <p className="sr-only">Loading source resources…</p>
+            <p className="sr-only">Loading comparison…</p>
             <ComparisonSkeleton resourceIds={ids} />
           </div>
         ) : isError ? (
           <p className="text-sm text-danger">
-            {error?.message ?? "Failed to load source resources."}
+            {error?.message ?? "Failed to load comparison."}
           </p>
-        ) : details ? (
+        ) : compare ? (
           <div className="space-y-4">
             <div className="grid gap-3" style={gridColumnsStyle(ids.length)}>
               {ids.map((id) => (
@@ -221,13 +237,14 @@ export default function MergeSourceComparison({ endpoint, resourceIds }) {
               <ComparisonRow
                 key={fieldKey}
                 fieldKey={fieldKey}
-                details={details}
+                entry={compareEntry(compare, fieldKey)}
+                resourceIds={ids}
               />
             ))}
-            <OtherAttributesAccordion details={details} />
+            <OtherAttributesAccordion compare={compare} resourceIds={ids} />
           </div>
         ) : (
-          <p className="text-sm text-ink-muted">No source resources loaded.</p>
+          <p className="text-sm text-ink-muted">No comparison available.</p>
         )}
       </div>
     </section>
