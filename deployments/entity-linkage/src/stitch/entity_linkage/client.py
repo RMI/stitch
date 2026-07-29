@@ -46,43 +46,6 @@ class StitchApiClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def list_oil_gas_fields_page(
-        self,
-        *,
-        page: int = 1,
-        page_size: int = 50,
-        q: str | None = None,
-        name: str | None = None,
-        country: str | None = None,
-    ) -> dict[str, Any]:
-        return await self._client.list_oil_gas_fields_page(
-            page=page,
-            page_size=page_size,
-            q=q,
-            name=name,
-            country=country,
-        )
-
-    async def collect_oil_gas_fields(
-        self,
-        *,
-        start_page: int = 1,
-        page_size: int = 50,
-        max_pages: int | None = None,
-        q: str | None = None,
-        name: str | None = None,
-        country: str | None = None,
-    ) -> tuple[list[FieldCandidate], int]:
-        items, pages_fetched = await self._client.collect_oil_gas_fields(
-            start_page=start_page,
-            page_size=page_size,
-            max_pages=max_pages,
-            q=q,
-            name=name,
-            country=country,
-        )
-        return self._to_candidates(items), pages_fetched
-
     async def iter_oil_gas_fields(
         self,
         *,
@@ -115,10 +78,6 @@ class StitchApiClient:
             name=data.get("name"),
             country=data.get("country"),
         )
-
-    @classmethod
-    def _to_candidates(cls, items: list[dict[str, Any]]) -> list[FieldCandidate]:
-        return [cls._to_candidate(item) for item in items]
 
     async def get_oil_gas_field_detail(self, resource_id: int) -> FieldDetailCandidate:
         payload = await self._client.get_oil_gas_field_detail(resource_id)
