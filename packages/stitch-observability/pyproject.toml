@@ -43,4 +43,4 @@ addopts = ["-v", "--strict-markers", "--tb=short"]
 # fastapi + httpx are test-only. fastapi also pulls in Starlette (the `asgi`
 # extra's dependency), so the middleware tests exercise the real import path
 # without the suite needing to install the extra explicitly.
-dev = ["pytest>=9.0.2", "fastapi[standard-no-fastapi-cloud-cli]>=0.135.1", "httpx>=0.28.0"]
+dev = ["pytest>=9.0.2", "fastapi[standard-no-fastapi-cloud-cli]>=0.140.7", "httpx>=0.28.0"]
