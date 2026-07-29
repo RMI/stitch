@@ -248,9 +248,14 @@ function CandidateDecisionPanel({
   } = candidateQuery;
 
   const candidate = detailCandidate ?? listCandidate;
-  // The heading comes from the detail response's compare object; while the
-  // detail is loading (or has no usable name) the panel falls back to the id.
-  const name = pickCompareName(detailCandidate?.compare);
+  // The compare-derived name is authoritative once the detail lands. Until
+  // then the queue's name stands in — it reads the same cached query the
+  // queue items already issued, so no extra requests — because falling back
+  // to the id would flash "Candidate #N" on first selection.
+  const queueName = useMergeCandidateName(ENDPOINT, candidate?.resource_ids);
+  const name = detailCandidate
+    ? pickCompareName(detailCandidate.compare)
+    : queueName;
 
   if (!selectedId) {
     return (

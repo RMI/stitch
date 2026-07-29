@@ -277,6 +277,23 @@ describe("MergeCandidateReviewPage", () => {
     expect(screen.queryByText("Loading candidate…")).not.toBeInTheDocument();
   });
 
+  it("shows the queue-cached name while the detail query loads, not the id fallback", async () => {
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: null,
+      isLoading: true,
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Burgan" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Candidate #11" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("approves with the queue's candidate id while the detail query loads", async () => {
     const user = userEvent.setup();
     vi.mocked(useMergeCandidate).mockReturnValue({
