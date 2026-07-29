@@ -7,7 +7,7 @@ requires-python = ">=3.12.12"
 dependencies = ["faker>=24.0.0", "stitch-client", "stitch-ogsi"]
 
 [build-system]
-requires = ["uv_build>=0.11.31,<0.12.0"]
+requires = ["uv_build>=0.11.32,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]

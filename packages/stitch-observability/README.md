@@ -6,7 +6,10 @@ one trace**.
 
 ```python
 from stitch.observability import (
-    configure_tracing, instrument_fastapi, instrument_httpx, shutdown_tracing,
+    configure_tracing,
+    instrument_fastapi,
+    instrument_httpx,
+    shutdown_tracing,
     OTelSettings,
 )
 
@@ -18,8 +21,8 @@ provider = configure_tracing(
     sample_ratio=settings.otel_sample_ratio,
 )
 if provider is not None:
-    instrument_fastapi(app)   # on the constructed app, before it serves
-    instrument_httpx()        # outbound calls inject W3C traceparent
+    instrument_fastapi(app)  # on the constructed app, before it serves
+    instrument_httpx()  # outbound calls inject W3C traceparent
 # ... shutdown_tracing(provider) on exit
 ```
 
