@@ -4,10 +4,7 @@ import {
   MERGE_COMPARISON_CORE_FIELDS,
   MERGE_COMPARISON_OTHER_FIELDS,
 } from "../constants/fieldMeta";
-import {
-  compareEntry,
-  valueEntryForResource,
-} from "../utils/candidateCompare";
+import { compareEntry, valueEntryForResource } from "../utils/candidateCompare";
 
 // Color is never the only signal: each status pairs its strip color with an
 // icon (aria-hidden) and a text label. "match"/"different" mirror the backend

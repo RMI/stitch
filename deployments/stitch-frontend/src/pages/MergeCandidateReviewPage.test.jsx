@@ -122,9 +122,7 @@ describe("MergeCandidateReviewPage", () => {
       screen.getByRole("heading", { name: "Merge Review" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Queue" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Burgan" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Burgan" })).toBeInTheDocument();
 
     expect(
       screen.queryByRole("heading", { name: "Summary" }),
@@ -175,9 +173,7 @@ describe("MergeCandidateReviewPage", () => {
   it("shows the compare-derived name in the detail panel heading", () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
-    expect(
-      screen.getByRole("heading", { name: "Burgan" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Burgan" })).toBeInTheDocument();
   });
 
   it("links each source resource id to its detail page", () => {
