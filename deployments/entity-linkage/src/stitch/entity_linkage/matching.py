@@ -92,14 +92,15 @@ async def _submit_group(
 ) -> tuple[bool, bool]:
     """Create a merge candidate for ``resource_ids``. Returns ``(created, skipped)``.
 
-    ``known_existing`` (optional) is a set of fingerprints already present in the
-    candidate queue; a match there is skipped without a POST. On a dry run
-    (``apply_merges`` false) nothing is created and nothing is skipped.
+    On a dry run (``apply_merges`` false) nothing is created and nothing is
+    skipped. When applying, ``known_existing`` (optional) is a set of fingerprints
+    already present in the candidate queue; a match there is skipped without a
+    POST.
     """
-    if known_existing is not None and merge_fingerprint(resource_ids) in known_existing:
-        return (False, True)
     if not apply_merges:
         return (False, False)
+    if known_existing is not None and merge_fingerprint(resource_ids) in known_existing:
+        return (False, True)
     try:
         await client.create_merge_candidate(resource_ids=resource_ids)
     except StitchAPIError as exc:
@@ -163,7 +164,9 @@ async def link_all(
     submitted at most once even though every member rediscovers it. Members of an
     already-formed block are skipped without re-searching.
     """
-    known_existing = await _existing_fingerprints(client)
+    # Only needed when we will actually POST; skip the (currently unpaginated)
+    # candidate-list fetch entirely on a dry run.
+    known_existing = await _existing_fingerprints(client) if apply_merges else None
 
     groups_by_fingerprint: dict[str, list[int]] = {}
     processed_ids: set[int] = set()

@@ -292,7 +292,11 @@ def test_link_all_records_downstream_failure_in_status(
         ),
     )
 
-    response = test_client.post("/api/v1/oil-gas-fields/link", json={})
+    # apply_merges so the run fetches the candidate queue (skipped on dry runs)
+    # and surfaces the downstream error.
+    response = test_client.post(
+        "/api/v1/oil-gas-fields/link", json={"apply_merges": True}
+    )
     assert response.status_code == 202
 
     final = _poll_status(test_client)
