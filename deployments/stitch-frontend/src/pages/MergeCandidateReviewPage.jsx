@@ -7,6 +7,7 @@ import MergeSourceComparison from "../components/MergeSourceComparison";
 import MergedResourceView from "../components/MergedResourceView";
 import { useMergeCandidateName } from "../hooks/useMergeCandidateName";
 import { useMergeCandidates, useMergeCandidate } from "../hooks/useResources";
+import { pickCompareName } from "../utils/candidateCompare";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { reviewMergeCandidate } from "../queries/api";
 import { useConfig } from "../config/useConfig";
@@ -241,12 +242,15 @@ function CandidateDecisionPanel({
 }) {
   const {
     data: detailCandidate,
+    isLoading: candidateLoading,
     isError: candidateError,
     error: candidateErrorObj,
   } = candidateQuery;
 
   const candidate = detailCandidate ?? listCandidate;
-  const name = useMergeCandidateName(ENDPOINT, candidate?.resource_ids);
+  // The heading comes from the detail response's compare object; while the
+  // detail is loading (or has no usable name) the panel falls back to the id.
+  const name = pickCompareName(detailCandidate?.compare);
 
   if (!selectedId) {
     return (
@@ -322,8 +326,11 @@ function CandidateDecisionPanel({
         />
       ) : (
         <MergeSourceComparison
-          endpoint={ENDPOINT}
           resourceIds={candidate.resource_ids}
+          compare={detailCandidate?.compare}
+          isLoading={candidateLoading}
+          isError={candidateError}
+          error={candidateErrorObj}
         />
       )}
 
@@ -381,9 +388,10 @@ export default function MergeCandidateReviewPage() {
     selectedId,
     Boolean(selectedId),
   );
-  // The list and detail endpoints return the same schema, so the already-loaded
-  // queue item stands in until the detail query lands. Without this, review
-  // actions dead-click while the detail is in flight.
+  // The detail endpoint layers `compare` on top of the list schema, so the
+  // already-loaded queue item stands in for everything except the comparison
+  // until the detail query lands. Without this, review actions dead-click
+  // while the detail is in flight.
   const listCandidate =
     candidates?.find((item) => item.id === selectedId) ?? null;
   const candidate = candidateQuery.data ?? listCandidate;
