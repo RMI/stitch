@@ -424,6 +424,19 @@ async def test_list_merge_candidates_rejects_non_array_payload() -> None:
 
 
 @pytest.mark.anyio
+async def test_list_merge_candidates_rejects_non_object_elements() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[{"id": 1}, "not-a-dict"])
+
+    client, raw_client = make_client(handler)
+
+    with pytest.raises(StitchAPIError):
+        await client.list_merge_candidates()
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
 async def test_collect_oil_gas_fields_follows_total_pages() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         page = int(request.url.params["page"])
