@@ -6,8 +6,10 @@ import Button from "../components/Button";
 import MergeSourceComparison from "../components/MergeSourceComparison";
 import MergedResourceView from "../components/MergedResourceView";
 import { useMergeCandidateName } from "../hooks/useMergeCandidateName";
+import { useMergedResourceDetail } from "../hooks/useMergedResourceDetail";
 import { useMergeCandidates, useMergeCandidate } from "../hooks/useResources";
 import { pickCompareName } from "../utils/candidateCompare";
+import { isEmptyValue } from "../utils/mergeComparison";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { reviewMergeCandidate } from "../queries/api";
 import { useConfig } from "../config/useConfig";
@@ -253,9 +255,19 @@ function CandidateDecisionPanel({
   // queue items already issued, so no extra requests — because falling back
   // to the id would flash "Candidate #N" on first selection.
   const queueName = useMergeCandidateName(ENDPOINT, candidate?.resource_ids);
-  const name = detailCandidate
-    ? pickCompareName(detailCandidate.compare)
-    : queueName;
+  // Post-merge, the source resources are null shells and compare carries no
+  // name, so the merged resource is the authoritative source. It shares the
+  // cache entry MergedResourceView fetches, so this adds no requests.
+  const { data: mergedResource } = useMergedResourceDetail(
+    ENDPOINT,
+    candidate?.merged_resource_id,
+  );
+  const mergedName = isEmptyValue(mergedResource?.data?.name)
+    ? null
+    : mergedResource.data.name;
+  const name =
+    mergedName ??
+    (detailCandidate ? pickCompareName(detailCandidate.compare) : queueName);
 
   if (!selectedId) {
     return (

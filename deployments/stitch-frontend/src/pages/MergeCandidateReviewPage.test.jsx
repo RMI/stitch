@@ -94,6 +94,7 @@ const resourceDetailsById = {
   102: { data: { name: "Bergan" }, provenance: { name: "wm" } },
   201: { data: { name: "Arabian Consolidated" }, provenance: { name: "rmi" } },
   202: { data: { name: "Arabian Duplicate" }, provenance: { name: "gem" } },
+  301: { data: { name: "Arabian Merged" }, provenance: { name: "rmi" } },
 };
 
 beforeEach(() => {
@@ -353,6 +354,28 @@ describe("MergeCandidateReviewPage", () => {
     expect(screen.getByText("Merged resource 301")).toBeInTheDocument();
     expect(
       screen.queryByText("Source comparison for 201, 202"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the merged resource's name in the heading once merged", async () => {
+    const mergedCandidate = candidates[1];
+    vi.mocked(useMergeCandidates).mockReturnValue({
+      ...defaultHookReturn,
+      data: [mergedCandidate],
+    });
+    // Post-merge, the originals are null shells: compare carries no name.
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: { ...mergedCandidate, compare: [] },
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Arabian Merged" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Candidate #12" }),
     ).not.toBeInTheDocument();
   });
 
