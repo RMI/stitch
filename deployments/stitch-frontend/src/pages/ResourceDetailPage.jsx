@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate } from "react-router";
 import { useResourceDetail, useSourceDetail } from "../hooks/useResources";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { useConfig } from "../config/useConfig";
