@@ -9,7 +9,12 @@ from stitch.auth.permissions import SERVICE_ENTITY_LINKAGE_RUN
 
 from stitch.entity_linkage.auth import AuthContext, require_permissions
 from stitch.entity_linkage.client import StitchApiClient
-from stitch.entity_linkage.entities import FieldCandidate, MatchGroup, User
+from stitch.entity_linkage.entities import (
+    FieldCandidate,
+    MatchGroup,
+    normalize_country,
+    user_label,
+)
 from stitch.entity_linkage.errors import StitchAPIError
 
 router = APIRouter(tags=["entity-linkage"])
@@ -44,10 +49,6 @@ class StartResponse(BaseModel):
     merge_results: list[dict]
 
 
-def _extract_user_label(user: User) -> str:
-    return user.name or user.email or user.sub
-
-
 def _group_duplicate_names(
     items: list[FieldCandidate],
 ) -> dict[str, list[FieldCandidate]]:
@@ -63,13 +64,6 @@ def _group_duplicate_names(
     }
 
 
-def _normalize_country(country: str | None) -> str | None:
-    if country is None:
-        return None
-    normalized = country.strip().upper()
-    return normalized or None
-
-
 async def _resolve_match_groups(
     client: StitchApiClient,
     duplicate_groups: dict[str, list[FieldCandidate]],
@@ -83,7 +77,7 @@ async def _resolve_match_groups(
         for candidate in candidates:
             detail = await client.get_oil_gas_field_detail(candidate.id)
             detail_records_fetched += 1
-            normalized_country = _normalize_country(detail.country)
+            normalized_country = normalize_country(detail.country)
             if normalized_country is None:
                 continue
             by_country[normalized_country].append(detail.id)
@@ -155,7 +149,7 @@ async def start(
         ) from exc
 
     return StartResponse(
-        initiated_by=_extract_user_label(auth_context.user),
+        initiated_by=user_label(auth_context.user),
         apply_merges=request.apply_merges,
         pages_fetched=pages_fetched,
         total_records_fetched=len(items),

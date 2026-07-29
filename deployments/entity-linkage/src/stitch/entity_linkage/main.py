@@ -13,11 +13,13 @@ from .client import validate_downstream_auth_config_at_startup
 from .settings import get_settings
 
 from .routers.health import router as health_router
+from .routers.link import router as link_router
 from .routers.start import router as start_router
 
 base_router = APIRouter(prefix="/api/v1")
 base_router.include_router(health_router)
 base_router.include_router(start_router)
+base_router.include_router(link_router)
 
 # Assigned below once settings are loaded; declared here so `lifespan` (which
 # reads it) can't NameError if an import between here and the assignment fails.
