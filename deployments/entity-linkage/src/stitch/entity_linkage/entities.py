@@ -74,12 +74,6 @@ class FieldDetailCandidate(BaseModel):
     country: str | None = None
 
 
-class MatchGroup(BaseModel):
-    ids: list[int]
-    normalized_name: str
-    country: str
-
-
 def user_label(user: User) -> str:
     return user.name or user.email or user.sub
 

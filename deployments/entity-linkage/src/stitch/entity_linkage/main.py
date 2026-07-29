@@ -14,11 +14,9 @@ from .settings import get_settings
 
 from .routers.health import router as health_router
 from .routers.link import router as link_router
-from .routers.start import router as start_router
 
 base_router = APIRouter(prefix="/api/v1")
 base_router.include_router(health_router)
-base_router.include_router(start_router)
 base_router.include_router(link_router)
 
 # Assigned below once settings are loaded; declared here so `lifespan` (which
