@@ -62,10 +62,13 @@ async def find_match_group_for_resource(
     if seed_name is None or seed_country is None:
         return []
 
-    superset, _ = await client.collect_oil_gas_fields(q=seed.name)
-    same_name_ids = {
-        candidate.id for candidate in superset if candidate.normalized_name == seed_name
-    }
+    # Stream the case-insensitive ``q`` superset a page at a time and keep only
+    # exact normalized-name matches, so peak memory is bounded by the same-name
+    # block rather than the (potentially large) ILIKE substring superset.
+    same_name_ids: set[int] = set()
+    async for candidate in client.iter_oil_gas_fields(q=seed.name):
+        if candidate.normalized_name == seed_name:
+            same_name_ids.add(candidate.id)
     # The seed always belongs to its own block even if the list universe omits it.
     same_name_ids.add(resource_id)
 

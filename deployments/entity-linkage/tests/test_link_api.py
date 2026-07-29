@@ -71,24 +71,6 @@ class FakeStitchApiClient(AbstractAsyncContextManager["FakeStitchApiClient"]):
             raise self.detail_error
         return self.details_by_id[resource_id]
 
-    async def collect_oil_gas_fields(
-        self,
-        *,
-        start_page: int = 1,
-        page_size: int = 50,
-        max_pages: int | None = None,
-        q: str | None = None,
-        name: str | None = None,
-        country: str | None = None,
-    ) -> tuple[list[FieldCandidate], int]:
-        superset = [
-            item
-            for item in self.items
-            if q is None
-            or (item.name is not None and q.casefold() in item.name.casefold())
-        ]
-        return superset, 1
-
     async def iter_oil_gas_fields(
         self,
         *,
@@ -100,7 +82,10 @@ class FakeStitchApiClient(AbstractAsyncContextManager["FakeStitchApiClient"]):
         country: str | None = None,
     ):
         for item in self.items:
-            yield item
+            if q is None or (
+                item.name is not None and q.casefold() in item.name.casefold()
+            ):
+                yield item
 
     async def create_merge_candidate(self, *, resource_ids: list[int]) -> dict:
         self.create_calls.append(list(resource_ids))

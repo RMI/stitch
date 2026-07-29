@@ -30,7 +30,7 @@ class FakeMatchingClient(AbstractAsyncContextManager["FakeMatchingClient"]):
         self.create_error = create_error
 
         self.detail_calls: list[int] = []
-        self.collect_q: list[str | None] = []
+        self.iter_q: list[str | None] = []
         self.create_calls: list[list[int]] = []
         self.list_candidates_calls = 0
 
@@ -44,25 +44,6 @@ class FakeMatchingClient(AbstractAsyncContextManager["FakeMatchingClient"]):
         self.detail_calls.append(resource_id)
         return self.details_by_id[resource_id]
 
-    async def collect_oil_gas_fields(
-        self,
-        *,
-        start_page: int = 1,
-        page_size: int = 50,
-        max_pages: int | None = None,
-        q: str | None = None,
-        name: str | None = None,
-        country: str | None = None,
-    ) -> tuple[list[FieldCandidate], int]:
-        self.collect_q.append(q)
-        superset = [
-            item
-            for item in self.items
-            if q is None
-            or (item.name is not None and q.casefold() in item.name.casefold())
-        ]
-        return superset, 1
-
     async def iter_oil_gas_fields(
         self,
         *,
@@ -73,8 +54,12 @@ class FakeMatchingClient(AbstractAsyncContextManager["FakeMatchingClient"]):
         name: str | None = None,
         country: str | None = None,
     ):
+        self.iter_q.append(q)
         for item in self.items:
-            yield item
+            if q is None or (
+                item.name is not None and q.casefold() in item.name.casefold()
+            ):
+                yield item
 
     async def create_merge_candidate(self, *, resource_ids: list[int]) -> dict:
         self.create_calls.append(list(resource_ids))
@@ -114,7 +99,7 @@ async def test_find_match_group_blocks_by_casefold_name_and_country() -> None:
     matched = await matching.find_match_group_for_resource(client, 1)
 
     assert matched == [1, 2]
-    assert client.collect_q == ["Ghawar"]
+    assert client.iter_q == ["Ghawar"]
     # Seed detail is fetched once up front and reused (not re-fetched in the loop).
     assert client.detail_calls == [1, 2, 3]
 
