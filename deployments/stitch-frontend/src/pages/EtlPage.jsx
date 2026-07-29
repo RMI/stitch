@@ -4,6 +4,7 @@ import { useConfig } from "../config/useConfig";
 import StructuredDataView from "../components/StructuredDataView";
 import Button from "../components/Button";
 import Input from "../components/Input";
+import StateBadge from "../components/StateBadge";
 
 // Per-ETL run parameters. Empty number/text fields are omitted from the
 // request body so the service falls back to its env-derived defaults.
@@ -58,26 +59,6 @@ const WOODMAC_FIELDS = [
     type: "checkbox",
   },
 ];
-
-const STATE_STYLES = {
-  running: "border-warning/30 bg-warning-soft text-warning",
-  succeeded: "border-success/25 bg-success-soft text-success-strong",
-  failed: "border-danger/25 bg-danger-soft text-danger",
-};
-
-function StateBadge({ state }) {
-  if (!state) return null;
-
-  const classes = STATE_STYLES[state] ?? "border-line bg-surface text-ink";
-
-  return (
-    <span
-      className={`rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${classes}`}
-    >
-      {state}
-    </span>
-  );
-}
 
 async function parseJsonResponse(response) {
   const text = await response.text();
