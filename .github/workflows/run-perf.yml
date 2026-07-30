@@ -262,7 +262,7 @@ jobs:
 
       - name: Upload comment JSON artifact
         if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: comment-json-perf
           path: /tmp/comment-json/*.json
