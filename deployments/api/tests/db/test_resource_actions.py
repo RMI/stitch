@@ -1313,7 +1313,7 @@ class TestSetFieldSourcePriority:
     """Write path: persist and enforce a curator's per-field source ordering."""
 
     async def _seed(self, session, user) -> int:
-        # gem(2) wins name & basin by default; wm(3) is second.
+        # wm(2) wins name & basin by default; gem(4) is second.
         return await _create_resource_with_sources(
             session,
             user,
@@ -1331,24 +1331,24 @@ class TestSetFieldSourcePriority:
         (wm_pk,) = await _source_pks(session, rid, "wm")
 
         result = await resource_actions.set_field_source_priority(
-            session, test_user, rid, "name", [wm_pk, gem_pk]
+            session, test_user, rid, "name", [gem_pk, wm_pk]
         )
 
         # Returned ranking is winner-first and flags the curated rows.
         assert [(r.source, r.source_id) for r in result] == [
-            ("wm", wm_pk),
             ("gem", gem_pk),
+            ("wm", wm_pk),
         ]
         assert all(r.is_override for r in result)
 
         # Detail and list agree on the new coalesced winner.
         detail = await resource_actions.get(session, rid)
-        assert detail.view.name == "WM Name"
+        assert detail.view.name == "GEM Name"
         items, _ = await resource_actions.query(session, _QueryParams())
-        assert next(i for i in items if i.id == rid).data.name == "WM Name"
+        assert next(i for i in items if i.id == rid).data.name == "GEM Name"
 
-        # basin was not curated -> still gem by default (per-field isolation).
-        assert detail.view.basin == "Alpha"
+        # basin was not curated -> still wm by default (per-field isolation).
+        assert detail.view.basin == "Beta"
 
     @pytest.mark.anyio
     async def test_noop_when_order_unchanged_writes_nothing(
@@ -1359,9 +1359,9 @@ class TestSetFieldSourcePriority:
         (gem_pk,) = await _source_pks(session, rid, "gem")
         (wm_pk,) = await _source_pks(session, rid, "wm")
 
-        # gem, wm is already the default order -> no-op, no rows written.
+        # wm, gem is already the default order -> no-op, no rows written.
         await resource_actions.set_field_source_priority(
-            session, test_user, rid, "name", [gem_pk, wm_pk]
+            session, test_user, rid, "name", [wm_pk, gem_pk]
         )
 
         count = await session.scalar(
@@ -1456,7 +1456,7 @@ class TestSetFieldSourcePriority:
         (wm_pk,) = await _source_pks(session, rid, "wm")
 
         await resource_actions.set_field_source_priority(
-            session, test_user, rid, "name", [wm_pk, gem_pk]
+            session, test_user, rid, "name", [gem_pk, wm_pk]
         )
 
         # A source added AFTER curation has no override row for the field, so it
@@ -1468,12 +1468,12 @@ class TestSetFieldSourcePriority:
 
         rows = await resource_actions.field_source_values(session, rid, "name")
         assert [(r.source, r.source_id) for r in rows] == [
-            ("wm", wm_pk),
             ("gem", gem_pk),
+            ("wm", wm_pk),
             ("rmi", rmi_pk),
         ]
-        # The coalesced winner is still the curated wm, not the newer rmi.
-        assert (await resource_actions.get(session, rid)).view.name == "WM Name"
+        # The coalesced winner is still the curated gem, not the newer rmi.
+        assert (await resource_actions.get(session, rid)).view.name == "GEM Name"
 
 
 class TestResourceDetailCoalescing:
