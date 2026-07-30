@@ -10,6 +10,16 @@ on:
     branches: [main, production]
   workflow_dispatch:
 
+# Serialize per PR (or per pushed ref) so a new commit -- or the 'no-deploy'
+# label event -- supersedes an in-flight deploy for the same target. The group
+# key deliberately omits the event type so 'labeled' and 'synchronize' share a
+# lane and can cancel each other; github.workflow keeps this separate from the
+# node/python check workflows. cancel-in-progress is limited to pull_request so
+# main/production deploys run to completion rather than being killed mid-migration.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # This pipeline deploys per-PR preview environments and needs repository
   # secrets, which the pull_request event withholds from two kinds of PR: PRs
