@@ -16,7 +16,6 @@ from .settings import OTelSettings
 from .tracing import (
     LoggingSpanExporter,
     configure_tracing,
-    get_tracer,
     instrument_fastapi,
     instrument_httpx,
     instrument_sqlalchemy,
@@ -32,7 +31,6 @@ __all__ = [
     "ResourceAttributesFilter",
     "configure_logging",
     "configure_tracing",
-    "get_tracer",
     "instrument_fastapi",
     "instrument_httpx",
     "instrument_sqlalchemy",

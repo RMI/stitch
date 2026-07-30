@@ -10,6 +10,7 @@ from stitch.models import (
 
 from .og_field import OilGasFieldBase, OilGasOwner, OilGasOperator
 from .types import (
+    CCRSrcKey,
     GEMSrcKey,
     LLMSrcKey,
     LocationType,
@@ -33,11 +34,14 @@ __all__ = [
     "WoodMacSourceView",
     "GemSource",
     "GemSourceView",
+    "CCRSource",
+    "CCRSourceView",
     "SourceRecord",
     "LocationType",
     "OilGasOwner",
     "OilGasOperator",
     "OGSISrcKey",
+    "SOURCE_PRIORITY",
 ]
 
 
@@ -45,6 +49,17 @@ LLM_SRC: Final[LLMSrcKey] = "llm"
 GEM_SRC: Final[GEMSrcKey] = "gem"
 RMI_SRC: Final[RMISrcKey] = "rmi"
 WM_SRC: Final[WMSrcKey] = "wm"
+CCR_SRC: Final[CCRSrcKey] = "ccr"
+
+# Canonical source coalescing priority (highest first). Single source of truth
+# for the coalescer, the query-param default, and the DB seed.
+SOURCE_PRIORITY: Final[tuple[OGSISrcKey, ...]] = (
+    RMI_SRC,
+    WM_SRC,
+    CCR_SRC,
+    GEM_SRC,
+    LLM_SRC,
+)
 
 
 class GemSource(Source[int, GEMSrcKey], OilGasFieldBase):
@@ -53,6 +68,14 @@ class GemSource(Source[int, GEMSrcKey], OilGasFieldBase):
 
 class GemSourceView(SourceView[int, GEMSrcKey], OilGasFieldBase):
     source: GEMSrcKey = GEM_SRC
+
+
+class CCRSource(Source[int, CCRSrcKey], OilGasFieldBase):
+    source: CCRSrcKey = CCR_SRC
+
+
+class CCRSourceView(SourceView[int, CCRSrcKey], OilGasFieldBase):
+    source: CCRSrcKey = CCR_SRC
 
 
 class WoodMacSource(Source[int, WMSrcKey], OilGasFieldBase):
@@ -80,12 +103,12 @@ class LLMSourceView(SourceView[int, LLMSrcKey], OilGasFieldBase):
 
 
 OGFieldSource = Annotated[
-    GemSource | WoodMacSource | RMISource | LLMSource,
+    GemSource | WoodMacSource | RMISource | LLMSource | CCRSource,
     Field(discriminator="source"),
 ]
 
 OGFieldSourceView = Annotated[
-    GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView,
+    GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView,
     Field(discriminator="source"),
 ]
 
@@ -119,15 +142,16 @@ class OGFieldDetailView(OGFieldListItemView):
 class OGFieldSourceValueView(BaseModel):
     """One source's value for a single field, with its effective priority.
 
-    Returned by the per-field source-values endpoint. ``priority`` is the
+    Returned by the per-field source-values endpoint. ``source_id`` is the id of
+    the source record (distinct from any resource id). ``priority`` is the
     effective per-resource ranking (lower ``priority`` value = higher priority);
     the winning value is the entry with the lowest ``priority`` value (ties
-    broken by ``id``). When priority becomes resource/field-scoped, only that
-    resolution changes -- this shape is stable.
+    broken by ``source_id``). When priority becomes resource/field-scoped, only
+    that resolution changes -- this shape is stable.
     """
 
     source: OGSISrcKey
-    id: int
+    source_id: int
     value: Any
     priority: int
 

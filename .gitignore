@@ -220,3 +220,6 @@ __marimo__/
 
 # macOS
 **/.DS_Store
+
+# Local design notes and plans
+/docs/

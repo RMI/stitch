@@ -1,5 +1,6 @@
 import logging
 
+import pytest
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
@@ -21,6 +22,18 @@ from stitch.observability.tracing import LoggingSpanExporter
 def test_configure_tracing_disabled_returns_none() -> None:
     assert configure_tracing(service_name="svc", enabled=False) is None
     assert configure_tracing(service_name="svc", enabled=True, exporter="none") is None
+
+
+def test_configure_tracing_rejects_unknown_exporter() -> None:
+    # A direct caller that bypasses OTelSettings gets a fail-fast error rather
+    # than silently falling through to the console exporter.
+    with pytest.raises(ValueError, match="exporter must be one of"):
+        configure_tracing(service_name="svc", exporter="consle")
+
+
+def test_configure_tracing_rejects_out_of_range_sample_ratio() -> None:
+    with pytest.raises(ValueError, match="sample_ratio must be in"):
+        configure_tracing(service_name="svc", sample_ratio=5.0)
 
 
 def test_configure_tracing_builds_provider_with_resource(monkeypatch) -> None:

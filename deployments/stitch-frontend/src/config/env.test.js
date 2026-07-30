@@ -21,8 +21,7 @@ describe("config/env", () => {
         apiUrl: "https://example.test/api/v1",
         entityLinkageUrl: "https://entity-linkage.test/api/v1",
         stitchLlmUrl: "https://stitch-llm.test/api/v1",
-        etlGemUrl: "https://etl-gem.test/api/v1",
-        etlWoodmacUrl: "https://etl-woodmac.test/api/v1",
+        etlUrl: "https://etl.test/api/v1/etl",
         auth0Domain: "my.auth0.com",
         auth0ClientId: "my-client-id",
         auth0Audience: "https://my-api",
@@ -51,8 +50,7 @@ describe("config/env", () => {
       "https://entity-linkage.test/api/v1",
     );
     expect(config.stitchLlmBaseUrl).toBe("https://stitch-llm.test/api/v1");
-    expect(config.etlGemBaseUrl).toBe("https://etl-gem.test/api/v1");
-    expect(config.etlWoodmacBaseUrl).toBe("https://etl-woodmac.test/api/v1");
+    expect(config.etlBaseUrl).toBe("https://etl.test/api/v1/etl");
     expect(config.appEnv).toBe("test");
 
     expect(config.build.buildId).toBe("gha-123");
@@ -125,8 +123,7 @@ describe("config/env", () => {
         apiUrl: "",
         entityLinkageUrl: "",
         stitchLlmUrl: "",
-        etlGemUrl: "",
-        etlWoodmacUrl: "",
+        etlUrl: "",
       }),
     });
 
@@ -136,8 +133,7 @@ describe("config/env", () => {
     expect(config.apiBaseUrl).toBe("http://localhost:8000/api/v1");
     expect(config.entityLinkageBaseUrl).toBe("http://localhost:8001/api/v1");
     expect(config.stitchLlmBaseUrl).toBe("http://localhost:8002/api/v1");
-    expect(config.etlGemBaseUrl).toBe("http://localhost:8101/api/v1");
-    expect(config.etlWoodmacBaseUrl).toBe("http://localhost:8102/api/v1");
+    expect(config.etlBaseUrl).toBe("http://localhost:8100/api/v1/etl");
   });
 
   it("throws when config fetch fails", async () => {

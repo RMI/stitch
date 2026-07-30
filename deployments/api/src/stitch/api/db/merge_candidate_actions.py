@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,12 +16,16 @@ from stitch.api.db.errors import (
     ResourceNotFoundError,
 )
 from stitch.api.entities import (
+    ComparisonValueView,
+    FieldComparisonView,
     MergeCandidateCreateRequest,
+    MergeCandidateDetailView,
     MergeCandidateReviewRequest,
     MergeCandidateStatus,
     MergeCandidateView,
     OGFieldMergePreviewView,
 )
+from stitch.ogsi.model import OGFieldSource
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
 
@@ -34,6 +39,7 @@ from .model import (
     ResourceModel,
 )
 from .og_field_resource_actions import apply_resource_merge
+from .utils import coalesce_resources
 
 
 def _normalize_resource_ids(resource_ids: Sequence[int]) -> list[int]:
@@ -92,6 +98,96 @@ def _candidate_to_view(model: MergeCandidateModel) -> MergeCandidateView:
     )
 
 
+def _comparison_status(resource_values: Sequence[Any]) -> str:
+    """``match`` if every resource resolves to the same value, else ``different``.
+
+    Compares each resource's coalesced value for a field. A value present on one
+    resource and null on another counts as ``different``; all-null counts as
+    ``match``. See ``FieldComparisonView``.
+    """
+    first = resource_values[0] if resource_values else None
+    return "match" if all(value == first for value in resource_values) else "different"
+
+
+def _build_comparison(
+    resource_views: Sequence[OilGasFieldBase],
+    sources_with_priority: Sequence[tuple[int, OGFieldSource, int]],
+) -> list[FieldComparisonView]:
+    """Per-field comparison across the candidate's resources.
+
+    For each ``OilGasFieldBase`` field, ``status`` compares the resources'
+    coalesced values (``resource_views``); ``values`` lists every source that
+    carries a value (winner-first by priority) tagged with the resource it is
+    attached to. See ``FieldComparisonView`` for the status semantics.
+
+    Values are a best guess at the persisted merge result, coalesced in Python;
+    superseded once coalescing moves into the DB.
+    """
+    comparison: list[FieldComparisonView] = []
+    for field_name in OilGasFieldBase.model_fields:
+        values: list[ComparisonValueView] = []
+        for resource_id, source, priority in sources_with_priority:
+            if source.id is None:
+                continue
+            value = getattr(source, field_name, None)
+            # Mirror the coalescer (coalesce_og_field_resource excludes None
+            # only): an empty string is a real value that can win the merge, so
+            # it must appear here too or `compare` disagrees with the result.
+            # note: when moving coalescing into DB (PR 170) this also needs to
+            # be checked
+            if value is None:
+                continue
+            values.append(
+                ComparisonValueView(
+                    resource_id=resource_id,
+                    source=source.source,
+                    source_id=source.id,
+                    value=value,
+                    priority=priority,
+                )
+            )
+        values.sort(key=lambda entry: (entry.priority, entry.source_id))
+        # CLEANUP (coalescer->DB, PR 170): `values` are ranked by the DEFAULT
+        # source order (the merged resource's predicted winner) while `status`
+        # below is derived from each resource's EFFECTIVE coalesced value. Under
+        # a per-resource priority override these disagree (values[0] is the
+        # default winner, not what that resource currently resolves to).
+        # Reconcile the two priority bases when coalescing moves into the DB.
+        resource_values = [getattr(view, field_name, None) for view in resource_views]
+        comparison.append(
+            FieldComparisonView(
+                field=field_name,
+                status=_comparison_status(resource_values),
+                values=values,
+            )
+        )
+    return comparison
+
+
+async def _default_source_priority(session: AsyncSession) -> dict[str, int]:
+    """Global default source ordering (``source`` key -> priority, lower wins).
+
+    A merge resets the merged resource to this default order, so the comparison
+    ranks sources by it rather than by any per-resource override.
+    """
+    rows = await session.execute(
+        select(OGFieldSourcePriority.source, OGFieldSourcePriority.priority)
+    )
+    return {source: priority for source, priority in rows.all()}
+
+
+def _candidate_to_detail_view(
+    model: MergeCandidateModel,
+    compare: Sequence[FieldComparisonView],
+) -> MergeCandidateDetailView:
+    # MergeCandidateDetailView is MergeCandidateView + `compare`; reuse the base
+    # mapping so the shared fields stay defined in one place.
+    return MergeCandidateDetailView(
+        **_candidate_to_view(model).model_dump(),
+        compare=list(compare),
+    )
+
+
 async def _load_candidate_model(
     session: AsyncSession, candidate_id: int
 ) -> MergeCandidateModel:
@@ -119,10 +215,41 @@ async def list_merge_candidates(session: AsyncSession) -> list[MergeCandidateVie
 
 
 async def get_merge_candidate(
-    session: AsyncSession, candidate_id: int
-) -> MergeCandidateView:
+    session: AsyncSession,
+    candidate_id: int,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> MergeCandidateDetailView:
     candidate = await _load_candidate_model(session, candidate_id)
-    return _candidate_to_view(candidate)
+
+    resource_ids = [
+        item.resource_id for item in sorted(candidate.items, key=lambda i: i.position)
+    ]
+
+    # Computed live: repointed (post-merge) resources coalesce to a null-shell
+    # here, so an APPROVED candidate's `compare` reflects the emptied originals.
+    # Freezing a snapshot at approve/deny time is deferred.
+    #
+    # Invariant: every resource_id still exists -- merge_candidate_items FK to
+    # og_field_resources and resources are never hard-deleted (merges repoint,
+    # never delete). So a null-shell view always means "emptied by a merge",
+    # never "missing"; no existence check is needed here. Revisit if a resource
+    # hard-delete path is ever added.
+    by_id = await coalesce_resources(session, resource_ids, licensed_sources)
+
+    # `status` compares the resources' coalesced values; `values` lists every
+    # contributing source tagged with the resource it's attached to, ranked by
+    # the default source order (winner-first).
+    default_priority = await _default_source_priority(session)
+    fallback_priority = max(default_priority.values(), default=0) + 1
+    sources_with_priority = [
+        (rid, source, default_priority.get(source.source, fallback_priority))
+        for rid in resource_ids
+        for source in by_id[rid].source_data
+    ]
+    resource_views = [by_id[rid].view for rid in resource_ids]
+    compare = _build_comparison(resource_views, sources_with_priority)
+
+    return _candidate_to_detail_view(candidate, compare)
 
 
 async def create_merge_candidate(

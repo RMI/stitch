@@ -7,21 +7,37 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 from polyfactory.pytest_plugin import register_fixture
+from sqlalchemy import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from stitch.auth import TokenClaims
 from stitch.auth.permissions import ALL_PERMISSIONS
+from stitch.ogsi.model import SOURCE_PRIORITY
 
 from stitch.api.db.config import UnitOfWork, get_uow
 from stitch.api.db.model import (
+    OGFieldSourcePriority,
     StitchBase,
     UserModel,
 )
 from stitch.api.auth import get_current_user, get_token_claims
 from stitch.api.entities import User
 from stitch.api.main import app
+from stitch.api.settings import PostgresConfig, Settings, SqliteConfig, get_settings
 from .factories import OGFieldBaseFactory, ResourceFactory
 from .utils import make_create_resource, make_resource, make_source
+
+
+# The settings classes read a ``.env`` file relative to the working directory,
+# and ``make`` runs the suite from the repo root, so ``Settings()`` would
+# otherwise pick up a developer's local ``.env`` and mask the declared code
+# defaults that tests assert against. Disable dotenv loading here; real env vars
+# (e.g. OTEL_TRACES_EXPORTER, set in the rootdir conftest) still win. Importing
+# ``app`` above already built the cached settings singleton off ``.env``, so
+# clear it — the next read rebuilds it from defaults.
+for _settings_cls in (PostgresConfig, Settings, SqliteConfig):
+    _settings_cls.model_config["env_file"] = None
+get_settings.cache_clear()
 
 
 _ALL_LICENSED_CLAIMS = TokenClaims(
@@ -133,6 +149,16 @@ async def integration_engine():
     )
     async with engine.begin() as conn:
         await conn.run_sync(StitchBase.metadata.create_all, tables=non_view_tables)
+        # Production seeds og_field_source_priority via Alembic; the test schema
+        # is built with create_all, so seed the priority order here from the
+        # canonical SOURCE_PRIORITY constant.
+        await conn.execute(
+            insert(OGFieldSourcePriority),
+            [
+                {"source": source, "priority": i + 1}
+                for i, source in enumerate(SOURCE_PRIORITY)
+            ],
+        )
     yield engine
     await engine.dispose()
 
