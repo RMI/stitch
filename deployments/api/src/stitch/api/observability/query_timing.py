@@ -14,10 +14,13 @@ import re
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 
+from stitch.observability.middleware import (
+    request_id_var,
+    route_var,
+    scenario_var,
+)
+
 from .context import db_stats_var
-from .context import request_id_var
-from .context import route_var
-from .context import scenario_var
 from .sinks import emit_query_event
 
 try:  # py3.12+: monotonic, nanosecond resolution

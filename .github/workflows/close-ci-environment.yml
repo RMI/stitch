@@ -3,11 +3,24 @@ name: Close CI environment
 
 on:
   pull_request:
-    types: [closed]
+    # 'closed' tears the environment down when the PR ends. 'labeled' handles the
+    # 'no-deploy' opt-out: adding that label mid-life should turn off whatever the
+    # CD pipeline (build-and-deploy.yml) has running. Removing the label is handled
+    # over there via its 'unlabeled' trigger, which redeploys -- no teardown needed
+    # here, so 'unlabeled' is deliberately absent.
+    types: [closed, labeled]
   workflow_call:
 
 jobs:
+  # 'labeled' fires for every label, so gate teardown to the two cases that want
+  # it: the PR closing, or the 'no-deploy' label specifically being added. All
+  # other jobs need resolve-context, so skipping it here skips the whole teardown.
+  # Non-pull_request events (workflow_call) are left to run as before.
   resolve-context:
+    if: >-
+      ${{ (github.event_name != 'pull_request')
+      || (github.event.action == 'closed')
+      || (github.event.action == 'labeled' && github.event.label.name == 'no-deploy') }}
     uses: ./.github/workflows/resolve-deployment-context.yml
 
   drop-db:
@@ -107,8 +120,8 @@ jobs:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       container-app-name: ${{ format('{0}-stitch-llm', needs.resolve-context.outputs.deployment-name) }}
 
-  delete-stitch-etl-gem-container-app:
-    name: Delete stitch-etl-gem container app
+  delete-stitch-etl-container-app:
+    name: Delete stitch-etl container app
     needs: [resolve-context]
     uses: ./.github/workflows/delete-container-app.yml
     secrets:
@@ -117,19 +130,7 @@ jobs:
       azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      container-app-name: ${{ format('{0}-etl-gem', needs.resolve-context.outputs.deployment-name) }}
-
-  delete-stitch-etl-woodmac-container-app:
-    name: Delete stitch-etl-woodmac container app
-    needs: [resolve-context]
-    uses: ./.github/workflows/delete-container-app.yml
-    secrets:
-      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-    with:
-      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      container-app-name: ${{ format('{0}-etl-woodmac', needs.resolve-context.outputs.deployment-name) }}
+      container-app-name: ${{ format('{0}-etl', needs.resolve-context.outputs.deployment-name) }}
 
   close-static-web-app-preview:
     needs: [resolve-context]

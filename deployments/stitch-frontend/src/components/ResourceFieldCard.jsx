@@ -8,11 +8,13 @@ import {
   DEFAULT_FIELD_COLOR,
 } from "../constants/sourceMeta";
 
-function SourceValueRow({ source, value, id, isWinner }) {
+function SourceValueRow({ source, value, sourceId, isWinner }) {
   const barColor = SOURCE_COLORS[source] ?? DEFAULT_FIELD_COLOR;
   const sourceLabel = SOURCE_LABELS[source] ?? UNKNOWN_SOURCE_LABEL;
   const meta =
-    id !== null && id !== undefined ? `${sourceLabel} · #${id}` : sourceLabel;
+    sourceId !== null && sourceId !== undefined
+      ? `${sourceLabel} · #${sourceId}`
+      : sourceLabel;
   // Quote strings to set text values apart; render numbers/booleans bare.
   const display = typeof value === "string" ? `"${value}"` : String(value);
 
@@ -50,10 +52,10 @@ function FieldSourcesPanel({ isLoading, isError, sources }) {
           {/* The endpoint returns best-priority first, so index 0 is the winner. */}
           {sources.map((row, idx) => (
             <SourceValueRow
-              key={`${row.source}-${row.id}`}
+              key={`${row.source}-${row.source_id}`}
               source={row.source}
               value={row.value}
-              id={row.id}
+              sourceId={row.source_id}
               isWinner={idx === 0}
             />
           ))}

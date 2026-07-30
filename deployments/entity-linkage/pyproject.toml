@@ -6,17 +6,18 @@ readme = "README.md"
 authors = [{ name = "Michael Barlow", email = "mbarlow@rmi.org" }]
 requires-python = ">=3.12.12"
 dependencies = [
-  "fastapi[standard-no-fastapi-cloud-cli]>=0.135.1",
+  "fastapi[standard-no-fastapi-cloud-cli]>=0.140.7",
   "httpx>=0.28.0",
   "pydantic-settings>=2.12.0",
   "stitch-auth",
   "stitch-client",
   "stitch-models",
+  "stitch-observability[asgi]",
   "stitch-ogsi",
 ]
 
 [build-system]
-requires = ["uv_build>=0.9.16,<0.10.0"]
+requires = ["uv_build>=0.11.31,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
@@ -24,7 +25,7 @@ module-name = "stitch.entity_linkage"
 
 [dependency-groups]
 dev = [
-  "pytest>=8.0",
+  "pytest>=9.1.1",
   "pytest-anyio>=0.0.0",
   "aiosqlite>=0.21.0",
   "httpx>=0.28.0",
@@ -42,4 +43,5 @@ addopts = ["-v", "--strict-markers", "--tb=short"]
 stitch-auth = { workspace = true }
 stitch-client = { workspace = true }
 stitch-models = { workspace = true }
+stitch-observability = { workspace = true }
 stitch-ogsi = { workspace = true }

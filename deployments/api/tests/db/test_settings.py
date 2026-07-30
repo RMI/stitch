@@ -234,3 +234,11 @@ class TestSettings:
         settings = Settings(_env_file=None)
 
         assert str(settings.frontend_origin_url) == "http://localhost:3000/"
+
+    @pytest.mark.parametrize("ratio", [-0.1, 1.5])
+    def test_otel_sample_ratio_out_of_range_is_rejected(self, ratio):
+        # otel_sample_ratio is inherited from the shared OTelSettings mixin and
+        # feeds TraceIdRatioBased, which is only defined on [0, 1]; an invalid
+        # env value should fail fast at settings construction.
+        with pytest.raises(ValidationError):
+            Settings(otel_sample_ratio=ratio)
