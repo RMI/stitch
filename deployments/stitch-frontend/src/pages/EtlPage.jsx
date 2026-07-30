@@ -23,6 +23,22 @@ const GEM_FIELDS = [
   },
 ];
 
+const CCR_FIELDS = [
+  {
+    key: "payload_limit",
+    label: "Payload limit",
+    type: "number",
+    help: "Optional cap on payloads posted this run. Leave blank to post all.",
+  },
+  {
+    key: "xlsx_sheet",
+    label: "CCR xlsx sheet",
+    type: "text",
+    placeholder: "Reservoirs",
+    help: "Excel sheet name to load. Leave blank to use the configured default.",
+  },
+];
+
 const WOODMAC_FIELDS = [
   {
     key: "payload_limit",
@@ -286,7 +302,7 @@ export default function EtlPage() {
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-3">
         <EtlPanel
           title="GEM"
           description="Load GEM oil & gas data from the configured spreadsheet and post it to Stitch."
@@ -299,6 +315,13 @@ export default function EtlPage() {
           description="Fetch WoodMac query results and post them to Stitch."
           baseUrl={`${config.etlBaseUrl}/wm`}
           fields={WOODMAC_FIELDS}
+          getToken={getToken}
+        />
+        <EtlPanel
+          title="CCR"
+          description="Load C&C Reservoirs field data from the configured spreadsheet and post it to Stitch."
+          baseUrl={`${config.etlBaseUrl}/ccr`}
+          fields={CCR_FIELDS}
           getToken={getToken}
         />
       </div>

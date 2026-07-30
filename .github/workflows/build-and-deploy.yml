@@ -2,6 +2,10 @@ name: CD Pipeline
 
 on:
   pull_request:
+    # labeled/unlabeled are included so toggling the 'no-deploy' label (see the
+    # resolve-context guard) takes effect immediately instead of waiting for the
+    # next push. The default types must be listed explicitly once any are named.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main, production]
   workflow_dispatch:
@@ -28,6 +32,12 @@ jobs:
   # (Dependabot PRs still receive no secrets even when labeled; those need a
   # human to re-push the branch under their own PR.)
   #
+  # A PR labeled 'no-deploy' opts out of the build/deploy pipeline entirely: the
+  # guard fails, resolve-context is skipped, and the rest of the pipeline skips
+  # with it. The language-level checks (Node / Python workflows) are separate and
+  # still run. Toggling the label re-runs this workflow (see on.pull_request.types
+  # above), so removing it re-enables deploys without needing a new push.
+  #
   # Every job transitively needs resolve-context, so skipping it here skips the
   # rest -- except deploy-frontend and comment-summary, whose always()/!failure()
   # conditions ignore skipped dependencies and so repeat this guard explicitly.
@@ -35,7 +45,8 @@ jobs:
     if: >-
       ${{ github.event_name != 'pull_request'
       || (github.event.pull_request.head.repo.full_name == github.repository
-      && github.event.pull_request.user.type == 'User') }}
+      && github.event.pull_request.user.type == 'User'
+      && !contains(github.event.pull_request.labels.*.name, 'no-deploy')) }}
     uses: ./.github/workflows/resolve-deployment-context.yml
 
   lane-config-validate:
@@ -300,6 +311,8 @@ jobs:
         POSTGRES_DB=${{ needs.deploy-db.outputs.postgres-db }}
         POSTGRES_USER=${{ needs.deploy-db.outputs.postgres-user }}
         PGSSLMODE=${{ needs.deploy-db.outputs.postgres-sslmode }}
+        OTEL_SERVICE_NAME=stitch-api
+        OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: api
       # Keep staging / dress-rehearsal always-on; development scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
@@ -327,6 +340,8 @@ jobs:
         AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
         ENTITY_LINKAGE_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
         ENTITY_LINKAGE_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
+        OTEL_SERVICE_NAME=stitch-entity-linkage
+        OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: entity-linkage
       # Keep staging / dress-rehearsal always-on; development scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
@@ -362,6 +377,8 @@ jobs:
         STITCH_LLM_AZURE_OPENAI_BASE_URL=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-base-url }}
         STITCH_LLM_AZURE_OPENAI_MODEL=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-model }}
         STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-timeout-seconds }}
+        OTEL_SERVICE_NAME=stitch-llm
+        OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: stitch-llm
       # Keep staging / dress-rehearsal always-on; development scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
@@ -429,7 +446,8 @@ jobs:
       ${{ (!failure() && !cancelled())
       && (github.event_name != 'pull_request'
       || (github.event.pull_request.head.repo.full_name == github.repository
-      && github.event.pull_request.user.type == 'User')) }}
+      && github.event.pull_request.user.type == 'User'
+      && !contains(github.event.pull_request.labels.*.name, 'no-deploy'))) }}
     needs: [resolve-context, lane-config-validate, build-frontend, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl]
     uses: ./.github/workflows/azure-static-web-apps.yml
     secrets:
@@ -448,11 +466,13 @@ jobs:
       production-branch: production
 
   comment-summary:
-    # always() ignores the resolve-context guard's skips, so repeat it here too.
+    # always() ignores the resolve-context guard's skips, so repeat it here too --
+    # including the 'no-deploy' exclusion, so a skipped pipeline posts no summary.
     if: >-
       ${{ always() && github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.full_name == github.repository
-      && github.event.pull_request.user.type == 'User' }}
+      && github.event.pull_request.user.type == 'User'
+      && !contains(github.event.pull_request.labels.*.name, 'no-deploy') }}
     uses: ./.github/workflows/comment-pr-summary.yml
     secrets: inherit
     needs: [resolve-context, build-api-docker-image, build-entity-linkage-docker-image, build-stitch-llm-docker-image, build-seed-docker-image, deploy-db, run-db-migrations, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl, run-seed, deploy-frontend]
