@@ -10,6 +10,7 @@ from stitch.models import (
 
 from .og_field import OilGasFieldBase, OilGasOwner, OilGasOperator
 from .types import (
+    CCRSrcKey,
     GEMSrcKey,
     LLMSrcKey,
     LocationType,
@@ -33,11 +34,14 @@ __all__ = [
     "WoodMacSourceView",
     "GemSource",
     "GemSourceView",
+    "CCRSource",
+    "CCRSourceView",
     "SourceRecord",
     "LocationType",
     "OilGasOwner",
     "OilGasOperator",
     "OGSISrcKey",
+    "SOURCE_PRIORITY",
 ]
 
 
@@ -45,6 +49,17 @@ LLM_SRC: Final[LLMSrcKey] = "llm"
 GEM_SRC: Final[GEMSrcKey] = "gem"
 RMI_SRC: Final[RMISrcKey] = "rmi"
 WM_SRC: Final[WMSrcKey] = "wm"
+CCR_SRC: Final[CCRSrcKey] = "ccr"
+
+# Canonical source coalescing priority (highest first). Single source of truth
+# for the coalescer, the query-param default, and the DB seed.
+SOURCE_PRIORITY: Final[tuple[OGSISrcKey, ...]] = (
+    RMI_SRC,
+    WM_SRC,
+    CCR_SRC,
+    GEM_SRC,
+    LLM_SRC,
+)
 
 
 class GemSource(Source[int, GEMSrcKey], OilGasFieldBase):
@@ -53,6 +68,14 @@ class GemSource(Source[int, GEMSrcKey], OilGasFieldBase):
 
 class GemSourceView(SourceView[int, GEMSrcKey], OilGasFieldBase):
     source: GEMSrcKey = GEM_SRC
+
+
+class CCRSource(Source[int, CCRSrcKey], OilGasFieldBase):
+    source: CCRSrcKey = CCR_SRC
+
+
+class CCRSourceView(SourceView[int, CCRSrcKey], OilGasFieldBase):
+    source: CCRSrcKey = CCR_SRC
 
 
 class WoodMacSource(Source[int, WMSrcKey], OilGasFieldBase):
@@ -80,12 +103,12 @@ class LLMSourceView(SourceView[int, LLMSrcKey], OilGasFieldBase):
 
 
 OGFieldSource = Annotated[
-    GemSource | WoodMacSource | RMISource | LLMSource,
+    GemSource | WoodMacSource | RMISource | LLMSource | CCRSource,
     Field(discriminator="source"),
 ]
 
 OGFieldSourceView = Annotated[
-    GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView,
+    GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView,
     Field(discriminator="source"),
 ]
 

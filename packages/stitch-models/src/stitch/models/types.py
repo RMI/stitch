@@ -8,7 +8,7 @@ type JsonValue = (
     None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
 )
 
-Year = Annotated[int, Field(ge=1800, le=2100)]
+Year = Annotated[int, Field(ge=1700, le=2100)]
 FractionalPercentage = Annotated[float, Field(ge=0.0, le=100)]
 Latitude = Annotated[float, Field(ge=-90.0, le=90.0)]
 Longitude = Annotated[float, Field(ge=-180.0, le=180.0)]

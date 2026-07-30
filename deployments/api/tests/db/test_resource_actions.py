@@ -335,10 +335,10 @@ class TestResourceQueryAction:
         assert [item.id for item in items] == [resource_id]
         assert items[0].data.name == "RMI Name"
         assert items[0].provenance["name"] == "rmi"
-        assert items[0].data.country == "CAN"
-        assert items[0].provenance["country"] == "gem"
-        assert items[0].data.basin == "GEM Basin"
-        assert items[0].provenance["basin"] == "gem"
+        assert items[0].data.country == "USA"
+        assert items[0].provenance["country"] == "wm"
+        assert items[0].data.basin == "WM Basin"
+        assert items[0].provenance["basin"] == "wm"
         assert items[0].data.reservoir_formation == "WM Formation"
         assert items[0].provenance["reservoir_formation"] == "wm"
 
@@ -1142,7 +1142,7 @@ class TestResourcePriorityOverride:
     """A per-field override re-ranks sources, flipping the coalesced winner."""
 
     async def _seed(self, session, user) -> int:
-        # Default priority: gem(2) outranks wm(3), so gem wins by default.
+        # Default priority: wm(2) outranks gem(4), so wm wins by default.
         return await _create_resource_with_sources(
             session,
             user,
@@ -1159,28 +1159,28 @@ class TestResourcePriorityOverride:
         session = seeded_integration_session
         rid = await self._seed(session, test_user)
 
-        # Default: gem wins.
+        # Default: wm wins.
         before = await resource_actions.get(session, rid)
-        assert before.view.name == "GEM Name"
-        assert before.provenance["name"][1] == "gem"
+        assert before.view.name == "WM Name"
+        assert before.provenance["name"][1] == "wm"
 
-        # Override wm to top priority for the NAME field of THIS resource only.
-        await _override(session, test_user, rid, "wm", "name", priority=0)
+        # Override gem to top priority for the NAME field of THIS resource only.
+        await _override(session, test_user, rid, "gem", "name", priority=0)
 
         # Detail path reflects the override on name (value + provenance)...
         after = await resource_actions.get(session, rid)
-        assert after.view.name == "WM Name"
-        assert after.provenance["name"][1] == "wm"
+        assert after.view.name == "GEM Name"
+        assert after.provenance["name"][1] == "gem"
         # ...but country is a different field with no override, so it still
-        # coalesces to gem -- overrides are per-field.
-        assert after.view.country == "USA"
-        assert after.provenance["country"][1] == "gem"
+        # coalesces to wm -- overrides are per-field.
+        assert after.view.country == "CAN"
+        assert after.provenance["country"][1] == "wm"
 
         # List path reflects it too.
         items, _ = await resource_actions.query(session, _QueryParams())
         item = next(i for i in items if i.id == rid)
-        assert item.data.name == "WM Name"
-        assert item.provenance["name"] == "wm"
+        assert item.data.name == "GEM Name"
+        assert item.provenance["name"] == "gem"
 
     @pytest.mark.anyio
     async def test_override_is_scoped_to_its_resource(
@@ -1192,18 +1192,18 @@ class TestResourcePriorityOverride:
         overridden = await self._seed(session, test_user)
         untouched = await self._seed(session, test_user)
 
-        await _override(session, test_user, overridden, "wm", "name", priority=0)
+        await _override(session, test_user, overridden, "gem", "name", priority=0)
 
-        assert (await resource_actions.get(session, overridden)).view.name == "WM Name"
+        assert (await resource_actions.get(session, overridden)).view.name == "GEM Name"
         # The other resource keeps the default ranking.
-        assert (await resource_actions.get(session, untouched)).view.name == "GEM Name"
+        assert (await resource_actions.get(session, untouched)).view.name == "WM Name"
 
 
 class TestFieldSourceValues:
     """Per-field source-value listing, best-priority first."""
 
     async def _seed(self, session, user) -> int:
-        # gem(2) outranks wm(3) by default; llm has no state_province.
+        # wm(2) outranks gem(4) by default; llm has no state_province.
         return await _create_resource_with_sources(
             session,
             user,
@@ -1223,10 +1223,10 @@ class TestFieldSourceValues:
 
         rows = await resource_actions.field_source_values(session, rid, "name")
 
-        # gem(2) < wm(3) < llm(4): winner (gem) first, then in priority order.
+        # wm(2) < gem(4) < llm(5): winner (wm) first, then in priority order.
         assert [(r.source, r.value) for r in rows] == [
-            ("gem", "GEM Name"),
             ("wm", "WM Name"),
+            ("gem", "GEM Name"),
             ("llm", "LLM Name"),
         ]
         assert [r.priority for r in rows] == sorted(r.priority for r in rows)
@@ -1239,14 +1239,14 @@ class TestFieldSourceValues:
     ):
         session = seeded_integration_session
         rid = await self._seed(session, test_user)
-        await _override(session, test_user, rid, "wm", "basin", priority=0)
+        await _override(session, test_user, rid, "gem", "basin", priority=0)
 
         rows = await resource_actions.field_source_values(session, rid, "basin")
 
-        # wm promoted above gem; llm has no basin so it is omitted.
+        # gem promoted above wm; llm has no basin so it is omitted.
         assert [(r.source, r.value) for r in rows] == [
-            ("wm", "Beta"),
             ("gem", "Alpha"),
+            ("wm", "Beta"),
         ]
         # The curated row is flagged; the untouched one is not.
         assert [r.is_override for r in rows] == [True, False]

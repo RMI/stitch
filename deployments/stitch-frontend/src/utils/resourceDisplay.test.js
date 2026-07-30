@@ -24,7 +24,7 @@ describe("resourceDisplay utilities", () => {
     };
 
     expect(deriveProvenance(resource)).toEqual({
-      name: "gem",
+      name: "wm",
       basin: "wm",
     });
   });
