@@ -136,26 +136,26 @@ class TestResourcesIntegration:
             rid = resource.id
             await session.commit()
 
-        # Default: gem(2) beats wm(3).
+        # Default: wm(2) beats gem(4).
         before = await integration_client.get(
             f"/oil-gas-fields/{rid}/fields/basin/sources"
         )
-        assert [r["source"] for r in before.json()] == ["gem", "wm"]
+        assert [r["source"] for r in before.json()] == ["wm", "gem"]
 
-        # Promote wm above gem for basin.
+        # Promote gem above wm for basin (flips the winner off the default).
         response = await integration_client.put(
             f"/oil-gas-fields/{rid}/fields/basin/sources/priority",
-            json={"ordered_source_pks": [pks["wm"], pks["gem"]]},
+            json={"ordered_source_pks": [pks["gem"], pks["wm"]]},
         )
         assert response.status_code == 200
         assert [(r["source"], r["value"]) for r in response.json()] == [
-            ("wm", "Beta"),
             ("gem", "Alpha"),
+            ("wm", "Beta"),
         ]
 
         # Coalesced detail reflects the new winner.
         detail = await integration_client.get(f"/oil-gas-fields/{rid}")
-        assert detail.json()["basin"] == "Beta"
+        assert detail.json()["basin"] == "Alpha"
 
     @pytest.mark.anyio
     async def test_create_with_minimal_data(

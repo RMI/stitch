@@ -27,12 +27,13 @@ describe("EtlPage", () => {
     expect(
       screen.getByRole("heading", { name: "WoodMac" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "CCR" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Start run" })).toHaveLength(
-      2,
+      3,
     );
     expect(
       screen.getAllByRole("button", { name: "Refresh status" }),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
   });
 
   it("starts a GEM run with an authenticated token and shows the returned state", async () => {
@@ -66,6 +67,43 @@ describe("EtlPage", () => {
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8100/api/v1/etl/gem/start",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer test-access-token",
+        }),
+      }),
+    );
+  });
+
+  it("starts a CCR run against the ccr ETL endpoint", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 202,
+      text: async () =>
+        JSON.stringify({
+          job_id: "job-456",
+          state: "running",
+          started_at: "2026-06-11T10:00:00Z",
+          initiated_by: "Test User",
+        }),
+    });
+
+    renderWithQueryClient(<EtlPage />);
+
+    const ccrPanel = getPanel("CCR");
+    await userEvent.click(
+      within(ccrPanel).getByRole("button", { name: "Start run" }),
+    );
+
+    await waitFor(() => {
+      expect(within(ccrPanel).getAllByText("running").length).toBeGreaterThan(
+        0,
+      );
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8100/api/v1/etl/ccr/start",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({

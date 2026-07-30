@@ -1,6 +1,12 @@
-"""Source priority lookup table for coalescing field values."""
+"""Source priority lookup table for coalescing field values.
 
-from sqlalchemy import Integer, String, event, insert
+The canonical order lives in ``stitch.ogsi.model.SOURCE_PRIORITY``. Production
+databases are seeded by the Alembic migrations; the integration tests seed this
+table from ``SOURCE_PRIORITY`` in a conftest fixture (they build the schema with
+``create_all`` rather than running migrations).
+"""
+
+from sqlalchemy import Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 from stitch.ogsi.model import OGSISrcKey
 
@@ -12,17 +18,3 @@ class OGFieldSourcePriority(Base):
 
     source: Mapped[OGSISrcKey] = mapped_column(String(10), primary_key=True)
     priority: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
-
-
-DEFAULT_PRIORITIES = [
-    {"source": "rmi", "priority": 1},
-    {"source": "gem", "priority": 2},
-    {"source": "wm", "priority": 3},
-    {"source": "llm", "priority": 4},
-]
-
-
-@event.listens_for(OGFieldSourcePriority.__table__, "after_create")
-def _seed_priorities(target, connection, **kw):
-    for row in DEFAULT_PRIORITIES:
-        connection.execute(insert(OGFieldSourcePriority).values(**row))

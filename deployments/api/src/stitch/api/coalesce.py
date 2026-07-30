@@ -1,16 +1,11 @@
 from collections.abc import Mapping, Sequence
 from typing import Any
 from stitch.ogsi.model import (
-    GEM_SRC,
-    LLM_SRC,
-    RMI_SRC,
-    WM_SRC,
+    SOURCE_PRIORITY,
     OGFieldSource,
 )
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
-
-SRC_PRIORITY = (RMI_SRC, GEM_SRC, WM_SRC, LLM_SRC)
 
 
 type ProvAttrs = dict[str, tuple[Any, OGSISrcKey, int] | None]
@@ -27,7 +22,7 @@ type _SortKey = tuple[int, int, int, OGSISrcKey, int]
 
 def coalesce_og_field_resource(
     source_data: Sequence[OGFieldSource],
-    priorities: Sequence[OGSISrcKey] = SRC_PRIORITY,
+    priorities: Sequence[OGSISrcKey] = SOURCE_PRIORITY,
     *,
     field_overrides: FieldOverrides | None = None,
 ) -> tuple[OilGasFieldBase, ProvAttrs]:
