@@ -44,7 +44,7 @@ const FILTER_FIELDS = [
   "location_type",
   "primary_hydrocarbon_group",
 ];
-const SOURCES = ["rmi", "gem", "wm", "llm"];
+const SOURCES = ["rmi", "gem", "wm", "llm", "ccr"];
 
 const setupFailures = new Counter("setup_failures");
 

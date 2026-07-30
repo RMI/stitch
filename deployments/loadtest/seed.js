@@ -63,7 +63,7 @@ const HYDROCARBON = [
   "Dry Gas", "Wet Gas", "Acid Gas", "Condensate", "Mixed", "Unknown",
 ];
 const FIELD_STATUS = ["Producing", "Non-Producing", "Abandoned", "Planned"];
-const SOURCES = ["gem", "wm", "rmi", "llm"];
+const SOURCES = ["gem", "wm", "rmi", "llm", "ccr"];
 const NULL_PROB = 0.3;
 
 // Flatten every committed data file (each is an array of payloads) into one list.
