@@ -2,6 +2,10 @@ name: CD Pipeline
 
 on:
   pull_request:
+    # labeled/unlabeled are included so toggling the 'no-deploy' label (see the
+    # resolve-context guard) takes effect immediately instead of waiting for the
+    # next push. The default types must be listed explicitly once any are named.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main, production]
   workflow_dispatch:
@@ -28,6 +32,12 @@ jobs:
   # (Dependabot PRs still receive no secrets even when labeled; those need a
   # human to re-push the branch under their own PR.)
   #
+  # A PR labeled 'no-deploy' opts out of the build/deploy pipeline entirely: the
+  # guard fails, resolve-context is skipped, and the rest of the pipeline skips
+  # with it. The language-level checks (Node / Python workflows) are separate and
+  # still run. Toggling the label re-runs this workflow (see on.pull_request.types
+  # above), so removing it re-enables deploys without needing a new push.
+  #
   # Every job transitively needs resolve-context, so skipping it here skips the
   # rest -- except deploy-frontend and comment-summary, whose always()/!failure()
   # conditions ignore skipped dependencies and so repeat this guard explicitly.
@@ -35,7 +45,8 @@ jobs:
     if: >-
       ${{ github.event_name != 'pull_request'
       || (github.event.pull_request.head.repo.full_name == github.repository
-      && github.event.pull_request.user.type == 'User') }}
+      && github.event.pull_request.user.type == 'User'
+      && !contains(github.event.pull_request.labels.*.name, 'no-deploy')) }}
     uses: ./.github/workflows/resolve-deployment-context.yml
 
   lane-config-validate:
@@ -435,7 +446,8 @@ jobs:
       ${{ (!failure() && !cancelled())
       && (github.event_name != 'pull_request'
       || (github.event.pull_request.head.repo.full_name == github.repository
-      && github.event.pull_request.user.type == 'User')) }}
+      && github.event.pull_request.user.type == 'User'
+      && !contains(github.event.pull_request.labels.*.name, 'no-deploy'))) }}
     needs: [resolve-context, lane-config-validate, build-frontend, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl]
     uses: ./.github/workflows/azure-static-web-apps.yml
     secrets:
@@ -454,11 +466,13 @@ jobs:
       production-branch: production
 
   comment-summary:
-    # always() ignores the resolve-context guard's skips, so repeat it here too.
+    # always() ignores the resolve-context guard's skips, so repeat it here too --
+    # including the 'no-deploy' exclusion, so a skipped pipeline posts no summary.
     if: >-
       ${{ always() && github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.full_name == github.repository
-      && github.event.pull_request.user.type == 'User' }}
+      && github.event.pull_request.user.type == 'User'
+      && !contains(github.event.pull_request.labels.*.name, 'no-deploy') }}
     uses: ./.github/workflows/comment-pr-summary.yml
     secrets: inherit
     needs: [resolve-context, build-api-docker-image, build-entity-linkage-docker-image, build-stitch-llm-docker-image, build-seed-docker-image, deploy-db, run-db-migrations, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl, run-seed, deploy-frontend]
