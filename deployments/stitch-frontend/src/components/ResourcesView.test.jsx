@@ -226,10 +226,25 @@ describe("ResourcesView", () => {
     ).toBeInTheDocument();
   });
 
-  it("does not show filter bar when no data", () => {
+  it("shows filter bar even before any data has loaded", () => {
     renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
 
-    expect(screen.queryByTestId("filter-bar")).not.toBeInTheDocument();
+    expect(screen.getByTestId("filter-bar")).toBeInTheDocument();
+  });
+
+  it("keeps filter bar visible while a new query is loading", () => {
+    // Mirrors a refetch triggered by a filter change: TanStack Query resets
+    // `data` to undefined and `isLoading` to true for the new query key.
+    vi.mocked(useResources).mockReturnValue({
+      ...defaultHookReturn,
+      data: undefined,
+      isLoading: true,
+      isFetching: true,
+    });
+
+    renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+    expect(screen.getByTestId("filter-bar")).toBeInTheDocument();
   });
 
   it("shows filter bar when the current result set is empty", () => {
