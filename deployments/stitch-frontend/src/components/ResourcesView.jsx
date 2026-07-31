@@ -198,11 +198,6 @@ export default function ResourcesView({ className = "", endpoint }) {
         {submittedSearch && <span>Search: {submittedSearch}</span>}
       </div>
 
-      {isLoading && resources.length === 0 && (
-        <p className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-ink-muted">
-          Loading resources...
-        </p>
-      )}
       {isError && (
         <p className="rounded-md border border-danger/25 bg-danger-soft px-4 py-3 text-sm text-danger">
           Failed to load resources. Check your connection and try again.
@@ -217,6 +212,7 @@ export default function ResourcesView({ className = "", endpoint }) {
         resources={resources}
         sortConfig={sortConfig}
         onSort={handleSortChange}
+        isLoading={isLoading}
       />
       {data && totalCount > 0 && (
         <Pagination
