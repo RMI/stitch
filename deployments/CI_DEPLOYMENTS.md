@@ -28,15 +28,98 @@ It builds Docker images for:
 - `entity-linkage`
 - `stitch-llm`
 - `seed`
+- `otel-collector` (traces gateway → Application Insights; see below)
 
 It then handles deployments for:
 
 - the database, assuming an existing Azure PostgreSQL flexible server
+- the shared OTel Collector Container App (`<lane>-otel-collector`), one per
+  lane (see "OTel Collector" below)
 - the API Container App, assuming an existing Container Apps environment
 - the entity-linkage Container App in the same environment
 - the stitch-llm Container App in the same environment
 - the ETL Container App (`etl`) in the same environment, on non-`development`
   lanes only (see below)
+
+### OTel Collector (traces → Application Insights)
+
+All services emit OTLP traces to a single **shared collector per lane**: a
+Container App named `<deployment_lane>-otel-collector` (e.g.
+`development-otel-collector`). Every deployment in a lane — `main` and every
+`pr-<N>` — sends spans to the same collector, which batches them and forwards to
+**Application Insights** via the `azuremonitor` exporter. The pipeline is
+**traces-only** (no metrics). Config lives at
+[`otel-collector/config-azure.yaml`](otel-collector/config-azure.yaml).
+
+Wired in CI — no manual deploy step:
+
+- `build-otel-collector-docker-image` builds `<repo>-otel-collector` from
+  [`otel-collector/Dockerfile`](otel-collector/Dockerfile), which **bakes
+  `config-azure.yaml` into the image**.
+- `deploy-otel-collector` deploys/updates the shared `<lane>-otel-collector`
+  app (OTLP/HTTP on port `4318`, `min-replicas: 1` so cold-starts don't drop
+  spans), then injects `APPLICATIONINSIGHTS_CONNECTION_STRING` as an env var.
+- `resolve-otel-collector` looks up the shared app's ingress URL (its FQDN is
+  stable across revisions) and hands it to the service deploys. It runs on
+  **every** deploy — including the routine PRs that skip the build/deploy above.
+- `deploy-api`, `deploy-entity-linkage`, and `deploy-stitch-llm` depend on
+  `resolve-otel-collector` and receive
+  `OTEL_EXPORTER_OTLP_ENDPOINT=<collector-url>/v1/traces` (plus
+  `OTEL_TRACES_EXPORTER=otlp`, `OTEL_EXPORTER_OTLP_PROTOCOL=http`), so each
+  service exports to the lane collector automatically.
+
+**The collector is not rebuilt/redeployed on every run.** Because it is one
+shared app per lane, redeploying it on every PR would churn a resource other
+PRs in the lane are actively using (and waste an image build each time). So
+`detect-collector-changes` gates the build + deploy: they run only when
+`deployments/otel-collector/**` changed in the push/PR, **or** on a canonical
+push (to `main` or `production`). Otherwise both skip and
+`resolve-otel-collector` reuses the existing app.
+
+#### One-time setup
+
+1. An **Application Insights** resource must exist (a single shared resource;
+   listed as a prereq in
+   [`OBSERVABILITY_SETUP.md`](OBSERVABILITY_SETUP.md)).
+2. Add its connection string as the **repo-level** Actions secret
+   `APPLICATIONINSIGHTS_CONNECTION_STRING` (see Repo-level secrets below). It is
+   passed in the same caller context as the `AZURE_*` identity secrets, so it is
+   **repo-level, not per-environment**. **Until it is set**, the collector still
+   deploys but the connection-string injection is skipped (the step is guarded
+   on an emptiness check), so **traces are silently dropped** — nothing fails,
+   but nothing reaches App Insights.
+3. **Bootstrap each lane's collector once.** Because the build/deploy is gated
+   (above), a lane whose collector has never been created makes
+   `resolve-otel-collector` fail with a clear error until it exists.
+   `development` and `dress-rehearsal` bootstrap themselves on the next push to
+   `main` / `production`. `staging` has no canonical push, so bootstrap it with
+   a PR that touches `deployments/otel-collector/**` (or create the collector
+   once by hand).
+
+> **Why one shared App Insights — and what to change for per-env retention.**
+> All lanes' collectors export to a single App Insights resource today, so
+> **retention and ingestion sampling are shared** across `development` /
+> `staging` / `dress-rehearsal`: those are properties of the resource, not of
+> the writer. Per-lane collector *processing* (e.g. tail sampling) is still
+> possible via each lane's own collector config, and per-service head sampling
+> via `OTEL_SAMPLE_RATIO`. But **different retention per lane requires a
+> separate App Insights resource per lane**, which would make
+> `APPLICATIONINSIGHTS_CONNECTION_STRING` a **per-environment** secret and change
+> the `deploy-otel-collector` wiring accordingly. Not done today.
+
+#### Updating the collector config
+
+`config-azure.yaml` is baked into the image, so there is **no separate deploy**:
+edit the file and merge. The change ships when the gated build/deploy next runs
+for a lane — a push to `main` / `production`, or any PR that touches
+`deployments/otel-collector/**`. Two things to keep in mind:
+
+- The collector app is **shared across the whole lane** and a redeploy
+  overwrites its running image, so the **most recent (re)deploy in a lane wins**;
+  the new config then applies to every deployment in that lane.
+- The gate only watches `deployments/otel-collector/**`. Changes to the
+  collector's *deploy parameters* in `build-and-deploy.yml` (port, replicas)
+  are not seen as a config change; they ship on the next canonical push.
 
 ### ETL pipelines (temporary POC wiring)
 
@@ -304,6 +387,13 @@ named:
 - `AZURE_CLIENT_ID`: Client ID for `GHActions-stitch-cicd`
 - `AZURE_SUBSCRIPTION_ID`: Subscription for the target Azure resources
 - `AZURE_TENANT_ID`: Tenant for `GHActions-stitch-cicd`
+- `APPLICATIONINSIGHTS_CONNECTION_STRING`: connection string for the shared
+  Application Insights resource. Consumed by `deploy-otel-collector` (injected
+  into the `<lane>-otel-collector` app) and passed through by the api,
+  entity-linkage, and stitch-llm deploys. Repo-level (not per-environment)
+  because it is resolved in the same caller context as the `AZURE_*` secrets
+  above. If unset, the collector deploys but exports nowhere — traces are
+  silently dropped. See "OTel Collector" above.
 
 ### Environment variables
 

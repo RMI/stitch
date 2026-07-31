@@ -242,9 +242,52 @@ jobs:
       image-name: ${{ github.event.repository.name }}-loadtest
       image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
 
+  # The collector is a single shared app per lane, so it must NOT be rebuilt and
+  # redeployed on every PR: that churns a resource other PRs in the lane are
+  # actively using and wastes a full image build each time. Gate build+deploy on
+  # "collector files actually changed" OR a canonical push (main/production);
+  # routine PRs skip it and resolve-otel-collector just looks up the existing URL.
+  detect-collector-changes:
+    name: "Detect OTel Collector changes"
+    needs: [resolve-context]
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.filter.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: filter
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "push" ]; then
+            base="$PUSH_BEFORE"
+          else
+            base="$PR_BASE_SHA"
+          fi
+          # Unknown/all-zero base (new branch, first push, manual dispatch):
+          # can't diff, so treat as changed and let the deploy run.
+          if [ -z "$base" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$base" "$HEAD_SHA" | grep -qE '^deployments/otel-collector/'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build-otel-collector-docker-image:
     name: "Build and publish OTel Collector"
-    needs: [resolve-context]
+    needs: [resolve-context, detect-collector-changes]
+    # Only (re)build when the collector actually changed or on a canonical push.
+    if: ${{ github.event_name == 'push' || needs.detect-collector-changes.outputs.changed == 'true' }}
     uses: ./.github/workflows/build-and-push-Docker-image.yml
     secrets: inherit
     permissions:
@@ -255,6 +298,7 @@ jobs:
       image-name: ${{ github.event.repository.name }}-otel-collector
       image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
 
+  # No explicit `if:` needed — this auto-skips when the build above is skipped.
   deploy-otel-collector:
     name: "Deploy OTel Collector"
     needs: [resolve-context, build-otel-collector-docker-image]
@@ -275,6 +319,51 @@ jobs:
       # Always keep one replica so spans are not dropped during cold-start.
       min-replicas: "1"
       environment-variables: ""
+
+  # Always resolves the shared collector's ingress URL for the service deploys,
+  # whether or not it was redeployed this run (the ingress FQDN is stable across
+  # revisions). Fails loudly if the lane's collector was never bootstrapped.
+  resolve-otel-collector:
+    name: "Resolve OTel Collector URL"
+    needs: [resolve-context, deploy-otel-collector]
+    # Run even when deploy-otel-collector was skipped (routine PR); only bail if
+    # resolve-context was skipped (no-deploy) or a deploy that ran actually failed.
+    if: ${{ !cancelled() && needs.resolve-context.result == 'success' && (needs.deploy-otel-collector.result == 'success' || needs.deploy-otel-collector.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-context.outputs.deployment-lane }}
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      container-app-url: ${{ steps.resolve.outputs.container-app-url }}
+    steps:
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Resolve collector ingress URL
+        id: resolve
+        shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          COLLECTOR_APP: ${{ format('{0}-otel-collector', needs.resolve-context.outputs.deployment-lane) }}
+        run: |
+          set -euo pipefail
+          fqdn="$(
+            az containerapp show \
+              --name "$COLLECTOR_APP" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --query "properties.configuration.ingress.fqdn" \
+              -o tsv 2>/dev/null || true
+          )"
+          if [ -z "$fqdn" ]; then
+            echo "::error::OTel collector '$COLLECTOR_APP' not found in resource group '$AZURE_RESOURCE_GROUP'. It is (re)deployed only on push to main/production or when deployments/otel-collector/** changes; bootstrap this lane's collector with one such deploy before PR deploys can resolve it." >&2
+            exit 1
+          fi
+          echo "Resolved collector URL: https://$fqdn"
+          echo "container-app-url=https://$fqdn" >> "$GITHUB_OUTPUT"
 
   deploy-db:
     name: "Create DB"
@@ -321,7 +410,7 @@ jobs:
 
   deploy-api:
     name: "Deploy API"
-    needs: [resolve-context, lane-config-validate, build-api-docker-image, deploy-db, run-db-migrations, deploy-otel-collector]
+    needs: [resolve-context, lane-config-validate, build-api-docker-image, deploy-db, run-db-migrations, resolve-otel-collector]
     uses: ./.github/workflows/deploy-container.yml
     secrets:
       azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -349,7 +438,7 @@ jobs:
         PGSSLMODE=${{ needs.deploy-db.outputs.postgres-sslmode }}
         OTEL_TRACES_EXPORTER=otlp
         OTEL_EXPORTER_OTLP_PROTOCOL=http
-        OTEL_EXPORTER_OTLP_ENDPOINT=${{ format('{0}/v1/traces', needs.deploy-otel-collector.outputs.container-app-url) }}
+        OTEL_EXPORTER_OTLP_ENDPOINT=${{ format('{0}/v1/traces', needs.resolve-otel-collector.outputs.container-app-url) }}
         OTEL_SERVICE_NAME=stitch-api
         OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: api
@@ -358,7 +447,7 @@ jobs:
 
   deploy-entity-linkage:
     name: "Deploy entity linkage"
-    needs: [resolve-context, lane-config-validate, build-entity-linkage-docker-image, deploy-api, deploy-otel-collector]
+    needs: [resolve-context, lane-config-validate, build-entity-linkage-docker-image, deploy-api, resolve-otel-collector]
     uses: ./.github/workflows/deploy-container.yml
     secrets:
       azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -381,7 +470,7 @@ jobs:
         ENTITY_LINKAGE_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
         OTEL_TRACES_EXPORTER=otlp
         OTEL_EXPORTER_OTLP_PROTOCOL=http
-        OTEL_EXPORTER_OTLP_ENDPOINT=${{ format('{0}/v1/traces', needs.deploy-otel-collector.outputs.container-app-url) }}
+        OTEL_EXPORTER_OTLP_ENDPOINT=${{ format('{0}/v1/traces', needs.resolve-otel-collector.outputs.container-app-url) }}
         OTEL_SERVICE_NAME=stitch-entity-linkage
         OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: entity-linkage
@@ -394,7 +483,7 @@ jobs:
 
   deploy-stitch-llm:
     name: "Deploy stitch-llm"
-    needs: [resolve-context, lane-config-validate, build-stitch-llm-docker-image, deploy-api, deploy-otel-collector]
+    needs: [resolve-context, lane-config-validate, build-stitch-llm-docker-image, deploy-api, resolve-otel-collector]
     uses: ./.github/workflows/deploy-container.yml
     secrets:
       azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -421,7 +510,7 @@ jobs:
         STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-timeout-seconds }}
         OTEL_TRACES_EXPORTER=otlp
         OTEL_EXPORTER_OTLP_PROTOCOL=http
-        OTEL_EXPORTER_OTLP_ENDPOINT=${{ format('{0}/v1/traces', needs.deploy-otel-collector.outputs.container-app-url) }}
+        OTEL_EXPORTER_OTLP_ENDPOINT=${{ format('{0}/v1/traces', needs.resolve-otel-collector.outputs.container-app-url) }}
         OTEL_SERVICE_NAME=stitch-llm
         OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: stitch-llm
