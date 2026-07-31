@@ -247,6 +247,29 @@ describe("ResourcesView", () => {
     expect(screen.getByTestId("filter-bar")).toBeInTheDocument();
   });
 
+  it("keeps showing the previous data (assets count, rows) during a background refetch", () => {
+    // With placeholderData: keepPreviousData on the query, a refetch
+    // triggered by a filter/page/sort change keeps `data` populated:
+    // isFetching is true but isLoading is false, and data is still the
+    // previous result rather than resetting to undefined.
+    vi.mocked(useResources).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockResourceData,
+      isLoading: false,
+      isFetching: true,
+    });
+
+    renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+    expect(
+      screen.getByText(`${mockResourceData.total_count} assets`),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/awaiting resource count/i),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Burgan Field")).toBeInTheDocument();
+  });
+
   it("shows filter bar when the current result set is empty", () => {
     vi.mocked(useResources).mockReturnValue({
       ...defaultHookReturn,
@@ -275,6 +298,20 @@ describe("ResourcesView", () => {
       vi.mocked(useResources).mockReturnValue({
         ...defaultHookReturn,
         data: { ...mockResourceData, total_pages: 5, total_count: 250 },
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      expect(screen.getByLabelText("Previous page")).toBeInTheDocument();
+      expect(screen.getByLabelText("Next page")).toBeInTheDocument();
+    });
+
+    it("keeps pagination visible during a background refetch", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: { ...mockResourceData, total_pages: 3, total_count: 150 },
+        isLoading: false,
+        isFetching: true,
       });
 
       renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
