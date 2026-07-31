@@ -1,3 +1,4 @@
+import { keepPreviousData } from "@tanstack/react-query";
 import {
   getResourceFilterOptions,
   getResource,
@@ -90,6 +91,10 @@ export const resourceQueries = {
       }),
     enabled: false,
     staleTime: DEFAULT_STALE_TIME,
+    // Keeps showing the previous page's rows (dimmed, in ResourcesTable)
+    // while a new page/filter/sort combination fetches, instead of the
+    // table flashing to empty for the duration of the request.
+    placeholderData: keepPreviousData,
   }),
 
   filterOptions: (config, endpoint = "resources", field) => ({

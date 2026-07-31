@@ -131,6 +131,7 @@ describe("ResourcesView", () => {
     const refreshButton = screen.getByRole("button", { name: /refreshing/i });
     expect(refreshButton).toBeInTheDocument();
     expect(refreshButton).toBeDisabled();
+    expect(screen.getByText(/loading resources/i)).toBeInTheDocument();
   });
 
   it("calls refetch when Refresh is clicked", () => {
