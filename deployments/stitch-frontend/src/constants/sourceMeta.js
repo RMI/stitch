@@ -2,7 +2,8 @@ export const SOURCES = ["rmi", "wm", "ccr", "bc", "alb", "gem", "llm"];
 
 /**
  * Priority order for coalescing a value across sources, best first. Mirrors
- * the backend's SRC_PRIORITY (deployments/api/src/stitch/api/coalesce.py).
+ * the backend's canonical SOURCE_PRIORITY
+ * (packages/stitch-ogsi/src/stitch/ogsi/model/__init__.py).
  */
 export const SOURCE_PRIORITY = ["rmi", "wm", "ccr", "bc", "alb", "gem", "llm"];
 

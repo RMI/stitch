@@ -58,6 +58,9 @@ const defaultHookReturn = {
   refetch: vi.fn(),
 };
 
+// 101/102 are two spellings of the same field. "wm" outranks "gem" in
+// SOURCE_PRIORITY, so the resolved name is the wm spelling ("Bergan") even
+// though the gem resource comes first — priority wins over resource order.
 const resourceDetailsById = {
   101: { data: { name: "Burgan" }, provenance: { name: "gem" } },
   102: { data: { name: "Bergan" }, provenance: { name: "wm" } },
@@ -109,7 +112,7 @@ describe("MergeCandidateReviewPage", () => {
   it("shows the resolved candidate name in the queue, hiding raw resource ids", async () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
-    const queueItem = await screen.findByRole("button", { name: /Burgan/ });
+    const queueItem = await screen.findByRole("button", { name: /Bergan/ });
     expect(within(queueItem).queryByText(/101/)).not.toBeInTheDocument();
     expect(within(queueItem).queryByText(/Resources/)).not.toBeInTheDocument();
     expect(within(queueItem).queryByText(/Merged/)).not.toBeInTheDocument();
@@ -130,7 +133,7 @@ describe("MergeCandidateReviewPage", () => {
   it('labels a pending item\'s status badge "CANDIDATE" instead of "PENDING"', async () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
-    const pendingItem = await screen.findByRole("button", { name: /Burgan/ });
+    const pendingItem = await screen.findByRole("button", { name: /Bergan/ });
     expect(within(pendingItem).getByText("CANDIDATE")).toBeInTheDocument();
     expect(within(pendingItem).queryByText("PENDING")).not.toBeInTheDocument();
 
@@ -144,7 +147,7 @@ describe("MergeCandidateReviewPage", () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
     expect(
-      await screen.findByRole("heading", { name: "Burgan" }),
+      await screen.findByRole("heading", { name: "Bergan" }),
     ).toBeInTheDocument();
   });
 
