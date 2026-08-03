@@ -109,7 +109,7 @@ describe("MergeCandidateReviewPage", () => {
   it("shows the resolved candidate name in the queue, hiding raw resource ids", async () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
-    const queueItem = await screen.findByRole("button", { name: /Burgan/ });
+    const queueItem = await screen.findByRole("button", { name: /Bergan/ });
     expect(within(queueItem).queryByText(/101/)).not.toBeInTheDocument();
     expect(within(queueItem).queryByText(/Resources/)).not.toBeInTheDocument();
     expect(within(queueItem).queryByText(/Merged/)).not.toBeInTheDocument();
@@ -130,7 +130,7 @@ describe("MergeCandidateReviewPage", () => {
   it('labels a pending item\'s status badge "CANDIDATE" instead of "PENDING"', async () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
-    const pendingItem = await screen.findByRole("button", { name: /Burgan/ });
+    const pendingItem = await screen.findByRole("button", { name: /Bergan/ });
     expect(within(pendingItem).getByText("CANDIDATE")).toBeInTheDocument();
     expect(within(pendingItem).queryByText("PENDING")).not.toBeInTheDocument();
 
@@ -144,7 +144,7 @@ describe("MergeCandidateReviewPage", () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
     expect(
-      await screen.findByRole("heading", { name: "Burgan" }),
+      await screen.findByRole("heading", { name: "Bergan" }),
     ).toBeInTheDocument();
   });
 

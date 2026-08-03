@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from stitch.api.auth import CurrentUser
-from stitch.api.coalesce import coalesce_og_field_resource
 from stitch.api.db.errors import (
     InvalidActionError,
     ResourceIntegrityError,
@@ -23,7 +22,6 @@ from stitch.api.entities import (
     MergeCandidateReviewRequest,
     MergeCandidateStatus,
     MergeCandidateView,
-    OGFieldMergePreviewView,
 )
 from stitch.ogsi.model import OGFieldSource
 from stitch.ogsi.model.og_field import OilGasFieldBase
@@ -32,14 +30,11 @@ from stitch.ogsi.model.types import OGSISrcKey
 from .model import (
     MergeCandidateItemModel,
     MergeCandidateModel,
-    MembershipModel,
-    MembershipStatus,
     OGFieldSourcePriority,
-    OilGasFieldSourceModel,
     ResourceModel,
 )
 from .og_field_resource_actions import apply_resource_merge
-from .utils import coalesce_resources
+from .utils import coalesce_resources_with_sources
 
 
 def _normalize_resource_ids(resource_ids: Sequence[int]) -> list[int]:
@@ -120,8 +115,9 @@ def _build_comparison(
     carries a value (winner-first by priority) tagged with the resource it is
     attached to. See ``FieldComparisonView`` for the status semantics.
 
-    Values are a best guess at the persisted merge result, coalesced in Python;
-    superseded once coalescing moves into the DB.
+    Values are a best guess at the persisted merge result: a merge drops any
+    per-resource overrides, so the merged resource can resolve to a value that
+    differs from any single parent's current winner.
     """
     comparison: list[FieldComparisonView] = []
     for field_name in OilGasFieldBase.model_fields:
@@ -130,11 +126,8 @@ def _build_comparison(
             if source.id is None:
                 continue
             value = getattr(source, field_name, None)
-            # Mirror the coalescer (coalesce_og_field_resource excludes None
-            # only): an empty string is a real value that can win the merge, so
-            # it must appear here too or `compare` disagrees with the result.
-            # note: when moving coalescing into DB (PR 170) this also needs to
-            # be checked
+            # None means "unset". Empty strings can't be persisted (write-path
+            # skip + DB CHECK), so a null check alone captures every real value.
             if value is None:
                 continue
             values.append(
@@ -147,12 +140,13 @@ def _build_comparison(
                 )
             )
         values.sort(key=lambda entry: (entry.priority, entry.source_id))
-        # CLEANUP (coalescer->DB, PR 170): `values` are ranked by the DEFAULT
-        # source order (the merged resource's predicted winner) while `status`
-        # below is derived from each resource's EFFECTIVE coalesced value. Under
-        # a per-resource priority override these disagree (values[0] is the
-        # default winner, not what that resource currently resolves to).
-        # Reconcile the two priority bases when coalescing moves into the DB.
+        # `values` rank by the DEFAULT global source order (what the merged
+        # resource will use -- a merge drops per-resource overrides), while
+        # `status` reflects each resource's current effective coalesced value.
+        # These can already differ whenever a per-resource priority override is
+        # active (the coalescer uses COALESCE(override, default)): values[0] is
+        # the post-merge winner, not necessarily the resource's current one.
+        # Expected, not a bug.
         resource_values = [getattr(view, field_name, None) for view in resource_views]
         comparison.append(
             FieldComparisonView(
@@ -234,7 +228,9 @@ async def get_merge_candidate(
     # never delete). So a null-shell view always means "emptied by a merge",
     # never "missing"; no existence check is needed here. Revisit if a resource
     # hard-delete path is ever added.
-    by_id = await coalesce_resources(session, resource_ids, licensed_sources)
+    by_id = await coalesce_resources_with_sources(
+        session, resource_ids, licensed_sources
+    )
 
     # `status` compares the resources' coalesced values; `values` lists every
     # contributing source tagged with the resource it's attached to, ranked by
@@ -352,59 +348,3 @@ async def deny_merge_candidate(
     await session.flush()
     candidate = await _load_candidate_model(session, candidate_id)
     return _candidate_to_view(candidate)
-
-
-async def preview_merge_candidate(
-    session: AsyncSession,
-    candidate_id: int,
-) -> OGFieldMergePreviewView:
-    candidate = await _load_candidate_model(session, candidate_id)
-
-    resource_ids = [
-        item.resource_id for item in sorted(candidate.items, key=lambda i: i.position)
-    ]
-
-    await _load_mergeable_resources(session, resource_ids)
-
-    stmt = (
-        select(OilGasFieldSourceModel)
-        .join(
-            MembershipModel,
-            MembershipModel.source_pk == OilGasFieldSourceModel.id,
-        )
-        .where(MembershipModel.resource_id.in_(resource_ids))
-        .where(MembershipModel.status == MembershipStatus.ACTIVE)
-    )
-    source_models = (await session.scalars(stmt)).all()
-
-    priorities = (
-        await session.scalars(
-            select(OGFieldSourcePriority.source).order_by(
-                OGFieldSourcePriority.priority
-            )
-        )
-    ).all()
-
-    source_entities = [src.as_entity() for src in source_models]
-    merged_data, raw_provenance = coalesce_og_field_resource(
-        source_entities,
-        priorities,
-    )
-
-    provenance: dict[str, OGSISrcKey | None] = {
-        key: (None if value is None else value[1])
-        for key, value in raw_provenance.items()
-    }
-
-    data = OilGasFieldBase(
-        **{
-            field_name: getattr(merged_data, field_name, None)
-            for field_name in OilGasFieldBase.model_fields
-        }
-    )
-
-    return OGFieldMergePreviewView(
-        resource_ids=resource_ids,
-        data=data,
-        provenance=provenance,
-    )

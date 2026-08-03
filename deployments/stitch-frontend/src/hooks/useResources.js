@@ -336,30 +336,6 @@ function useMergeCandidateMock(
   });
 }
 
-function useMergeCandidatePreviewMock(
-  endpoint = "oil-gas-fields",
-  id,
-  enabled = false,
-) {
-  return useQuery({
-    queryKey: resourceKeys.preview(endpoint, id),
-    queryFn: () => Promise.resolve(null),
-    enabled,
-  });
-}
-
-function useMergeCandidatePreviewReal(
-  endpoint = "oil-gas-fields",
-  id,
-  enabled = false,
-) {
-  const config = useConfig();
-  return useAuthenticatedQuery({
-    ...resourceQueries.mergeCandidatePreview(config, endpoint, id),
-    enabled,
-  });
-}
-
 // Export one implementation based on the compile-time flag. Assign at module level
 export const useResources = USE_MOCK_DATA ? useResourcesMock : useResourcesReal;
 export const useResourceFilterOptions = USE_MOCK_DATA
@@ -381,6 +357,3 @@ export const useMergeCandidates = USE_MOCK_DATA
 export const useMergeCandidate = USE_MOCK_DATA
   ? useMergeCandidateMock
   : useMergeCandidateReal;
-export const useMergeCandidatePreview = USE_MOCK_DATA
-  ? useMergeCandidatePreviewMock
-  : useMergeCandidatePreviewReal;
