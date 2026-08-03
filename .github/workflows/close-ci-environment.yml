@@ -106,7 +106,7 @@ jobs:
       azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      container-app-name: ${{ format('{0}-entity-linkage', needs.resolve-context.outputs.deployment-name) }}
+      container-app-name: ${{ format('{0}-el', needs.resolve-context.outputs.deployment-name) }}
 
   delete-stitch-llm-container-app:
     name: Delete stitch-llm container app
@@ -118,7 +118,7 @@ jobs:
       azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      container-app-name: ${{ format('{0}-stitch-llm', needs.resolve-context.outputs.deployment-name) }}
+      container-app-name: ${{ format('{0}-llm', needs.resolve-context.outputs.deployment-name) }}
 
   delete-stitch-etl-container-app:
     name: Delete stitch-etl container app
