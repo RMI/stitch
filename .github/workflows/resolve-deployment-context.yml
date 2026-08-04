@@ -58,8 +58,11 @@ jobs:
               ;;
             pull_request)
               # Zero-padded PR token, shared by both PR paths so names are uniform and
-              # sort together in the Azure portal (e.g. pr0042, pr0200, pr12345).
-              pr_token="pr$(printf '%04d' "$PR_NUMBER")"
+              # sort together in the Azure portal (e.g. pr-0042, pr-0200, pr-12345).
+              # The "pr-" prefix (with dash) is required: the API only allows
+              # AUTH_DISABLED=true when ENVIRONMENT starts with "pr-" (see
+              # api/settings.py allows_disabled_auth), and ENVIRONMENT == deployment-name.
+              pr_token="pr-$(printf '%04d' "$PR_NUMBER")"
               if [[ "$BASE_REF" == "production" || "$HEAD_REF" == demo/* ]]; then
                 deployment_lane="staging"
                 # Staging/demo names carry a readable branch tag. The PR number already
