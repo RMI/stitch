@@ -21,7 +21,7 @@
     "@tanstack/react-query": "^5.101.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.2",
+    "react-router": "^8.3.0",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
@@ -44,6 +44,6 @@
     "vitest": "^4.1.8"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.22.0"
   }
 }
