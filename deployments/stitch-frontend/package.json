@@ -16,12 +16,12 @@
     "test:coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@auth0/auth0-react": "^2.22.0",
+    "@auth0/auth0-react": "^2.22.1",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-query": "^5.101.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.1",
+    "react-router": "^8.3.0",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
@@ -29,21 +29,21 @@
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.4",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
     "@vitest/coverage-v8": "^4.1.10",
     "@vitest/ui": "^4.1.8",
     "eslint": "^10.8.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.3",
     "globals": "^17.8.0",
-    "jsdom": "^30.0.0",
+    "jsdom": "^30.0.1",
     "prettier": "^3.9.6",
-    "vite": "^8.1.5",
+    "vite": "^8.2.0",
     "vitest": "^4.1.8"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.22.0"
   }
 }
