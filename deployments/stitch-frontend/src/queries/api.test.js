@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   createLLMSuggestion,
-  createMergeCandidate,
-  createResource,
+  createSourceForResource,
   getResourceFilterOptions,
   getResources,
   getResource,
@@ -303,31 +302,32 @@ describe("API Functions", () => {
     });
   });
 
-  describe("createResource", () => {
-    it("posts the resource payload to the Stitch API", async () => {
-      const payload = { source_data: [{ source: "llm" }] };
+  describe("createSourceForResource", () => {
+    it("posts the source payload to the resource-scoped sources endpoint", async () => {
+      const payload = { source: "llm", name: null, country: null };
       mockFetcher.mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({ id: 123 }),
+        json: async () => ({ id: 123, source: "llm" }),
       });
 
-      const result = await createResource(
+      const result = await createSourceForResource(
         config,
+        42,
         payload,
         mockFetcher,
         "oil-gas-fields",
       );
 
       expect(mockFetcher).toHaveBeenCalledWith(
-        "http://localhost:8000/api/v1/oil-gas-fields/",
+        "http://localhost:8000/api/v1/oil-gas-fields/42/sources",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         },
       );
-      expect(result).toEqual({ id: 123 });
+      expect(result).toEqual({ id: 123, source: "llm" });
     });
 
     it("stringifies structured validation errors from the API", async () => {
@@ -338,7 +338,7 @@ describe("API Functions", () => {
           JSON.stringify({
             detail: [
               {
-                loc: ["body", "source_data", 0, "llm", "name"],
+                loc: ["body", "llm", "name"],
                 msg: "Field required",
               },
             ],
@@ -346,9 +346,10 @@ describe("API Functions", () => {
       });
 
       await expect(
-        createResource(
+        createSourceForResource(
           config,
-          { source_data: [] },
+          42,
+          { source: "llm" },
           mockFetcher,
           "oil-gas-fields",
         ),
@@ -356,7 +357,7 @@ describe("API Functions", () => {
         message: JSON.stringify(
           [
             {
-              loc: ["body", "source_data", 0, "llm", "name"],
+              loc: ["body", "llm", "name"],
               msg: "Field required",
             },
           ],
@@ -366,53 +367,28 @@ describe("API Functions", () => {
         status: 422,
       });
     });
-  });
 
-  describe("createMergeCandidate", () => {
-    it("posts the resource ids to create a merge candidate", async () => {
-      mockFetcher.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ id: 88, resource_ids: [42, 123] }),
-      });
-
-      const result = await createMergeCandidate(
-        config,
-        [42, 123],
-        mockFetcher,
-        "oil-gas-fields",
-      );
-
-      expect(mockFetcher).toHaveBeenCalledWith(
-        "http://localhost:8000/api/v1/oil-gas-fields/merge-candidates",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ resource_ids: [42, 123] }),
-        },
-      );
-      expect(result).toEqual({ id: 88, resource_ids: [42, 123] });
-    });
-
-    it("surfaces API error detail and status for failed merge creation", async () => {
+    it("surfaces API error detail and status for failed attach", async () => {
       mockFetcher.mockResolvedValueOnce({
         ok: false,
-        status: 409,
+        status: 404,
         text: async () =>
           JSON.stringify({
-            detail: { message: "Merge candidate already exists" },
+            detail: "No resource found for id: 42",
           }),
       });
 
       await expect(
-        createMergeCandidate(config, [42, 123], mockFetcher, "oil-gas-fields"),
-      ).rejects.toMatchObject({
-        message: JSON.stringify(
-          { message: "Merge candidate already exists" },
-          null,
-          2,
+        createSourceForResource(
+          config,
+          42,
+          { source: "llm", name: null, country: null },
+          mockFetcher,
+          "oil-gas-fields",
         ),
-        status: 409,
+      ).rejects.toMatchObject({
+        message: "No resource found for id: 42",
+        status: 404,
       });
     });
   });

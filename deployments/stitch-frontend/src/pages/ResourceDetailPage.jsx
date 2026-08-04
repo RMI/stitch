@@ -4,11 +4,8 @@ import { useParams, useNavigate } from "react-router";
 import { useResourceDetail, useSourceDetail } from "../hooks/useResources";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { useConfig } from "../config/useConfig";
-import {
-  createLLMSuggestion,
-  createMergeCandidate,
-  createResource,
-} from "../queries/api";
+import { createLLMSuggestion, createSourceForResource } from "../queries/api";
+import { usePermissions } from "../hooks/usePermissions";
 import SourceMixBar from "../components/SourceMixBar";
 import SectionHeader from "../components/SectionHeader";
 import { FieldCard, FieldGrid } from "../components/FieldCard";
@@ -68,35 +65,27 @@ function buildSuggestionAuditPayload({ resourceId, result, persistIntentId }) {
   };
 }
 
-function buildLLMResourcePayload({ resourceId, result, persistIntentId }) {
+function buildLLMSourcePayload({ resourceId, result, persistIntentId }) {
   const auditPayload = buildSuggestionAuditPayload({
     resourceId,
     result,
     persistIntentId,
   });
 
+  // A bare source (no `id`) to be created and attached to the target resource.
+  // `name`/`country` are required keys on the field model (null when unknown).
   return {
-    id: null,
-    repointed_to: null,
-    constituents: [],
-    provenance: {},
-    view: null,
-    source_data: [
-      {
-        id: null,
-        source: "llm",
-        name: null,
-        country: null,
-        [result.field]: result.value,
-        source_record: {
-          record_id: persistIntentId,
-          run_id: null,
-          observed_at: result.observed_at,
-          producer: LLM_AUDIT_PRODUCER,
-          payload: auditPayload,
-        },
-      },
-    ],
+    source: "llm",
+    name: null,
+    country: null,
+    [result.field]: result.value,
+    source_record: {
+      record_id: persistIntentId,
+      run_id: null,
+      observed_at: result.observed_at,
+      producer: LLM_AUDIT_PRODUCER,
+      payload: auditPayload,
+    },
   };
 }
 
@@ -178,7 +167,7 @@ function SuggestionResult({ result }) {
   );
 }
 
-function AISuggestionPanel({ endpoint, resourceId }) {
+function AISuggestionPanel({ endpoint, resourceId, onAttached }) {
   const config = useConfig();
   const { getAccessTokenSilently } = useAuth0();
   const fetcher = createAuthenticatedFetcher(config, getAccessTokenSilently);
@@ -189,6 +178,16 @@ function AISuggestionPanel({ endpoint, resourceId }) {
   const [isPersisting, setIsPersisting] = useState(false);
   const [persistState, setPersistState] = useState(null);
 
+  // Read the cached /auth/me permissions once. `isLoading` lets us hold a
+  // placeholder instead of flashing the panel in once it loads.
+  const { data: permissions, isLoading: permissionsLoading } = usePermissions();
+  const hasPermission = (permission) =>
+    Array.isArray(permissions) && permissions.includes(permission);
+  // The whole panel is only useful to users who can run LLM suggestions.
+  const canRunLlm = hasPermission("service:llm:suggest");
+  // Creating + attaching a source needs both the source and resource writes.
+  const canAttach =
+    hasPermission("source:write") && hasPermission("resource:write");
   const canPersist = result?.value != null;
   const isPersistedCurrentSuggestion =
     result &&
@@ -224,7 +223,7 @@ function AISuggestionPanel({ endpoint, resourceId }) {
     setError("");
 
     const persistIntentId = createPersistIntentId();
-    const resourcePayload = buildLLMResourcePayload({
+    const sourcePayload = buildLLMSourcePayload({
       resourceId,
       result,
       persistIntentId,
@@ -232,43 +231,49 @@ function AISuggestionPanel({ endpoint, resourceId }) {
     const suggestionKey = getSuggestionSubmissionKey(result);
 
     try {
-      const createdResource = await createResource(
+      const createdSource = await createSourceForResource(
         config,
-        resourcePayload,
+        resourceId,
+        sourcePayload,
         fetcher,
         endpoint,
       );
-
+      setPersistState({
+        status: "success",
+        sourceId: createdSource.id,
+        suggestionKey,
+      });
+      // Refresh the resource so the newly attached source (and any change to
+      // the coalesced winning value) shows immediately. Best-effort: a failed
+      // refresh must not turn a successful attach into an error.
       try {
-        const mergeCandidate = await createMergeCandidate(
-          config,
-          [resourceId, createdResource.id],
-          fetcher,
-          endpoint,
-        );
-        setPersistState({
-          status: "success",
-          resourceId: createdResource.id,
-          candidateId: mergeCandidate.id,
-          suggestionKey,
-        });
+        await onAttached?.();
       } catch {
-        setPersistState({
-          status: "partial",
-          resourceId: createdResource.id,
-          suggestionKey,
-        });
-        setError(
-          `Suggestion saved as resource ${createdResource.id}, but the merge draft was not created.`,
-        );
+        // ignore refresh failures
       }
     } catch (err) {
       setPersistState(null);
-      setError(err.message || "Failed to persist suggestion.");
+      setError(err.message || "Failed to add suggestion to resource.");
     } finally {
       setIsPersisting(false);
     }
   }
+
+  // Hold a placeholder until permissions resolve, so the panel doesn't flash
+  // in (or briefly appear then vanish) once /auth/me loads.
+  if (permissionsLoading) {
+    return (
+      <section aria-hidden="true">
+        <div
+          data-testid="ai-suggestion-loading"
+          className="h-28 animate-pulse rounded-md border border-line bg-surface"
+        />
+      </section>
+    );
+  }
+
+  // Hide the entire panel from users who can't run LLM suggestions.
+  if (!canRunLlm) return null;
 
   return (
     <section>
@@ -310,7 +315,7 @@ function AISuggestionPanel({ endpoint, resourceId }) {
 
         {result && <SuggestionResult result={result} />}
 
-        {canPersist && (
+        {canPersist && canAttach && (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <Button
               onClick={handlePersistSuggestion}
@@ -327,7 +332,7 @@ function AISuggestionPanel({ endpoint, resourceId }) {
             {persistState?.status === "success" &&
               isPersistedCurrentSuggestion && (
                 <p className="text-sm text-green-700">
-                  Suggestion saved and queued for later merge review.
+                  Source added to resource.
                 </p>
               )}
           </div>
@@ -423,6 +428,17 @@ function SourceRow({ source }) {
 
   const sourceLabel = SOURCE_LABELS[source.source] ?? source.source;
   const sourceRecord = sourceDetail?.source_record ?? null;
+  // A curator's overwrite note, when this source was created via the field
+  // overwrite action. Payload is arbitrary JSON, so guard the shape before use.
+  const payload = sourceRecord?.payload;
+  const overrideNote =
+    payload &&
+    typeof payload === "object" &&
+    !Array.isArray(payload) &&
+    typeof payload.note === "string" &&
+    payload.note.trim()
+      ? payload.note.trim()
+      : null;
 
   let metaLine;
   if (sourceRecord) {
@@ -496,6 +512,16 @@ function SourceRow({ source }) {
                 />
                 <FieldCard label="Source row ID" value={source.id} />
               </FieldGrid>
+              {overrideNote && (
+                <div className="rounded-md border border-line bg-surface p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                    Note
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-sm text-ink">
+                    {overrideNote}
+                  </p>
+                </div>
+              )}
               <TechnicalImportRecord sourceRecord={sourceRecord} />
             </>
           )}
@@ -616,7 +642,11 @@ export default function ResourceDetailPage() {
             </FieldGrid>
           </section>
 
-          <AISuggestionPanel endpoint={endpoint} resourceId={numericId} />
+          <AISuggestionPanel
+            endpoint={endpoint}
+            resourceId={numericId}
+            onAttached={refetch}
+          />
 
           <SourcesSection sources={detailView.source_data} />
         </div>

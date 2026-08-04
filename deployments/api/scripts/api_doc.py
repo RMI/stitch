@@ -137,7 +137,10 @@ def generate_markdown(openapi: dict) -> str:
             req_schema = get_request_body_schema(operation)
             if req_schema:
                 name, _ = resolve_ref(req_schema, openapi)
-                label = f"`{name}`" if name else "Body"
+                # Named models show their schema name; unions / inline bodies
+                # (e.g. "GemSource | ...") show their composed type, mirroring
+                # how responses are rendered below.
+                label = f"`{name}`" if name else format_type(req_schema, openapi)
                 lines.append(f"**Request Body:** {label}")
                 lines.append("")
                 prop_lines = render_properties(req_schema, openapi)
