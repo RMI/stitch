@@ -76,7 +76,7 @@ def make_source_model(
     model.values = [
         OilGasFieldSourceValueModel.from_attribute(colname, value)
         for colname, value in attrs.items()
-        if colname in ATTRIBUTE_NAMES and value is not None
+        if colname in ATTRIBUTE_NAMES and value is not None and value != ""
     ]
     return model
 

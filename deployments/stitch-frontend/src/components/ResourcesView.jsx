@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import { useResources } from "../hooks/useResources";
 import ResourcesTable from "./ResourcesTable";
 import FilterBar from "./FilterBar";

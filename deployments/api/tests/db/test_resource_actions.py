@@ -4,6 +4,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.dialects import postgresql
 from sqlalchemy import event, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from stitch.api.db import og_field_resource_actions as resource_actions
@@ -12,6 +13,7 @@ from stitch.api.db.model import (
     MembershipModel,
     MembershipStatus,
     OGFieldResourceSourcePriority,
+    OilGasFieldSourceValueModel,
     ResourceModel,
 )
 from stitch.api.entities import (
@@ -286,6 +288,63 @@ class TestResourceQueryAction:
         assert items[0].provenance["basin"] == "wm"
         assert items[0].data.reservoir_formation == "WM Formation"
         assert items[0].provenance["reservoir_formation"] == "wm"
+
+    @pytest.mark.anyio
+    async def test_empty_string_value_loses_to_lower_priority_nonempty(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        # Highest-priority source (rmi) supplies an empty-string basin. It is
+        # dropped on write (empty == unset), so it never becomes a value row and
+        # coalescing falls through to the lower-priority non-empty value.
+        resource_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "rmi", "name": "RMI Name", "country": "USA", "basin": ""},
+            {
+                "source": "gem",
+                "name": "GEM Name",
+                "country": "USA",
+                "basin": "GEM Basin",
+            },
+        )
+
+        params = _QueryParams(page=1, page_size=10)
+        items, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 1
+        assert items[0].data.basin == "GEM Basin"
+        assert items[0].provenance["basin"] == "gem"
+
+        # The empty value was never persisted, so the all-sources view lists
+        # only gem and its winner-first order agrees with the coalesced winner.
+        values = await resource_actions.field_source_values(
+            seeded_integration_session, resource_id, "basin"
+        )
+        assert [v.source for v in values] == ["gem"]
+
+    @pytest.mark.anyio
+    async def test_empty_string_value_row_rejected_by_db_constraint(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        # Defense in depth: even if a caller bypasses the write-path skip, the
+        # DB refuses to persist an empty-string value row.
+        source = make_source_model(
+            source="rmi", created_by_id=test_user.id, name="RMI Name"
+        )
+        seeded_integration_session.add(source)
+        await seeded_integration_session.flush()
+
+        empty = OilGasFieldSourceValueModel.from_attribute("basin", "")
+        empty.source_pk = source.id
+        seeded_integration_session.add(empty)
+
+        with pytest.raises(IntegrityError):
+            await seeded_integration_session.flush()
+        await seeded_integration_session.rollback()
 
     @pytest.mark.anyio
     async def test_no_redaction_uses_priority_coalesced_owner_operator_lists(
@@ -1332,6 +1391,85 @@ class TestResourceDetailCoalescing:
         ]
         assert result.provenance["operators"][1] == "rmi"
 
+    @pytest.mark.anyio
+    async def test_detail_reconstructs_source_data_from_single_query(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """Detail builds the winner view *and* raw source_data from one query.
+
+        Both projections come from the same ranked-candidate rows: the winner
+        view/provenance (rn == 1) and source_data (all rows, grouped by source,
+        best-priority first). Each source keeps its own per-field values.
+        """
+        session = seeded_integration_session
+        rid = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "rmi", "name": "RMI Name", "country": "USA"},
+            {"source": "gem", "name": "GEM Name", "basin": "GEM Basin"},
+        )
+
+        result = await resource_actions.get(session, rid)
+
+        # Winner view: rmi outranks gem for shared fields; gem fills basin.
+        assert result.view.name == "RMI Name"
+        assert result.view.country == "USA"
+        assert result.view.basin == "GEM Basin"
+        assert result.provenance["basin"][1] == "gem"
+
+        # source_data: both sources, best-priority first, each with its own values.
+        assert [s.source for s in result.source_data] == ["rmi", "gem"]
+        by_source = {s.source: s for s in result.source_data}
+        assert by_source["rmi"].name == "RMI Name"
+        assert by_source["rmi"].basin is None
+        assert by_source["gem"].basin == "GEM Basin"
+        assert by_source["gem"].country is None
+
+    @pytest.mark.anyio
+    async def test_detail_hydration_round_trips_constant_in_source_count(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """get() costs a fixed number of round-trips regardless of source count.
+
+        The view + source_data come from a single ranked query (no separate
+        source-listing query, no per-source N+1), so a 4-source resource costs
+        the same as a 1-source one.
+        """
+        one = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "Only GEM", "country": "USA"},
+        )
+        many = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            *[
+                {"source": src, "name": f"{src} Name", "country": "USA"}
+                for src in ("rmi", "gem", "wm", "llm")
+            ],
+        )
+        sync_engine = seeded_integration_session.bind.sync_engine
+
+        async def _count(rid):
+            executions = 0
+
+            def _inc(conn, cursor, statement, parameters, context, executemany):
+                nonlocal executions
+                executions += 1
+
+            event.listen(sync_engine, "before_cursor_execute", _inc)
+            try:
+                await resource_actions.get(seeded_integration_session, rid)
+            finally:
+                event.remove(sync_engine, "before_cursor_execute", _inc)
+            return executions
+
+        assert await _count(one) == await _count(many)
+
 
 class TestBatchedSourceData:
     """ResourceModel.source_data_by_resource_id groups + licensed-filters."""
@@ -1424,7 +1562,11 @@ class TestCoalescingEngineParity:
 
 
 class TestCoalesceResources:
-    """The shared in-memory coalescing core used by detail + list."""
+    """The shared SQL coalescing core used by detail + list.
+
+    Produces the coalesced view + provenance; raw ``source_data`` is left empty
+    here and attached by the detail path (``resource_model_to_entity``).
+    """
 
     @pytest.mark.anyio
     async def test_entry_per_id_with_nullshell_for_empty(
@@ -1445,7 +1587,9 @@ class TestCoalesceResources:
         res = out[rid]
         assert res.view.name == "G"
         assert res.provenance["name"][1] == "gem"
-        assert {s.source for s in res.source_data} == {"gem"}
+        # coalesce_resources returns the coalesced view + provenance only; raw
+        # sources are attached separately by the detail path.
+        assert res.source_data == []
 
         empty_res = out[empty.id]
         assert empty_res.view.name is None

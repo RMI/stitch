@@ -2,8 +2,9 @@ export const SOURCES = ["rmi", "wm", "ccr", "bc", "alb", "gem", "llm"];
 
 /**
  * Priority order for coalescing a value across sources, best first. Mirrors
- * the backend's canonical SOURCE_PRIORITY
- * (packages/stitch-ogsi/src/stitch/ogsi/model/__init__.py).
+ * the backend's canonical SOURCE_PRIORITY in
+ * packages/stitch-ogsi/src/stitch/ogsi/model, which is the single source of
+ * truth. Keep this list in sync with it until the constant is generated.
  */
 export const SOURCE_PRIORITY = ["rmi", "wm", "ccr", "bc", "alb", "gem", "llm"];
 

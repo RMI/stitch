@@ -53,8 +53,10 @@ async def query(
 ) -> tuple[list[OGFieldListItemView], int]:
     """Query coalesced resource list items, restricted to licensed sources.
 
-    Two-phase: a narrowed id-query (+ count) over the participating fields, then
-    a single batched hydration of the returned page by id.
+    A narrowed id-query (+ count) over the participating fields selects and
+    orders the page, then one SQL coalesce (``coalesce_resources``) hydrates
+    those ids -- values and provenance come straight from the query, with no
+    second coalesce pass.
     """
     if params.sort_by == "source":
         raise HTTPException(
@@ -71,8 +73,8 @@ async def query(
     if not ids:
         return [], total
 
-    # Phase 2: one batched Python coalesce over the page ids (same coalescer the
-    # detail path uses), then the shared list-item projection, in phase-1 order.
+    # Hydrate the page with the shared SQL coalescer (same one the detail path
+    # uses), then the shared list-item projection, in phase-1 order.
     coalesced = await coalesce_resources(session, ids, licensed_sources)
     items = [resource_to_list_item_view(coalesced[rid]) for rid in ids]
     return items, total
@@ -100,12 +102,7 @@ async def filter_options(
     ranked = add_ranking(filtered).cte("ranked")
     value_col = getattr(ranked.c, value_attr_for(params.field))
     labeled = value_col.label("value")
-    stmt = (
-        select(labeled)
-        .where(value_col.is_not(None), value_col != "")
-        .distinct()
-        .order_by(labeled)
-    )
+    stmt = select(labeled).where(value_col.is_not(None)).distinct().order_by(labeled)
     values = await session.scalars(stmt)
     return list(values.all())
 
@@ -139,7 +136,7 @@ async def field_source_values(
 ) -> list[OGFieldSourceValueView]:
     """Every source's value for one field of a resource, best-priority first.
 
-    Returns only sources that carry a value for ``field`` (empty/null omitted),
+    Returns only sources that carry a value for ``field`` (unset omitted),
     each with its effective per-resource priority. The first entry is the
     coalesced winner. Licensing is applied. Priority is source-scoped today; the
     contract is unchanged when it becomes resource/field-scoped.
@@ -154,25 +151,21 @@ async def field_source_values(
             status_code=HTTP_404_NOT_FOUND, detail=f"No Resource with id `{id}` found."
         )
 
+    # source_data_by_resource_id returns rows best-priority-first (ordered in
+    # SQL by the same (priority, source, source_pk) as the coalesce ranking), so
+    # dropping sources with no value for the field preserves winner-first order
+    # -- the first entry is the coalesced winner. Empty strings are never
+    # persisted (absent == unset), so a null check alone is enough.
     by_id = await ResourceModel.source_data_by_resource_id(
         session, [id], licensed_sources
     )
-    # CLEANUP (coalescer->DB, PR 170): this drops empty strings (`value != ""`),
-    # but the coalescer keeps "" (it excludes only None), and the merge-candidate
-    # `compare` path was aligned to the coalescer. So this endpoint currently
-    # disagrees with both on empty-string values. Reconcile when coalescing moves
-    # into the DB.
-    values = [
+    return [
         OGFieldSourceValueView(
             source=src.source, source_id=src.id, value=value, priority=priority
         )
         for src, priority in by_id.get(id, [])
-        if src.id is not None
-        and (value := getattr(src, field)) is not None
-        and value != ""
+        if src.id is not None and (value := getattr(src, field)) is not None
     ]
-    values.sort(key=lambda v: (v.priority, v.source_id))
-    return values
 
 
 async def create(
