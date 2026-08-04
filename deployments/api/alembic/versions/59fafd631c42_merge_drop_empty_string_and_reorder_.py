@@ -10,12 +10,13 @@ Revision ID: 59fafd631c42
 Revises: 2445c5141f3d, 790b2078d706
 Create Date: 2026-08-04 15:33:47.145055
 """
+
 from __future__ import annotations
 
 
 # revision identifiers, used by Alembic.
-revision = '59fafd631c42'
-down_revision = ('2445c5141f3d', '790b2078d706')
+revision = "59fafd631c42"
+down_revision = ("2445c5141f3d", "790b2078d706")
 branch_labels = None
 depends_on = None
 
