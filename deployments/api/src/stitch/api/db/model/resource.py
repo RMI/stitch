@@ -62,7 +62,8 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
         priority (+ per-resource override) -> source header, restricted to active
         memberships of non-repointed resources. ``values`` selectin-loads with the
         entity. Effective priority is ``COALESCE(override, default)``; licensing is
-        applied in SQL.
+        applied in SQL. Rows are ordered best-priority-first, matching the coalesce
+        ranking (``queries.add_ranking``).
         """
         by_id: dict[int, list[tuple[OGFieldSource, int]]] = {
             rid: [] for rid in resource_ids
@@ -90,6 +91,12 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
         )
         if licensed_sources is not None:
             stmt = stmt.where(m.source.in_(list(dict.fromkeys(licensed_sources))))
+
+        # Best-priority first, matching the coalesce ranking
+        # (queries.add_ranking): (priority, source, source_pk). Callers that want
+        # winner-first order (field_source_values) can rely on this instead of a
+        # separate Python sort.
+        stmt = stmt.order_by(priority, m.source, s.id)
 
         for resource_id, src_model, prio in (await session.execute(stmt)).all():
             by_id[resource_id].append((src_model.as_entity(), prio))
