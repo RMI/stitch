@@ -1,12 +1,42 @@
 import { useState } from "react";
+import { useAuth0 } from "@auth0/auth0-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { FieldCard } from "./FieldCard";
+import Button from "./Button";
+import Input from "./Input";
 import { useFieldSourceValues } from "../hooks/useResources";
+import { useHasPermission } from "../hooks/usePermissions";
+import { createAuthenticatedFetcher } from "../auth/api";
+import { useConfig } from "../config/useConfig";
+import { createSourceForResource } from "../queries/api";
+import { resourceKeys } from "../queries/resources";
 import {
   SOURCE_COLORS,
   SOURCE_LABELS,
   UNKNOWN_SOURCE_LABEL,
   DEFAULT_FIELD_COLOR,
 } from "../constants/sourceMeta";
+
+// Build a bare "User Generated" (rmi) source that populates only `fieldKey`, to
+// be created and attached to the resource. `name`/`country` are required-present
+// keys on the field model (null unless the panel's field IS name/country — the
+// [fieldKey] spread then overrides the null). The curator's note and an audit
+// breadcrumb ride along in `source_record.payload`.
+function buildRmiSourcePayload({ fieldKey, value, note }) {
+  return {
+    source: "rmi",
+    name: null,
+    country: null,
+    [fieldKey]: value,
+    source_record: {
+      record_id: null,
+      run_id: null,
+      observed_at: new Date().toISOString(),
+      producer: "stitch-frontend",
+      payload: { action: "field_overwrite", field: fieldKey, value, note },
+    },
+  };
+}
 
 function SourceValueRow({ source, value, sourceId, isWinner }) {
   const barColor = SOURCE_COLORS[source] ?? DEFAULT_FIELD_COLOR;
@@ -31,13 +61,142 @@ function SourceValueRow({ source, value, sourceId, isWinner }) {
   );
 }
 
-function FieldSourcesPanel({ isLoading, isError, sources }) {
+// The value entry form, revealed after the curator clicks "+". Lets them enter a
+// new "User Generated" value (with an optional note) for this field; on Save it
+// creates and attaches an rmi source to the resource.
+function AddSourceForm({ endpoint, resourceId, fieldKey, onSaved }) {
+  const config = useConfig();
+  const { getAccessTokenSilently } = useAuth0();
+  const queryClient = useQueryClient();
+
+  const [value, setValue] = useState("");
+  const [note, setNote] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+
+  const trimmedValue = value.trim();
+
+  async function handleSave() {
+    if (!trimmedValue || isSaving) return;
+    setIsSaving(true);
+    setSaveError("");
+
+    const fetcher = createAuthenticatedFetcher(config, getAccessTokenSilently);
+    const payload = buildRmiSourcePayload({
+      fieldKey,
+      value: trimmedValue,
+      note: note.trim() || null,
+    });
+
+    try {
+      await createSourceForResource(
+        config,
+        resourceId,
+        payload,
+        fetcher,
+        endpoint,
+      );
+      // Refresh this field's source list and the resource detail (coalesced
+      // value / provenance / Sources section) so the new value shows at once.
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: resourceKeys.fieldSources(endpoint, resourceId, fieldKey),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: resourceKeys.detail(endpoint, resourceId),
+        }),
+      ]);
+      // Success unmounts this form (parent exits edit mode), so there is no
+      // `isSaving` to reset — only the error path below keeps the form mounted.
+      onSaved();
+    } catch (err) {
+      setSaveError(err.message || "Failed to add value.");
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border border-line bg-surface p-2">
+      <Input
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        placeholder="New value"
+        aria-label="New value"
+        className="w-full"
+      />
+      <Input
+        value={note}
+        onChange={(event) => setNote(event.target.value)}
+        placeholder="Note (optional)"
+        aria-label="Note"
+        className="w-full"
+      />
+      <div className="flex items-center gap-2">
+        <Button
+          variant="primary"
+          onClick={handleSave}
+          disabled={!trimmedValue || isSaving}
+        >
+          {isSaving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+      {saveError && <p className="text-sm text-danger">{saveError}</p>}
+    </div>
+  );
+}
+
+function FieldSourcesPanel({
+  isLoading,
+  isError,
+  sources,
+  canEdit,
+  endpoint,
+  resourceId,
+  fieldKey,
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  // Keep the value form hidden until the curator clicks "+", to reduce clutter.
+  const [isAdding, setIsAdding] = useState(false);
+
+  function stopEditing() {
+    setIsEditing(false);
+    setIsAdding(false);
+  }
+
   return (
     <div className="mt-2 space-y-2 rounded-md border border-line bg-panel p-3">
-      {/* Reserved header — future controls will live alongside this label. */}
-      <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-        All sources
-      </p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          All sources
+        </p>
+        {canEdit &&
+          (isEditing ? (
+            <Button variant="ghost" onClick={stopEditing}>
+              Cancel
+            </Button>
+          ) : (
+            <Button variant="ghost" onClick={() => setIsEditing(true)}>
+              Edit
+            </Button>
+          ))}
+      </div>
+      {isEditing &&
+        (isAdding ? (
+          <AddSourceForm
+            endpoint={endpoint}
+            resourceId={resourceId}
+            fieldKey={fieldKey}
+            onSaved={stopEditing}
+          />
+        ) : (
+          <Button
+            variant="secondary"
+            onClick={() => setIsAdding(true)}
+            aria-label="Add value"
+          >
+            +
+          </Button>
+        ))}
       {isLoading && <p className="text-sm text-ink-muted">Loading sources…</p>}
       {isError && (
         <p className="text-sm text-danger">Failed to load source values.</p>
@@ -67,6 +226,8 @@ function FieldSourcesPanel({ isLoading, isError, sources }) {
 
 // A FieldCard for the resource detail page: clicking a populated value lazily
 // fetches every source's value for that field and shows them in priority order.
+// Curators (source:write + resource:write) can also expand a field that has no
+// values yet, to add the first one.
 export default function ResourceFieldCard({
   endpoint,
   resourceId,
@@ -76,7 +237,15 @@ export default function ResourceFieldCard({
   source,
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const expandable = value !== null && value !== undefined && value !== "";
+  // Creating + attaching a source needs both writes, matching
+  // POST /oil-gas-fields/{id}/sources. Call both hooks unconditionally.
+  const canWriteSource = useHasPermission("source:write");
+  const canWriteResource = useHasPermission("resource:write");
+  const canEdit = canWriteSource && canWriteResource;
+
+  const hasValue = value !== null && value !== undefined && value !== "";
+  // Editors can also open empty fields to add the first value.
+  const expandable = hasValue || canEdit;
   const { data, isLoading, isError } = useFieldSourceValues(
     endpoint,
     resourceId,
@@ -97,6 +266,10 @@ export default function ResourceFieldCard({
         isLoading={isLoading}
         isError={isError}
         sources={data ?? []}
+        canEdit={canEdit}
+        endpoint={endpoint}
+        resourceId={resourceId}
+        fieldKey={fieldKey}
       />
     </FieldCard>
   );
