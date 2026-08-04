@@ -61,44 +61,65 @@ async def _get_attachable_resource(
     return resource
 
 
-async def create_and_attach_source(
+async def create_and_attach_sources(
     session: AsyncSession,
     user: User,
-    source: OGFieldSource,
+    sources: Sequence[OGFieldSource],
     resource_id: int,
-) -> OGFieldSource:
-    """Create a new source and attach it to an existing resource.
+) -> Sequence[OGFieldSource]:
+    """Create new sources and attach them to an existing resource.
 
-    A source is always created (never resolved by id here), then linked to
-    ``resource_id`` via an ACTIVE membership, both within the caller's unit of
+    Each source is always created (never resolved by id here), then linked to
+    ``resource_id`` via an ACTIVE membership, all within the caller's unit of
     work. The resource is validated first, so an invalid target fails before any
     source is written.
 
     Args:
         session: db session (transaction context)
         user: the logged in User (recorded as creator)
-        source: raw source data; must not carry an ``id``
-        resource_id: the resource to attach the new source to
+        sources: raw source data; none may carry an ``id``
+        resource_id: the resource to attach the new sources to
 
     Returns:
-        The created OGFieldSource with its assigned id.
+        The created OGFieldSources, each with its assigned id, in input order.
+
+    Raises:
+        SourceIntegrityError: if any source carries a non-None id.
+        ResourceNotFoundError: if ``resource_id`` does not exist.
+        ResourceIntegrityError: if the resource has been merged (repointed).
+    """
+    supplied_ids = [src.id for src in sources if src.id is not None]
+    if supplied_ids:
+        raise SourceIntegrityError(
+            f"Cannot create sources with client-supplied ids: {supplied_ids}"
+        )
+    # Fail fast: validate the target before creating any source, so an invalid
+    # resource_id never leaves a source insert to roll back.
+    resource = await _get_attachable_resource(session, resource_id)
+
+    models = await _create_source_models(session, user, sources)
+    await _attach_source_models(session, resource, models, user)
+    return [model.as_entity() for model in models]
+
+
+async def create_and_attach_source(
+    session: AsyncSession,
+    user: User,
+    source: OGFieldSource,
+    resource_id: int,
+) -> OGFieldSource:
+    """Create a single source and attach it to an existing resource.
+
+    Thin convenience wrapper over :func:`create_and_attach_sources` for the
+    common single-source path; see that function for full semantics.
 
     Raises:
         SourceIntegrityError: if ``source`` carries a non-None id.
         ResourceNotFoundError: if ``resource_id`` does not exist.
         ResourceIntegrityError: if the resource has been merged (repointed).
     """
-    if source.id is not None:
-        raise SourceIntegrityError(
-            f"Cannot create a source with a client-supplied id: {source.id}"
-        )
-    # Fail fast: validate the target before creating the source, so an invalid
-    # resource_id never leaves a source insert to roll back.
-    resource = await _get_attachable_resource(session, resource_id)
-
-    [model] = await _create_source_models(session, user, [source])
-    await _attach_source_models(session, resource, [model], user)
-    return model.as_entity()
+    [created] = await create_and_attach_sources(session, user, [source], resource_id)
+    return created
 
 
 async def get_or_create_sources(
