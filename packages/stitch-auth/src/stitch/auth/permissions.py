@@ -21,6 +21,8 @@ SOURCE_READ_GEM: Permission = f"{SOURCE_READ_PREFIX}gem"
 SOURCE_READ_WM: Permission = f"{SOURCE_READ_PREFIX}wm"
 SOURCE_READ_LLM: Permission = f"{SOURCE_READ_PREFIX}llm"
 SOURCE_READ_CCR: Permission = f"{SOURCE_READ_PREFIX}ccr"
+SOURCE_READ_BC: Permission = f"{SOURCE_READ_PREFIX}bc"
+SOURCE_READ_ALB: Permission = f"{SOURCE_READ_PREFIX}alb"
 SOURCE_READ_PERMISSIONS: frozenset[Permission] = frozenset(
     {
         SOURCE_READ_RMI,
@@ -28,6 +30,8 @@ SOURCE_READ_PERMISSIONS: frozenset[Permission] = frozenset(
         SOURCE_READ_WM,
         SOURCE_READ_LLM,
         SOURCE_READ_CCR,
+        SOURCE_READ_BC,
+        SOURCE_READ_ALB,
     }
 )
 SOURCE_WRITE: Permission = "source:write"

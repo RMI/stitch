@@ -39,6 +39,28 @@ const CCR_FIELDS = [
   },
 ];
 
+// Mirrors stitch-etl-poc's BcStartRequest (payload_limit + use_cached); the BC
+// ETL fetches live from the BCER API + reserves CSV, so there is no sheet input.
+const BC_FIELDS = [
+  {
+    key: "payload_limit",
+    label: "Payload limit",
+    type: "number",
+    help: "Optional cap on payloads posted this run. Leave blank to post all.",
+  },
+  {
+    key: "use_cached",
+    label: "Reuse cached BCER data (if within TTL)",
+    type: "checkbox",
+  },
+];
+
+// No run parameters yet: the Alberta dataset hasn't been added to
+// stitch-etl-poc, so the real request-body shape is unknown. Leave empty (no
+// inputs, empty body) until the dataset lands and the fields can be defined to
+// match it.
+const ALB_FIELDS = [];
+
 const WOODMAC_FIELDS = [
   {
     key: "payload_limit",
@@ -322,6 +344,20 @@ export default function EtlPage() {
           description="Load C&C Reservoirs field data from the configured spreadsheet and post it to Stitch."
           baseUrl={`${config.etlBaseUrl}/ccr`}
           fields={CCR_FIELDS}
+          getToken={getToken}
+        />
+        <EtlPanel
+          title="BC"
+          description="Fetch BC Energy Regulator (BCER) field data and post it to Stitch."
+          baseUrl={`${config.etlBaseUrl}/bc`}
+          fields={BC_FIELDS}
+          getToken={getToken}
+        />
+        <EtlPanel
+          title="Alberta"
+          description="Load Alberta Energy Regulator field data from the configured spreadsheet and post it to Stitch."
+          baseUrl={`${config.etlBaseUrl}/alb`}
+          fields={ALB_FIELDS}
           getToken={getToken}
         />
       </div>
