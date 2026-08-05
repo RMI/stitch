@@ -28,12 +28,16 @@ describe("EtlPage", () => {
       screen.getByRole("heading", { name: "WoodMac" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "CCR" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "BC" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Alberta" }),
+    ).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Start run" })).toHaveLength(
-      3,
+      5,
     );
     expect(
       screen.getAllByRole("button", { name: "Refresh status" }),
-    ).toHaveLength(3);
+    ).toHaveLength(5);
   });
 
   it("starts a GEM run with an authenticated token and shows the returned state", async () => {
@@ -104,6 +108,78 @@ describe("EtlPage", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8100/api/v1/etl/ccr/start",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer test-access-token",
+        }),
+      }),
+    );
+  });
+
+  it("starts a BC run against the bc ETL endpoint", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 202,
+      text: async () =>
+        JSON.stringify({
+          job_id: "job-bc",
+          state: "running",
+          started_at: "2026-06-11T10:00:00Z",
+          initiated_by: "Test User",
+        }),
+    });
+
+    renderWithQueryClient(<EtlPage />);
+
+    const bcPanel = getPanel("BC");
+    await userEvent.click(
+      within(bcPanel).getByRole("button", { name: "Start run" }),
+    );
+
+    await waitFor(() => {
+      expect(within(bcPanel).getAllByText("running").length).toBeGreaterThan(0);
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8100/api/v1/etl/bc/start",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer test-access-token",
+        }),
+      }),
+    );
+  });
+
+  it("starts an Alberta run against the alb ETL endpoint", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 202,
+      text: async () =>
+        JSON.stringify({
+          job_id: "job-alb",
+          state: "running",
+          started_at: "2026-06-11T10:00:00Z",
+          initiated_by: "Test User",
+        }),
+    });
+
+    renderWithQueryClient(<EtlPage />);
+
+    const albPanel = getPanel("Alberta");
+    await userEvent.click(
+      within(albPanel).getByRole("button", { name: "Start run" }),
+    );
+
+    await waitFor(() => {
+      expect(within(albPanel).getAllByText("running").length).toBeGreaterThan(
+        0,
+      );
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8100/api/v1/etl/alb/start",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({

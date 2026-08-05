@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [{ name = "RMI", email = "stitch@rmi.org" }]
 requires-python = ">=3.12.12"
 dependencies = [
-  "fastapi[standard-no-fastapi-cloud-cli]>=0.140.7",
+  "fastapi[standard-no-fastapi-cloud-cli]>=0.141.1",
   "httpx>=0.28.0",
   "pydantic-settings>=2.12.0",
   "stitch-auth",

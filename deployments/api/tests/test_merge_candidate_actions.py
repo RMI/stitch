@@ -398,18 +398,21 @@ def test_build_comparison_matches_when_per_resource_winners_agree():
     ]
 
 
-def test_build_comparison_treats_empty_string_as_a_real_value():
-    # The coalescer excludes only None (empty strings are real values), so
-    # `compare` must keep "" too. Both resources coalesce to "" -> match, and ""
-    # appears in `values` rather than being filtered out.
-    view_a = OilGasFieldBase(name=None, country="SAU", basin="")
-    view_b = OilGasFieldBase(name=None, country="SAU", basin="")
-    src_a = SimpleNamespace(source="rmi", id=10, basin="")
-    src_b = SimpleNamespace(source="rmi", id=11, basin="")
+def test_build_comparison_keeps_present_values_and_matches_equal():
+    # Only None is dropped (unset); present values are kept and compared. Empty
+    # strings can't be persisted (write-path skip + DB CHECK), so they never
+    # reach here -- a null check is all `_build_comparison` needs.
+    view_a = OilGasFieldBase(name=None, country="SAU", basin="Ghawar")
+    view_b = OilGasFieldBase(name=None, country="SAU", basin="Ghawar")
+    src_a = SimpleNamespace(source="rmi", id=10, basin="Ghawar")
+    src_b = SimpleNamespace(source="rmi", id=11, basin="Ghawar")
 
     compare = mca._build_comparison([view_a, view_b], [(18, src_a, 1), (19, src_b, 1)])
 
-    assert _values_for(compare, "basin") == [(18, "rmi", 10, ""), (19, "rmi", 11, "")]
+    assert _values_for(compare, "basin") == [
+        (18, "rmi", 10, "Ghawar"),
+        (19, "rmi", 11, "Ghawar"),
+    ]
     assert _status_for(compare, "basin") == "match"
 
 
@@ -444,7 +447,7 @@ async def test_get_merge_candidate_returns_detail_view_in_item_order(monkeypatch
         return {"rmi": 1, "gem": 2, "wm": 3, "llm": 4}
 
     monkeypatch.setattr(mca, "_load_candidate_model", fake_load_candidate_model)
-    monkeypatch.setattr(mca, "coalesce_resources", fake_coalesce)
+    monkeypatch.setattr(mca, "coalesce_resources_with_sources", fake_coalesce)
     monkeypatch.setattr(mca, "_default_source_priority", fake_default_priority)
 
     view = await mca.get_merge_candidate(
@@ -491,7 +494,7 @@ async def test_get_merge_candidate_after_merge_yields_empty_compare(monkeypatch)
         return {"rmi": 1, "gem": 2, "wm": 3, "llm": 4}
 
     monkeypatch.setattr(mca, "_load_candidate_model", fake_load_candidate_model)
-    monkeypatch.setattr(mca, "coalesce_resources", fake_coalesce)
+    monkeypatch.setattr(mca, "coalesce_resources_with_sources", fake_coalesce)
     monkeypatch.setattr(mca, "_default_source_priority", fake_default_priority)
 
     view = await mca.get_merge_candidate(AsyncMock(), candidate_id=2)

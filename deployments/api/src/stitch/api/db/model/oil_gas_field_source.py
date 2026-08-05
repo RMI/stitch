@@ -61,10 +61,13 @@ class OilGasFieldSourceModel(TimestampMixin, UserAuditMixin, Base):
             kwargs["created_by_id"] = created_by_id
             kwargs["last_updated_by_id"] = created_by_id
         header = cls(**kwargs)
+        # Absent and empty-string attributes are both "unset": no value row is
+        # written (empty strings are dropped here, not persisted and filtered
+        # out later). The raw payload survives verbatim on ``source_record``.
         header.values = [
-            OilGasFieldSourceValueModel.from_attribute(colname, dumped[colname])
+            OilGasFieldSourceValueModel.from_attribute(colname, value)
             for colname in ATTRIBUTE_NAMES
-            if dumped.get(colname) is not None
+            if (value := dumped.get(colname)) is not None and value != ""
         ]
         return header
 

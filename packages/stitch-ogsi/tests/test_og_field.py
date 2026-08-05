@@ -12,6 +12,8 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from stitch.ogsi.model import (
+    ALBSource,
+    BCSource,
     CCRSource,
     GemSource,
     OGFieldDetailView,
@@ -54,6 +56,22 @@ class TestOGFieldSourceDiscriminator:
         )
         assert isinstance(obj, CCRSource)
         assert obj.source == "ccr"
+        assert obj.name == "Test Field"
+
+    def test_bc_source_from_json(self):
+        obj = _source_adapter.validate_json(
+            '{"source": "bc", "name": "Test Field", "country": "CAN", "source_record": {"observed_at": "2026-01-01T00:00:00Z", "producer": "test", "payload": {"kind": "fixture"}}}'
+        )
+        assert isinstance(obj, BCSource)
+        assert obj.source == "bc"
+        assert obj.name == "Test Field"
+
+    def test_alb_source_from_json(self):
+        obj = _source_adapter.validate_json(
+            '{"source": "alb", "name": "Test Field", "country": "CAN", "source_record": {"observed_at": "2026-01-01T00:00:00Z", "producer": "test", "payload": {"kind": "fixture"}}}'
+        )
+        assert isinstance(obj, ALBSource)
+        assert obj.source == "alb"
         assert obj.name == "Test Field"
 
     def test_invalid_source_key_rejected(self):

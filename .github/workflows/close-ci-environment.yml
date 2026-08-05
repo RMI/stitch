@@ -11,6 +11,15 @@ on:
     types: [closed, labeled]
   workflow_call:
 
+# Serialize teardowns for a PR, but never cancel one in flight: teardown must run
+# to completion so it doesn't leak cloud resources. cancel-in-progress is false
+# (unlike the deploy/check workflows) precisely because this job is the cleanup.
+# Kept in its own lane -- NOT shared with the deploy group -- because both fire on
+# 'labeled'; a shared cancelling group could drop the teardown nondeterministically.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
 jobs:
   # 'labeled' fires for every label, so gate teardown to the two cases that want
   # it: the PR closing, or the 'no-deploy' label specifically being added. All
@@ -106,7 +115,7 @@ jobs:
       azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      container-app-name: ${{ format('{0}-entity-linkage', needs.resolve-context.outputs.deployment-name) }}
+      container-app-name: ${{ format('{0}-el', needs.resolve-context.outputs.deployment-name) }}
 
   delete-stitch-llm-container-app:
     name: Delete stitch-llm container app
@@ -118,7 +127,7 @@ jobs:
       azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      container-app-name: ${{ format('{0}-stitch-llm', needs.resolve-context.outputs.deployment-name) }}
+      container-app-name: ${{ format('{0}-llm', needs.resolve-context.outputs.deployment-name) }}
 
   delete-stitch-etl-container-app:
     name: Delete stitch-etl container app

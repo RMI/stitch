@@ -9,15 +9,17 @@ import {
   useSourceDetail,
   useFieldSourceValues,
 } from "../hooks/useResources";
+import { usePermissions } from "../hooks/usePermissions";
 import * as apiModule from "../queries/api";
 
 vi.mock("../hooks/useResources");
+vi.mock("../hooks/usePermissions");
 
 let mockedRouteId = "1";
 const mockNavigate = vi.fn();
 
-vi.mock("react-router-dom", async () => {
-  const actual = await vi.importActual("react-router-dom");
+vi.mock("react-router", async () => {
+  const actual = await vi.importActual("react-router");
   return {
     ...actual,
     useParams: () => ({ id: mockedRouteId }),
@@ -88,6 +90,11 @@ beforeEach(() => {
     data: [],
     isLoading: false,
     isError: false,
+  });
+  // Default: permissions resolved, caller has every permission the panel checks.
+  vi.mocked(usePermissions).mockReturnValue({
+    data: ["service:llm:suggest", "source:write", "resource:write"],
+    isLoading: false,
   });
   vi.stubGlobal("crypto", {
     randomUUID: () => "persist-uuid-123",
@@ -351,6 +358,70 @@ describe("ResourceDetailPage", () => {
     expect(screen.getByText("run-1")).toBeInTheDocument();
   });
 
+  it("shows the curator note from the source payload in the source details", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    vi.mocked(useSourceDetail).mockReturnValue({
+      ...defaultSourceDetailHookReturn,
+      data: {
+        id: 11,
+        source: "rmi",
+        name: "Burgan Source",
+        source_record: {
+          producer: "stitch-frontend",
+          observed_at: "2026-05-13T12:00:00Z",
+          record_id: null,
+          run_id: null,
+          payload: {
+            action: "field_overwrite",
+            field: "basin",
+            value: "Arabian",
+            note: "Confirmed with the survey team.",
+          },
+        },
+      },
+    });
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(screen.getByRole("button", { name: /^view$/i }));
+
+    expect(screen.getByText("Note")).toBeInTheDocument();
+    expect(
+      screen.getByText("Confirmed with the survey team."),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the Note block when the source payload has no note", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    vi.mocked(useSourceDetail).mockReturnValue({
+      ...defaultSourceDetailHookReturn,
+      data: {
+        id: 11,
+        source: "gem",
+        name: "Burgan Source",
+        source_record: {
+          producer: "stitch-seed@0.1.0",
+          observed_at: "2026-05-13T12:00:00Z",
+          record_id: "abc",
+          run_id: "run-1",
+          payload: { name: "Burgan Source" },
+        },
+      },
+    });
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(screen.getByRole("button", { name: /^view$/i }));
+
+    expect(screen.queryByText("Note")).not.toBeInTheDocument();
+  });
+
   it("generates and renders an AI suggestion preview", async () => {
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,
@@ -452,10 +523,12 @@ describe("ResourceDetailPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("creates an LLM-backed resource, then creates a merge candidate, and leaves the user on the page", async () => {
+  it("creates an llm source and attaches it to the resource, staying on the page", async () => {
+    const refetch = vi.fn();
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,
       data: mockDetailView,
+      refetch,
     });
     vi.spyOn(apiModule, "createLLMSuggestion").mockResolvedValue({
       resource_id: 1,
@@ -471,12 +544,9 @@ describe("ResourceDetailPage", () => {
       foundry_request: { request: true },
       foundry_response: { response: true },
     });
-    const createResourceSpy = vi
-      .spyOn(apiModule, "createResource")
-      .mockResolvedValue({ id: 123 });
-    const createMergeCandidateSpy = vi
-      .spyOn(apiModule, "createMergeCandidate")
-      .mockResolvedValue({ id: 88, resource_ids: [1, 123] });
+    const createSourceSpy = vi
+      .spyOn(apiModule, "createSourceForResource")
+      .mockResolvedValue({ id: 123, source: "llm" });
     const user = userEvent.setup();
 
     renderWithQueryClient(<ResourceDetailPage />);
@@ -487,69 +557,51 @@ describe("ResourceDetailPage", () => {
       await screen.findByRole("button", { name: /add to resource/i }),
     );
 
-    expect(createResourceSpy).toHaveBeenCalledWith(
+    expect(createSourceSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         apiBaseUrl: "http://localhost:8000/api/v1",
         stitchLlmBaseUrl: "http://localhost:8002/api/v1",
       }),
+      1,
       {
-        id: null,
-        repointed_to: null,
-        constituents: [],
-        provenance: {},
-        view: null,
-        source_data: [
-          {
-            id: null,
-            source: "llm",
-            name: null,
-            country: null,
-            basin: "Songliao",
-            source_record: {
-              record_id: "persist-uuid-123",
-              run_id: null,
-              observed_at: "2026-05-13T12:00:00Z",
-              producer: "stitch-frontend",
-              payload: {
-                resource_id: 1,
-                field: "basin",
-                suggested_value: "Songliao",
-                rationale: "Supported.",
-                citations: [
-                  {
-                    url: "https://example.com/source",
-                    title: "Example Source",
-                  },
-                ],
-                model: "test-model",
-                foundry_request: { request: true },
-                foundry_response: { response: true },
-                persist_intent_id: "persist-uuid-123",
+        source: "llm",
+        name: null,
+        country: null,
+        basin: "Songliao",
+        source_record: {
+          record_id: "persist-uuid-123",
+          run_id: null,
+          observed_at: "2026-05-13T12:00:00Z",
+          producer: "stitch-frontend",
+          payload: {
+            resource_id: 1,
+            field: "basin",
+            suggested_value: "Songliao",
+            rationale: "Supported.",
+            citations: [
+              {
+                url: "https://example.com/source",
+                title: "Example Source",
               },
-            },
+            ],
+            model: "test-model",
+            foundry_request: { request: true },
+            foundry_response: { response: true },
+            persist_intent_id: "persist-uuid-123",
           },
-        ],
+        },
       },
       expect.any(Function),
       "oil-gas-fields",
     );
-    expect(createMergeCandidateSpy).toHaveBeenCalledWith(
-      expect.any(Object),
-      [1, 123],
-      expect.any(Function),
-      "oil-gas-fields",
-    );
     expect(
-      await screen.findByText(
-        "Suggestion saved and queued for later merge review.",
-      ),
+      await screen.findByText("Source added to resource."),
     ).toBeInTheDocument();
-    expect(mockNavigate).not.toHaveBeenCalledWith(
-      "/merge-candidate-review?candidate=88",
-    );
+    expect(refetch).toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it("renders structured create-resource validation errors instead of object coercions", async () => {
+  it("renders structured create-source validation errors instead of object coercions", async () => {
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,
       data: mockDetailView,
@@ -566,16 +618,16 @@ describe("ResourceDetailPage", () => {
       foundry_request: {},
       foundry_response: {},
     });
-    vi.spyOn(apiModule, "createResource").mockRejectedValue(
+    vi.spyOn(apiModule, "createSourceForResource").mockRejectedValue(
       new Error(
         JSON.stringify(
           [
             {
-              loc: ["body", "source_data", 0, "llm", "name"],
+              loc: ["body", "llm", "name"],
               msg: "Field required",
             },
             {
-              loc: ["body", "source_data", 0, "llm", "country"],
+              loc: ["body", "llm", "country"],
               msg: "Field required",
             },
           ],
@@ -600,7 +652,7 @@ describe("ResourceDetailPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows partial-failure messaging when merge candidate creation fails after resource creation", async () => {
+  it("surfaces the API error when attaching the source fails", async () => {
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,
       data: mockDetailView,
@@ -617,10 +669,9 @@ describe("ResourceDetailPage", () => {
       foundry_request: {},
       foundry_response: {},
     });
-    vi.spyOn(apiModule, "createResource").mockResolvedValue({ id: 123 });
-    const createMergeCandidateSpy = vi
-      .spyOn(apiModule, "createMergeCandidate")
-      .mockRejectedValue(new Error("merge failed"));
+    vi.spyOn(apiModule, "createSourceForResource").mockRejectedValue(
+      new Error("attach failed"),
+    );
     const user = userEvent.setup();
 
     renderWithQueryClient(<ResourceDetailPage />);
@@ -631,20 +682,58 @@ describe("ResourceDetailPage", () => {
       await screen.findByRole("button", { name: /add to resource/i }),
     );
 
-    expect(createMergeCandidateSpy).toHaveBeenCalled();
-    expect(
-      await screen.findByText(
-        "Suggestion saved as resource 123, but the merge draft was not created.",
-      ),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("attach failed")).toBeInTheDocument();
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it("does not attempt merge-candidate creation when resource creation fails", async () => {
+  it("holds a placeholder (no controls) while permissions are still loading", () => {
+    // Still loading: no permission data yet, so the placeholder wins.
+    vi.mocked(usePermissions).mockReturnValue({ isLoading: true });
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,
       data: mockDetailView,
     });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(screen.getByTestId("ai-suggestion-loading")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /generate suggestion/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the entire AI Suggestion panel when the user cannot run LLM suggestions", async () => {
+    // No service:llm:suggest -> the whole panel is gone (even with write perms).
+    vi.mocked(usePermissions).mockReturnValue({
+      data: ["source:write", "resource:write"],
+      isLoading: false,
+    });
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(
+      screen.queryByRole("heading", { name: /ai suggestion/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /generate suggestion/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the add-to-resource action when the user lacks write permissions", async () => {
+    // Can run LLM (panel shows) but has neither write permission.
+    vi.mocked(usePermissions).mockReturnValue({
+      data: ["service:llm:suggest"],
+      isLoading: false,
+    });
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    const createSourceSpy = vi.spyOn(apiModule, "createSourceForResource");
     vi.spyOn(apiModule, "createLLMSuggestion").mockResolvedValue({
       resource_id: 1,
       field: "basin",
@@ -657,25 +746,60 @@ describe("ResourceDetailPage", () => {
       foundry_request: {},
       foundry_response: {},
     });
-    vi.spyOn(apiModule, "createResource").mockRejectedValue(
-      new Error("create failed"),
-    );
-    const createMergeCandidateSpy = vi.spyOn(apiModule, "createMergeCandidate");
     const user = userEvent.setup();
 
     renderWithQueryClient(<ResourceDetailPage />);
     await user.click(
       screen.getByRole("button", { name: /generate suggestion/i }),
     );
-    await user.click(
-      await screen.findByRole("button", { name: /add to resource/i }),
-    );
 
-    expect(createMergeCandidateSpy).not.toHaveBeenCalled();
-    expect(await screen.findByText("create failed")).toBeInTheDocument();
+    // Suggestion still renders, but the write-gated action is not offered.
+    expect(await screen.findByText("Songliao")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /add to resource/i }),
+    ).not.toBeInTheDocument();
+    expect(createSourceSpy).not.toHaveBeenCalled();
   });
 
-  it("disables resubmission after a successful persist for the current suggestion", async () => {
+  it("hides the add-to-resource action when the user has only one of the two write permissions", async () => {
+    // Can run LLM + source:write granted, but resource:write missing -> action
+    // stays hidden (attach needs both).
+    vi.mocked(usePermissions).mockReturnValue({
+      data: ["service:llm:suggest", "source:write"],
+      isLoading: false,
+    });
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    const createSourceSpy = vi.spyOn(apiModule, "createSourceForResource");
+    vi.spyOn(apiModule, "createLLMSuggestion").mockResolvedValue({
+      resource_id: 1,
+      field: "basin",
+      value: "Songliao",
+      citations: [],
+      query_succeeded: true,
+      model: "test-model",
+      rationale: "Supported.",
+      observed_at: "2026-05-13T12:00:00Z",
+      foundry_request: {},
+      foundry_response: {},
+    });
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(
+      screen.getByRole("button", { name: /generate suggestion/i }),
+    );
+
+    expect(await screen.findByText("Songliao")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /add to resource/i }),
+    ).not.toBeInTheDocument();
+    expect(createSourceSpy).not.toHaveBeenCalled();
+  });
+
+  it("disables resubmission after a successful attach for the current suggestion", async () => {
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,
       data: mockDetailView,
@@ -692,10 +816,9 @@ describe("ResourceDetailPage", () => {
       foundry_request: {},
       foundry_response: {},
     });
-    vi.spyOn(apiModule, "createResource").mockResolvedValue({ id: 123 });
-    vi.spyOn(apiModule, "createMergeCandidate").mockResolvedValue({
-      id: 88,
-      resource_ids: [1, 123],
+    vi.spyOn(apiModule, "createSourceForResource").mockResolvedValue({
+      id: 123,
+      source: "llm",
     });
     const user = userEvent.setup();
 

@@ -16,7 +16,6 @@ from stitch.ogsi.model.types import (
     PrimaryHydrocarbonGroup,
     ProductionConventionality,
 )
-from stitch.ogsi.model.og_field import OilGasFieldBase
 
 OGSI_SOURCE_DEFAULT: tuple[OGSISrcKey, ...] = SOURCE_PRIORITY
 
@@ -179,14 +178,13 @@ class ComparisonValueView(OGFieldSourceValueView):
     """A source's value in a merge comparison, tagged with ``resource_id`` --
     the candidate resource the source is currently attached to.
 
-    NOTE: unlike the base ``OGFieldSourceValueView`` (whose ``priority`` is the
-    *effective per-resource* ranking used by the source-values endpoint), the
     ``priority`` here is the *default global* source order -- the order the
-    merged resource will use -- so it does not reflect any per-resource
-    override. As a result the winner-ordering of these values can disagree with
-    ``FieldComparisonView.status``, which compares each resource's effective
-    coalesced value. CLEANUP: reconcile once coalescing moves into the DB
-    (PR 170; see ``_build_comparison``).
+    merged resource will use, since a merge drops per-resource priority
+    overrides -- not the effective per-resource ranking. So the winner-ordering
+    of these values can differ from ``FieldComparisonView.status`` (each
+    resource's current effective coalesced value) whenever a per-resource
+    override is active. That divergence is expected: ``values`` predicts the
+    post-merge winner, ``status`` describes the current state.
     """
 
     resource_id: int
@@ -210,10 +208,9 @@ class FieldComparisonView(BaseModel):
     Equality is Python ``==``, which errs toward ``different`` (exact float
     equality; ordered ``owners``/``operators`` comparison).
 
-    NOTE: ``values`` (and the derived ``status``) are a client-side best guess at
-    what the merge will persist -- they are coalesced in Python from the current
-    source data. Once coalescing moves entirely into the database, the persisted
-    result is authoritative and may differ here.
+    NOTE: ``values`` (and the derived ``status``) are a best guess at what the
+    merge will persist -- overrides are dropped on merge, so the merged resource
+    can resolve to a value that differs from any single parent's current winner.
     """
 
     field: str
@@ -223,9 +220,3 @@ class FieldComparisonView(BaseModel):
 
 class MergeCandidateDetailView(MergeCandidateView):
     compare: list[FieldComparisonView]
-
-
-class OGFieldMergePreviewView(BaseModel):
-    resource_ids: list[int]
-    data: OilGasFieldBase
-    provenance: dict[str, OGSISrcKey | None]
