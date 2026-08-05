@@ -215,6 +215,7 @@ export default function ResourcesView({ className = "", endpoint }) {
         resources={resources}
         sortConfig={sortConfig}
         onSort={handleSortChange}
+        isFetching={isFetching}
       />
       {data && totalCount > 0 && (
         <Pagination
