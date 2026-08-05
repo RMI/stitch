@@ -178,7 +178,7 @@ describe("MergeCandidateReviewPage", () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
     expect(
-      await screen.findByRole("heading", { name: "Bergan" }),
+      await screen.findByRole("heading", { name: "Burgan" }),
     ).toBeInTheDocument();
   });
 
@@ -293,7 +293,7 @@ describe("MergeCandidateReviewPage", () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
     expect(
-      await screen.findByRole("heading", { name: "Burgan" }),
+      await screen.findByRole("heading", { name: "Bergan" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "Candidate #11" }),
