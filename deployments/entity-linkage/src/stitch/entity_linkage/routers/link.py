@@ -147,7 +147,12 @@ async def link_one(
                 apply_merges=request.apply_merges,
             )
     except StitchAPIError as exc:
-        raise HTTPException(
-            status_code=HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
+        # A 404 from the downstream API means the resource doesn't exist; surface
+        # that as 404 rather than a generic bad-gateway. Any other downstream
+        # failure is an upstream problem -> 502.
+        status_code = (
+            HTTP_404_NOT_FOUND
+            if exc.status_code == HTTP_404_NOT_FOUND
+            else HTTP_502_BAD_GATEWAY
+        )
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc

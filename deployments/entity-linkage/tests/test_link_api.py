@@ -220,6 +220,22 @@ def test_link_one_translates_stitch_api_error_to_502(
     }
 
 
+def test_link_one_maps_unknown_resource_to_404(test_client, install_client) -> None:
+    install_client(
+        detail_error=StitchAPIError(
+            "GET /oil-gas-fields/999/detail failed with status 404: not found",
+            status_code=404,
+        ),
+    )
+
+    response = test_client.post("/api/v1/oil-gas-fields/999/link", json={})
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "GET /oil-gas-fields/999/detail failed with status 404: not found",
+    }
+
+
 def _poll_status(client: TestClient, *, timeout: float = 5.0) -> dict:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
