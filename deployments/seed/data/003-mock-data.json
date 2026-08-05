@@ -84,6 +84,18 @@
           "state_province": "Rogaland",
           "region": "North Sea",
           "basin": "North Sea",
+          "owners": [
+            {"name": "KazMunayGas", "stake": 16.88},
+            {"name": "Eni", "stake": 16.81},
+            {"name": "Shell", "stake": 16.81},
+            {"name": "TotalEnergies", "stake": 16.81},
+            {"name": "ExxonMobil", "stake": 16.81},
+            {"name": "CNPC", "stake": 8.33},
+            {"name": "Inpex", "stake": 7.55}
+          ],
+          "operators": [
+            {"name": "North Caspian Operating Company", "stake": null}
+          ],
           "location_type": "Onshore",
           "production_conventionality": "Conventional",
           "primary_hydrocarbon_group": "Condensate",
@@ -104,6 +116,13 @@
           "state_province": "Rogaland",
           "region": "North Sea",
           "basin": "North Sea",
+          "owners": [
+            {"name": "KazMunayGas", "stake": null},
+            {"name": "Eni", "stake": null}
+          ],
+          "operators": [
+            {"name": "North Caspian Operating Company", "stake": null}
+          ],
           "location_type": "Onshore",
           "production_conventionality": "Conventional",
           "primary_hydrocarbon_group": "Condensate",
@@ -130,8 +149,13 @@
           "state_province": null,
           "region": null,
           "basin": null,
-          "owners": null,
-          "operators": null,
+          "owners": [
+            {"name": "Equinor Energy AS", "stake": 42.6},
+            {"name": "Aker BP ASA", "stake": 31.57},
+            {"name": "Petoro AS", "stake": 17.36},
+            {"name": "TotalEnergies EP Norge AS", "stake": 8.47}
+          ],
+          "operators": [{"name": "Equinor Energy AS", "stake": null}],
           "location_type": null,
           "production_conventionality": null,
           "primary_hydrocarbon_group": null,
@@ -158,6 +182,8 @@
           "state_province": "Delta",
           "region": "Oceania",
           "basin": null,
+          "owners": [{"name": "Kuwait Petroleum Corporation", "stake": null}],
+          "operators": [{"name": "Kuwait Oil Company", "stake": null}],
           "location_type": "Onshore",
           "production_conventionality": "Mixed",
           "primary_hydrocarbon_group": "Medium Oil",
@@ -178,8 +204,8 @@
           "state_province": "Delta",
           "region": "Oceania",
           "basin": "Arabian",
-          "owners": null,
-          "operators": null,
+          "owners": [{"name": "Kuwait Oil Company", "stake": 100.0}],
+          "operators": [{"name": "Kuwait Oil Company", "stake": null}],
           "location_type": null,
           "production_conventionality": "Mixed",
           "primary_hydrocarbon_group": "Medium Oil",
@@ -330,6 +356,14 @@
           "state_province": "Western Australia",
           "region": "North America",
           "basin": "Gulf of Mexico",
+          "owners": [
+            {"name": "BP Iraq NV", "stake": 47.6},
+            {"name": "PetroChina", "stake": 46.4},
+            {"name": "State Oil Marketing Organisation", "stake": null}
+          ],
+          "operators": [
+            {"name": "Rumaila Operating Organisation", "stake": null}
+          ],
           "location_type": "Onshore",
           "production_conventionality": "Conventional",
           "primary_hydrocarbon_group": "Wet Gas",
@@ -350,6 +384,13 @@
           "state_province": "Western Australia",
           "region": "North America",
           "basin": "Gulf of Mexico",
+          "owners": [
+            {"name": "BP", "stake": 47.6},
+            {"name": "PetroChina", "stake": 46.4}
+          ],
+          "operators": [
+            {"name": "Rumaila Operating Organisation", "stake": null}
+          ],
           "location_type": "Onshore",
           "production_conventionality": "Conventional",
           "primary_hydrocarbon_group": "Wet Gas",
@@ -396,6 +437,14 @@
           "state_province": "Western Australia",
           "region": "North America",
           "basin": "Gulf of Mexico",
+          "owners": [
+            {"name": "BP Iraq NV", "stake": 47.6},
+            {"name": "PetroChina", "stake": 46.4},
+            {"name": "State Oil Marketing Organisation", "stake": null}
+          ],
+          "operators": [
+            {"name": "Rumaila Operating Organisation", "stake": null}
+          ],
           "location_type": "Onshore",
           "production_conventionality": "Conventional",
           "primary_hydrocarbon_group": "Wet Gas",
@@ -416,6 +465,13 @@
           "state_province": "Western Australia",
           "region": "North America",
           "basin": "Gulf of Mexico",
+          "owners": [
+            {"name": "BP", "stake": 47.6},
+            {"name": "PetroChina", "stake": 46.4}
+          ],
+          "operators": [
+            {"name": "Rumaila Operating Organisation", "stake": null}
+          ],
           "location_type": "Onshore",
           "production_conventionality": "Conventional",
           "primary_hydrocarbon_group": "Wet Gas",
@@ -488,6 +544,14 @@
           "state_province": "Western Australia",
           "region": "North America",
           "basin": "Gulf of Mexico",
+          "owners": [
+            {"name": "BP Iraq NV", "stake": 47.6},
+            {"name": "PetroChina", "stake": 46.4},
+            {"name": "State Oil Marketing Organisation", "stake": null}
+          ],
+          "operators": [
+            {"name": "Rumaila Operating Organisation", "stake": null}
+          ],
           "location_type": "Onshore",
           "production_conventionality": "Conventional",
           "primary_hydrocarbon_group": "Wet Gas",
@@ -508,6 +572,13 @@
           "state_province": "Western Australia",
           "region": "North America",
           "basin": "Gulf of Mexico",
+          "owners": [
+            {"name": "BP", "stake": 47.6},
+            {"name": "PetroChina", "stake": 46.4}
+          ],
+          "operators": [
+            {"name": "Rumaila Operating Organisation", "stake": null}
+          ],
           "location_type": "Onshore",
           "production_conventionality": "Conventional",
           "primary_hydrocarbon_group": "Wet Gas",
