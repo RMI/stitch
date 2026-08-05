@@ -22,6 +22,7 @@ from stitch.ogsi.model import (
     SourceRecord,
     WoodMacSource,
 )
+from stitch.ogsi.model import OilGasOperator, OilGasOwner
 from stitch.ogsi.model.og_field import OilGasFieldBase
 
 
@@ -99,6 +100,54 @@ class TestOGFieldSourceDiscriminator:
             producer="stitch-seed/0.1.0",
             payload={"kind": "seed_faker", "source": {"name": "Test Field"}},
         )
+
+
+# ---------------------------------------------------------------------------
+# Ownership
+# ---------------------------------------------------------------------------
+
+
+class TestOwnershipStake:
+    """`stake` is optional: providers often name a party without a percentage."""
+
+    @pytest.mark.parametrize("model", [OilGasOwner, OilGasOperator])
+    def test_stake_defaults_to_none_when_omitted(self, model):
+        party = model(name="Acme Energy")
+        assert party.stake is None
+
+    @pytest.mark.parametrize("model", [OilGasOwner, OilGasOperator])
+    def test_explicit_null_stake_accepted(self, model):
+        party = model.model_validate({"name": "Acme Energy", "stake": None})
+        assert party.stake is None
+
+    @pytest.mark.parametrize("model", [OilGasOwner, OilGasOperator])
+    def test_stated_stake_is_parsed(self, model):
+        party = model(name="Acme Energy", stake=53.14)
+        assert party.stake == 53.14
+
+    @pytest.mark.parametrize("model", [OilGasOwner, OilGasOperator])
+    def test_out_of_range_stake_still_rejected(self, model):
+        with pytest.raises(ValidationError):
+            model(name="Acme Energy", stake=150)
+
+    def test_field_round_trips_mixed_stated_and_null_stakes(self):
+        field = OilGasFieldBase(
+            name="Alpha",
+            country="USA",
+            owners=[
+                OilGasOwner(name="Sval Energi AS", stake=20.0),
+                OilGasOwner(name="Petoro AS"),
+            ],
+            operators=[OilGasOperator(name="Equinor Energy AS")],
+        )
+
+        dumped = field.model_dump()
+        assert dumped["owners"] == [
+            {"name": "Sval Energi AS", "stake": 20.0},
+            {"name": "Petoro AS", "stake": None},
+        ]
+        assert dumped["operators"] == [{"name": "Equinor Energy AS", "stake": None}]
+        assert OilGasFieldBase.model_validate(dumped) == field
 
 
 # ---------------------------------------------------------------------------
