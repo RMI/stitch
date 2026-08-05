@@ -18,8 +18,11 @@ vi.mock("../queries/api", () => ({
 }));
 
 vi.mock("../components/MergeSourceComparison", () => ({
-  default: ({ resourceIds }) => (
-    <div>Source comparison for {resourceIds.join(", ")}</div>
+  default: ({ resourceIds, compare, isLoading }) => (
+    <div>
+      Source comparison for {resourceIds.join(", ")}
+      {compare ? " (compare loaded)" : isLoading ? " (loading)" : ""}
+    </div>
   ),
 }));
 
@@ -43,6 +46,34 @@ const candidates = [
 ];
 
 const pendingCandidate = candidates[0];
+
+// Detail responses layer `compare` on top of the list schema. The panel
+// heading must come from this, not from per-resource fetches.
+const pendingDetail = {
+  ...pendingCandidate,
+  compare: [
+    {
+      field: "name",
+      status: "different",
+      values: [
+        {
+          source: "gem",
+          source_id: 1,
+          value: "Burgan",
+          priority: 0,
+          resource_id: 101,
+        },
+        {
+          source: "wm",
+          source_id: 2,
+          value: "Bergan",
+          priority: 1,
+          resource_id: 102,
+        },
+      ],
+    },
+  ],
+};
 const nextPendingCandidate = {
   id: 13,
   status: "PENDING",
@@ -66,6 +97,7 @@ const resourceDetailsById = {
   102: { data: { name: "Bergan" }, provenance: { name: "wm" } },
   201: { data: { name: "Arabian Consolidated" }, provenance: { name: "rmi" } },
   202: { data: { name: "Arabian Duplicate" }, provenance: { name: "gem" } },
+  301: { data: { name: "Arabian Merged" }, provenance: { name: "rmi" } },
 };
 
 beforeEach(() => {
@@ -77,7 +109,7 @@ beforeEach(() => {
   });
   vi.mocked(useMergeCandidate).mockReturnValue({
     ...defaultHookReturn,
-    data: pendingCandidate,
+    data: pendingDetail,
     refetch: vi.fn(),
   });
   vi.mocked(reviewMergeCandidate).mockResolvedValue({});
@@ -94,9 +126,7 @@ describe("MergeCandidateReviewPage", () => {
       screen.getByRole("heading", { name: "Merge Review" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Queue" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Candidate #11" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Burgan" })).toBeInTheDocument();
 
     expect(
       screen.queryByRole("heading", { name: "Summary" }),
@@ -119,15 +149,16 @@ describe("MergeCandidateReviewPage", () => {
     expect(queueItem).toHaveAttribute("title", "Source resources: 101, 102");
   });
 
-  it("falls back to the candidate id when no source resource has a name", async () => {
-    vi.mocked(getResourceDetail).mockResolvedValue({
-      data: { name: null },
-      provenance: {},
+  it("falls back to the candidate id when the compare object has no name", () => {
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: { ...pendingCandidate, compare: [] },
     });
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
-    await waitFor(() => expect(getResourceDetail).toHaveBeenCalled());
-    expect(screen.getAllByText("Candidate #11").length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("heading", { name: "Candidate #11" }),
+    ).toBeInTheDocument();
   });
 
   it('labels a pending item\'s status badge "CANDIDATE" instead of "PENDING"', async () => {
@@ -143,7 +174,7 @@ describe("MergeCandidateReviewPage", () => {
     expect(within(approvedItem).getByText("APPROVED")).toBeInTheDocument();
   });
 
-  it("shows the resolved name in the detail panel heading, with the merged resource id still visible in the facts", async () => {
+  it("shows the compare-derived name in the detail panel heading", () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
     expect(
@@ -167,7 +198,9 @@ describe("MergeCandidateReviewPage", () => {
   it("shows the source comparison instead of the merged preview", () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
-    const comparison = screen.getByText("Source comparison for 101, 102");
+    const comparison = screen.getByText(
+      "Source comparison for 101, 102 (compare loaded)",
+    );
     const decisionNotes = screen.getByLabelText("Decision notes");
 
     expect(
@@ -242,12 +275,29 @@ describe("MergeCandidateReviewPage", () => {
       screen.getByRole("heading", { name: "Candidate #11" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("Source comparison for 101, 102"),
+      screen.getByText("Source comparison for 101, 102 (loading)"),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Approve merge" }),
     ).toBeInTheDocument();
     expect(screen.queryByText("Loading candidate…")).not.toBeInTheDocument();
+  });
+
+  it("shows the queue-cached name while the detail query loads, not the id fallback", async () => {
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: null,
+      isLoading: true,
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Burgan" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Candidate #11" }),
+    ).not.toBeInTheDocument();
   });
 
   it("approves with the queue's candidate id while the detail query loads", async () => {
@@ -309,6 +359,28 @@ describe("MergeCandidateReviewPage", () => {
     expect(screen.getByText("Merged resource 301")).toBeInTheDocument();
     expect(
       screen.queryByText("Source comparison for 201, 202"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the merged resource's name in the heading once merged", async () => {
+    const mergedCandidate = candidates[1];
+    vi.mocked(useMergeCandidates).mockReturnValue({
+      ...defaultHookReturn,
+      data: [mergedCandidate],
+    });
+    // Post-merge, the originals are null shells: compare carries no name.
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: { ...mergedCandidate, compare: [] },
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Arabian Merged" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Candidate #12" }),
     ).not.toBeInTheDocument();
   });
 
