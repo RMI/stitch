@@ -174,7 +174,7 @@ describe("MergeCandidateReviewPage", () => {
     expect(within(approvedItem).getByText("APPROVED")).toBeInTheDocument();
   });
 
-  it("shows the compare-derived name in the detail panel heading", () => {
+  it("shows the compare-derived name in the detail panel heading", async () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
     expect(
