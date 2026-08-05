@@ -18,7 +18,7 @@ build-backend = "uv_build"
 module-name = "stitch.auth"
 
 [dependency-groups]
-dev = ["pytest>=9.1.1", "cryptography>=44.0.0"]
+dev = ["pytest>=9.1.1", "cryptography>=50.0.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
