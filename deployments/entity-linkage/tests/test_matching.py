@@ -99,9 +99,32 @@ async def test_find_match_group_blocks_by_casefold_name_and_country() -> None:
     matched = await matching.find_match_group_for_resource(client, 1)
 
     assert matched == [1, 2]
-    assert client.iter_q == ["Ghawar"]
+    # Searched on the normalized (stripped + casefolded) name, not the raw one.
+    assert client.iter_q == ["ghawar"]
     # Seed detail is fetched once up front and reused (not re-fetched in the loop).
     assert client.detail_calls == [1, 2, 3]
+
+
+@pytest.mark.anyio
+async def test_find_match_group_matches_whitespace_variants() -> None:
+    # Both names carry surrounding whitespace (and differ in case). Searching on
+    # the raw seed name would exclude the other from the ILIKE superset, missing
+    # the pair entirely; searching on the normalized name groups them.
+    client = FakeMatchingClient(
+        items=[
+            FieldCandidate(id=1, name=" Ghawar", country="US"),
+            FieldCandidate(id=2, name="ghawar ", country="US"),
+        ],
+        details_by_id={
+            1: FieldDetailCandidate(id=1, name=" Ghawar", country="US"),
+            2: FieldDetailCandidate(id=2, name="ghawar ", country="US"),
+        },
+    )
+
+    matched = await matching.find_match_group_for_resource(client, 1)
+
+    assert matched == [1, 2]
+    assert client.iter_q == ["ghawar"]
 
 
 @pytest.mark.anyio

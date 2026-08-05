@@ -65,8 +65,14 @@ async def find_match_group_for_resource(
     # Stream the case-insensitive ``q`` superset a page at a time and keep only
     # exact normalized-name matches, so peak memory is bounded by the same-name
     # block rather than the (potentially large) ILIKE substring superset.
+    #
+    # Search on the *normalized* name: ``q`` is a literal ILIKE ``%term%``, so a
+    # raw name with surrounding whitespace would exclude clean-named duplicates
+    # (and vice versa), missing exactly the whitespace variants this blocking is
+    # meant to catch. ``seed_name`` is stripped + casefolded; ILIKE is already
+    # case-insensitive, so the casefold is harmless and the strip is what matters.
     same_name_ids: set[int] = set()
-    async for candidate in client.iter_oil_gas_fields(q=seed.name):
+    async for candidate in client.iter_oil_gas_fields(q=seed_name):
         if candidate.normalized_name == seed_name:
             same_name_ids.add(candidate.id)
     # The seed always belongs to its own block even if the list universe omits it.
