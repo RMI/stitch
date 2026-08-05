@@ -83,6 +83,13 @@ def _source_payload() -> dict:
             SOURCE_WRITE,
             _source_payload(),
         ),
+        (
+            "put",
+            "/oil-gas-fields/1/fields/basin/sources/priority",
+            (RESOURCE_READ,),
+            RESOURCE_WRITE,
+            {"ordered_source_pks": [1, 2]},
+        ),
         # create-and-attach requires BOTH source:write and resource:write
         (
             "post",
