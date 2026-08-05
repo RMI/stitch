@@ -174,11 +174,11 @@ describe("MergeCandidateReviewPage", () => {
     expect(within(approvedItem).getByText("APPROVED")).toBeInTheDocument();
   });
 
-  it("shows the compare-derived name in the detail panel heading", () => {
+  it("shows the compare-derived name in the detail panel heading", async () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
     expect(
-      await screen.findByRole("heading", { name: "Bergan" }),
+      await screen.findByRole("heading", { name: "Burgan" }),
     ).toBeInTheDocument();
   });
 
@@ -293,7 +293,7 @@ describe("MergeCandidateReviewPage", () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
     expect(
-      await screen.findByRole("heading", { name: "Burgan" }),
+      await screen.findByRole("heading", { name: "Bergan" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "Candidate #11" }),
