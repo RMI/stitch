@@ -4,7 +4,11 @@ import userEvent from "@testing-library/user-event";
 import ResourceFieldCard from "./ResourceFieldCard";
 import { useFieldSourceValues } from "../hooks/useResources";
 import { useHasPermission } from "../hooks/usePermissions";
-import { updateFieldSourcePriority } from "../queries/api";
+import {
+  updateFieldSourcePriority,
+  createSourceForResource,
+} from "../queries/api";
+import { resourceKeys } from "../queries/resources";
 import { SOURCE_LABELS } from "../constants/sourceMeta";
 import { renderWithQueryClient } from "../test/utils";
 
@@ -16,6 +20,7 @@ vi.mock("../hooks/usePermissions", () => ({
 }));
 vi.mock("../queries/api", () => ({
   updateFieldSourcePriority: vi.fn(),
+  createSourceForResource: vi.fn(),
 }));
 
 const TWO_SOURCES = [
@@ -34,6 +39,13 @@ const TWO_SOURCES = [
     is_override: false,
   },
 ];
+
+// Grant both writes required to create + attach a source.
+function grantWritePermissions() {
+  vi.mocked(useHasPermission).mockImplementation((permission) =>
+    ["source:write", "resource:write"].includes(permission),
+  );
+}
 
 function renderCard(props = {}) {
   return renderWithQueryClient(
@@ -55,15 +67,14 @@ async function openPanel(user) {
 
 describe("ResourceFieldCard", () => {
   beforeEach(() => {
-    useFieldSourceValues.mockReset();
+    vi.clearAllMocks();
     useFieldSourceValues.mockReturnValue({
       data: undefined,
       isLoading: false,
       isError: false,
     });
-    useHasPermission.mockReset();
+    // Default: no permissions, so the edit affordance stays hidden.
     useHasPermission.mockReturnValue(false);
-    updateFieldSourcePriority.mockReset();
     updateFieldSourcePriority.mockResolvedValue([]);
   });
 
@@ -150,7 +161,7 @@ describe("ResourceFieldCard", () => {
     ).toBeInTheDocument();
   });
 
-  it("does not show an Edit button without resource:write", async () => {
+  it("does not show an Edit button without any write permission", async () => {
     const user = userEvent.setup();
     useHasPermission.mockReturnValue(false);
     useFieldSourceValues.mockReturnValue({
@@ -165,9 +176,10 @@ describe("ResourceFieldCard", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("does not show an Edit button when only one source has a value", async () => {
+  it("offers add but not reorder controls when only one source has a value", async () => {
     const user = userEvent.setup();
-    useHasPermission.mockReturnValue(true);
+    // Both writes → the field can still be edited to add a value...
+    grantWritePermissions();
     useFieldSourceValues.mockReturnValue({
       data: [TWO_SOURCES[0]],
       isLoading: false,
@@ -175,8 +187,19 @@ describe("ResourceFieldCard", () => {
     });
     renderCard();
     await openPanel(user);
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    // ...the add affordance is present...
     expect(
-      screen.queryByRole("button", { name: "Edit" }),
+      screen.getByRole("button", { name: /add value/i }),
+    ).toBeInTheDocument();
+    // ...but a lone source cannot be reordered: no move arrows, no reorder Save.
+    expect(
+      screen.queryByRole("button", { name: `Move ${SOURCE_LABELS.wm} up` }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Save" }),
     ).not.toBeInTheDocument();
   });
 
@@ -226,5 +249,192 @@ describe("ResourceFieldCard", () => {
 
     const winnerRow = screen.getByText('"Foo Basin"').closest(".border-l-4");
     expect(within(winnerRow).getByText("curated")).toBeInTheDocument();
+  });
+
+  it("lets an editor expand a field that has no values to add the first one", async () => {
+    const user = userEvent.setup();
+    grantWritePermissions();
+    useFieldSourceValues.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+    });
+    renderCard({ value: null });
+
+    await user.click(screen.getByRole("button"));
+
+    expect(useFieldSourceValues).toHaveBeenLastCalledWith(
+      "oil-gas-fields",
+      42,
+      "basin",
+      true,
+    );
+    expect(
+      screen.getByText("No source values for this field."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
+  });
+
+  describe("overwrite action", () => {
+    beforeEach(() => {
+      useFieldSourceValues.mockReturnValue({
+        data: [{ source: "wm", source_id: 20, value: "Foo Basin" }],
+        isLoading: false,
+        isError: false,
+      });
+    });
+
+    it("hides the Edit action without both write permissions", async () => {
+      const user = userEvent.setup();
+      // Only source:write, missing resource:write.
+      vi.mocked(useHasPermission).mockImplementation(
+        (permission) => permission === "source:write",
+      );
+      renderCard();
+      await user.click(screen.getByRole("button"));
+
+      expect(
+        screen.queryByRole("button", { name: /^edit$/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("keeps the value form hidden until '+' is clicked, and Cancel resets", async () => {
+      const user = userEvent.setup();
+      grantWritePermissions();
+      renderCard();
+      await user.click(screen.getByRole("button")); // open panel
+
+      await user.click(screen.getByRole("button", { name: /^edit$/i }));
+      // Only the "+" affordance shows; the fields stay hidden until it's clicked.
+      expect(
+        screen.getByRole("button", { name: /add value/i }),
+      ).toBeInTheDocument();
+      expect(screen.queryByLabelText("New value")).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: /add value/i }));
+      expect(screen.getByLabelText("New value")).toBeInTheDocument();
+      expect(screen.getByLabelText("Note")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /^save$/i }),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: /^cancel$/i }));
+      expect(screen.queryByLabelText("New value")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /add value/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("creates an rmi source with only this field populated, plus the note, and refreshes", async () => {
+      const user = userEvent.setup();
+      grantWritePermissions();
+      createSourceForResource.mockResolvedValue({ id: 99, source: "rmi" });
+
+      const { queryClient } = renderCard();
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+      await user.click(screen.getByRole("button")); // open panel
+      await user.click(screen.getByRole("button", { name: /^edit$/i }));
+      await user.click(screen.getByRole("button", { name: /add value/i }));
+      await user.type(screen.getByLabelText("New value"), "Deep Basin");
+      await user.type(screen.getByLabelText("Note"), "checked the map");
+      await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+      expect(createSourceForResource).toHaveBeenCalledWith(
+        expect.objectContaining({
+          apiBaseUrl: "http://localhost:8000/api/v1",
+        }),
+        42,
+        expect.objectContaining({
+          source: "rmi",
+          name: null,
+          country: null,
+          basin: "Deep Basin",
+          source_record: expect.objectContaining({
+            record_id: null,
+            run_id: null,
+            producer: "stitch-frontend",
+            observed_at: expect.any(String),
+            payload: {
+              action: "field_overwrite",
+              field: "basin",
+              value: "Deep Basin",
+              note: "checked the map",
+            },
+          }),
+        }),
+        expect.any(Function),
+        "oil-gas-fields",
+      );
+
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: resourceKeys.fieldSources("oil-gas-fields", 42, "basin"),
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: resourceKeys.detail("oil-gas-fields", 42),
+      });
+
+      // Form closes on success.
+      expect(
+        await screen.findByRole("button", { name: /^edit$/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("sends a null note when the note field is left blank", async () => {
+      const user = userEvent.setup();
+      grantWritePermissions();
+      createSourceForResource.mockResolvedValue({ id: 100, source: "rmi" });
+
+      renderCard();
+      await user.click(screen.getByRole("button"));
+      await user.click(screen.getByRole("button", { name: /^edit$/i }));
+      await user.click(screen.getByRole("button", { name: /add value/i }));
+      await user.type(screen.getByLabelText("New value"), "Deep Basin");
+      await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+      expect(createSourceForResource).toHaveBeenCalledWith(
+        expect.anything(),
+        42,
+        expect.objectContaining({
+          source_record: expect.objectContaining({
+            payload: expect.objectContaining({ note: null }),
+          }),
+        }),
+        expect.any(Function),
+        "oil-gas-fields",
+      );
+    });
+
+    it("surfaces the API error and preserves the draft", async () => {
+      const user = userEvent.setup();
+      grantWritePermissions();
+      createSourceForResource.mockRejectedValue(new Error("overwrite failed"));
+
+      renderCard();
+      await user.click(screen.getByRole("button"));
+      await user.click(screen.getByRole("button", { name: /^edit$/i }));
+      await user.click(screen.getByRole("button", { name: /add value/i }));
+      await user.type(screen.getByLabelText("New value"), "Deep Basin");
+      await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+      expect(await screen.findByText("overwrite failed")).toBeInTheDocument();
+      // Draft is preserved so the user can retry.
+      expect(screen.getByLabelText("New value")).toHaveValue("Deep Basin");
+    });
+
+    it("keeps the Save button disabled until a value is entered", async () => {
+      const user = userEvent.setup();
+      grantWritePermissions();
+      renderCard();
+      await user.click(screen.getByRole("button"));
+      await user.click(screen.getByRole("button", { name: /^edit$/i }));
+      await user.click(screen.getByRole("button", { name: /add value/i }));
+
+      expect(screen.getByRole("button", { name: /^save$/i })).toBeDisabled();
+      await user.type(screen.getByLabelText("New value"), "Deep Basin");
+      expect(
+        screen.getByRole("button", { name: /^save$/i }),
+      ).not.toBeDisabled();
+    });
   });
 });

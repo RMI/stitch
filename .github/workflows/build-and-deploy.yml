@@ -10,6 +10,25 @@ on:
     branches: [main, production]
   workflow_dispatch:
 
+# Serialize per PR (or per pushed ref) so a new commit -- or the 'no-deploy'
+# label event -- supersedes an in-flight deploy for the same target. The group
+# key deliberately omits the event type so 'labeled' and 'synchronize' share a
+# lane and can cancel each other; github.workflow keeps this separate from the
+# node/python check workflows.
+#
+# cancel-in-progress fires for code changes (synchronize/opened/reopened) and for
+# the 'no-deploy' label specifically, but NOT for other label changes: this
+# workflow triggers on every labeled/unlabeled event, and adding an unrelated
+# label (e.g. 'bug') must not interrupt and restart an in-flight deploy. Non-PR
+# events (push/dispatch to main/production) are never cancelled, so they run their
+# migrations to completion.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: >-
+    ${{ github.event_name == 'pull_request'
+    && ((github.event.action != 'labeled' && github.event.action != 'unlabeled')
+    || github.event.label.name == 'no-deploy') }}
+
 jobs:
   # This pipeline deploys per-PR preview environments and needs repository
   # secrets, which the pull_request event withholds from two kinds of PR: PRs
@@ -329,7 +348,7 @@ jobs:
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       full-image-name: ${{ needs.build-entity-linkage-docker-image.outputs.digest-image-name }}
-      container-app-name: ${{ format('{0}-entity-linkage', needs.resolve-context.outputs.deployment-name) }}
+      container-app-name: ${{ format('{0}-el', needs.resolve-context.outputs.deployment-name) }}
       environment-variables: >-
         LOG_LEVEL=info
         AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
@@ -363,7 +382,7 @@ jobs:
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       full-image-name: ${{ needs.build-stitch-llm-docker-image.outputs.digest-image-name }}
-      container-app-name: ${{ format('{0}-stitch-llm', needs.resolve-context.outputs.deployment-name) }}
+      container-app-name: ${{ format('{0}-llm', needs.resolve-context.outputs.deployment-name) }}
       environment-variables: >-
         STITCH_LLM_LOG_LEVEL=info
         AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}

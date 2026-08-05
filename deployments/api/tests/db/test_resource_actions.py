@@ -1142,7 +1142,7 @@ class TestResourcePriorityOverride:
     """A per-field override re-ranks sources, flipping the coalesced winner."""
 
     async def _seed(self, session, user) -> int:
-        # Default priority: wm(2) outranks gem(4), so wm wins by default.
+        # Default priority: wm(2) outranks gem(6), so wm wins by default.
         return await _create_resource_with_sources(
             session,
             user,
@@ -1203,7 +1203,7 @@ class TestFieldSourceValues:
     """Per-field source-value listing, best-priority first."""
 
     async def _seed(self, session, user) -> int:
-        # wm(2) outranks gem(4) by default; llm has no state_province.
+        # wm(2) outranks gem(6) by default; llm has no state_province.
         return await _create_resource_with_sources(
             session,
             user,
@@ -1223,7 +1223,7 @@ class TestFieldSourceValues:
 
         rows = await resource_actions.field_source_values(session, rid, "name")
 
-        # wm(2) < gem(4) < llm(5): winner (wm) first, then in priority order.
+        # wm(2) < gem(6) < llm(7): winner (wm) first, then in priority order.
         assert [(r.source, r.value) for r in rows] == [
             ("wm", "WM Name"),
             ("gem", "GEM Name"),
