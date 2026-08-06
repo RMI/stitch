@@ -232,6 +232,18 @@ function FieldSourcesPanel({
   // reordering the existing sources or adding a new value.
   const canEnterEdit = canReorder || canEdit;
   const orderChanged = isEditing && !arraysEqual(workingOrder, originalOrder);
+  // A background refetch can change the source set while the panel is open,
+  // leaving `workingOrder` (snapshotted when editing began) out of sync with what
+  // a save would target. Compare membership order-independently: a pure
+  // server-side re-order is still saveable, but an added or removed source is not
+  // -- surface a notice and block that stale save so the curator re-opens from
+  // the fresh list.
+  const sourceSetChanged =
+    isEditing &&
+    !arraysEqual(
+      [...workingOrder].sort((a, b) => a - b),
+      [...originalOrder].sort((a, b) => a - b),
+    );
 
   function beginEdit() {
     setWorkingOrder(originalOrder);
@@ -319,7 +331,7 @@ function FieldSourcesPanel({
                 variant="primary"
                 className="px-2 py-1"
                 onClick={handleSaveOrder}
-                disabled={!orderChanged || isSaving}
+                disabled={!orderChanged || isSaving || sourceSetChanged}
               >
                 {isSaving ? "Saving…" : "Save"}
               </Button>
@@ -328,6 +340,11 @@ function FieldSourcesPanel({
         )}
       </div>
       {saveError && <p className="text-sm text-danger">{saveError}</p>}
+      {sourceSetChanged && (
+        <p className="text-sm text-warning">
+          The source list changed. Cancel and re-open to edit the current order.
+        </p>
+      )}
       {isEditing &&
         canEdit &&
         (isAdding ? (

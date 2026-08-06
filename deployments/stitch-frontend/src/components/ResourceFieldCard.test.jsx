@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -235,6 +236,61 @@ describe("ResourceFieldCard", () => {
     expect(call[2]).toBe("basin");
     expect(call[3]).toEqual([10, 20]);
     expect(call[5]).toBe("oil-gas-fields");
+  });
+
+  it("warns and blocks the save when the source set changes mid-edit", async () => {
+    const user = userEvent.setup();
+    useHasPermission.mockReturnValue(true);
+    useFieldSourceValues.mockReturnValue({
+      data: TWO_SOURCES,
+      isLoading: false,
+      isError: false,
+    });
+
+    // A harness whose button forces ResourceFieldCard to re-render -- standing in
+    // for a background refetch -- without unmounting the open panel, so its edit
+    // state survives while `useFieldSourceValues` reports a changed source set.
+    function Harness() {
+      const [, setTick] = useState(0);
+      return (
+        <>
+          <button onClick={() => setTick((tick) => tick + 1)}>refetch</button>
+          <ResourceFieldCard
+            endpoint="oil-gas-fields"
+            resourceId={42}
+            fieldKey="basin"
+            label="Basin"
+            value="Foo Basin"
+            source="wm"
+          />
+        </>
+      );
+    }
+    renderWithQueryClient(<Harness />);
+
+    await user.click(screen.getByRole("button", { name: /Foo Basin/i }));
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    // A source is added under the open panel, so the working order no longer
+    // matches the source set a save would target.
+    useFieldSourceValues.mockReturnValue({
+      data: [
+        ...TWO_SOURCES,
+        {
+          source: "ccr",
+          source_id: 30,
+          value: "Baz Basin",
+          priority: 2,
+          is_override: false,
+        },
+      ],
+      isLoading: false,
+      isError: false,
+    });
+    await user.click(screen.getByRole("button", { name: "refetch" }));
+
+    expect(screen.getByText(/source list changed/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
   it("badges curated (overridden) rows", async () => {
