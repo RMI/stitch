@@ -84,9 +84,9 @@ export const resourceQueries = {
       }),
     enabled: false,
     staleTime: DEFAULT_STALE_TIME,
-    // Keeps showing the previous page's rows/filters while a new
-    // page/filter/sort combination fetches, instead of `data` (and anything
-    // gated on it) flashing away for the duration of the request.
+    // Keeps showing the previous page's rows (dimmed, in ResourcesTable)
+    // while a new page/filter/sort combination fetches, instead of the
+    // table flashing to empty for the duration of the request.
     placeholderData: keepPreviousData,
   }),
 

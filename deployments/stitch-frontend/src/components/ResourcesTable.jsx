@@ -69,7 +69,12 @@ function SortIndicator({ column, sortConfig }) {
   );
 }
 
-export default function ResourcesTable({ resources, sortConfig, onSort }) {
+export default function ResourcesTable({
+  resources,
+  sortConfig,
+  onSort,
+  isFetching,
+}) {
   if (!resources?.length) return null;
 
   function handleSort(key) {
@@ -85,8 +90,11 @@ export default function ResourcesTable({ resources, sortConfig, onSort }) {
   const sorted = resources;
 
   return (
-    <div className="overflow-x-auto rounded-md border border-line bg-panel">
-      <table className="w-full text-sm">
+    <div className="relative overflow-x-auto rounded-md border border-line bg-panel">
+      <table
+        className={`w-full text-sm transition-opacity ${isFetching ? "pointer-events-none opacity-50" : ""}`}
+        aria-busy={isFetching || undefined}
+      >
         <thead className="bg-surface">
           <tr className="border-b border-line text-left text-xs font-semibold tracking-wide text-ink-muted">
             {COLUMNS.map((col) =>
@@ -157,6 +165,18 @@ export default function ResourcesTable({ resources, sortConfig, onSort }) {
           ))}
         </tbody>
       </table>
+      {isFetching && (
+        <div
+          role="status"
+          className="absolute inset-0 flex items-center justify-center"
+        >
+          <span className="sr-only">Updating resources...</span>
+          <span
+            aria-hidden="true"
+            className="h-8 w-8 animate-spin rounded-full border-2 border-line border-t-ink-muted motion-reduce:animate-none"
+          />
+        </div>
+      )}
     </div>
   );
 }
