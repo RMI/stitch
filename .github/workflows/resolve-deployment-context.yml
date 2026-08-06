@@ -57,12 +57,30 @@ jobs:
               esac
               ;;
             pull_request)
+              # Zero-padded PR token, shared by both PR paths so names are uniform and
+              # sort together in the Azure portal (e.g. pr-0042, pr-0200, pr-12345).
+              # The "pr-" prefix (with dash) is required: the API only allows
+              # AUTH_DISABLED=true when ENVIRONMENT starts with "pr-" (see
+              # api/settings.py allows_disabled_auth), and ENVIRONMENT == deployment-name.
+              pr_token="pr-$(printf '%04d' "$PR_NUMBER")"
               if [[ "$BASE_REF" == "production" || "$HEAD_REF" == demo/* ]]; then
                 deployment_lane="staging"
-                deployment_name="$(normalize_name "$HEAD_REF")"
+                # Staging/demo names carry a readable branch tag. The PR number already
+                # guarantees uniqueness; the hash lets a truncated tag be traced back to
+                # its branch. Size the whole name to <=27 chars so appending the longest
+                # container-app suffix ("-api"/"-llm"/"-etl", 4 chars) stays under Azure's
+                # 32-char limit. Deriving the hash from the branch (not the commit/run)
+                # keeps the name stable across every push to the same PR.
+                branch="$(normalize_name "$HEAD_REF")"
+                name_hash="$(printf '%s' "$branch" | sha256sum | cut -c1-4)"
+                prefix="${pr_token}-"
+                suffix="-${name_hash}"
+                tag_budget=$(( 27 - ${#prefix} - ${#suffix} ))
+                tag="$(printf '%s' "$branch" | cut -c1-"$tag_budget" | sed -E 's/-+$//')"
+                deployment_name="${prefix}${tag}${suffix}"
               else
                 deployment_lane="development"
-                deployment_name="pr-$PR_NUMBER"
+                deployment_name="$pr_token"
               fi
               ;;
             *)

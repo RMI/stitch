@@ -7,7 +7,6 @@ import {
   getFieldSourceValues,
   getMergeCandidates,
   getMergeCandidate,
-  getMergeCandidatePreview,
 } from "./api";
 
 export const DEFAULT_STALE_TIME = 60_000;
@@ -51,12 +50,6 @@ export const resourceKeys = {
     endpoint,
     "merge-candidates",
     id,
-  ],
-  preview: (endpoint = "oil-gas-fields", id) => [
-    endpoint,
-    "merge-candidates",
-    id,
-    "preview",
   ],
 };
 
@@ -134,12 +127,6 @@ export const resourceQueries = {
   mergeCandidate: (config, endpoint = "oil-gas-fields", id) => ({
     queryKey: resourceKeys.mergeCandidate(endpoint, id),
     queryFn: (fetcher) => getMergeCandidate(config, id, fetcher, endpoint),
-    enabled: false,
-  }),
-  mergeCandidatePreview: (config, endpoint = "oil-gas-fields", id) => ({
-    queryKey: resourceKeys.preview(endpoint, id),
-    queryFn: (fetcher) =>
-      getMergeCandidatePreview(config, id, fetcher, endpoint),
     enabled: false,
   }),
 };

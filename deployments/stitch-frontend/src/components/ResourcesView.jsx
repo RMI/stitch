@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import { useResources } from "../hooks/useResources";
 import ResourcesTable from "./ResourcesTable";
 import FilterBar from "./FilterBar";
@@ -181,13 +181,11 @@ export default function ResourcesView({ className = "", endpoint }) {
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
             Filters
           </p>
-          {data && (
-            <FilterBar
-              endpoint={endpoint}
-              filters={filters}
-              onFiltersChange={handleFiltersChange}
-            />
-          )}
+          <FilterBar
+            endpoint={endpoint}
+            filters={filters}
+            onFiltersChange={handleFiltersChange}
+          />
         </div>
       </div>
 

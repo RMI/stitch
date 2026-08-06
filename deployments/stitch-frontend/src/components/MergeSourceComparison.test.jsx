@@ -1,65 +1,75 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, within } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useAuth0 } from "@auth0/auth0-react";
-import { auth0TestDefaults, renderWithQueryClient } from "../test/utils";
 import MergeSourceComparison from "./MergeSourceComparison";
-import { getResourceDetail } from "../queries/api";
 
-vi.mock("../queries/api", () => ({
-  getResourceDetail: vi.fn(),
-}));
+const RESOURCE_IDS = [101, 102];
 
-const detailsById = {
-  101: {
-    data: {
-      name: "Burgan",
-      country: "Kuwait",
-      region: "Middle East",
-      basin: "Arabian",
-      state_province: null,
-      discovery_year: 1938,
-    },
+function val(resourceId, value, priority) {
+  return {
+    source: "gem",
+    source_id: priority + 1,
+    value,
+    priority,
+    resource_id: resourceId,
+  };
+}
+
+// Statuses come verbatim from the backend; the component must not re-derive
+// them. "country" encodes the deliberate semantics change: case-different
+// strings are now "different".
+const compare = [
+  {
+    field: "name",
+    status: "match",
+    values: [val(101, "Burgan", 0), val(102, "Burgan", 1)],
   },
-  102: {
-    data: {
-      name: "Burgan",
-      country: "kuwait",
-      region: "Middle East",
-      basin: null,
-      state_province: null,
-      discovery_year: 1938,
-    },
+  {
+    field: "country",
+    status: "different",
+    values: [val(101, "Kuwait", 0), val(102, "kuwait", 1)],
   },
-};
+  {
+    field: "region",
+    status: "match",
+    values: [val(101, "Middle East", 0), val(102, "Middle East", 1)],
+  },
+  {
+    field: "basin",
+    status: "different",
+    values: [val(101, "Arabian", 0)],
+  },
+  { field: "state_province", status: "match", values: [] },
+  {
+    field: "discovery_year",
+    status: "match",
+    values: [val(101, 1938, 0), val(102, 1938, 1)],
+  },
+];
 
-function renderComparison(resourceIds = [101, 102]) {
-  return renderWithQueryClient(
+function renderComparison(props = {}) {
+  return render(
     <MergeSourceComparison
-      endpoint="oil-gas-fields"
-      resourceIds={resourceIds}
+      resourceIds={RESOURCE_IDS}
+      compare={compare}
+      isLoading={false}
+      isError={false}
+      error={null}
+      {...props}
     />,
   );
 }
 
 describe("MergeSourceComparison", () => {
-  beforeEach(() => {
-    vi.mocked(useAuth0).mockReturnValue(auth0TestDefaults);
-    vi.mocked(getResourceDetail).mockImplementation((_config, id) =>
-      Promise.resolve(detailsById[id]),
-    );
-  });
-
-  it("shows one column header per source resource", async () => {
+  it("shows one column header per source resource", () => {
     renderComparison();
 
-    expect(await screen.findByText("Resource #101")).toBeInTheDocument();
+    expect(screen.getByText("Resource #101")).toBeInTheDocument();
     expect(screen.getByText("Resource #102")).toBeInTheDocument();
   });
 
-  it("keeps headers and field labels in place while sources load", () => {
-    vi.mocked(getResourceDetail).mockReturnValue(new Promise(() => {}));
-    renderComparison();
+  it("keeps headers and field labels in place while loading", () => {
+    renderComparison({ compare: undefined, isLoading: true });
 
     expect(screen.getByText("Resource #101")).toBeInTheDocument();
     expect(screen.getByText("Resource #102")).toBeInTheDocument();
@@ -68,64 +78,65 @@ describe("MergeSourceComparison", () => {
     expect(screen.getByText("Region")).toBeInTheDocument();
     expect(screen.getByText("Basin")).toBeInTheDocument();
     expect(screen.getByText("State / Province")).toBeInTheDocument();
-  });
-
-  it("shows a placeholder cell per source for every field while loading", () => {
-    vi.mocked(getResourceDetail).mockReturnValue(new Promise(() => {}));
-    renderComparison();
-
     // 5 core fields x 2 sources
     expect(screen.getAllByTestId("comparison-skeleton-cell")).toHaveLength(10);
+    expect(screen.getByText("Loading comparison…")).toBeInTheDocument();
   });
 
-  it("announces the loading state to screen readers", () => {
-    vi.mocked(getResourceDetail).mockReturnValue(new Promise(() => {}));
+  it("renders backend match status on every cell", () => {
     renderComparison();
 
-    expect(screen.getByText("Loading source resources…")).toBeInTheDocument();
-  });
-
-  it("marks agreeing values as matches on every cell", async () => {
-    renderComparison();
-
-    const row = await screen.findByRole("group", { name: "Name" });
+    const row = screen.getByRole("group", { name: "Name" });
     expect(within(row).getAllByText("Match")).toHaveLength(2);
   });
 
-  it("marks case-different string values as matches", async () => {
+  it("renders case-different strings as differing, per backend status", () => {
     renderComparison();
 
-    const row = await screen.findByRole("group", { name: "Country" });
-    expect(within(row).getAllByText("Match")).toHaveLength(2);
+    const row = screen.getByRole("group", { name: "Country" });
+    expect(within(row).getAllByText("Differs")).toHaveLength(2);
   });
 
-  it("grays the empty cell and marks the populated one as differing", async () => {
+  it("grays a cell whose resource has no value and keeps backend status on the rest", () => {
     renderComparison();
 
-    const row = await screen.findByRole("group", { name: "Basin" });
+    const row = screen.getByRole("group", { name: "Basin" });
     expect(within(row).getAllByText("Differs")).toHaveLength(1);
     expect(within(row).getAllByText("No value")).toHaveLength(1);
     expect(within(row).getByText("—")).toBeInTheDocument();
   });
 
-  it("renders all-empty rows as neutral with no judgment", async () => {
+  it("renders rows with no values as neutral with no judgment", () => {
     renderComparison();
 
-    const row = await screen.findByRole("group", {
-      name: "State / Province",
-    });
+    const row = screen.getByRole("group", { name: "State / Province" });
     expect(within(row).getAllByText("No value")).toHaveLength(2);
     expect(within(row).queryByText("Match")).not.toBeInTheDocument();
     expect(within(row).queryByText("Differs")).not.toBeInTheDocument();
+  });
+
+  it("treats an empty string as a real value with a real status", () => {
+    renderComparison({
+      compare: [
+        {
+          field: "name",
+          status: "match",
+          values: [val(101, "", 0), val(102, "", 1)],
+        },
+      ],
+    });
+
+    const row = screen.getByRole("group", { name: "Name" });
+    expect(within(row).getAllByText("Match")).toHaveLength(2);
+    expect(within(row).queryByText("No value")).not.toBeInTheDocument();
+    // Nothing visible to print, so the dash is display-only.
+    expect(within(row).getAllByText("—")).toHaveLength(2);
   });
 
   it("hides other attributes until the accordion is expanded", async () => {
     const user = userEvent.setup();
     renderComparison();
 
-    // "Burgan" is a fetched value, so it only appears once the sources load.
-    // Headers render during loading and are no longer a loaded signal.
-    await screen.findAllByText("Burgan");
     expect(
       screen.queryByRole("group", { name: "Discovery Year" }),
     ).not.toBeInTheDocument();
@@ -136,21 +147,29 @@ describe("MergeSourceComparison", () => {
     expect(within(row).getAllByText("Match")).toHaveLength(2);
   });
 
-  it("shows a note instead of fetching when fewer than two resources", () => {
-    renderComparison([101]);
+  it("shows a note when fewer than two resources", () => {
+    renderComparison({ resourceIds: [101] });
 
     expect(
       screen.getByText(
         "At least two source resources are required to compare.",
       ),
     ).toBeInTheDocument();
-    expect(getResourceDetail).not.toHaveBeenCalled();
   });
 
-  it("surfaces fetch errors", async () => {
-    vi.mocked(getResourceDetail).mockRejectedValue(new Error("boom"));
-    renderComparison();
+  it("surfaces detail load errors", () => {
+    renderComparison({
+      compare: undefined,
+      isError: true,
+      error: new Error("boom"),
+    });
 
-    expect(await screen.findByText("boom")).toBeInTheDocument();
+    expect(screen.getByText("boom")).toBeInTheDocument();
+  });
+
+  it("shows a fallback when no comparison is available", () => {
+    renderComparison({ compare: undefined });
+
+    expect(screen.getByText("No comparison available.")).toBeInTheDocument();
   });
 });

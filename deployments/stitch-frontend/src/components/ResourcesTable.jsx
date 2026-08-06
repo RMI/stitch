@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import SourceMixBar from "./SourceMixBar";
 import { getResourceField } from "../utils/resourceDisplay";
 import { getCountryName } from "../constants/countries";

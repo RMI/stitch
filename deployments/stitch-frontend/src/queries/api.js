@@ -133,40 +133,18 @@ async function getErrorDetail(response) {
   }
 }
 
-export async function createResource(
+export async function createSourceForResource(
   config,
-  payload,
+  resourceId,
+  sourcePayload,
   fetcher,
   endpoint = "oil-gas-fields",
 ) {
-  const url = `${config.apiBaseUrl}/${endpoint}/`;
+  const url = `${config.apiBaseUrl}/${endpoint}/${resourceId}/sources`;
   const response = await fetcher(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    const detail = await getErrorDetail(response);
-    const error = new Error(detail);
-    error.status = response.status;
-    throw error;
-  }
-
-  return await response.json();
-}
-
-export async function createMergeCandidate(
-  config,
-  resource_ids,
-  fetcher,
-  endpoint = "oil-gas-fields",
-) {
-  const url = `${config.apiBaseUrl}/${endpoint}/merge-candidates`;
-  const response = await fetcher(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ resource_ids }),
+    body: JSON.stringify(sourcePayload),
   });
 
   if (!response.ok) {
@@ -232,24 +210,6 @@ export async function reviewMergeCandidate(
   if (!response.ok) {
     const detail = await getErrorDetail(response);
     const error = new Error(detail);
-    error.status = response.status;
-    throw error;
-  }
-
-  return await response.json();
-}
-
-export async function getMergeCandidatePreview(
-  config,
-  id,
-  fetcher,
-  endpoint = "oil-gas-fields",
-) {
-  const url = `${config.apiBaseUrl}/${endpoint}/merge-candidates/${id}/preview`;
-  const response = await fetcher(url);
-
-  if (!response.ok) {
-    const error = new Error(`HTTP error! status: ${response.status}`);
     error.status = response.status;
     throw error;
   }

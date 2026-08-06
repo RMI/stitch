@@ -1,4 +1,4 @@
-import { Routes, Route, Link, NavLink } from "react-router-dom";
+import { Routes, Route, Link, NavLink } from "react-router";
 import EnvironmentBanner from "./components/EnvironmentBanner";
 import HomePage from "./pages/HomePage";
 import ResourceDetailPage from "./pages/ResourceDetailPage";
