@@ -1447,6 +1447,27 @@ class TestSetFieldSourcePriority:
             )
 
     @pytest.mark.anyio
+    async def test_rejects_reorder_without_read_access_to_all_sources(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        # Reordering rewrites the field's whole override set, so a caller not
+        # licensed to read every source must be refused -- defense-in-depth behind
+        # the route's all-source-read requirement.
+        session = seeded_integration_session
+        rid = await self._seed(session, test_user)
+        (gem_pk,) = await _source_pks(session, rid, "gem")
+        (wm_pk,) = await _source_pks(session, rid, "wm")
+        with pytest.raises(InvalidActionError):
+            await resource_actions.set_field_source_priority(
+                session,
+                test_user,
+                rid,
+                "name",
+                [gem_pk, wm_pk],
+                licensed_sources={"gem", "wm"},  # not the full source set
+            )
+
+    @pytest.mark.anyio
     async def test_new_source_ranks_last_after_curation(
         self, seeded_integration_session: AsyncSession, test_user: User
     ):

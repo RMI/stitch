@@ -11,6 +11,7 @@ from stitch.auth.permissions import (
     RESOURCE_READ,
     RESOURCE_WRITE,
     SOURCE_READ_GEM,
+    SOURCE_READ_PERMISSIONS,
     SOURCE_WRITE,
 )
 
@@ -88,6 +89,15 @@ def _source_payload() -> dict:
             "/oil-gas-fields/1/fields/basin/sources/priority",
             (RESOURCE_READ,),
             RESOURCE_WRITE,
+            {"ordered_source_pks": [1, 2]},
+        ),
+        # Reordering also requires read access to every source, so holding all but
+        # one still 403s on the missing source-read permission.
+        (
+            "put",
+            "/oil-gas-fields/1/fields/basin/sources/priority",
+            (RESOURCE_WRITE, *(SOURCE_READ_PERMISSIONS - {SOURCE_READ_GEM})),
+            SOURCE_READ_GEM,
             {"ordered_source_pks": [1, 2]},
         ),
         # create-and-attach requires BOTH source:write and resource:write

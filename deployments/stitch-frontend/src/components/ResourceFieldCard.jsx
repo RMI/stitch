@@ -5,7 +5,10 @@ import { FieldCard } from "./FieldCard";
 import Button from "./Button";
 import Input from "./Input";
 import { useFieldSourceValues } from "../hooks/useResources";
-import { useHasPermission } from "../hooks/usePermissions";
+import {
+  useHasPermission,
+  useHasAllPermissions,
+} from "../hooks/usePermissions";
 import { useConfig } from "../config/useConfig";
 import { createAuthenticatedFetcher } from "../auth/api";
 import {
@@ -14,6 +17,7 @@ import {
 } from "../queries/api";
 import { resourceKeys } from "../queries/resources";
 import {
+  SOURCES,
   SOURCE_COLORS,
   SOURCE_LABELS,
   UNKNOWN_SOURCE_LABEL,
@@ -21,6 +25,12 @@ import {
 } from "../constants/sourceMeta";
 
 const RESOURCE_WRITE = "resource:write";
+// Reordering rewrites the whole per-field override set, so the API requires read
+// access to every source (not just this resource's) on top of resource:write.
+// Gate the affordance the same way so it only appears to curators who can save.
+const ALL_SOURCE_READ_PERMISSIONS = SOURCES.map(
+  (source) => `source:read:${source}`,
+);
 
 function arraysEqual(a, b) {
   return a.length === b.length && a.every((value, index) => value === b[index]);
@@ -206,6 +216,7 @@ function FieldSourcesPanel({
   fieldKey,
 }) {
   const canWriteResource = useHasPermission(RESOURCE_WRITE);
+  const canReadAllSources = useHasAllPermissions(ALL_SOURCE_READ_PERMISSIONS);
   const config = useConfig();
   const { getAccessTokenSilently } = useAuth0();
   const queryClient = useQueryClient();
@@ -226,8 +237,11 @@ function FieldSourcesPanel({
     [sources],
   );
 
-  // Reordering needs resource:write and at least two sources to swap.
-  const canReorder = canWriteResource && sources.length > 1;
+  // Reordering needs resource:write, read access to every source (so the save
+  // acts on a complete picture -- see the priority route), and at least two
+  // sources to swap.
+  const canReorder =
+    canWriteResource && canReadAllSources && sources.length > 1;
   // The Edit affordance opens the shared edit mode for either capability:
   // reordering the existing sources or adding a new value.
   const canEnterEdit = canReorder || canEdit;

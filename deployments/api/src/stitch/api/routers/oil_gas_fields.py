@@ -8,6 +8,7 @@ from stitch.auth.permissions import (
     MERGE_CANDIDATE_REVIEW,
     RESOURCE_READ,
     RESOURCE_WRITE,
+    SOURCE_READ_PERMISSIONS,
     SOURCE_WRITE,
 )
 
@@ -284,10 +285,17 @@ async def get_field_source_values(
     )
 
 
+# Reordering rewrites the whole per-field override set, so a curator who cannot
+# read every source could otherwise clobber rankings for sources they can't see.
+# Require read access to *all* sources (not just this resource's) on top of write
+# -- matching the curator role in Auth0 -- so the write always acts on a complete
+# picture. (Scoped to this endpoint for now; other write actions to follow.)
 @router.put(
     "/{id}/fields/{field}/sources/priority",
     response_model=list[OGFieldSourceValueView],
-    dependencies=[Depends(require_permissions(RESOURCE_WRITE))],
+    dependencies=[
+        Depends(require_permissions(RESOURCE_WRITE, *SOURCE_READ_PERMISSIONS))
+    ],
 )
 async def set_field_source_priority(
     *,

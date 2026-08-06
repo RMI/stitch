@@ -4,7 +4,10 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ResourceFieldCard from "./ResourceFieldCard";
 import { useFieldSourceValues } from "../hooks/useResources";
-import { useHasPermission } from "../hooks/usePermissions";
+import {
+  useHasPermission,
+  useHasAllPermissions,
+} from "../hooks/usePermissions";
 import {
   updateFieldSourcePriority,
   createSourceForResource,
@@ -18,6 +21,7 @@ vi.mock("../hooks/useResources", () => ({
 }));
 vi.mock("../hooks/usePermissions", () => ({
   useHasPermission: vi.fn(),
+  useHasAllPermissions: vi.fn(),
 }));
 vi.mock("../queries/api", () => ({
   updateFieldSourcePriority: vi.fn(),
@@ -76,6 +80,7 @@ describe("ResourceFieldCard", () => {
     });
     // Default: no permissions, so the edit affordance stays hidden.
     useHasPermission.mockReturnValue(false);
+    useHasAllPermissions.mockReturnValue(false);
     updateFieldSourcePriority.mockResolvedValue([]);
   });
 
@@ -204,9 +209,39 @@ describe("ResourceFieldCard", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("does not offer reorder controls without read access to all sources", async () => {
+    const user = userEvent.setup();
+    // Curator writes but is missing at least one source:read, so reordering (which
+    // rewrites every source's ranking) is withheld even with two sources.
+    grantWritePermissions();
+    useHasAllPermissions.mockReturnValue(false);
+    useFieldSourceValues.mockReturnValue({
+      data: TWO_SOURCES,
+      isLoading: false,
+      isError: false,
+    });
+    renderCard();
+    await openPanel(user);
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    // Add is still available (it needs only source:write + resource:write)...
+    expect(
+      screen.getByRole("button", { name: /add value/i }),
+    ).toBeInTheDocument();
+    // ...but the reorder affordances are withheld.
+    expect(
+      screen.queryByRole("button", { name: `Move ${SOURCE_LABELS.gem} up` }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Save" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("reorders sources and saves the new priority order", async () => {
     const user = userEvent.setup();
     useHasPermission.mockReturnValue(true);
+    useHasAllPermissions.mockReturnValue(true);
     useFieldSourceValues.mockReturnValue({
       data: TWO_SOURCES,
       isLoading: false,
@@ -241,6 +276,7 @@ describe("ResourceFieldCard", () => {
   it("warns and blocks the save when the source set changes mid-edit", async () => {
     const user = userEvent.setup();
     useHasPermission.mockReturnValue(true);
+    useHasAllPermissions.mockReturnValue(true);
     useFieldSourceValues.mockReturnValue({
       data: TWO_SOURCES,
       isLoading: false,

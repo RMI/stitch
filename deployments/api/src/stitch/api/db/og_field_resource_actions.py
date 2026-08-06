@@ -54,6 +54,7 @@ from .utils import (
 
 
 _FILTER_OPTION_FIELDS: frozenset[str] = frozenset(get_args(FilterOptionField))
+_ALL_SOURCES: frozenset[OGSISrcKey] = frozenset(get_args(OGSISrcKey))
 
 
 async def query(
@@ -221,6 +222,16 @@ async def set_field_source_priority(
         )
     if len(set(ordered_source_pks)) != len(ordered_source_pks):
         raise InvalidActionError("ordered_source_pks contains duplicate ids.")
+
+    # Belt-and-suspenders behind the route's all-source-read requirement: this
+    # write replaces the field's entire override set, so a caller who cannot read
+    # every source could clobber rankings for sources they can't see. Require the
+    # full set here too. (Revisit when partial-license reordering is supported.)
+    if licensed_sources is not None and set(licensed_sources) != _ALL_SOURCES:
+        raise InvalidActionError(
+            "You must have read permissions for all sources to reorder a field's "
+            "sources."
+        )
 
     # Eligibility + current effective order come from the same ranked read the GET
     # endpoint uses: licensed sources with a non-empty value for the field,
