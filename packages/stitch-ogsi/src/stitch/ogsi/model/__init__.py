@@ -8,7 +8,7 @@ from stitch.models import (
     SourceRecord,
 )
 
-from .og_field import OilGasFieldBase, OilGasOwner, OilGasOperator
+from .og_field import OGFieldName, OilGasFieldBase, OilGasOwner, OilGasOperator
 from .types import (
     ALBSrcKey,
     BCSrcKey,
@@ -44,6 +44,7 @@ __all__ = [
     "BCSourceView",
     "SourceRecord",
     "LocationType",
+    "OGFieldName",
     "OilGasOwner",
     "OilGasOperator",
     "OGSISrcKey",

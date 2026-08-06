@@ -43,6 +43,7 @@ from stitch.api.permissions import licensed_sources
 from stitch.ogsi.model import (
     OGFieldDetailView,
     OGFieldListItemView,
+    OGFieldName,
     OGFieldResource,
     OGFieldResourceView,
     OGFieldSource,
@@ -273,7 +274,7 @@ async def get_field_source_values(
     user: CurrentUser,
     claims: Claims,
     id: int,
-    field: str,
+    field: OGFieldName,
 ) -> list[OGFieldSourceValueView]:
     return await resource_actions.field_source_values(
         session=uow.session,
@@ -294,7 +295,7 @@ async def set_field_source_priority(
     user: CurrentUser,
     claims: Claims,
     id: int,
-    field: str,
+    field: OGFieldName,
     request: SetFieldPriorityRequest,
 ) -> list[OGFieldSourceValueView]:
     try:
