@@ -6,7 +6,10 @@ import Button from "../components/Button";
 import MergeSourceComparison from "../components/MergeSourceComparison";
 import MergedResourceView from "../components/MergedResourceView";
 import { useMergeCandidateName } from "../hooks/useMergeCandidateName";
+import { useMergedResourceDetail } from "../hooks/useMergedResourceDetail";
 import { useMergeCandidates, useMergeCandidate } from "../hooks/useResources";
+import { pickCompareName } from "../utils/candidateCompare";
+import { isEmptyValue } from "../utils/mergeComparison";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { reviewMergeCandidate } from "../queries/api";
 import { useConfig } from "../config/useConfig";
@@ -241,12 +244,30 @@ function CandidateDecisionPanel({
 }) {
   const {
     data: detailCandidate,
+    isLoading: candidateLoading,
     isError: candidateError,
     error: candidateErrorObj,
   } = candidateQuery;
 
   const candidate = detailCandidate ?? listCandidate;
-  const name = useMergeCandidateName(ENDPOINT, candidate?.resource_ids);
+  // The compare-derived name is authoritative once the detail lands. Until
+  // then the queue's name stands in — it reads the same cached query the
+  // queue items already issued, so no extra requests — because falling back
+  // to the id would flash "Candidate #N" on first selection.
+  const queueName = useMergeCandidateName(ENDPOINT, candidate?.resource_ids);
+  // Post-merge, the source resources are null shells and compare carries no
+  // name, so the merged resource is the authoritative source. It shares the
+  // cache entry MergedResourceView fetches, so this adds no requests.
+  const { data: mergedResource } = useMergedResourceDetail(
+    ENDPOINT,
+    candidate?.merged_resource_id,
+  );
+  const mergedName = isEmptyValue(mergedResource?.data?.name)
+    ? null
+    : mergedResource.data.name;
+  const name =
+    mergedName ??
+    (detailCandidate ? pickCompareName(detailCandidate.compare) : queueName);
 
   if (!selectedId) {
     return (
@@ -322,8 +343,11 @@ function CandidateDecisionPanel({
         />
       ) : (
         <MergeSourceComparison
-          endpoint={ENDPOINT}
           resourceIds={candidate.resource_ids}
+          compare={detailCandidate?.compare}
+          isLoading={candidateLoading}
+          isError={candidateError}
+          error={candidateErrorObj}
         />
       )}
 
@@ -381,9 +405,10 @@ export default function MergeCandidateReviewPage() {
     selectedId,
     Boolean(selectedId),
   );
-  // The list and detail endpoints return the same schema, so the already-loaded
-  // queue item stands in until the detail query lands. Without this, review
-  // actions dead-click while the detail is in flight.
+  // The detail endpoint layers `compare` on top of the list schema, so the
+  // already-loaded queue item stands in for everything except the comparison
+  // until the detail query lands. Without this, review actions dead-click
+  // while the detail is in flight.
   const listCandidate =
     candidates?.find((item) => item.id === selectedId) ?? null;
   const candidate = candidateQuery.data ?? listCandidate;
