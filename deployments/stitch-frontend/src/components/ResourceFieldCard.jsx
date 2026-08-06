@@ -225,6 +225,10 @@ function FieldSourcesPanel({
   // Keep the value form hidden until the curator clicks "+", to reduce clutter.
   const [isAdding, setIsAdding] = useState(false);
   const [workingOrder, setWorkingOrder] = useState([]);
+  // The order captured when editing began. `orderChanged` and the stale-panel
+  // check both compare against this snapshot -- not the live `originalOrder` --
+  // so a background refetch can't be mistaken for a user edit.
+  const [baselineOrder, setBaselineOrder] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
@@ -245,22 +249,19 @@ function FieldSourcesPanel({
   // The Edit affordance opens the shared edit mode for either capability:
   // reordering the existing sources or adding a new value.
   const canEnterEdit = canReorder || canEdit;
-  const orderChanged = isEditing && !arraysEqual(workingOrder, originalOrder);
-  // A background refetch can change the source set while the panel is open,
-  // leaving `workingOrder` (snapshotted when editing began) out of sync with what
-  // a save would target. Compare membership order-independently: a pure
-  // server-side re-order is still saveable, but an added or removed source is not
-  // -- surface a notice and block that stale save so the curator re-opens from
-  // the fresh list.
-  const sourceSetChanged =
-    isEditing &&
-    !arraysEqual(
-      [...workingOrder].sort((a, b) => a - b),
-      [...originalOrder].sort((a, b) => a - b),
-    );
+  // Did the curator actually reorder? Compared against the edit-start snapshot, so
+  // a background refetch shifting `originalOrder` can't spuriously enable Save.
+  const orderChanged = isEditing && !arraysEqual(workingOrder, baselineOrder);
+  // Did the underlying sources diverge from what the curator started editing --
+  // an added/removed source, or someone else's re-order of the same set? Either
+  // way the working order is stale and a save would overwrite newer state, so
+  // surface a notice and block it until the curator re-opens from the fresh list.
+  const sourcesChanged =
+    isEditing && !arraysEqual(baselineOrder, originalOrder);
 
   function beginEdit() {
     setWorkingOrder(originalOrder);
+    setBaselineOrder(originalOrder);
     setSaveError("");
     setIsEditing(true);
   }
@@ -345,7 +346,7 @@ function FieldSourcesPanel({
                 variant="primary"
                 className="px-2 py-1"
                 onClick={handleSaveOrder}
-                disabled={!orderChanged || isSaving || sourceSetChanged}
+                disabled={!orderChanged || isSaving || sourcesChanged}
               >
                 {isSaving ? "Saving…" : "Save"}
               </Button>
@@ -354,7 +355,7 @@ function FieldSourcesPanel({
         )}
       </div>
       {saveError && <p className="text-sm text-danger">{saveError}</p>}
-      {sourceSetChanged && (
+      {sourcesChanged && (
         <p className="text-sm text-warning">
           The source list changed. Cancel and re-open to edit the current order.
         </p>

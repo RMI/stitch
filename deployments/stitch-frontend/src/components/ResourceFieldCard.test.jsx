@@ -70,6 +70,26 @@ async function openPanel(user) {
   await user.click(screen.getByRole("button", { name: /Foo Basin/i }));
 }
 
+// Renders the card plus a button that forces a parent re-render -- standing in for
+// a background refetch -- without unmounting the open panel, so its edit state
+// survives while `useFieldSourceValues` reports new data.
+function RefetchHarness() {
+  const [, setTick] = useState(0);
+  return (
+    <>
+      <button onClick={() => setTick((tick) => tick + 1)}>refetch</button>
+      <ResourceFieldCard
+        endpoint="oil-gas-fields"
+        resourceId={42}
+        fieldKey="basin"
+        label="Basin"
+        value="Foo Basin"
+        source="wm"
+      />
+    </>
+  );
+}
+
 describe("ResourceFieldCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -283,26 +303,7 @@ describe("ResourceFieldCard", () => {
       isError: false,
     });
 
-    // A harness whose button forces ResourceFieldCard to re-render -- standing in
-    // for a background refetch -- without unmounting the open panel, so its edit
-    // state survives while `useFieldSourceValues` reports a changed source set.
-    function Harness() {
-      const [, setTick] = useState(0);
-      return (
-        <>
-          <button onClick={() => setTick((tick) => tick + 1)}>refetch</button>
-          <ResourceFieldCard
-            endpoint="oil-gas-fields"
-            resourceId={42}
-            fieldKey="basin"
-            label="Basin"
-            value="Foo Basin"
-            source="wm"
-          />
-        </>
-      );
-    }
-    renderWithQueryClient(<Harness />);
+    renderWithQueryClient(<RefetchHarness />);
 
     await user.click(screen.getByRole("button", { name: /Foo Basin/i }));
     await user.click(screen.getByRole("button", { name: "Edit" }));
@@ -320,6 +321,34 @@ describe("ResourceFieldCard", () => {
           is_override: false,
         },
       ],
+      isLoading: false,
+      isError: false,
+    });
+    await user.click(screen.getByRole("button", { name: "refetch" }));
+
+    expect(screen.getByText(/source list changed/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("blocks the save when the same sources are reordered server-side mid-edit", async () => {
+    const user = userEvent.setup();
+    useHasPermission.mockReturnValue(true);
+    useHasAllPermissions.mockReturnValue(true);
+    useFieldSourceValues.mockReturnValue({
+      data: TWO_SOURCES,
+      isLoading: false,
+      isError: false,
+    });
+    renderWithQueryClient(<RefetchHarness />);
+
+    await user.click(screen.getByRole("button", { name: /Foo Basin/i }));
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    // Someone else reorders the *same* sources while the panel is open and the
+    // curator has not touched anything. Save must not spuriously enable (which
+    // would overwrite the newer order with a stale snapshot); the notice shows.
+    useFieldSourceValues.mockReturnValue({
+      data: [TWO_SOURCES[1], TWO_SOURCES[0]],
       isLoading: false,
       isError: false,
     });
