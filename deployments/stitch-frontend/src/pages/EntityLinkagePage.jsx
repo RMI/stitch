@@ -1,8 +1,13 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useConfig } from "../config/useConfig";
 import StructuredDataView from "../components/StructuredDataView";
 import Button from "../components/Button";
+import StateBadge from "../components/StateBadge";
+
+// While a run is active the status endpoint is polled on this cadence so the
+// page reflects progress without the user clicking "Refresh status".
+const POLL_INTERVAL_MS = 2000;
 
 function formatCount(count, singular, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
@@ -19,6 +24,16 @@ function getResultDetails(result) {
 
   const { match_groups: _matchGroups, ...details } = result;
   return details;
+}
+
+async function parseJsonResponse(response) {
+  const text = await response.text();
+
+  try {
+    return text ? JSON.parse(text) : null;
+  } catch {
+    return { raw: text };
+  }
 }
 
 function MatchGroupsSummary({ groups }) {
@@ -62,32 +77,59 @@ function MatchGroupsSummary({ groups }) {
   );
 }
 
-function RunResult({ result }) {
-  const matchGroups = getMatchGroups(result);
-  const details = getResultDetails(result);
-
-  if (!result) {
-    return <p className="text-sm text-ink-muted">No run has completed yet.</p>;
+function RunResult({ record }) {
+  if (!record) {
+    return (
+      <p className="text-sm text-ink-muted">
+        No run started yet. Start a run to begin.
+      </p>
+    );
   }
+
+  const result = record.result;
 
   return (
     <div className="space-y-5">
-      <section>
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-base font-semibold text-ink">Match groups</h3>
-          <span className="text-sm font-medium text-ink-muted">
-            {formatCount(matchGroups.length, "group")}
-          </span>
-        </div>
+      {result ? (
+        <>
+          <section>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h3 className="text-base font-semibold text-ink">Match groups</h3>
+              <span className="text-sm font-medium text-ink-muted">
+                {formatCount(getMatchGroups(result).length, "group")}
+              </span>
+            </div>
 
-        <div className="mt-3">
-          <MatchGroupsSummary groups={matchGroups} />
+            <div className="mt-3">
+              <MatchGroupsSummary groups={getMatchGroups(result)} />
+            </div>
+          </section>
+
+          <section className="border-t border-line pt-4">
+            <h3 className="mb-3 text-base font-semibold text-ink">
+              Run details
+            </h3>
+            <StructuredDataView
+              data={getResultDetails(result)}
+              label="Entity linkage run details"
+            />
+          </section>
+        </>
+      ) : record.state === "running" ? (
+        <p className="text-sm text-ink-muted">
+          Run in progress — status refreshes automatically.
+        </p>
+      ) : record.state === "failed" ? (
+        <div className="rounded-md border border-danger/25 bg-danger-soft p-3 text-sm text-danger">
+          {record.error || "Run failed."}
         </div>
-      </section>
+      ) : (
+        <p className="text-sm text-ink-muted">No result available.</p>
+      )}
 
       <section className="border-t border-line pt-4">
-        <h3 className="mb-3 text-base font-semibold text-ink">Run details</h3>
-        <StructuredDataView data={details} label="Entity linkage run details" />
+        <h3 className="mb-2 text-sm font-semibold text-ink">Job status</h3>
+        <StructuredDataView data={record} label="Entity linkage job status" />
       </section>
     </div>
   );
@@ -96,60 +138,125 @@ function RunResult({ result }) {
 export default function EntityLinkagePage() {
   const config = useConfig();
   const { getAccessTokenSilently } = useAuth0();
+  const baseUrl = config.entityLinkageBaseUrl;
 
   const [applyMerges, setApplyMerges] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
+  const [starting, setStarting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [record, setRecord] = useState(null);
   const [error, setError] = useState(null);
 
+  const getToken = useCallback(
+    () =>
+      getAccessTokenSilently({
+        authorizationParams: { audience: config.auth0.audience },
+      }),
+    [getAccessTokenSilently, config.auth0.audience],
+  );
+
+  // Status is permission-gated (unlike the ETL service's open /status), so the
+  // bearer token is sent on the poll as well as the start.
+  const fetchStatus = useCallback(
+    async ({ manual = false } = {}) => {
+      if (manual) {
+        setRefreshing(true);
+        setError(null);
+      }
+
+      try {
+        const token = await getToken();
+        const response = await fetch(`${baseUrl}/oil-gas-fields/link/status`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const parsed = await parseJsonResponse(response);
+
+        if (response.status === 404) {
+          setRecord(null);
+          if (manual) {
+            setError({
+              status: 404,
+              message: "No linkage run has been started yet.",
+              body: parsed,
+            });
+          }
+          return;
+        }
+
+        if (!response.ok) {
+          if (manual) setError({ status: response.status, body: parsed });
+          return;
+        }
+
+        setRecord(parsed);
+      } catch (err) {
+        if (manual) {
+          setError({
+            status: null,
+            body: err instanceof Error ? err.message : String(err),
+          });
+        }
+      } finally {
+        if (manual) setRefreshing(false);
+      }
+    },
+    [baseUrl, getToken],
+  );
+
+  // Auto-poll while a run is active; stop once it reaches a terminal state.
+  useEffect(() => {
+    if (record?.state !== "running") return undefined;
+
+    const id = setInterval(() => {
+      fetchStatus();
+    }, POLL_INTERVAL_MS);
+
+    return () => clearInterval(id);
+  }, [record?.state, fetchStatus]);
+
   async function handleStart() {
-    setLoading(true);
+    setStarting(true);
     setError(null);
-    setResult(null);
 
     try {
-      const token = await getAccessTokenSilently({
-        authorizationParams: { audience: config.auth0.audience },
-      });
+      const token = await getToken();
 
-      const response = await fetch(`${config.entityLinkageBaseUrl}/start`, {
+      const response = await fetch(`${baseUrl}/oil-gas-fields/link`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          apply_merges: applyMerges,
-        }),
+        body: JSON.stringify({ apply_merges: applyMerges }),
       });
 
-      const text = await response.text();
+      const parsed = await parseJsonResponse(response);
 
-      let parsed;
-      try {
-        parsed = text ? JSON.parse(text) : null;
-      } catch {
-        parsed = { raw: text };
-      }
-
-      if (!response.ok) {
+      if (response.status === 409) {
         setError({
-          status: response.status,
+          status: 409,
+          message: "A run is already in progress — refresh status to check.",
           body: parsed,
         });
         return;
       }
 
-      setResult(parsed);
+      if (!response.ok) {
+        setError({ status: response.status, body: parsed });
+        return;
+      }
+
+      setRecord(parsed);
     } catch (err) {
       setError({
         status: null,
         body: err instanceof Error ? err.message : String(err),
       });
     } finally {
-      setLoading(false);
+      setStarting(false);
     }
   }
+
+  const isRunning = record?.state === "running";
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -157,9 +264,13 @@ export default function EntityLinkagePage() {
         <p className="text-xs font-semibold uppercase tracking-wide text-primary">
           Batch workflow
         </p>
-        <h1 className="mt-1 text-3xl font-semibold text-ink">Entity Linkage</h1>
+        <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2">
+          <h1 className="text-3xl font-semibold text-ink">Entity Linkage</h1>
+          <StateBadge state={record?.state} />
+        </div>
         <p className="mt-2 text-sm text-ink-muted">
-          Start an entity-linkage run and review the result.
+          Start an entity-linkage run and review the result. The run happens in
+          the background — only one run may be active at a time.
         </p>
       </div>
 
@@ -174,9 +285,20 @@ export default function EntityLinkagePage() {
           <span>Initiate merges</span>
         </label>
 
-        <div className="mt-4">
-          <Button onClick={handleStart} disabled={loading} variant="primary">
-            {loading ? "Running…" : "Start run"}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            onClick={handleStart}
+            disabled={starting || isRunning}
+            variant="primary"
+          >
+            {starting ? "Starting…" : "Start run"}
+          </Button>
+          <Button
+            onClick={() => fetchStatus({ manual: true })}
+            disabled={refreshing}
+            variant="secondary"
+          >
+            {refreshing ? "Refreshing…" : "Refresh status"}
           </Button>
         </div>
       </div>
@@ -185,7 +307,13 @@ export default function EntityLinkagePage() {
         <section className="mb-6">
           <h2 className="mb-2 text-lg font-semibold text-ink">Run error</h2>
           <div className="rounded-md border border-danger/25 bg-danger-soft p-4 text-sm text-danger">
-            <StructuredDataView data={error} label="Entity linkage error" />
+            {error.message ? (
+              <p className="mb-2 font-medium">{error.message}</p>
+            ) : null}
+            <StructuredDataView
+              data={{ status: error.status, response: error.body }}
+              label="Entity linkage error"
+            />
           </div>
         </section>
       ) : null}
@@ -193,7 +321,7 @@ export default function EntityLinkagePage() {
       <section>
         <h2 className="mb-2 text-lg font-semibold text-ink">Run result</h2>
         <div className="rounded-md border border-line bg-panel p-4">
-          <RunResult result={result} />
+          <RunResult record={record} />
         </div>
       </section>
     </div>
