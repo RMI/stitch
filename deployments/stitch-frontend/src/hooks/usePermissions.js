@@ -32,3 +32,14 @@ export function useHasPermission(permission) {
   const { data } = usePermissions();
   return Array.isArray(data) && data.includes(permission);
 }
+
+// True only once claims have loaded and include every listed permission. Defaults
+// to false while loading or on error, so gated controls stay hidden until
+// confirmed.
+export function useHasAllPermissions(permissions) {
+  const { data } = usePermissions();
+  return (
+    Array.isArray(data) &&
+    permissions.every((permission) => data.includes(permission))
+  );
+}
