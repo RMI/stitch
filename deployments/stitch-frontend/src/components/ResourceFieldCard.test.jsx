@@ -5,7 +5,6 @@ import { renderWithQueryClient } from "../test/utils";
 import ResourceFieldCard from "./ResourceFieldCard";
 import { useFieldSourceValues } from "../hooks/useResources";
 import { useHasPermission } from "../hooks/usePermissions";
-import { resourceKeys } from "../queries/resources";
 import * as apiModule from "../queries/api";
 import { SOURCE_LABELS } from "../constants/sourceMeta";
 
@@ -262,7 +261,7 @@ describe("ResourceFieldCard", () => {
       // A save can change the coalesced winning value anywhere it appears
       // (list rows, detail, filter options), so the whole endpoint refreshes.
       expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: resourceKeys.all("oil-gas-fields"),
+        queryKey: ["oil-gas-fields"],
       });
 
       // Form closes on success.

@@ -6,7 +6,6 @@ import { auth0TestDefaults, renderWithQueryClient } from "../test/utils";
 import MergeCandidateReviewPage from "./MergeCandidateReviewPage";
 import { useMergeCandidates, useMergeCandidate } from "../hooks/useResources";
 import { reviewMergeCandidate, getResourceDetail } from "../queries/api";
-import { resourceKeys } from "../queries/resources";
 
 // Mock only the read hooks; the review path exercises the real
 // useReviewMergeCandidate mutation against the mocked API module.
@@ -250,7 +249,7 @@ describe("MergeCandidateReviewPage", () => {
     // the endpoint (lists, details, merge candidates) must be refetched.
     await waitFor(() => {
       expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: resourceKeys.all("oil-gas-fields"),
+        queryKey: ["oil-gas-fields"],
       });
     });
   });

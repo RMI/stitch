@@ -4,10 +4,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ConfigProvider } from "../config/context-provider";
 import { getConfig } from "../config/env";
 import * as apiModule from "../queries/api";
-import { resourceKeys } from "../queries/resources";
 import {
   useCreateSourceForResource,
   useReviewMergeCandidate,
+  useResource,
+  useResourceDetail,
 } from "./useResources";
 
 function createWrapper() {
@@ -71,7 +72,7 @@ describe("useCreateSourceForResource", () => {
     });
 
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: resourceKeys.all("oil-gas-fields"),
+      queryKey: ["oil-gas-fields"],
     });
   });
 
@@ -93,6 +94,40 @@ describe("useCreateSourceForResource", () => {
     });
 
     expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("read-hook enabled defaults", () => {
+  it("useResource fetches automatically once a valid id is given, with no explicit enabled arg", async () => {
+    const getResourceSpy = vi
+      .spyOn(apiModule, "getResource")
+      .mockResolvedValue({ id: 42 });
+    const { wrapper } = createWrapper();
+
+    renderHook(() => useResource("oil-gas-fields", 42), { wrapper });
+
+    await vi.waitFor(() => expect(getResourceSpy).toHaveBeenCalled());
+  });
+
+  it("useResource does not fetch when id is null, with no explicit enabled arg", async () => {
+    const getResourceSpy = vi.spyOn(apiModule, "getResource");
+    const { wrapper } = createWrapper();
+
+    renderHook(() => useResource("oil-gas-fields", null), { wrapper });
+
+    // Give any wrongly-scheduled fetch a chance to fire before asserting.
+    await act(async () => {});
+    expect(getResourceSpy).not.toHaveBeenCalled();
+  });
+
+  it("useResourceDetail does not fetch when id is null, with no explicit enabled arg", async () => {
+    const getResourceDetailSpy = vi.spyOn(apiModule, "getResourceDetail");
+    const { wrapper } = createWrapper();
+
+    renderHook(() => useResourceDetail("oil-gas-fields", null), { wrapper });
+
+    await act(async () => {});
+    expect(getResourceDetailSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -148,7 +183,7 @@ describe("useReviewMergeCandidate", () => {
     });
 
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: resourceKeys.all("oil-gas-fields"),
+      queryKey: ["oil-gas-fields"],
     });
   });
 });
