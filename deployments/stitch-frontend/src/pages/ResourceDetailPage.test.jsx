@@ -536,8 +536,17 @@ describe("ResourceDetailPage", () => {
       data: mockDetailView,
     });
 
-    renderWithQueryClient(<ResourceDetailPage />);
+    const { unmount } = renderWithQueryClient(<ResourceDetailPage />);
     expect(useResourceDetail).toHaveBeenCalledWith("oil-gas-fields", 1, true);
+    // Unmount before re-rendering: mockedRouteId is a shared module variable
+    // read fresh by the mocked useParams() on every render, so a still-mounted
+    // first instance would pick up the new value on any later re-render and
+    // could call useResourceDetail again — racing the second instance's call
+    // and making toHaveBeenLastCalledWith flaky. (rerender() isn't an option
+    // here: renderWithQueryClient inlines its providers into one render()
+    // call rather than using RTL's `wrapper` option, so rerender() would
+    // replace the whole wrapped tree with an unwrapped one.)
+    unmount();
 
     mockedRouteId = "not-a-number";
     renderWithQueryClient(<ResourceDetailPage />);
