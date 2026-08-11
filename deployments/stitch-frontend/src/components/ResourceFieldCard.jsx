@@ -1,15 +1,12 @@
 import { useState } from "react";
-import { useAuth0 } from "@auth0/auth0-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { FieldCard } from "./FieldCard";
 import Button from "./Button";
 import Input from "./Input";
-import { useFieldSourceValues } from "../hooks/useResources";
+import {
+  useCreateSourceForResource,
+  useFieldSourceValues,
+} from "../hooks/useResources";
 import { useHasPermission } from "../hooks/usePermissions";
-import { createAuthenticatedFetcher } from "../auth/api";
-import { useConfig } from "../config/useConfig";
-import { createSourceForResource } from "../queries/api";
-import { resourceKeys } from "../queries/resources";
 import {
   SOURCE_COLORS,
   SOURCE_LABELS,
@@ -65,23 +62,20 @@ function SourceValueRow({ source, value, sourceId, isWinner }) {
 // new "User Generated" value (with an optional note) for this field; on Save it
 // creates and attaches an rmi source to the resource.
 function AddSourceForm({ endpoint, resourceId, fieldKey, onSaved }) {
-  const config = useConfig();
-  const { getAccessTokenSilently } = useAuth0();
-  const queryClient = useQueryClient();
+  const createSource = useCreateSourceForResource(endpoint);
 
   const [value, setValue] = useState("");
   const [note, setNote] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
 
   const trimmedValue = value.trim();
+  const isSaving = createSource.isPending;
+  const saveError = createSource.error
+    ? createSource.error.message || "Failed to add value."
+    : "";
 
   async function handleSave() {
     if (!trimmedValue || isSaving) return;
-    setIsSaving(true);
-    setSaveError("");
 
-    const fetcher = createAuthenticatedFetcher(config, getAccessTokenSilently);
     const payload = buildRmiSourcePayload({
       fieldKey,
       value: trimmedValue,
@@ -89,29 +83,13 @@ function AddSourceForm({ endpoint, resourceId, fieldKey, onSaved }) {
     });
 
     try {
-      await createSourceForResource(
-        config,
-        resourceId,
-        payload,
-        fetcher,
-        endpoint,
-      );
-      // Refresh this field's source list and the resource detail (coalesced
-      // value / provenance / Sources section) so the new value shows at once.
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: resourceKeys.fieldSources(endpoint, resourceId, fieldKey),
-        }),
-        queryClient.invalidateQueries({
-          queryKey: resourceKeys.detail(endpoint, resourceId),
-        }),
-      ]);
-      // Success unmounts this form (parent exits edit mode), so there is no
-      // `isSaving` to reset — only the error path below keeps the form mounted.
+      // Resolves after the mutation's cache invalidation, so the refreshed
+      // data is on its way before the form closes.
+      await createSource.mutateAsync({ resourceId, payload });
       onSaved();
-    } catch (err) {
-      setSaveError(err.message || "Failed to add value.");
-      setIsSaving(false);
+    } catch {
+      // Surfaced via `createSource.error` above; the form stays mounted with
+      // the draft intact so the curator can retry.
     }
   }
 

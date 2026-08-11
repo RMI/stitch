@@ -1,5 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthenticatedQuery } from "./useAuthenticatedQuery";
+import { useAuthenticatedMutation } from "./useAuthenticatedMutation";
 import { useConfig } from "../config/useConfig";
 import {
   resourceQueries,
@@ -7,6 +8,7 @@ import {
   DEFAULT_PAGE_SIZE,
   DEFAULT_PAGE,
 } from "../queries/resources";
+import { createSourceForResource, reviewMergeCandidate } from "../queries/api";
 import mockResources from "../mockData/og_field_resources.json";
 import {
   getResourceField,
@@ -333,6 +335,37 @@ function useMergeCandidateMock(
     queryKey: resourceKeys.mergeCandidate(endpoint, id),
     queryFn: () => Promise.resolve(null),
     enabled,
+  });
+}
+
+//--------------------------------
+// Mutations
+//--------------------------------
+// Mutations always hit the real API (mock mode hides the write affordances
+// behind permissions), so there are no mock variants. Each one invalidates
+// every cached query under the endpoint on success — lists, details, views,
+// field-sources, filter-options, and merge-candidates all share the
+// `[endpoint]` key prefix — so any save refreshes whatever is on screen.
+
+export function useCreateSourceForResource(endpoint = "oil-gas-fields") {
+  const config = useConfig();
+  const queryClient = useQueryClient();
+  return useAuthenticatedMutation({
+    mutationFn: (fetcher, { resourceId, payload }) =>
+      createSourceForResource(config, resourceId, payload, fetcher, endpoint),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: resourceKeys.all(endpoint) }),
+  });
+}
+
+export function useReviewMergeCandidate(endpoint = "oil-gas-fields") {
+  const config = useConfig();
+  const queryClient = useQueryClient();
+  return useAuthenticatedMutation({
+    mutationFn: (fetcher, { id, action, reviewNotes }) =>
+      reviewMergeCandidate(config, id, action, fetcher, endpoint, reviewNotes),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: resourceKeys.all(endpoint) }),
   });
 }
 

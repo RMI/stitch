@@ -6,8 +6,12 @@ import { auth0TestDefaults, renderWithQueryClient } from "../test/utils";
 import MergeCandidateReviewPage from "./MergeCandidateReviewPage";
 import { useMergeCandidates, useMergeCandidate } from "../hooks/useResources";
 import { reviewMergeCandidate, getResourceDetail } from "../queries/api";
+import { resourceKeys } from "../queries/resources";
 
-vi.mock("../hooks/useResources", () => ({
+// Mock only the read hooks; the review path exercises the real
+// useReviewMergeCandidate mutation against the mocked API module.
+vi.mock("../hooks/useResources", async (importOriginal) => ({
+  ...(await importOriginal()),
   useMergeCandidates: vi.fn(),
   useMergeCandidate: vi.fn(),
 }));
@@ -232,6 +236,22 @@ describe("MergeCandidateReviewPage", () => {
         "oil-gas-fields",
         "Looks safe",
       );
+    });
+  });
+
+  it("refreshes all cached oil-gas-fields data after a review", async () => {
+    const user = userEvent.setup();
+    const { queryClient } = renderWithQueryClient(<MergeCandidateReviewPage />);
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    await user.click(screen.getByRole("button", { name: "Approve merge" }));
+
+    // An approved merge changes the resources themselves, so everything under
+    // the endpoint (lists, details, merge candidates) must be refetched.
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: resourceKeys.all("oil-gas-fields"),
+      });
     });
   });
 
