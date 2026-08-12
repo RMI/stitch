@@ -6,7 +6,6 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     and_,
-    func,
     literal,
     select,
 )
@@ -19,7 +18,6 @@ from stitch.ogsi.model.types import OGSISrcKey
 from .membership import MembershipModel, MembershipStatus
 from .oil_gas_field_source import OilGasFieldSourceModel
 from .og_field_source_priority import OGFieldSourcePriority
-from .og_field_resource_source_priority import OGFieldResourceSourcePriority
 
 from stitch.api.entities import User as UserEntity
 from .common import Base
@@ -56,14 +54,17 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
         resource_ids: Collection[int],
         licensed_sources: Collection[OGSISrcKey] | None = None,
     ) -> dict[int, list[tuple[OGFieldSource, int]]]:
-        """Active ``(source entity, effective priority)`` rows per resource id.
+        """Active ``(source entity, default priority)`` rows per resource id.
 
         One query mirroring the SQL ``active_src`` CTE: membership -> resource ->
-        priority (+ per-resource override) -> source header, restricted to active
-        memberships of non-repointed resources. ``values`` selectin-loads with the
-        entity. Effective priority is ``COALESCE(override, default)``; licensing is
-        applied in SQL. Rows are ordered best-priority-first, matching the coalesce
-        ranking (``queries.add_ranking``).
+        default priority -> source header, restricted to active memberships of
+        non-repointed resources. ``values`` selectin-loads with the entity;
+        licensing is applied in SQL. This is the raw source-listing helper for the
+        detail path -- it returns the *global default* priority only. Per-field
+        override tiering can't be expressed as one scalar per source (a record's
+        effective rank now varies by field), so field-scoped ordering lives in the
+        SQL ranking (``field_source_values`` / ``queries.add_ranking``), not here.
+        Rows are ordered by ``(default priority, source, source_pk)``.
         """
         by_id: dict[int, list[tuple[OGFieldSource, int]]] = {
             rid: [] for rid in resource_ids
@@ -72,14 +73,12 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
             return by_id
 
         m, r, s = MembershipModel, cls, OilGasFieldSourceModel
-        p, o = OGFieldSourcePriority, OGFieldResourceSourcePriority
-        priority = func.coalesce(o.priority, p.priority)
+        p = OGFieldSourcePriority
         stmt = (
-            select(m.resource_id, s, priority.label("priority"))
+            select(m.resource_id, s, p.priority.label("priority"))
             .select_from(m)
             .join(r, r.id == m.resource_id)
             .join(p, p.source == m.source)
-            .outerjoin(o, and_(o.resource_id == r.id, o.source == m.source))
             # dual-key: membership.source is not FK-tied to the header's source,
             # so matching on source_pk alone could admit a mismatched row.
             .join(s, and_(s.id == m.source_pk, s.source == m.source))
@@ -92,11 +91,7 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
         if licensed_sources is not None:
             stmt = stmt.where(m.source.in_(list(dict.fromkeys(licensed_sources))))
 
-        # Best-priority first, matching the coalesce ranking
-        # (queries.add_ranking): (priority, source, source_pk). Callers that want
-        # winner-first order (field_source_values) can rely on this instead of a
-        # separate Python sort.
-        stmt = stmt.order_by(priority, m.source, s.id)
+        stmt = stmt.order_by(p.priority, m.source, s.id)
 
         for resource_id, src_model, prio in (await session.execute(stmt)).all():
             by_id[resource_id].append((src_model.as_entity(), prio))

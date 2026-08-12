@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.factories import ResourceCreateFactory
-from stitch.api.db.model import OGFieldResourceSourcePriority
+from stitch.api.db.model import MembershipModel, OGFieldResourceSourcePriority
 from stitch.ogsi.model import OGFieldResource, OGFieldSource
 
 
@@ -152,11 +152,25 @@ class TestMergeCandidateDetailIntegration:
             [source_maker(source="rmi", managed=False, name="B-name")],
         )
 
-        # Override A's ordering so GEM outranks RMI -> A's coalesced name flips.
+        # Override A's ordering so GEM outranks RMI for the NAME field -> A's
+        # coalesced name flips. Overrides are per-field, per-source-record now, so
+        # curate GEM's record for `name`.
         async with integration_session_factory() as session:
+            gem_pk = await session.scalar(
+                select(MembershipModel.source_pk).where(
+                    MembershipModel.resource_id == id_a,
+                    MembershipModel.source == "gem",
+                )
+            )
             session.add(
                 OGFieldResourceSourcePriority(
-                    resource_id=id_a, source="gem", priority=0
+                    resource_id=id_a,
+                    source="gem",
+                    source_pk=gem_pk,
+                    colname="name",
+                    priority=0,
+                    created_by_id=1,
+                    last_updated_by_id=1,
                 )
             )
             await session.commit()

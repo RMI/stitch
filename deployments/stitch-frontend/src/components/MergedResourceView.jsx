@@ -1,7 +1,5 @@
 import { useState } from "react";
-import { useConfig } from "../config/useConfig";
-import { useAuthenticatedQuery } from "../hooks/useAuthenticatedQuery";
-import { getResourceDetail } from "../queries/api";
+import { useMergedResourceDetail } from "../hooks/useMergedResourceDetail";
 import {
   FIELD_META,
   MERGE_COMPARISON_CORE_FIELDS,
@@ -62,19 +60,12 @@ function OtherAttributesAccordion({ detail }) {
 // Read-only view of the resource a merge candidate produced, shown in place of
 // the source comparison once the merge has run.
 export default function MergedResourceView({ endpoint, resourceId }) {
-  const config = useConfig();
-
   const {
     data: detail,
     isLoading,
     isError,
     error,
-  } = useAuthenticatedQuery({
-    queryKey: [endpoint, "merged-resource-detail", resourceId],
-    queryFn: (fetcher) =>
-      getResourceDetail(config, resourceId, fetcher, endpoint),
-    enabled: Boolean(resourceId),
-  });
+  } = useMergedResourceDetail(endpoint, resourceId);
 
   return (
     <section className="border-t border-line px-5 py-5">

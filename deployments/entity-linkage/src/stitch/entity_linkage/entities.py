@@ -41,6 +41,22 @@ class RequestAuthContext:
     bearer_token: str | None
 
 
+def normalize_name(name: str | None) -> str | None:
+    """Blocking key for name matching: case-insensitive, whitespace-trimmed."""
+    if name is None:
+        return None
+    normalized = name.strip().casefold()
+    return normalized or None
+
+
+def normalize_country(country: str | None) -> str | None:
+    """Country confirmation key: whitespace-trimmed, upper-cased."""
+    if country is None:
+        return None
+    normalized = country.strip().upper()
+    return normalized or None
+
+
 class FieldCandidate(BaseModel):
     id: int
     name: str | None = None
@@ -49,10 +65,7 @@ class FieldCandidate(BaseModel):
     @computed_field
     @property
     def normalized_name(self) -> str | None:
-        if self.name is None:
-            return None
-        normalized = self.name.strip().casefold()
-        return normalized or None
+        return normalize_name(self.name)
 
 
 class FieldDetailCandidate(BaseModel):
@@ -61,10 +74,28 @@ class FieldDetailCandidate(BaseModel):
     country: str | None = None
 
 
-class MatchGroup(BaseModel):
-    ids: list[int]
-    normalized_name: str
-    country: str
+def user_label(user: User) -> str:
+    return user.name or user.email or user.sub
+
+
+class ResourceLinkResult(BaseModel):
+    """Outcome of linking a single resource against its duplicates."""
+
+    resource_id: int
+    matched_ids: list[int]
+    merge_candidate_created: bool
+    skipped_existing: bool
+
+
+class BulkLinkResponse(BaseModel):
+    """Summary of a full linkage pass over every resource."""
+
+    initiated_by: str
+    apply_merges: bool
+    resources_scanned: int
+    match_groups: list[list[int]]
+    merge_candidates_created: int
+    merge_candidates_skipped: int
 
 
 class PaginationParams(BaseModel):

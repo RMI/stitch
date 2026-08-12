@@ -2,7 +2,7 @@ from collections.abc import Collection, Sequence
 from typing import get_args
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.status import HTTP_404_NOT_FOUND
@@ -32,10 +32,20 @@ from stitch.ogsi.model.types import OGSISrcKey
 from .model import (
     MembershipModel,
     MembershipStatus,
+    OGFieldResourceSourcePriority,
     ResourceModel,
 )
-from .model.oil_gas_field_source_value import ATTRIBUTE_NAMES, value_attr_for
-from .queries import base_resource_query, construct_base_query_statement, add_ranking
+from .model.oil_gas_field_source_value import (
+    ATTRIBUTE_NAMES,
+    materialize_value,
+    value_attr_for,
+)
+from .queries import (
+    add_ranking,
+    base_resource_query,
+    construct_base_query_statement,
+    field_source_candidates,
+)
 from .utils import (
     coalesce_resources,
     resource_model_to_entity,
@@ -44,6 +54,7 @@ from .utils import (
 
 
 _FILTER_OPTION_FIELDS: frozenset[str] = frozenset(get_args(FilterOptionField))
+_ALL_SOURCES: frozenset[OGSISrcKey] = frozenset(get_args(OGSISrcKey))
 
 
 async def query(
@@ -134,12 +145,14 @@ async def field_source_values(
     field: str,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> list[OGFieldSourceValueView]:
-    """Every source's value for one field of a resource, best-priority first.
+    """Every source's value for one field of a resource, winner-first.
 
-    Returns only sources that carry a value for ``field`` (unset omitted),
-    each with its effective per-resource priority. The first entry is the
-    coalesced winner. Licensing is applied. Priority is source-scoped today; the
-    contract is unchanged when it becomes resource/field-scoped.
+    Returns only sources that carry a value for ``field`` (unset omitted), in the
+    same tiered per-field ranking coalescing uses -- curated (overridden) records
+    first by override priority, then the rest by global default priority. The
+    first entry is the coalesced winner. Licensing is applied. Each view's
+    ``priority`` is its 0-based rank position (list order is authoritative);
+    ``is_override`` flags the curated rows.
     """
     if field not in ATTRIBUTE_NAMES:
         raise HTTPException(
@@ -151,21 +164,116 @@ async def field_source_values(
             status_code=HTTP_404_NOT_FOUND, detail=f"No Resource with id `{id}` found."
         )
 
-    # source_data_by_resource_id returns rows best-priority-first (ordered in
-    # SQL by the same (priority, source, source_pk) as the coalesce ranking), so
-    # dropping sources with no value for the field preserves winner-first order
-    # -- the first entry is the coalesced winner. Empty strings are never
-    # persisted (absent == unset), so a null check alone is enough.
-    by_id = await ResourceModel.source_data_by_resource_id(
-        session, [id], licensed_sources
-    )
+    # field_source_candidates ranks in SQL by the same tiered key as the coalesce
+    # winner, so the row order is winner-first and rank is just the enumerate
+    # index. Empty text can't be persisted, so every returned row is a real value.
+    rows = (
+        await session.execute(field_source_candidates(id, field, licensed_sources))
+    ).all()
     return [
         OGFieldSourceValueView(
-            source=src.source, source_id=src.id, value=value, priority=priority
+            source=row.source,
+            source_id=row.source_pk,
+            value=materialize_value(
+                field,
+                value_text=row.value_text,
+                value_num=row.value_num,
+                value_json=row.value_json,
+            ),
+            priority=rank,
+            is_override=bool(row.is_override),
         )
-        for src, priority in by_id.get(id, [])
-        if src.id is not None and (value := getattr(src, field)) is not None
+        for rank, row in enumerate(rows)
     ]
+
+
+async def set_field_source_priority(
+    session: AsyncSession,
+    user: CurrentUser,
+    id: int,
+    field: str,
+    ordered_source_pks: Sequence[int],
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> list[OGFieldSourceValueView]:
+    """Persist a curator's per-field source ordering; return the new ranking.
+
+    ``ordered_source_pks`` must cover *exactly* the source records that currently
+    carry a value for ``field`` (licensed, non-empty) -- the same set
+    ``field_source_values`` returns -- each once, best-first. The save is a
+    complete snapshot: every override row for ``(resource, field)`` is replaced
+    with one row per record at ``priority = index``. Records added later have no
+    override row, so they land in the default tier and rank last until re-curated
+    (see ``add_ranking``). Writing nothing when the order is unchanged keeps the
+    default tier (and its "new source ranks by default priority" behaviour) intact.
+    """
+    if field not in ATTRIBUTE_NAMES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"field={field} is not a known resource field.",
+        )
+    resource = await session.get(ResourceModel, id)
+    if resource is None:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND, detail=f"No Resource with id `{id}` found."
+        )
+    if resource.repointed_id is not None:
+        raise ResourceIntegrityError(
+            f"Cannot re-prioritize sources of repointed resource `{id}`."
+        )
+    if len(set(ordered_source_pks)) != len(ordered_source_pks):
+        raise InvalidActionError("ordered_source_pks contains duplicate ids.")
+
+    # Belt-and-suspenders behind the route's all-source-read requirement: this
+    # write replaces the field's entire override set, so a caller who cannot read
+    # every source could clobber rankings for sources they can't see. Require the
+    # full set here too. (Revisit when partial-license reordering is supported.)
+    if licensed_sources is not None and set(licensed_sources) != _ALL_SOURCES:
+        raise InvalidActionError(
+            "You must have read permissions for all sources to reorder a field's "
+            "sources."
+        )
+
+    # Eligibility + current effective order come from the same ranked read the GET
+    # endpoint uses: licensed sources with a non-empty value for the field,
+    # winner-first.
+    rows = (
+        await session.execute(field_source_candidates(id, field, licensed_sources))
+    ).all()
+    current_order = [row.source_pk for row in rows]
+    eligible = set(current_order)
+    requested = set(ordered_source_pks)
+    if requested != eligible:
+        raise InvalidActionError(
+            "ordered_source_pks must cover exactly the sources with a value for "
+            f"field {field!r} (missing={sorted(eligible - requested)}, "
+            f"unexpected={sorted(requested - eligible)})."
+        )
+
+    # No-op: the requested order already matches the effective order, so persist
+    # nothing (and leave any records in the default tier there).
+    if list(ordered_source_pks) == current_order:
+        return await field_source_values(session, id, field, licensed_sources)
+
+    source_by_pk = {row.source_pk: row.source for row in rows}
+    await session.execute(
+        delete(OGFieldResourceSourcePriority).where(
+            OGFieldResourceSourcePriority.resource_id == id,
+            OGFieldResourceSourcePriority.colname == field,
+        )
+    )
+    for priority, source_pk in enumerate(ordered_source_pks):
+        session.add(
+            OGFieldResourceSourcePriority.create(
+                created_by=user,
+                resource_id=id,
+                source=source_by_pk[source_pk],
+                source_pk=source_pk,
+                colname=field,
+                priority=priority,
+            )
+        )
+    await session.flush()
+    return await field_source_values(session, id, field, licensed_sources)
 
 
 async def create(

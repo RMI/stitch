@@ -8,6 +8,7 @@ from stitch.auth.permissions import (
     MERGE_CANDIDATE_REVIEW,
     RESOURCE_READ,
     RESOURCE_WRITE,
+    SOURCE_READ_PERMISSIONS,
     SOURCE_WRITE,
 )
 
@@ -20,6 +21,7 @@ from stitch.api.entities import (
     MergeCandidateView,
     OGFieldQueryParams,
     PaginatedResponse,
+    SetFieldPriorityRequest,
 )
 
 from stitch.api.db import og_field_resource_actions as resource_actions
@@ -42,6 +44,7 @@ from stitch.api.permissions import licensed_sources
 from stitch.ogsi.model import (
     OGFieldDetailView,
     OGFieldListItemView,
+    OGFieldName,
     OGFieldResource,
     OGFieldResourceView,
     OGFieldSource,
@@ -272,7 +275,7 @@ async def get_field_source_values(
     user: CurrentUser,
     claims: Claims,
     id: int,
-    field: str,
+    field: OGFieldName,
 ) -> list[OGFieldSourceValueView]:
     return await resource_actions.field_source_values(
         session=uow.session,
@@ -280,6 +283,55 @@ async def get_field_source_values(
         field=field,
         licensed_sources=licensed_sources(claims),
     )
+
+
+# Reordering rewrites the whole per-field override set, so a curator who cannot
+# read every source could otherwise clobber rankings for sources they can't see.
+# Require read access to *all* sources (not just this resource's) on top of write
+# -- matching the curator role in Auth0 -- so the write always acts on a complete
+# picture. (Scoped to this endpoint for now; other write actions to follow.)
+@router.put(
+    "/{id}/fields/{field}/sources/priority",
+    response_model=list[OGFieldSourceValueView],
+    dependencies=[
+        Depends(require_permissions(RESOURCE_WRITE, *SOURCE_READ_PERMISSIONS))
+    ],
+)
+async def set_field_source_priority(
+    *,
+    uow: UnitOfWorkDep,
+    user: CurrentUser,
+    claims: Claims,
+    id: int,
+    field: OGFieldName,
+    request: SetFieldPriorityRequest,
+) -> list[OGFieldSourceValueView]:
+    try:
+        return await resource_actions.set_field_source_priority(
+            session=uow.session,
+            user=user,
+            id=id,
+            field=field,
+            ordered_source_pks=request.ordered_source_pks,
+            licensed_sources=licensed_sources(claims),
+        )
+    except (InvalidActionError, ResourceIntegrityError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ResourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(
+            "Error setting field-source priority for resource %s field %s: %s",
+            id,
+            field,
+            exc,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Internal error while setting field source priority",
+        )
 
 
 @router.post(

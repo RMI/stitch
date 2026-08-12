@@ -15,7 +15,7 @@ dependencies = [
   "opentelemetry-instrumentation-fastapi>=0.65b0",
   "opentelemetry-instrumentation-sqlalchemy>=0.65b0",
   "opentelemetry-instrumentation-httpx>=0.65b0",
-  "pydantic-settings>=2.11.0",
+  "pydantic-settings>=2.15.0",
 ]
 
 [project.optional-dependencies]
