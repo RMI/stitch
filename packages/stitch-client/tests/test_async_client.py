@@ -14,6 +14,7 @@ from stitch.client import (
     StitchAPIError,
     env_bearer_token_headers_provider,
 )
+from stitch.client.async_client import MAX_PAGE_SIZE
 
 
 def make_client(
@@ -685,6 +686,302 @@ async def test_create_merge_candidate_sends_expected_request() -> None:
         "path": "/api/v1/oil-gas-fields/merge-candidates",
         "body": {"resource_ids": [7, 8]},
     }
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_list_oil_gas_field_sources_page_sends_expected_request() -> None:
+    """Path, method, and the stable-scan sort defaults reach the wire."""
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["method"] = request.method
+        captured["path"] = request.url.path
+        captured["query"] = request.url.query.decode("utf-8")
+        return httpx.Response(
+            200,
+            json={
+                "items": [
+                    {"id": 1, "source": "gem", "name": "Alpha", "country": "USA"}
+                ],
+                "total_count": 1,
+                "page": 1,
+                "page_size": 50,
+                "total_pages": 1,
+            },
+        )
+
+    client, raw_client = make_client(handler)
+
+    payload = await client.list_oil_gas_field_sources_page()
+
+    assert payload["items"][0]["source"] == "gem"
+    assert captured == {
+        "method": "GET",
+        "path": "/api/v1/oil-gas-field-sources/",
+        "query": "page=1&page_size=50&sort_by=id&sort_order=asc",
+    }
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_list_oil_gas_field_sources_page_repeats_source_param() -> None:
+    """A sequence of source keys serializes as repeated params, not a CSV value."""
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        # dict(request.url.params) would collapse the repeats to the first value.
+        captured["source"] = request.url.params.get_list("source")
+        captured["query"] = request.url.query.decode("utf-8")
+        return httpx.Response(200, json={"items": [], "total_pages": 1})
+
+    client, raw_client = make_client(handler)
+
+    await client.list_oil_gas_field_sources_page(source=["gem", "wm"])
+
+    assert captured["source"] == ["gem", "wm"]
+    assert captured["query"].endswith("&source=gem&source=wm")
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_list_oil_gas_field_sources_page_omits_source_when_unset() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["query"] = request.url.query.decode("utf-8")
+        return httpx.Response(200, json={"items": [], "total_pages": 1})
+
+    client, raw_client = make_client(handler)
+
+    await client.list_oil_gas_field_sources_page()
+
+    assert "source" not in captured["query"]
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_list_oil_gas_field_sources_page_rejects_empty_source() -> None:
+    """An empty sequence vanishes from the query string and would select *every*
+    source, so it is refused before the request goes out."""
+    called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(200, json={"items": [], "total_pages": 1})
+
+    client, raw_client = make_client(handler)
+
+    with pytest.raises(ValueError) as exc_info:
+        await client.list_oil_gas_field_sources_page(source=[])
+
+    assert str(exc_info.value) == "source must not be empty when provided"
+    assert called is False
+
+    await raw_client.aclose()
+
+
+@pytest.mark.parametrize("page_size", [0, 201, 1000])
+@pytest.mark.anyio
+async def test_list_oil_gas_field_sources_page_rejects_out_of_range_page_size(
+    page_size: int,
+) -> None:
+    """The server caps page_size at 200; fail locally instead of on a 422."""
+    called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(200, json={"items": [], "total_pages": 1})
+
+    client, raw_client = make_client(handler)
+
+    with pytest.raises(ValueError) as exc_info:
+        await client.list_oil_gas_field_sources_page(page_size=page_size)
+
+    assert "page_size must be between 1 and 200" in str(exc_info.value)
+    assert called is False
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_list_oil_gas_field_sources_page_accepts_max_page_size() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["page_size"] = request.url.params["page_size"]
+        return httpx.Response(200, json={"items": [], "total_pages": 1})
+
+    client, raw_client = make_client(handler)
+
+    await client.list_oil_gas_field_sources_page(page_size=MAX_PAGE_SIZE)
+
+    assert captured["page_size"] == "200"
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_iter_oil_gas_field_sources_streams_items_across_pages() -> None:
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        page = int(request.url.params["page"])
+        calls.append(page)
+        payloads = {
+            1: {
+                "items": [
+                    {"id": 1, "source": "gem", "name": "Alpha"},
+                    {"id": 2, "source": "gem", "name": "Beta"},
+                ],
+                "total_count": 3,
+                "total_pages": 2,
+            },
+            2: {
+                "items": [{"id": 3, "source": "gem", "name": "Gamma"}],
+                "total_count": 3,
+                "total_pages": 2,
+            },
+        }
+        return httpx.Response(200, json=payloads[page])
+
+    client, raw_client = make_client(handler)
+
+    collected = [
+        item["id"]
+        async for item in client.iter_oil_gas_field_sources(page_size=2, source=["gem"])
+    ]
+
+    assert calls == [1, 2]
+    assert collected == [1, 2, 3]
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_iter_oil_gas_field_sources_forwards_source_on_every_page() -> None:
+    """The source filter must survive into page 2+, not just the first request."""
+    captured: list[list[str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.url.params.get_list("source"))
+        page = int(request.url.params["page"])
+        return httpx.Response(
+            200,
+            json={
+                "items": [{"id": page * 10 + 1}, {"id": page * 10 + 2}],
+                "total_count": 100,
+                "total_pages": 50,
+            },
+        )
+
+    client, raw_client = make_client(handler)
+
+    collected = [
+        item["id"]
+        async for item in client.iter_oil_gas_field_sources(
+            page_size=2, max_pages=2, source=["gem"]
+        )
+    ]
+
+    assert collected == [11, 12, 21, 22]
+    assert captured == [["gem"], ["gem"]]
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_iter_oil_gas_field_sources_yields_nothing_when_empty() -> None:
+    """An empty first page ends the walk without a second request."""
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(int(request.url.params["page"]))
+        return httpx.Response(
+            200,
+            json={
+                "items": [],
+                "total_count": 0,
+                "page": 1,
+                "page_size": 50,
+                "total_pages": 0,
+            },
+        )
+
+    client, raw_client = make_client(handler)
+
+    collected = [item async for item in client.iter_oil_gas_field_sources()]
+
+    assert calls == [1]
+    assert collected == []
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_iter_oil_gas_field_sources_stops_on_short_page() -> None:
+    """Terminates on a short page even when total_pages is absent."""
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        page = int(request.url.params["page"])
+        calls.append(page)
+        payloads = {
+            1: {"items": [{"id": 1}, {"id": 2}]},
+            2: {"items": [{"id": 3}]},
+        }
+        return httpx.Response(200, json=payloads[page])
+
+    client, raw_client = make_client(handler)
+
+    collected = [
+        item["id"] async for item in client.iter_oil_gas_field_sources(page_size=2)
+    ]
+
+    assert calls == [1, 2]
+    assert collected == [1, 2, 3]
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_list_oil_gas_field_sources_page_raises_on_forbidden() -> None:
+    """A token carrying no source:read:<key> gets a 403 the caller can branch on."""
+    detail = "Missing required permission(s): source:read:gem"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"detail": detail})
+
+    client, raw_client = make_client(handler)
+
+    with pytest.raises(StitchAPIError) as exc_info:
+        await client.list_oil_gas_field_sources_page(source=["gem"])
+
+    assert exc_info.value.status_code == 403
+    assert "source:read:" in (exc_info.value.response_text or "")
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_iter_oil_gas_field_sources_propagates_forbidden() -> None:
+    """The 403 surfaces on first iteration rather than as an empty stream."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"detail": "Missing required permission(s)"})
+
+    client, raw_client = make_client(handler)
+
+    with pytest.raises(StitchAPIError) as exc_info:
+        [item async for item in client.iter_oil_gas_field_sources(source=["gem"])]
+
+    assert exc_info.value.status_code == 403
 
     await raw_client.aclose()
 
