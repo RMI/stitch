@@ -14,26 +14,14 @@ import { createAuthenticatedFetcher } from "../auth/api";
 import { reviewMergeCandidate } from "../queries/api";
 import { useConfig } from "../config/useConfig";
 import { resourceKeys } from "../queries/resources";
+import {
+  DEFAULT_HIDDEN_STATUSES,
+  MERGE_CANDIDATE_STATUS,
+  getStatusClasses,
+  getStatusLabel,
+} from "../constants/mergeCandidateStatus";
 
 const ENDPOINT = "oil-gas-fields";
-
-function getStatusClasses(status) {
-  if (status === "PENDING") {
-    return "border-warning/30 bg-warning-soft text-warning";
-  }
-  if (status === "APPROVED") {
-    return "border-success/25 bg-success-soft text-success-strong";
-  }
-  if (status === "DENIED") {
-    return "border-danger/25 bg-danger-soft text-danger";
-  }
-  return "border-line bg-surface text-ink";
-}
-
-// PENDING reads as "CANDIDATE": it isn't a real merged resource yet.
-function getStatusLabel(status) {
-  return status === "PENDING" ? "CANDIDATE" : status;
-}
 
 function StatusBadge({ status }) {
   return (
@@ -88,11 +76,26 @@ function QueuePanel({
   error,
   selectedId,
   onSelect,
+  showReviewed,
+  onShowReviewedChange,
+  hiddenCount,
 }) {
   return (
     <aside className="min-w-0 rounded-md border border-line bg-panel">
-      <div className="border-b border-line px-4 py-3">
+      <div className="space-y-2 border-b border-line px-4 py-3">
         <h2 className="text-base font-semibold text-ink">Queue</h2>
+        <label className="flex items-center gap-2 text-sm text-ink-muted">
+          <input
+            type="checkbox"
+            checked={showReviewed}
+            onChange={(e) => onShowReviewedChange(e.target.checked)}
+            className="accent-primary"
+          />
+          <span>
+            Show reviewed
+            {!showReviewed && hiddenCount > 0 ? ` (${hiddenCount})` : ""}
+          </span>
+        </label>
       </div>
 
       <div className="p-2">
@@ -115,6 +118,15 @@ function QueuePanel({
               />
             ))}
           </div>
+        ) : hiddenCount > 0 ? (
+          // Distinct from an empty backlog: there is work here, it's just
+          // filtered out. Say so, next to the checkbox that undoes it.
+          <p className="px-2 py-3 text-sm text-ink-muted">
+            Nothing left to review.{" "}
+            {hiddenCount === 1
+              ? "1 reviewed candidate is hidden."
+              : `${hiddenCount} reviewed candidates are hidden.`}
+          </p>
         ) : (
           <p className="px-2 py-3 text-sm text-ink-muted">
             No merge candidates to review.
@@ -329,7 +341,7 @@ function CandidateDecisionPanel({
           </div>
         ) : null}
 
-        {candidate.status !== "PENDING" ? (
+        {candidate.status !== MERGE_CANDIDATE_STATUS.PENDING ? (
           <p className="rounded-md border border-line bg-surface p-3 text-sm text-ink-muted">
             This candidate has already been reviewed.
           </p>
@@ -351,7 +363,7 @@ function CandidateDecisionPanel({
         />
       )}
 
-      {candidate.status === "PENDING" ? (
+      {candidate.status === MERGE_CANDIDATE_STATUS.PENDING ? (
         <DecisionControls
           reviewNotes={reviewNotes}
           onReviewNotesChange={onReviewNotesChange}
@@ -384,6 +396,10 @@ export default function MergeCandidateReviewPage() {
   const [actionError, setActionError] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [activeReviewAction, setActiveReviewAction] = useState(null);
+  // Held as a list of statuses rather than a boolean so the queue can grow a
+  // per-status control (or push the filter down to the API) without reshaping
+  // this state.
+  const [hiddenStatuses, setHiddenStatuses] = useState(DEFAULT_HIDDEN_STATUSES);
 
   const {
     data: candidates,
@@ -392,12 +408,27 @@ export default function MergeCandidateReviewPage() {
     error: listErrorObj,
   } = useMergeCandidates(ENDPOINT, true);
 
+  // The selected candidate stays in the queue even once its status is hidden,
+  // so a candidate the reviewer just decided doesn't vanish out from under
+  // them. It drops out on the next reload or filter change.
+  const visibleCandidates = useMemo(
+    () =>
+      candidates?.filter(
+        (c) => !hiddenStatuses.includes(c.status) || c.id === selectedId,
+      ) ?? [],
+    [candidates, hiddenStatuses, selectedId],
+  );
+
+  const hiddenCount = (candidates?.length ?? 0) - visibleCandidates.length;
+
   // Default to the first pending candidate once the list loads. Done during
   // render (not in an effect) so the selection is set before the first paint
   // and without triggering a cascading re-render.
-  if (!selectedId && candidates?.length) {
-    const firstPending = candidates.find((c) => c.status === "PENDING");
-    setSelectedId(firstPending?.id ?? candidates[0].id);
+  if (!selectedId && visibleCandidates.length) {
+    const firstPending = visibleCandidates.find(
+      (c) => c.status === MERGE_CANDIDATE_STATUS.PENDING,
+    );
+    setSelectedId(firstPending?.id ?? visibleCandidates[0].id);
   }
 
   const candidateQuery = useMergeCandidate(
@@ -413,11 +444,17 @@ export default function MergeCandidateReviewPage() {
     candidates?.find((item) => item.id === selectedId) ?? null;
   const candidate = candidateQuery.data ?? listCandidate;
 
+  // Counters intentionally read the unfiltered list: the queue filter changes
+  // what you review next, not how much work exists.
   const pendingCount =
-    candidates?.filter((c) => c.status === "PENDING").length ?? 0;
-  const reviewedCount =
-    candidates?.filter((c) => c.status === "APPROVED" || c.status === "DENIED")
+    candidates?.filter((c) => c.status === MERGE_CANDIDATE_STATUS.PENDING)
       .length ?? 0;
+  const reviewedCount =
+    candidates?.filter(
+      (c) =>
+        c.status === MERGE_CANDIDATE_STATUS.APPROVED ||
+        c.status === MERGE_CANDIDATE_STATUS.DENIED,
+    ).length ?? 0;
 
   function handleSelect(id) {
     setSelectedId(id);
@@ -452,7 +489,9 @@ export default function MergeCandidateReviewPage() {
       ]);
 
       const nextPending = candidates?.find(
-        (item) => item.id !== candidate.id && item.status === "PENDING",
+        (item) =>
+          item.id !== candidate.id &&
+          item.status === MERGE_CANDIDATE_STATUS.PENDING,
       );
       if (nextPending) {
         setSelectedId(nextPending.id);
@@ -502,12 +541,17 @@ export default function MergeCandidateReviewPage() {
 
       <div className="grid gap-6 lg:grid-cols-[20rem_minmax(0,1fr)]">
         <QueuePanel
-          candidates={candidates}
+          candidates={visibleCandidates}
           isLoading={listLoading}
           isError={listError}
           error={listErrorObj}
           selectedId={selectedId}
           onSelect={handleSelect}
+          showReviewed={hiddenStatuses.length === 0}
+          onShowReviewedChange={(showReviewed) =>
+            setHiddenStatuses(showReviewed ? [] : DEFAULT_HIDDEN_STATUSES)
+          }
+          hiddenCount={hiddenCount}
         />
 
         <CandidateDecisionPanel

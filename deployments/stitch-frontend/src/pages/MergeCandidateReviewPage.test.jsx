@@ -118,6 +118,17 @@ beforeEach(() => {
   );
 });
 
+// Reviewed candidates are hidden by default. Cases below that are about how an
+// already-decided candidate renders have to reveal them first.
+function revealReviewed(user) {
+  return user.click(screen.getByRole("checkbox", { name: /Show reviewed/ }));
+}
+
+// Reads a header counter by its label, e.g. counterValue("Reviewed").
+function counterValue(label) {
+  return screen.getByText(label).parentElement.querySelector("dd").textContent;
+}
+
 describe("MergeCandidateReviewPage", () => {
   it("centers the page on a queue and one decision panel", () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
@@ -162,12 +173,14 @@ describe("MergeCandidateReviewPage", () => {
   });
 
   it('labels a pending item\'s status badge "CANDIDATE" instead of "PENDING"', async () => {
+    const user = userEvent.setup();
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
     const pendingItem = await screen.findByRole("button", { name: /Bergan/ });
     expect(within(pendingItem).getByText("CANDIDATE")).toBeInTheDocument();
     expect(within(pendingItem).queryByText("PENDING")).not.toBeInTheDocument();
 
+    await revealReviewed(user);
     const approvedItem = await screen.findByRole("button", {
       name: /Arabian Consolidated/,
     });
@@ -343,7 +356,8 @@ describe("MergeCandidateReviewPage", () => {
     expect(screen.getByText(/detail boom/)).toBeInTheDocument();
   });
 
-  it("shows the merged resource instead of the source comparison once merged_resource_id is set", () => {
+  it("shows the merged resource instead of the source comparison once merged_resource_id is set", async () => {
+    const user = userEvent.setup();
     const mergedCandidate = candidates[1];
     vi.mocked(useMergeCandidates).mockReturnValue({
       ...defaultHookReturn,
@@ -355,6 +369,7 @@ describe("MergeCandidateReviewPage", () => {
     });
 
     renderWithQueryClient(<MergeCandidateReviewPage />);
+    await revealReviewed(user);
 
     expect(screen.getByText("Merged resource 301")).toBeInTheDocument();
     expect(
@@ -363,6 +378,7 @@ describe("MergeCandidateReviewPage", () => {
   });
 
   it("shows the merged resource's name in the heading once merged", async () => {
+    const user = userEvent.setup();
     const mergedCandidate = candidates[1];
     vi.mocked(useMergeCandidates).mockReturnValue({
       ...defaultHookReturn,
@@ -375,6 +391,7 @@ describe("MergeCandidateReviewPage", () => {
     });
 
     renderWithQueryClient(<MergeCandidateReviewPage />);
+    await revealReviewed(user);
 
     expect(
       await screen.findByRole("heading", { name: "Arabian Merged" }),
@@ -384,7 +401,8 @@ describe("MergeCandidateReviewPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("links the merged resource id to its detail page", () => {
+  it("links the merged resource id to its detail page", async () => {
+    const user = userEvent.setup();
     const mergedCandidate = candidates[1];
     vi.mocked(useMergeCandidates).mockReturnValue({
       ...defaultHookReturn,
@@ -396,6 +414,7 @@ describe("MergeCandidateReviewPage", () => {
     });
 
     renderWithQueryClient(<MergeCandidateReviewPage />);
+    await revealReviewed(user);
 
     expect(screen.getByRole("link", { name: "301" })).toHaveAttribute(
       "href",
@@ -424,5 +443,120 @@ describe("MergeCandidateReviewPage", () => {
     expect(
       screen.queryByRole("heading", { name: "Candidate #11" }),
     ).not.toBeInTheDocument();
+  });
+
+  describe("hiding reviewed candidates", () => {
+    const deniedCandidate = {
+      id: 14,
+      status: "DENIED",
+      resource_ids: [401, 402],
+      merged_resource_id: null,
+    };
+
+    it("hides approved and denied candidates by default", async () => {
+      vi.mocked(useMergeCandidates).mockReturnValue({
+        ...defaultHookReturn,
+        data: [...candidates, deniedCandidate],
+      });
+
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      expect(
+        await screen.findByRole("button", { name: /Bergan/ }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /Arabian Consolidated/ }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /Candidate #14/ }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("reveals and re-hides reviewed candidates as the control is toggled", async () => {
+      const user = userEvent.setup();
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      await revealReviewed(user);
+      expect(
+        await screen.findByRole("button", { name: /Arabian Consolidated/ }),
+      ).toBeInTheDocument();
+
+      await revealReviewed(user);
+      expect(
+        screen.queryByRole("button", { name: /Arabian Consolidated/ }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /Bergan/ }),
+      ).toBeInTheDocument();
+    });
+
+    it("reports the same totals whether or not reviewed candidates are shown", async () => {
+      const user = userEvent.setup();
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      expect(counterValue("Pending")).toBe("1");
+      expect(counterValue("Reviewed")).toBe("1");
+      expect(counterValue("Total")).toBe("2");
+
+      await revealReviewed(user);
+
+      expect(counterValue("Pending")).toBe("1");
+      expect(counterValue("Reviewed")).toBe("1");
+      expect(counterValue("Total")).toBe("2");
+    });
+
+    it("keeps a selected candidate in the queue after its status becomes hidden", async () => {
+      const user = userEvent.setup();
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      await revealReviewed(user);
+      await user.click(
+        await screen.findByRole("button", { name: /Arabian Consolidated/ }),
+      );
+
+      // Re-hiding must not pull the candidate under review out of the queue.
+      await revealReviewed(user);
+      expect(
+        screen.getByRole("button", { name: /Arabian Consolidated/ }),
+      ).toBeInTheDocument();
+    });
+
+    it("distinguishes an all-hidden queue from an empty one", () => {
+      vi.mocked(useMergeCandidates).mockReturnValue({
+        ...defaultHookReturn,
+        data: [candidates[1], deniedCandidate],
+      });
+
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      expect(
+        screen.getByText(/2 reviewed candidates are hidden/),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText("No merge candidates to review."),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows a status it does not recognize rather than hiding it", async () => {
+      vi.mocked(useMergeCandidates).mockReturnValue({
+        ...defaultHookReturn,
+        data: [
+          { ...candidates[1] },
+          {
+            id: 15,
+            status: "NEEDS_INFO",
+            resource_ids: [501],
+            merged_resource_id: null,
+          },
+        ],
+      });
+
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      const unknownItem = await screen.findByRole("button", {
+        name: /Candidate #15/,
+      });
+      expect(within(unknownItem).getByText("NEEDS_INFO")).toBeInTheDocument();
+    });
   });
 });
