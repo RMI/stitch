@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
 from fastapi import Depends
-from pydantic import AfterValidator, HttpUrl, SecretStr
+from pydantic import AfterValidator, Field, HttpUrl, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from stitch.observability import OTelSettings
 from sqlalchemy import URL
@@ -88,6 +88,18 @@ class Settings(OTelSettings):
     log_format: Literal["json", "plain"] = "json"
     slow_query_ms: float = 200.0
     log_all_queries: bool = False
+
+    # Cooperative admission control for shared dev servers: when enabled, a
+    # request tagged ``X-Stitch-Traffic-Class: batch`` (the entity-linkage bulk
+    # pass) waits while interactive traffic is active, then is admitted anyway
+    # once max_wait elapses. Dev-only — ignored when ENVIRONMENT is prod. See
+    # stitch/api/admission.py.
+    batch_yield_enabled: bool = False
+    batch_yield_quiet_ms: float = Field(default=1500.0, ge=0.0)
+    # Bounded: this is the one value where a fat-fingered number surfaces as a
+    # confusing client-side timeout in a *different* service (the shared client
+    # allows 30s per request), so it is worth rejecting at startup.
+    batch_yield_max_wait_ms: float = Field(default=5000.0, ge=0.0, le=20000.0)
 
     # OpenTelemetry tracing settings (otel_enabled / otel_traces_exporter /
     # otel_exporter_otlp_endpoint / otel_sample_ratio) are inherited from
