@@ -99,10 +99,10 @@ def _is_batch(scope: Scope) -> bool:
     return False
 
 
-def _is_exempt(scope: Scope) -> bool:
-    if scope.get("method") == "OPTIONS":
-        return True
-    path = scope.get("path", "")
+def _is_exempt(path: str) -> bool:
+    # Only health. CORS preflights need no special case: CORSMiddleware is
+    # registered outside this gate and answers a genuine preflight itself without
+    # calling the inner app, so one never reaches here.
     return path == _HEALTH_PATH or path.startswith(_HEALTH_PATH + "/")
 
 
@@ -144,7 +144,7 @@ class BatchYieldMiddleware:
         # ``quiet_ms`` above ~5000 starves batch traffic forever with no human
         # load at all — a value that reads as conservative would silently mean
         # "never run".
-        if scope["type"] != "http" or _is_exempt(scope):
+        if scope["type"] != "http" or _is_exempt(scope["path"]):
             await self.app(scope, receive, send)
             return
 

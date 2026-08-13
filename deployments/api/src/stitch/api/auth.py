@@ -72,6 +72,14 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 #
 # Cached ``TokenClaims`` instances are shared between requests. That is safe only
 # because nothing mutates them -- keep it that way, or hand out copies here.
+#
+# Security note, so it does not have to be re-derived on review: this does not
+# weaken the auth model. A cache hit cannot outlive the token's own ``exp``, and
+# revocation was never honoured mid-token anyway -- the API does no introspection,
+# and permissions travel *inside* the token, so they cannot change without a new
+# token being issued (which is a different digest, hence a different entry). The
+# only thing traded away is that a *newly issued* token for the same subject does
+# not invalidate the old one early, which was already true.
 _CLAIMS_CACHE_MAX_ENTRIES = 1024
 # Retire entries slightly before the token itself lapses, so anything close to
 # expiry goes back through the real validator (which applies the configured clock

@@ -60,12 +60,11 @@ class FakeClock:
 
 def _http_scope(
     path: str = "/api/v1/oil-gas-fields/",
-    method: str = "GET",
     headers: list[tuple[bytes, bytes]] | None = None,
 ) -> dict:
     return {
         "type": "http",
-        "method": method,
+        "method": "GET",
         "path": path,
         "headers": headers or [],
     }
@@ -117,16 +116,14 @@ class TestExemptions:
         "path", ["/api/v1/health", "/api/v1/health/details", "/api/v1/health/deep"]
     )
     def test_health_paths_are_exempt(self, path: str) -> None:
-        assert _is_exempt(_http_scope(path=path)) is True
+        assert _is_exempt(path) is True
 
     @pytest.mark.parametrize(
         "path", ["/api/v1/healthy", "/api/v1/oil-gas-fields/", "/api/v1/healthcheck"]
     )
     def test_other_paths_are_not_exempt(self, path: str) -> None:
-        assert _is_exempt(_http_scope(path=path)) is False
-
-    def test_options_is_exempt(self) -> None:
-        assert _is_exempt(_http_scope(method="OPTIONS")) is True
+        # Prefix-adjacent paths must not be swept in by a loose startswith.
+        assert _is_exempt(path) is False
 
 
 @pytest.fixture

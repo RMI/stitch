@@ -26,11 +26,19 @@ ALLOWED_HEADERS: Final[tuple[str, ...]] = (
 
 def register_middlewares(application: FastAPI, settings: Settings):
     if settings.batch_yield_enabled:
+        # Backstop, not the primary control. ``is_prod`` only reports true for
+        # ENVIRONMENT in {prod, production}, and no deployed lane uses those names
+        # today -- deployment-name resolves to main / dress-rehearsal / pr-NNNN
+        # (see .github/workflows/resolve-deployment-context.yml), so this branch
+        # does not currently fire anywhere. What actually keeps the gate out of
+        # production-like environments is that BATCH_YIELD_ENABLED defaults to
+        # false and the deploy workflow sets it false for the dress-rehearsal
+        # lane. This stays as a guard for the day a real prod lane exists.
         if settings.is_prod:
             # Warn rather than fail: unlike AUTH_DISABLED (a security hole, so
             # validate_auth_config_at_startup refuses outright), this is a perf
-            # knob and should not crash prod because a var lingered in a shared
-            # config. Not silently ignored, though — hence the warning.
+            # knob and should not crash a deploy because a var lingered in a
+            # shared config. Not silently ignored, though — hence the warning.
             logger.warning(
                 "BATCH_YIELD_ENABLED is set but ignored: the batch-yield gate is "
                 "a dev/shared-server feature and is never active in prod."
