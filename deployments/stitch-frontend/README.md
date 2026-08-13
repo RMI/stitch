@@ -591,7 +591,7 @@ https://stitch.rmi.org/
 https://stitch.rmi.org/callback
 ```
 
-Register a custom domain here *before* pointing the lane's
+Register a custom domain here _before_ pointing the lane's
 `FRONTEND_PRODUCTION_URL` at it, or sign-in breaks on the first deploy. See
 "Custom domains" in [`../CI_DEPLOYMENTS.md`](../CI_DEPLOYMENTS.md).
 
