@@ -13,9 +13,13 @@ from stitch.client import (
     env_bearer_token_headers_provider,
 )
 from stitch.entity_linkage.client import (
+    BATCH_TRAFFIC_CLASS,
+    TRAFFIC_CLASS_HEADER,
     StitchApiClient,
+    batch_headers_provider,
     validate_downstream_auth_config_at_startup,
 )
+from stitch.entity_linkage.settings import get_settings
 
 
 def make_client(
@@ -42,6 +46,56 @@ def test_stitch_api_client_requires_env_bearer_token(
         validate_downstream_auth_config_at_startup()
 
     assert str(exc_info.value) == f"{STITCH_CLIENT_BEARER_TOKEN_ENV_VAR} must be set"
+
+
+def test_batch_headers_provider_tags_traffic_class_alongside_auth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The tag is what makes the API's batch-yield gate apply to entity-linkage at
+    # all; drop it and EL silently goes back to competing with human users.
+    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "token-123")
+
+    headers = batch_headers_provider()()
+
+    assert headers == {
+        "Authorization": "Bearer token-123",
+        TRAFFIC_CLASS_HEADER: BATCH_TRAFFIC_CLASS,
+    }
+
+
+@pytest.mark.parametrize(
+    ("tag_as_batch", "expect_tag"),
+    [(True, True), (False, False)],
+)
+def test_client_tags_traffic_class_only_when_asked(
+    monkeypatch: pytest.MonkeyPatch,
+    tag_as_batch: bool,
+    expect_tag: bool,
+) -> None:
+    # The readiness probe passes tag_as_batch=False so the API's gate cannot
+    # delay it while a human is using the app.
+    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "token-123")
+    monkeypatch.setenv("ENTITY_LINKAGE_API_BASE_URL", "http://example.test/api/v1")
+    get_settings.cache_clear()
+
+    client = StitchApiClient(tag_as_batch=tag_as_batch)
+    try:
+        headers = client._client._headers()
+    finally:
+        get_settings.cache_clear()
+
+    assert headers["Authorization"] == "Bearer token-123"
+    assert (TRAFFIC_CLASS_HEADER in headers) is expect_tag
+
+
+def test_batch_headers_provider_still_requires_the_bearer_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Adding the tag must not paper over a missing token.
+    monkeypatch.delenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, raising=False)
+
+    with pytest.raises(ValueError):
+        batch_headers_provider()()
 
 
 @pytest.mark.anyio

@@ -84,7 +84,10 @@ async def check_health_details(request: Request):
     status_code = HTTP_200_OK
 
     try:
-        async with StitchApiClient() as client:
+        # Not batch-tagged: this is a reachability check, and tagging it would let
+        # the API's batch-yield gate delay the probe whenever a human is using the
+        # app — reporting the API as slow precisely when it is healthy and busy.
+        async with StitchApiClient(tag_as_batch=False) as client:
             await client.get_auth_me()
         downstream["api_reachable"] = True
         downstream["token_accepted"] = True
