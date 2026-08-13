@@ -319,6 +319,7 @@ jobs:
         LOG_LEVEL=debug
         FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
         AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
+        BATCH_YIELD_ENABLED=${{ needs.resolve-context.outputs.deployment-lane != 'dress-rehearsal' }}
         DEPLOYMENT_LANE=${{ needs.resolve-context.outputs.deployment-lane }}
         DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
         ENVIRONMENT=${{ needs.resolve-context.outputs.deployment-name }}
