@@ -9,6 +9,11 @@ on:
       deployment-name:
         description: Concrete deployment target name
         value: ${{ jobs.resolve-context.outputs.deployment-name }}
+      always-on:
+        description: >-
+          Container App min-replicas for this deployment: "1" to keep one warm
+          replica, empty to leave the default scale-to-zero.
+        value: ${{ jobs.resolve-context.outputs.always-on }}
 
 jobs:
   resolve-context:
@@ -16,6 +21,7 @@ jobs:
     outputs:
       deployment-lane: ${{ steps.resolve.outputs.deployment-lane }}
       deployment-name: ${{ steps.resolve.outputs.deployment-name }}
+      always-on: ${{ steps.resolve.outputs.always-on }}
     steps:
       - name: Resolve lane and deployment name
         id: resolve
@@ -38,9 +44,16 @@ jobs:
 
           deployment_lane=""
           deployment_name=""
+          # Container App min-replicas. Long-lived deployments -- the ones people
+          # visit at a stable URL -- keep one warm replica so the first request
+          # after an idle period is not a cold start. Throwaway per-PR previews
+          # keep the default scale-to-zero so they cost nothing while idle.
+          always_on=""
 
           case "$EVENT_NAME" in
             push|workflow_dispatch)
+              # Every push target is long-lived.
+              always_on="1"
               case "$REF_NAME" in
                 main)
                   deployment_lane="development"
@@ -65,6 +78,9 @@ jobs:
               pr_token="pr-$(printf '%04d' "$PR_NUMBER")"
               if [[ "$BASE_REF" == "production" || "$HEAD_REF" == demo/* ]]; then
                 deployment_lane="staging"
+                # Release candidates and demos get shown to people live, so they
+                # stay warm even though they are per-PR.
+                always_on="1"
                 # Staging/demo names carry a readable branch tag. The PR number already
                 # guarantees uniqueness; the hash lets a truncated tag be traced back to
                 # its branch. Size the whole name to <=27 chars so appending the longest
@@ -92,4 +108,5 @@ jobs:
           {
             echo "deployment-lane=$deployment_lane"
             echo "deployment-name=$deployment_name"
+            echo "always-on=$always_on"
           } >> "$GITHUB_OUTPUT"

@@ -2,25 +2,31 @@
 
 The CD pipeline is managed by the GitHub workflow `build-and-deploy.yml`.
 
-It uses two explicit workflow concepts:
+It uses three explicit workflow concepts, all resolved in
+`resolve-deployment-context.yml`:
 
 - `deployment_lane`: deploy class / GitHub Environment name
 - `deployment_name`: concrete runtime target name used for DB and app naming
+- `always_on`: whether this deployment keeps a warm Container App replica
 
 Branch behavior is:
 
 - push to `main` -> `deployment_lane=development`, `deployment_name=main`
-- any PR not targeting `production` -> `deployment_lane=development`, `deployment_name=pr-<number>`
-- push to `production` -> `deployment_lane=dress-rehearsal`, `deployment_name=production`
+- any PR not targeting `production` -> `deployment_lane=development`, `deployment_name=pr-<zero-padded number>`
+- push to `production` -> `deployment_lane=dress-rehearsal`, `deployment_name=dress-rehearsal`
 - any PR targeting `production` -> `deployment_lane=staging`, branch-derived `deployment_name`
 - any PR from a `demo/*` branch -> `deployment_lane=staging`, branch-derived `deployment_name` (regardless of whether it targets `main` or `production`)
 
-Examples:
+Pushes to any other branch fail the pipeline rather than guessing a target.
 
-- PR #57 into `main` -> `deployment_name=pr-57`
-- PR from `next` into `production` -> `deployment_name=next`
-- PR from `hotfix/fix-auth` into `production` -> `deployment_name=hotfix-fix-auth`
-- PR from `demo/q3-pitch` into `main` -> `deployment_name=demo-q3-pitch`
+Staging names carry a readable branch tag plus a 4-character hash of the branch,
+truncated so that the name plus the longest Container App suffix (`-api`, `-llm`,
+`-etl`) stays under Azure's 32-character limit. Examples:
+
+- PR #57 into `main` -> `deployment_name=pr-0057`
+- PR #224 from `next` into `production` -> `deployment_name=pr-0224-next-c6c1`
+- PR #7 from `hotfix/fix-auth` into `production` -> `deployment_name=pr-0007-hotfix-fix-aut-3c3d`
+- PR #232 from `demo/dedupe` into `main` -> `deployment_name=pr-0232-demo-dedupe-7c63`
 
 It builds Docker images for:
 
@@ -180,25 +186,37 @@ is only reachable at 2.0 vCPU**; there is no "low CPU + 4 GiB" option without
 moving the environment to a Dedicated workload profile. The inputs must be set
 together (the deploy validates one-without-the-other and fails fast).
 
-#### Keeping staging / dress-rehearsal awake (scale-to-zero policy)
+#### Keeping long-lived deployments awake (scale-to-zero policy)
 
 By default a Container App scales to zero (`min-replicas: 0`) when idle, so the
-first request after a quiet period pays a cold-start. That is fine for
-`development` (keeps costs down when nobody is using it) but undesirable for
-`staging` / `dress-rehearsal`, which we want responsive.
+first request after a quiet period pays a cold-start. That is right for a
+throwaway per-PR preview, which should cost nothing while nobody is looking at
+it, and wrong for anything people reach at a stable URL and expect to just work.
 
-The always-on services — `api`, `entity-linkage`, `stitch-llm` — therefore pass a
-**lane-conditional** `min-replicas` through the same mechanism:
+The split is therefore by **deployment lifetime**, not by lane. `resolve-context`
+decides it once and exposes it as the `always-on` output:
+
+| Deployment | `always-on` | Why |
+| --- | --- | --- |
+| push to `main` | `1` | long-lived; reachable at the dev lane's stable hostname |
+| push to `production` | `1` | long-lived; reachable at the release hostname |
+| `staging` lane PRs (into `production`, or from `demo/*`) | `1` | release candidates and demos get shown live |
+| `development` lane PRs | *(empty)* | throwaway preview, one per PR |
+
+The three long-running services — `api`, `entity-linkage`, `stitch-llm` — pass it
+straight through:
 
 ```yaml
-min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
+min-replicas: ${{ needs.resolve-context.outputs.always-on }}
 ```
 
-So on `staging` / `dress-rehearsal` they reassert `min-replicas: 1` (always one
-warm replica, `max` left at the default so they can still scale out), and on
-`development` the input is empty, the post-deploy step is skipped, and they keep
-the default scale-to-zero. The ETL app is always-on on those lanes too, since it
-pins `min = max = 1` and only deploys on non-`development` lanes.
+`1` means one warm replica with `max` left at the default, so they still scale
+out under load. Empty means the input is skipped entirely and the app keeps the
+default scale-to-zero. The ETL app is separate: it pins `min = max = 1` and only
+deploys on non-`development` lanes.
+
+Note that `entity-linkage` runs at 2.0 vCPU / 4.0 GiB, so it dominates the cost
+of keeping a lane warm.
 
 This only affects the Container Apps. The frontend is an Azure Static Web App
 (always served, no hibernation), and the PostgreSQL flexible server's
@@ -245,6 +263,59 @@ separate logical DBs)
 
 It also handles running `db-migrations` (via Alembic in the `api` image) and
 `seed`, both directly from GH Actions (rather than starting on Azure).
+
+### Custom domains (RMI hostnames)
+
+There is one Static Web App per lane group, and each has its own production
+branch. `deploy-frontend` passes that branch to the Azure deploy action as
+`production-branch`, which is what decides whether a deployment lands in the
+site's **production** environment or in a **preview** environment.
+
+| Hostname | Lane | Branch | Static Web App | Default hostname |
+| --- | --- | --- | --- | --- |
+| `stitch.rmi.org` | `dress-rehearsal` | `production` | `stitch-staging` | `brave-cliff-09493391e.7.azurestaticapps.net` |
+| `stitch-dev.rmi.org` | `development` | `main` | `stitch-dev` | `witty-mushroom-017a3dc1e.1.azurestaticapps.net` |
+
+**Preview environments cannot have custom domains.** This is an Azure product
+limitation, not a configuration gap, so every PR preview stays on an
+`azurestaticapps.net` hostname. Giving per-PR previews RMI hostnames would need
+Azure Front Door in front of the Static Web Apps, or one Static Web App per lane.
+It also means a lane can only get a hostname once its branch deploys to the
+site's production environment — which is why `main` uses `main` as its
+`production-branch` rather than sharing `production`.
+
+#### Who owns DNS
+
+`rmi.org` is registered and hosted at Network Solutions
+(`ns49.worldnic.com` / `ns50.worldnic.com`). There is no Azure DNS zone for it,
+so record changes are **not self-service** — they go through RMI IT. A wildcard
+`*.rmi.org` record exists, so an unconfigured subdomain will still resolve; a
+specific record takes precedence over it.
+
+#### Adding a hostname
+
+1. **Ask IT for a CNAME** from the hostname to the Static Web App's default
+   hostname (the table above, or the site's Overview blade in the portal). Check
+   first that nothing is already served there — the wildcard makes every name
+   resolve, so `dig` alone does not tell you whether the name is in use.
+2. **Bind it in Azure.** This part does not need IT; the Stitch team has access
+   to the `RMI-PROJECT-STITCH-SUB` subscription. On the Static Web App:
+   **Custom domains → Add → Custom domain on other DNS**, hostname record type
+   **CNAME**. Azure validates the record, then issues and auto-renews a free
+   managed certificate. Validation can take a while to see a fresh record.
+3. **Set it as the default domain.** With the domain selected, choose
+   **Set default**. Azure then 301-redirects the site's other hostnames —
+   including the `azurestaticapps.net` one — to it, so old links keep working.
+   Verify an open PR's preview URL still loads after doing this.
+4. **Register it with Auth0** on lanes that run `AUTH_DISABLED=false`. Add the
+   origin to Allowed Callback URLs, Allowed Logout URLs, and Allowed Web Origins
+   in the `rmi-spd` tenant. No code change is needed — the SPA derives its
+   `redirect_uri` from `window.location.origin`.
+5. **Point the lane at it** by setting `FRONTEND_PRODUCTION_URL` on the lane's
+   GitHub Environment to the new origin. This is the actual cutover: it becomes
+   the single CORS origin the backend services accept on the next deploy, so do
+   it only once the certificate is valid. Update the links in the top-level
+   `README.md` at the same time.
 
 ## Azure Permissions
 
@@ -314,7 +385,9 @@ named:
 - `POSTGRES_ADMIN_USER` (example: `postgres`)
 - `POSTGRES_SSLMODE` (example: `require`)
 - `POSTGRES_DEFAULT_DB` (example: `postgres`)
-- `FRONTEND_PRODUCTION_URL` (example: `https://witty-mushroom-017a3dc1e.1.azurestaticapps.net`)
+- `FRONTEND_PRODUCTION_URL` — the origin the lane's Static Web App production
+  environment is reached at, custom domain included once one is bound
+  (example: `https://stitch-dev.rmi.org`). See "Custom domains" below.
 - `FRONTEND_PREVIEW_URL_TEMPLATE` (example: `https://witty-mushroom-017a3dc1e-{name}.westus2.1.azurestaticapps.net`)
 - `AUTH_DISABLED` (example: `true` for `development`, `false` for `staging` / `dress-rehearsal`)
 - `AUTH_ISSUER` (example: `https://rmi-spd.us.auth0.com/`)
@@ -335,8 +408,19 @@ named:
   storage above).
 - `ETL_IMAGE_TAG` (example: `main`) — optional; consolidated ETL image tag to
   deploy, defaults to `main`. Only used on `staging` / `dress-rehearsal`.
-  - NOTE: `FRONTEND_PREVIEW_URL_TEMPLATE` must contain the literal `{name}` placeholder.
-    For `dress-rehearsal`, the workflow uses `FRONTEND_PRODUCTION_URL` directly. For pull requests, it replaces `{name}` with the raw PR number so PR #106 resolves to `https://witty-mushroom-017a3dc1e-106.westus2.1.azurestaticapps.net`. For other preview deployments, it replaces `{name}` with `deployment_name`.
+
+The two frontend URLs together define the single CORS origin the API,
+entity-linkage, and stitch-llm services will accept for a given deployment, so
+they have to match where the frontend actually lands:
+
+- A **pull request** always deploys to a Static Web App preview environment named
+  for the PR number, so the workflow substitutes the raw PR number into
+  `FRONTEND_PREVIEW_URL_TEMPLATE` — PR #106 resolves to
+  `https://witty-mushroom-017a3dc1e-106.westus2.1.azurestaticapps.net`. The
+  template must contain the literal `{name}` placeholder.
+- Any **other event** is a push to a lane's production branch, which deploys to
+  that lane's Static Web App production environment, so the workflow uses
+  `FRONTEND_PRODUCTION_URL` verbatim.
 
 ### Environment secrets
 

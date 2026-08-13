@@ -581,6 +581,20 @@ https://<your-swa>.azurestaticapps.net/callback
 
 Save.
 
+The app derives its `redirect_uri` from `window.location.origin`, so **every
+hostname it is served from needs its own entry** — the generated
+`azurestaticapps.net` hostname, each PR preview hostname, and any custom domain.
+For the shared lanes that means:
+
+```text
+https://stitch.rmi.org/
+https://stitch.rmi.org/callback
+```
+
+Register a custom domain here *before* pointing the lane's
+`FRONTEND_PRODUCTION_URL` at it, or sign-in breaks on the first deploy. See
+"Custom domains" in [`../CI_DEPLOYMENTS.md`](../CI_DEPLOYMENTS.md).
+
 ---
 
 ### Configure Auth0 for session persistence (refresh tokens)
