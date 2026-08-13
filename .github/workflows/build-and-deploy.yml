@@ -315,6 +315,13 @@ jobs:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
       container-app-name: ${{ format('{0}-api', needs.resolve-context.outputs.deployment-name) }}
+      # BATCH_YIELD_ENABLED makes batch-tagged callers (entity-linkage) wait while
+      # interactive traffic is active -- see stitch/api/admission.py. Deliberately
+      # OFF for dress-rehearsal, the lane the `production` branch deploys to: the
+      # gate is a per-process mechanism and the API has no max-replicas, so once
+      # Container Apps scales out, a batch caller can land on a replica that is not
+      # serving the human and see a false "quiet" window. Known consequence:
+      # STIT-644 is not mitigated on dress-rehearsal until this is turned on there.
       environment-variables: >-
         LOG_LEVEL=debug
         FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
