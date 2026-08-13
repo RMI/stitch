@@ -1,6 +1,9 @@
 import asyncio
+import hashlib
 import logging
+from collections import OrderedDict
 from functools import lru_cache
+from time import time
 from typing import Annotated, Literal, NoReturn
 
 from fastapi import Depends, HTTPException, Request
@@ -51,6 +54,73 @@ _DEV_CLAIMS = TokenClaims(
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 
+# Validated-claims cache.
+#
+# Validating a bearer token means an RSA signature verify, which costs real CPU on
+# every single request. Callers reuse one token for a long time -- a browser tab
+# for the life of its session, entity-linkage for an entire bulk run -- so the same
+# token gets verified thousands of times to produce an identical answer.
+#
+# Three properties this must keep:
+#
+# * **Keyed on a digest, not the token.** This dict outlives the request, and there
+#   is no reason to retain raw bearer tokens in a long-lived structure.
+# * **Never extends a token's life.** Each entry carries the token's own ``exp``
+#   and is dropped once reached, so a cache hit cannot resurrect an expired token.
+# * **Only successful validations are cached.** Failures must keep hitting the
+#   validator, or a token that failed transiently (e.g. JWKS fetch) would be stuck.
+#
+# Cached ``TokenClaims`` instances are shared between requests. That is safe only
+# because nothing mutates them -- keep it that way, or hand out copies here.
+_CLAIMS_CACHE_MAX_ENTRIES = 1024
+# Retire entries slightly before the token itself lapses, so anything close to
+# expiry goes back through the real validator (which applies the configured clock
+# skew) instead of being served from cache in its final moments.
+_CLAIMS_CACHE_EXPIRY_MARGIN_S = 30.0
+
+_claims_cache: OrderedDict[str, tuple[float, TokenClaims]] = OrderedDict()
+
+
+def _token_digest(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _cached_claims(digest: str, now: float) -> TokenClaims | None:
+    entry = _claims_cache.get(digest)
+    if entry is None:
+        return None
+    expires_at, claims = entry
+    if now >= expires_at:
+        del _claims_cache[digest]
+        return None
+    _claims_cache.move_to_end(digest)
+    return claims
+
+
+def _cache_claims(digest: str, claims: TokenClaims, now: float) -> None:
+    exp = claims.raw.get("exp")
+    if not isinstance(exp, (int, float)) or isinstance(exp, bool):
+        # The validator requires ``exp``, so this should be unreachable — but with
+        # no trustworthy expiry there is no safe way to cache.
+        return
+
+    expires_at = float(exp) - _CLAIMS_CACHE_EXPIRY_MARGIN_S
+    if expires_at <= now:
+        return
+
+    _claims_cache[digest] = (expires_at, claims)
+    _claims_cache.move_to_end(digest)
+    # Bounded so a flood of distinct tokens cannot grow this without limit;
+    # least-recently-used entries go first.
+    while len(_claims_cache) > _CLAIMS_CACHE_MAX_ENTRIES:
+        _claims_cache.popitem(last=False)
+
+
+def reset_claims_cache() -> None:
+    """Drop every cached entry. Test-only; not part of the request flow."""
+    _claims_cache.clear()
+
+
 def validate_auth_config_at_startup() -> None:
     """Called from FastAPI lifespan. Fail fast if misconfigured."""
     settings = get_settings()
@@ -94,6 +164,12 @@ async def get_token_claims(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    digest = _token_digest(token)
+    now = time()
+    cached = _cached_claims(digest, now)
+    if cached is not None:
+        return cached
+
     validator = get_jwt_validator()
     try:
         claims = await asyncio.to_thread(validator.validate, token)
@@ -115,9 +191,12 @@ async def get_token_claims(
         )
 
     if not claims.permissions:
+        # Emitted on validation, so once per token rather than once per request —
+        # the condition is a property of the token, so repeating it adds nothing.
         logger.warning(
             "authenticated token has no permissions; protected routes will reject it"
         )
+    _cache_claims(digest, claims, now)
     return claims
 
 

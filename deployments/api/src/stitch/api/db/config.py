@@ -54,6 +54,18 @@ def get_engine() -> AsyncEngine:
         settings.get_database_url(),
         echo=not settings.is_prod,
         pool_pre_ping=True,
+        # Stated explicitly rather than inherited. These are SQLAlchemy's own
+        # defaults, so this changes no behavior — the point is that the ceiling is
+        # now visible: 15 connections per process, and a 16th request waits up to
+        # pool_timeout before failing. Worth knowing because every authenticated
+        # request checks out *twice* (get_current_user opens its own session before
+        # the handler's UnitOfWork), and because each replica brings its own pool,
+        # so the real cap against Postgres is 15 x replicas.
+        pool_size=5,
+        max_overflow=10,
+        # NB: exhaustion raises TimeoutError, which the OperationalError -> 503
+        # handler in main.py does not catch — clients see a 500, not a 503.
+        pool_timeout=30.0,
     )
     register_query_timing(
         engine.sync_engine,
