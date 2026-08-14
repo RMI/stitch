@@ -1,7 +1,11 @@
+import csv
+import hashlib
+import io
+import json
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from stitch.auth.permissions import (
     MERGE_CANDIDATE_CREATE,
     MERGE_CANDIDATE_READ,
@@ -13,6 +17,7 @@ from stitch.auth.permissions import (
 )
 
 from stitch.api.entities import (
+    OGFieldExportParams,
     OGFieldFilterOptionsParams,
     OGFieldFilterOptionsResponse,
     MergeCandidateCreateRequest,
@@ -51,10 +56,104 @@ from stitch.ogsi.model import (
     OGFieldSourceValueView,
     OGFieldSourceView,
     OGFieldView,
+    OGSISrcKey,
 )
 
 
 logger = logging.getLogger(__name__)
+
+# Maximum number of rows returned by the CSV export endpoint. Requests that
+# would exceed this limit receive a 400 response so the caller can narrow their
+# filters. Chosen to bound memory and response time while covering most
+# real-world filtered query sizes.
+CSV_EXPORT_ROW_LIMIT = 10_000
+
+# Ordered field names from OilGasFieldBase -- the columns that appear in the CSV
+# after the ``id`` column. Keep in model-definition order so the export is
+# predictable and matches the detail view.
+_CSV_FIELD_NAMES: tuple[str, ...] = (
+    "name",
+    "country",
+    "latitude",
+    "longitude",
+    "name_local",
+    "state_province",
+    "region",
+    "basin",
+    "owners",
+    "operators",
+    "location_type",
+    "production_conventionality",
+    "primary_hydrocarbon_group",
+    "reservoir_formation",
+    "discovery_year",
+    "production_start_year",
+    "fid_year",
+    "field_status",
+)
+
+_CSV_HEADERS: tuple[str, ...] = (
+    "id",
+    *_CSV_FIELD_NAMES,
+    *[f"{f}_source" for f in _CSV_FIELD_NAMES],
+)
+
+
+def _serialize_csv_value(value: Any) -> str:
+    """Serialize a single field value to a CSV-safe string."""
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        # owners / operators: lists of Pydantic models -> JSON array string
+        return json.dumps(
+            [
+                item.model_dump(mode="json") if hasattr(item, "model_dump") else item
+                for item in value
+            ]
+        )
+    return str(value)
+
+
+def _items_to_csv(items: list[OGFieldListItemView]) -> str:
+    """Render a list of resource list-item views as a CSV string."""
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(_CSV_HEADERS)
+    for item in items:
+        data = item.data
+        row = [
+            item.id,
+            *[
+                _serialize_csv_value(getattr(data, field, None))
+                for field in _CSV_FIELD_NAMES
+            ],
+            *[item.provenance.get(field) or "" for field in _CSV_FIELD_NAMES],
+        ]
+        writer.writerow(row)
+    return output.getvalue()
+
+
+def _export_filename_hash(
+    params: OGFieldExportParams,
+    ls: frozenset[OGSISrcKey],
+) -> str:
+    """Return a 12-character hex hash that uniquely identifies this dataset.
+
+    Two calls with the same filters AND the same licensed-source set produce the
+    same hash, so users can tell at a glance whether two files match. Different
+    licensing levels or different filter combinations produce different hashes.
+    """
+    canonical = json.dumps(
+        {
+            "filters": {
+                k: str(v) for k, v in params.model_dump().items() if v is not None
+            },
+            "licensed_sources": sorted(ls),
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()[:12]
+
 
 router = APIRouter(
     prefix="/oil-gas-fields",
@@ -98,6 +197,59 @@ async def get_resource_filter_options(
         licensed_sources=licensed_sources(claims),
     )
     return OGFieldFilterOptionsResponse(field=params.field, values=values)
+
+
+@router.get(
+    "/export/csv",
+    dependencies=[Depends(require_permissions(RESOURCE_READ))],
+    response_class=Response,
+    responses={
+        200: {"content": {"text/csv": {}}, "description": "CSV file download"},
+        400: {"description": "Result set exceeds the export row limit"},
+    },
+)
+async def export_resources_csv(
+    *,
+    uow: UnitOfWorkDep,
+    _user: CurrentUser,
+    claims: Claims,
+    params: Annotated[OGFieldExportParams, Query()],
+) -> Response:
+    """Export the current resource list as a CSV file.
+
+    Accepts the same filter and sort parameters as ``GET /``. When the result
+    set would exceed ``CSV_EXPORT_ROW_LIMIT`` rows the endpoint returns HTTP
+    400; callers should narrow their filters and retry.
+
+    The ``Content-Disposition`` filename includes a short hash derived from the
+    active filters and the caller's licensed-source set, so two users with
+    different licensing levels can tell at a glance that their files may differ.
+    """
+    ls = licensed_sources(claims)
+    items, total_count = await resource_actions.export(
+        session=uow.session,
+        params=params,
+        licensed_sources=ls,
+    )
+
+    if total_count > CSV_EXPORT_ROW_LIMIT:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Export would return {total_count:,} resources, which exceeds the "
+                f"{CSV_EXPORT_ROW_LIMIT:,}-row limit. "
+                "Apply filters to narrow your results and try again."
+            ),
+        )
+
+    file_hash = _export_filename_hash(params, ls)
+    filename = f"stitch-export-{file_hash}.csv"
+    csv_content = _items_to_csv(items)
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get(

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAuth0 } from "@auth0/auth0-react";
 import { useSearchParams } from "react-router";
 import { useResources } from "../hooks/useResources";
 import ResourcesTable from "./ResourcesTable";
@@ -9,6 +10,11 @@ import Input from "./Input";
 import { EMPTY_FILTERS } from "../config/filters";
 import { DEFAULT_PAGE_SIZE, DEFAULT_PAGE } from "../queries/resources";
 import { useConfig } from "../config/useConfig";
+import { createAuthenticatedFetcher } from "../auth/api";
+import { getResourcesCsvExport } from "../queries/api";
+
+// Must match the limit enforced by the API export endpoint.
+const CSV_EXPORT_ROW_LIMIT = 10_000;
 
 const COLUMN_LABELS = {
   name: "Name",
@@ -30,6 +36,7 @@ function getSortLabel(sortConfig) {
 
 export default function ResourcesView({ className = "", endpoint }) {
   const config = useConfig();
+  const { getAccessTokenSilently } = useAuth0();
   const [searchParams, setSearchParams] = useSearchParams();
   const page = Number(searchParams.get("page") ?? DEFAULT_PAGE);
   const pageSize = Number(searchParams.get("page_size") ?? DEFAULT_PAGE_SIZE);
@@ -40,6 +47,8 @@ export default function ResourcesView({ className = "", endpoint }) {
     column: null,
     direction: "asc",
   });
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState(null);
 
   const { data, isLoading, isFetching, isError, error, refetch } = useResources(
     endpoint,
@@ -123,6 +132,46 @@ export default function ResourcesView({ className = "", endpoint }) {
     });
   };
 
+  const handleCsvDownload = async () => {
+    setIsDownloading(true);
+    setDownloadError(null);
+    try {
+      const fetcher = createAuthenticatedFetcher(config, getAccessTokenSilently);
+      const response = await getResourcesCsvExport(config, fetcher, endpoint, {
+        filters,
+        q: submittedSearch || undefined,
+        sort_by: sortConfig.column ?? undefined,
+        sort_order: sortConfig.column ? sortConfig.direction : undefined,
+      });
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        setDownloadError(
+          body.detail ?? "Export failed. Try again.",
+        );
+        return;
+      }
+
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const filenameMatch = disposition.match(/filename="([^"]+)"/);
+      const filename = filenameMatch?.[1] ?? "stitch-export.csv";
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setDownloadError("Export failed. Check your connection and try again.");
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const isOverExportLimit = totalCount > CSV_EXPORT_ROW_LIMIT;
+
   return (
     <div className={`mx-auto w-full max-w-6xl ${className}`}>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
@@ -138,13 +187,36 @@ export default function ResourcesView({ className = "", endpoint }) {
           </p>
         </div>
 
-        <Button
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-          variant="secondary"
-        >
-          {isRefreshing ? "Refreshing" : "Refresh"}
-        </Button>
+        <div className="flex flex-wrap items-start gap-2">
+          <div className="flex flex-col items-end gap-1">
+            <Button
+              onClick={handleCsvDownload}
+              disabled={isRefreshing || isDownloading || !data || isOverExportLimit}
+              variant="secondary"
+            >
+              {isDownloading ? "Downloading…" : "Download CSV"}
+            </Button>
+            {data && isOverExportLimit && (
+              <p className="max-w-xs text-right text-xs text-ink-muted">
+                Too many results ({totalCount.toLocaleString()} resources).
+                Apply filters to export below{" "}
+                {CSV_EXPORT_ROW_LIMIT.toLocaleString()}.
+              </p>
+            )}
+            {downloadError && (
+              <p className="max-w-xs text-right text-xs text-danger">
+                {downloadError}
+              </p>
+            )}
+          </div>
+          <Button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            variant="secondary"
+          >
+            {isRefreshing ? "Refreshing" : "Refresh"}
+          </Button>
+        </div>
       </div>
 
       <div className="mb-4 rounded-md border border-line bg-panel p-3">

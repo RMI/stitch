@@ -185,6 +185,25 @@ export async function createSourceForResource(
   return await response.json();
 }
 
+export async function getResourcesCsvExport(
+  config,
+  fetcher,
+  endpoint = "resources",
+  { filters = {}, q, sort_by, sort_order } = {},
+) {
+  const params = new URLSearchParams();
+  for (const [key, values] of Object.entries(filters)) {
+    for (const v of values) {
+      params.append(key, v);
+    }
+  }
+  if (q) params.set("q", q);
+  if (sort_by) params.set("sort_by", sort_by);
+  if (sort_order) params.set("sort_order", sort_order);
+  const url = `${config.apiBaseUrl}/${endpoint}/export/csv?${params}`;
+  return await fetcher(url);
+}
+
 export async function getMergeCandidates(
   config,
   fetcher,

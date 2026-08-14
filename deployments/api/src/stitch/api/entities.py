@@ -132,7 +132,13 @@ class OGFieldSortParams(BaseModel):
     sort_order: Literal["asc", "desc"] = "asc"
 
 
-class OGFieldQueryParams(PaginationParams, OGFieldFilterParams, OGFieldSortParams):
+class OGFieldExportParams(OGFieldFilterParams, OGFieldSortParams):
+    """Filter + sort params for the CSV export endpoint (no pagination)."""
+
+    pass
+
+
+class OGFieldQueryParams(PaginationParams, OGFieldExportParams):
     source: list[OGSISrcKey] = Field(default_factory=lambda: list(OGSI_SOURCE_DEFAULT))
 
 

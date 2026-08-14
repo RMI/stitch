@@ -1,11 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, within, fireEvent } from "@testing-library/react";
+import { screen, within, fireEvent, waitFor, act } from "@testing-library/react";
 import { renderWithQueryClient } from "../test/utils";
 import ResourcesView from "./ResourcesView";
 import { useResourceFilterOptions, useResources } from "../hooks/useResources";
 import { DEFAULT_PAGE_SIZE, DEFAULT_PAGE } from "../queries/resources";
 
 vi.mock("../hooks/useResources");
+vi.mock("../queries/api", () => ({
+  getResourcesCsvExport: vi.fn(),
+}));
+vi.mock("../auth/api", () => ({
+  createAuthenticatedFetcher: vi.fn(() => vi.fn()),
+}));
+
+import { getResourcesCsvExport } from "../queries/api";
 
 const mockItems = [
   {
@@ -709,6 +717,143 @@ describe("ResourcesView", () => {
         ENDPOINT,
         expect.objectContaining({ q: undefined }),
       );
+    });
+  });
+
+  describe("CSV download", () => {
+    const CSV_EXPORT_ROW_LIMIT = 10_000;
+
+    it("renders a Download CSV button", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: mockResourceData,
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      expect(
+        screen.getByRole("button", { name: /download csv/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("disables the Download CSV button when no data has loaded", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      expect(
+        screen.getByRole("button", { name: /download csv/i }),
+      ).toBeDisabled();
+    });
+
+    it("enables the Download CSV button when data is available and within limit", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: mockResourceData,
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      expect(
+        screen.getByRole("button", { name: /download csv/i }),
+      ).not.toBeDisabled();
+    });
+
+    it("disables the Download CSV button when total count exceeds the limit", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: {
+          ...mockResourceData,
+          total_count: CSV_EXPORT_ROW_LIMIT + 1,
+          total_pages: 1001,
+        },
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      expect(
+        screen.getByRole("button", { name: /download csv/i }),
+      ).toBeDisabled();
+    });
+
+    it("shows an over-limit message when total count exceeds the limit", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: {
+          ...mockResourceData,
+          total_count: CSV_EXPORT_ROW_LIMIT + 1,
+          total_pages: 1001,
+        },
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      expect(screen.getByText(/too many results/i)).toBeInTheDocument();
+    });
+
+    it("does not show the over-limit message when within limit", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: mockResourceData,
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      expect(screen.queryByText(/too many results/i)).not.toBeInTheDocument();
+    });
+
+    it("calls getResourcesCsvExport with active filters and search when clicked", async () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: mockResourceData,
+      });
+
+      const mockResponse = {
+        ok: true,
+        headers: {
+          get: vi.fn().mockReturnValue('attachment; filename="stitch-export-abc123.csv"'),
+        },
+        blob: vi.fn().mockResolvedValue(new Blob(["id,name\n1,Test"], { type: "text/csv" })),
+      };
+      vi.mocked(getResourcesCsvExport).mockResolvedValue(mockResponse);
+
+      // jsdom does not support URL.createObjectURL
+      const createObjectURL = vi.fn().mockReturnValue("blob:mock");
+      const revokeObjectURL = vi.fn();
+      vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /download csv/i }));
+      });
+
+      await waitFor(() => {
+        expect(getResourcesCsvExport).toHaveBeenCalled();
+      });
+
+      const [, , calledEndpoint] = vi.mocked(getResourcesCsvExport).mock.calls[0];
+      expect(calledEndpoint).toBe(ENDPOINT);
+    });
+
+    it("shows an error message when the export API call fails", async () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: mockResourceData,
+      });
+
+      vi.mocked(getResourcesCsvExport).mockResolvedValue({
+        ok: false,
+        json: vi.fn().mockResolvedValue({ detail: "Export failed for testing" }),
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /download csv/i }));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Export failed for testing")).toBeInTheDocument();
+      });
     });
   });
 });

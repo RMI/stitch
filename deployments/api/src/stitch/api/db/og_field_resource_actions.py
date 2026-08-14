@@ -15,6 +15,7 @@ from stitch.api.db.errors import (
 from stitch.api.auth import CurrentUser
 from stitch.api.entities import (
     FilterOptionField,
+    OGFieldExportParams,
     OGFieldFilterOptionsParams,
     OGFieldQueryParams,
 )
@@ -86,6 +87,35 @@ async def query(
 
     # Hydrate the page with the shared SQL coalescer (same one the detail path
     # uses), then the shared list-item projection, in phase-1 order.
+    coalesced = await coalesce_resources(session, ids, licensed_sources)
+    items = [resource_to_list_item_view(coalesced[rid]) for rid in ids]
+    return items, total
+
+
+async def export(
+    session: AsyncSession,
+    params: OGFieldExportParams,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> tuple[list[OGFieldListItemView], int]:
+    """Query all coalesced resource list items matching params (no pagination).
+
+    Returns ``(items, total_count)``. The caller is responsible for enforcing
+    any row limit before calling this function.
+    """
+    if params.sort_by == "source":
+        raise HTTPException(
+            status_code=422,
+            detail="sort_by=source is not supported for resource export queries.",
+        )
+
+    ids_stmt = base_resource_query(params, licensed_sources)
+    count_stmt = select(func.count()).select_from(ids_stmt.subquery())
+    total = (await session.scalar(count_stmt)) or 0
+
+    if not total:
+        return [], 0
+
+    ids = list((await session.scalars(ids_stmt)).all())
     coalesced = await coalesce_resources(session, ids, licensed_sources)
     items = [resource_to_list_item_view(coalesced[rid]) for rid in ids]
     return items, total

@@ -38,7 +38,7 @@ from stitch.api.db.model import (
     ResourceModel,
 )
 from stitch.api.db.model.oil_gas_field_source_value import value_attr_for
-from stitch.api.entities import OGFieldQueryParams
+from stitch.api.entities import OGFieldExportParams, OGFieldQueryParams
 from stitch.ogsi.model.types import OGSISrcKey
 
 # Single source of truth for the source-list field metadata. This is a shared
@@ -66,7 +66,7 @@ EXACT_MATCH_FIELDS: Final[tuple[str, ...]] = (
 _HEADER_SORT_FIELDS: Final[frozenset[str]] = frozenset({"id", "source", "resource_id"})
 
 
-def _participating_columns(params: OGFieldQueryParams) -> list[str]:
+def _participating_columns(params: OGFieldExportParams) -> list[str]:
     """Value attributes the query actually touches -- the columns to pivot.
 
     The sort field (unless it resolves from a header column), every *set*
@@ -351,7 +351,7 @@ def _resource_universe() -> Select[tuple[int]]:
 
 
 def base_resource_query(
-    params: OGFieldQueryParams,
+    params: OGFieldExportParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> Select[tuple[int]]:
     involved = _participating_columns(params)
@@ -435,7 +435,7 @@ def _require_column(cte: CTE | Select, field_name: str) -> ColumnElement[Any]:
 
 def _build_field_conditions(
     cte: CTE | Select,
-    params: OGFieldQueryParams,
+    params: OGFieldExportParams,
 ) -> list[ColumnElement[bool]]:
     """Path-agnostic q-ILIKE + exact-match filters over the pivoted columns.
 
@@ -464,7 +464,7 @@ def _build_field_conditions(
 
 def _build_sort_clauses(
     cte: CTE | Select,
-    params: OGFieldQueryParams,
+    params: OGFieldExportParams,
     default: Literal["resource_id", "source_pk"] = "source_pk",
 ) -> list[Any]:
     direction = desc if params.sort_order == "desc" else asc
