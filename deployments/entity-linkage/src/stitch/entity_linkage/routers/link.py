@@ -51,10 +51,14 @@ class BulkLinkRequest(BaseModel):
         ),
     )
     page_size: int = Field(
-        default=200,
+        default=matching.DEFAULT_PAGE_SIZE,
         ge=1,
         le=200,
-        description="Page size used to stream resources during the pass.",
+        description=(
+            "Page size used for every listing request the pass makes -- both "
+            "streaming the resource list and searching each resource's "
+            "same-name candidates."
+        ),
     )
 
 

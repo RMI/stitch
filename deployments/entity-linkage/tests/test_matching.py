@@ -35,6 +35,7 @@ class FakeMatchingClient(AbstractAsyncContextManager["FakeMatchingClient"]):
 
         self.detail_calls: list[int] = []
         self.iter_q: list[str | None] = []
+        self.iter_page_sizes: list[int] = []
         self.create_calls: list[list[int]] = []
         self.list_candidates_calls = 0
 
@@ -59,6 +60,7 @@ class FakeMatchingClient(AbstractAsyncContextManager["FakeMatchingClient"]):
         country: str | None = None,
     ):
         self.iter_q.append(q)
+        self.iter_page_sizes.append(page_size)
         for item in self.items:
             if q is None or (
                 item.name is not None and q.casefold() in item.name.casefold()
@@ -391,3 +393,39 @@ async def test_link_all_logs_progress_periodically(
     ]
     # One at the 2-resource mark, one final summary at the end of the pass.
     assert [event["resources_scanned"] for event in events] == [2, 3]
+
+
+@pytest.mark.anyio
+async def test_link_all_uses_one_page_size_for_every_listing_request() -> None:
+    # Regression: the driver loop asked for the run's page size while the inner
+    # match scan silently fell back to the client default of 50, quadrupling
+    # requests -- and their per-page COUNT queries -- on the hot path.
+    client = FakeMatchingClient(
+        items=[
+            FieldCandidate(id=1, name="Alpha", country="US"),
+            FieldCandidate(id=2, name="alpha", country="US"),
+        ],
+        details_by_id={
+            1: FieldDetailCandidate(id=1, name="Alpha", country="US"),
+            2: FieldDetailCandidate(id=2, name="alpha", country="US"),
+        },
+    )
+
+    await matching.link_all(
+        client, apply_merges=False, page_size=200, initiated_by="Tester"
+    )
+
+    # The driver stream plus the seed's ``q`` scan, both at the requested size.
+    assert client.iter_page_sizes == [200, 200]
+
+
+@pytest.mark.anyio
+async def test_link_resource_defaults_to_the_shared_page_size() -> None:
+    client = FakeMatchingClient(
+        items=[FieldCandidate(id=1, name="Alpha", country="US")],
+        details_by_id={1: FieldDetailCandidate(id=1, name="Alpha", country="US")},
+    )
+
+    await matching.link_resource(client, 1, apply_merges=False)
+
+    assert client.iter_page_sizes == [matching.DEFAULT_PAGE_SIZE]

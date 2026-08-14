@@ -44,6 +44,12 @@ _ALREADY_HANDLED_STATUS = 400
 # partway left no record of how far it got. Emit a progress event this often.
 _PROGRESS_LOG_EVERY = 100
 
+# One page size for every request a linkage run makes. Kept in one place because
+# the outer driver loop and the inner match scan silently disagreed before: the
+# driver asked for 200 while the scan fell back to the client default of 50,
+# quadrupling requests -- and their per-page COUNT queries -- on the hot path.
+DEFAULT_PAGE_SIZE = 200
+
 
 def merge_fingerprint(resource_ids: Sequence[int]) -> str:
     """Sorted, de-duplicated id key.
@@ -57,6 +63,8 @@ def merge_fingerprint(resource_ids: Sequence[int]) -> str:
 async def find_match_group_for_resource(
     client: StitchApiClient,
     resource_id: int,
+    *,
+    page_size: int = DEFAULT_PAGE_SIZE,
 ) -> list[int]:
     """Return the sorted id block ``resource_id`` merges into, or ``[]``.
 
@@ -80,7 +88,7 @@ async def find_match_group_for_resource(
     # meant to catch. ``seed_name`` is stripped + casefolded; ILIKE is already
     # case-insensitive, so the casefold is harmless and the strip is what matters.
     same_name_ids: set[int] = set()
-    async for candidate in client.iter_oil_gas_fields(q=seed_name):
+    async for candidate in client.iter_oil_gas_fields(q=seed_name, page_size=page_size):
         if candidate.normalized_name == seed_name:
             same_name_ids.add(candidate.id)
     # The seed always belongs to its own block even if the list universe omits it.
@@ -133,9 +141,12 @@ async def link_resource(
     *,
     apply_merges: bool,
     known_existing: set[str] | None = None,
+    page_size: int = DEFAULT_PAGE_SIZE,
 ) -> ResourceLinkResult:
     """Match a single resource and optionally submit its merge candidate."""
-    matched = await find_match_group_for_resource(client, resource_id)
+    matched = await find_match_group_for_resource(
+        client, resource_id, page_size=page_size
+    )
     if not matched:
         return ResourceLinkResult(
             resource_id=resource_id,
@@ -206,7 +217,9 @@ async def link_all(
         if candidate.id in processed_ids:
             continue
 
-        matched = await find_match_group_for_resource(client, candidate.id)
+        matched = await find_match_group_for_resource(
+            client, candidate.id, page_size=page_size
+        )
         if not matched:
             continue
 
