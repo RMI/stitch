@@ -9,13 +9,6 @@ from stitch.entity_linkage.entities import FieldCandidate, FieldDetailCandidate
 from stitch.entity_linkage.settings import get_settings
 
 
-def _get_api_base_url() -> str:
-    """
-    Resolve the downstream Stitch API base URL.
-    """
-    return str(get_settings().api_base_url)
-
-
 def validate_downstream_auth_config_at_startup() -> None:
     headers_provider = env_bearer_token_headers_provider()
     headers_provider()
@@ -30,11 +23,13 @@ class StitchApiClient:
             self._client = client
             return
 
+        settings = get_settings()
         headers_provider = env_bearer_token_headers_provider()
         self._client = AsyncStitchClient(
-            base_url=_get_api_base_url(),
-            timeout=30.0,
+            base_url=str(settings.api_base_url),
+            timeout=settings.api_timeout_seconds,
             headers_provider=headers_provider,
+            max_retries=settings.api_max_retries,
         )
 
     async def __aenter__(self) -> "StitchApiClient":

@@ -20,9 +20,30 @@ country, and proposes them to the Stitch API as merge candidates.
   (resources scanned, match groups, candidates created/skipped). `404` before any
   run has started.
 
+While a pass is running, `status` also reports `progress` — resources scanned,
+match groups found, and candidates created/skipped so far. The same counters are
+written to the logs as a `linkage_progress` event every 100 resources, so a run's
+throughput (and how far a failed run got) is visible without polling.
+
 Job state is in-memory and single-process (see `jobs.py`): it is lost on restart,
 tracks one run at a time, and must move to shared storage before the service is
 scaled beyond one worker.
+
+## Downstream requests
+
+A full pass makes a very large number of calls to the Stitch API, so a single
+transient failure would otherwise end the whole run. Reads are retried with
+exponential backoff and jitter; writes are never replayed, since a timed-out
+create may already have been applied.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `ENTITY_LINKAGE_API_TIMEOUT_SECONDS` | `30` | How long to wait on one request |
+| `ENTITY_LINKAGE_API_MAX_RETRIES` | `2` | Retries after a failed read; `0` disables |
+
+Raising the timeout is an operational lever, not a fix: if the downstream query
+is genuinely slow, a longer timeout makes an already-long pass longer. The
+underlying cost is the substring name search the matcher relies on (STIT-573).
 
 All linkage endpoints require the `service:entity-linkage:run` permission and
 default to a dry run (`apply_merges` defaults to `false`).

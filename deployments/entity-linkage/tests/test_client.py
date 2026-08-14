@@ -16,6 +16,7 @@ from stitch.entity_linkage.client import (
     StitchApiClient,
     validate_downstream_auth_config_at_startup,
 )
+from stitch.entity_linkage.settings import get_settings
 
 
 def make_client(
@@ -120,3 +121,26 @@ def test_raise_for_status_raises_stitch_api_error(
     assert (
         str(exc_info.value) == f"{operation} failed with status {status_code}: {text}"
     )
+
+
+def test_default_client_is_built_from_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Timeout and retry budget come from settings, not hardcoded values."""
+    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "token-123")
+    monkeypatch.setenv("ENTITY_LINKAGE_API_BASE_URL", "http://api.test/api/v1")
+    monkeypatch.setenv("ENTITY_LINKAGE_API_TIMEOUT_SECONDS", "45")
+    monkeypatch.setenv("ENTITY_LINKAGE_API_MAX_RETRIES", "4")
+    get_settings.cache_clear()
+
+    try:
+        client = StitchApiClient()
+    finally:
+        # get_settings is lru_cached, so leaving this populated would leak the
+        # patched environment into every later test in the session.
+        get_settings.cache_clear()
+
+    shared = client._client
+    assert str(shared._client.base_url).rstrip("/") == "http://api.test/api/v1"
+    assert shared._client.timeout.read == 45.0
+    assert shared._max_retries == 4
