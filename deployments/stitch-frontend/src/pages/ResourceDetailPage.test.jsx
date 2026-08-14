@@ -11,8 +11,16 @@ import {
 } from "../hooks/useResources";
 import { usePermissions } from "../hooks/usePermissions";
 import * as apiModule from "../queries/api";
+import { resourceKeys } from "../queries/resources";
 
-vi.mock("../hooks/useResources");
+// Mock only the read hooks; the attach path exercises the real
+// useCreateSourceForResource mutation against a spied API module.
+vi.mock("../hooks/useResources", async (importOriginal) => ({
+  ...(await importOriginal()),
+  useResourceDetail: vi.fn(),
+  useSourceDetail: vi.fn(),
+  useFieldSourceValues: vi.fn(),
+}));
 vi.mock("../hooks/usePermissions");
 
 let mockedRouteId = "1";
@@ -541,12 +549,37 @@ describe("ResourceDetailPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("creates an llm source and attaches it to the resource, staying on the page", async () => {
-    const refetch = vi.fn();
+  it("enables the detail query only for a valid id, so invalidations refetch it", () => {
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,
       data: mockDetailView,
-      refetch,
+    });
+
+    const { unmount } = renderWithQueryClient(<ResourceDetailPage />);
+    expect(useResourceDetail).toHaveBeenCalledWith("oil-gas-fields", 1, true);
+    // Unmount before re-rendering: mockedRouteId is a shared module variable
+    // read fresh by the mocked useParams() on every render, so a still-mounted
+    // first instance would pick up the new value on any later re-render and
+    // could call useResourceDetail again — racing the second instance's call
+    // and making toHaveBeenLastCalledWith flaky. (rerender() isn't an option
+    // here: renderWithQueryClient inlines its providers into one render()
+    // call rather than using RTL's `wrapper` option, so rerender() would
+    // replace the whole wrapped tree with an unwrapped one.)
+    unmount();
+
+    mockedRouteId = "not-a-number";
+    renderWithQueryClient(<ResourceDetailPage />);
+    expect(useResourceDetail).toHaveBeenLastCalledWith(
+      "oil-gas-fields",
+      NaN,
+      false,
+    );
+  });
+
+  it("creates an llm source and attaches it to the resource, staying on the page", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
     });
     vi.spyOn(apiModule, "createLLMSuggestion").mockResolvedValue({
       resource_id: 1,
@@ -567,7 +600,8 @@ describe("ResourceDetailPage", () => {
       .mockResolvedValue({ id: 123, source: "llm" });
     const user = userEvent.setup();
 
-    renderWithQueryClient(<ResourceDetailPage />);
+    const { queryClient } = renderWithQueryClient(<ResourceDetailPage />);
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
     await user.click(
       screen.getByRole("button", { name: /generate suggestion/i }),
     );
@@ -615,7 +649,11 @@ describe("ResourceDetailPage", () => {
     expect(
       await screen.findByText("Source added to resource."),
     ).toBeInTheDocument();
-    expect(refetch).toHaveBeenCalled();
+    // The attach changes the resource's coalesced data, so everything cached
+    // under the endpoint refreshes.
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: resourceKeys.all("oil-gas-fields"),
+    });
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 

@@ -16,7 +16,10 @@ import { resourceKeys } from "../queries/resources";
 import { SOURCE_LABELS } from "../constants/sourceMeta";
 import { renderWithQueryClient } from "../test/utils";
 
-vi.mock("../hooks/useResources", () => ({
+// Mock only the read hook; the save path exercises the real
+// useCreateSourceForResource mutation against a spied API module.
+vi.mock("../hooks/useResources", async (importOriginal) => ({
+  ...(await importOriginal()),
   useFieldSourceValues: vi.fn(),
 }));
 vi.mock("../hooks/usePermissions", () => ({
@@ -488,11 +491,10 @@ describe("ResourceFieldCard", () => {
         "oil-gas-fields",
       );
 
+      // A save can change the coalesced winning value anywhere it appears
+      // (list rows, detail, filter options), so the whole endpoint refreshes.
       expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: resourceKeys.fieldSources("oil-gas-fields", 42, "basin"),
-      });
-      expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: resourceKeys.detail("oil-gas-fields", 42),
+        queryKey: resourceKeys.all("oil-gas-fields"),
       });
 
       // Form closes on success.
