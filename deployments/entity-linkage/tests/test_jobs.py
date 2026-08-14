@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
+import httpx
 import pytest
 from pydantic import BaseModel
 
@@ -72,8 +73,32 @@ def test_run_thunk_failure_records_error() -> None:
                 break
             await asyncio.sleep(0.01)
         assert mgr.current().state == JobState.failed
-        assert mgr.current().error == "kaboom"
+        assert mgr.current().error == "RuntimeError: kaboom"
         assert mgr.current().result is None
+
+    asyncio.run(scenario())
+
+
+def test_run_thunk_failure_records_type_when_message_is_empty() -> None:
+    """The shape that produced a blank ``error`` in the PR-0224 incident.
+
+    httpx timeout exceptions stringify to ``""``, so recording ``str(exc)``
+    alone left the job record saying only "failed".
+    """
+
+    async def scenario() -> None:
+        mgr = get_job_manager()
+
+        async def run() -> _Result:
+            raise httpx.ReadTimeout("")
+
+        await mgr.start(_Params(), run)
+        for _ in range(200):
+            if mgr.current().state != JobState.running:
+                break
+            await asyncio.sleep(0.01)
+        assert mgr.current().state == JobState.failed
+        assert mgr.current().error == "ReadTimeout"
 
     asyncio.run(scenario())
 

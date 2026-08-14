@@ -49,6 +49,18 @@ class JobAlreadyRunningError(Exception):
         super().__init__(f"A job is already running: {job_id}")
 
 
+def format_exception(exc: BaseException) -> str:
+    """Describe ``exc`` in a string that is never empty.
+
+    ``str(exc)`` alone is not enough: httpx's timeout exceptions
+    (``ReadTimeout``, ``ConnectTimeout``, ``PoolTimeout``) carry an empty
+    message, so a run that died on one recorded a blank ``error`` and the only
+    way to learn what had happened was the container logs.
+    """
+    message = str(exc)
+    return f"{type(exc).__name__}: {message}" if message else type(exc).__name__
+
+
 class JobManager:
     """Single-job, in-memory run manager.
 
@@ -85,7 +97,7 @@ class JobManager:
             record.state = JobState.succeeded
         except Exception as exc:
             logger.exception("Linkage run %s failed", record.job_id)
-            record.error = str(exc)
+            record.error = format_exception(exc)
             record.state = JobState.failed
         finally:
             record.finished_at = datetime.now(UTC)
