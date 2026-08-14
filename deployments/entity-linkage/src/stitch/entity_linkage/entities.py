@@ -87,6 +87,21 @@ class ResourceLinkResult(BaseModel):
     skipped_existing: bool
 
 
+class LinkProgress(BaseModel):
+    """Live counters for an in-flight pass, mutated in place by ``link_all``.
+
+    Held by the job record so a poll of the status endpoint reports how far the
+    run has got -- including on a run that ultimately fails, where the counters
+    are the only record of what it managed to do.
+    """
+
+    resources_scanned: int = 0
+    match_groups_found: int = 0
+    merge_candidates_created: int = 0
+    merge_candidates_skipped: int = 0
+    last_resource_id: int | None = None
+
+
 class BulkLinkResponse(BaseModel):
     """Summary of a full linkage pass over every resource."""
 

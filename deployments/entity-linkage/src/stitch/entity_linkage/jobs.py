@@ -41,6 +41,9 @@ class JobRecord(BaseModel):
     finished_at: datetime | None = None
     result: SerializeAsAny[BaseModel] | None = None
     error: str | None = None
+    # Owned and mutated by the caller's run body; the manager only serializes
+    # it, so this stays generic like ``params`` and ``result``.
+    progress: SerializeAsAny[BaseModel] | None = None
 
 
 class JobAlreadyRunningError(Exception):
@@ -76,7 +79,12 @@ class JobManager:
     def current(self) -> JobRecord | None:
         return self._record
 
-    async def start(self, params: BaseModel, run: RunThunk) -> JobRecord:
+    async def start(
+        self,
+        params: BaseModel,
+        run: RunThunk,
+        progress: BaseModel | None = None,
+    ) -> JobRecord:
         async with self._lock:
             if self._record is not None and self._record.state == JobState.running:
                 raise JobAlreadyRunningError(self._record.job_id)
@@ -86,6 +94,7 @@ class JobManager:
                 state=JobState.running,
                 params=params,
                 started_at=datetime.now(UTC),
+                progress=progress,
             )
             self._record = record
             self._task = asyncio.create_task(self._run(record, run))

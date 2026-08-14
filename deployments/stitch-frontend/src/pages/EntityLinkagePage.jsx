@@ -117,7 +117,9 @@ function RunResult({ record }) {
         </>
       ) : record.state === "running" ? (
         <p className="text-sm text-ink-muted">
-          Run in progress — status refreshes automatically.
+          {record.progress
+            ? `Run in progress — ${record.progress.resources_scanned.toLocaleString()} resources checked so far, ${record.progress.match_groups_found.toLocaleString()} duplicate groups found. Status refreshes automatically.`
+            : "Run in progress — status refreshes automatically."}
         </p>
       ) : record.state === "failed" ? (
         <div className="rounded-md border border-danger/25 bg-danger-soft p-3 text-sm text-danger">

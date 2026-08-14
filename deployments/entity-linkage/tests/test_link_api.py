@@ -311,7 +311,9 @@ def test_link_all_rejects_concurrent_run_with_409(
 ) -> None:
     install_client()
 
-    async def slow_link_all(client, *, apply_merges, page_size, initiated_by):
+    async def slow_link_all(
+        client, *, apply_merges, page_size, initiated_by, progress=None
+    ):
         import asyncio
 
         await asyncio.sleep(0.5)

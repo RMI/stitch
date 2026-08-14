@@ -17,6 +17,7 @@ from stitch.entity_linkage.auth import AuthContext, require_permissions
 from stitch.entity_linkage.client import StitchApiClient
 from stitch.entity_linkage.entities import (
     BulkLinkResponse,
+    LinkProgress,
     ResourceLinkResult,
     user_label,
 )
@@ -82,6 +83,9 @@ async def start_link_all(
     failures are captured on the job record rather than surfaced here.
     """
     initiated_by = user_label(auth_context.user)
+    # One object, shared between the run body and the job record, so the status
+    # endpoint reports live counters instead of only "running".
+    progress = LinkProgress()
 
     async def run() -> BulkLinkResponse:
         async with StitchApiClient() as client:
@@ -90,10 +94,11 @@ async def start_link_all(
                 apply_merges=request.apply_merges,
                 page_size=request.page_size,
                 initiated_by=initiated_by,
+                progress=progress,
             )
 
     try:
-        record = await get_job_manager().start(request, run)
+        record = await get_job_manager().start(request, run, progress=progress)
     except JobAlreadyRunningError as exc:
         raise HTTPException(
             status_code=HTTP_409_CONFLICT,

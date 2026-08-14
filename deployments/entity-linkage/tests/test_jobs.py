@@ -103,6 +103,31 @@ def test_run_thunk_failure_records_type_when_message_is_empty() -> None:
     asyncio.run(scenario())
 
 
+def test_progress_object_is_visible_on_the_record_while_running() -> None:
+    """The caller mutates its own object; the record reflects it live."""
+
+    class _Progress(BaseModel):
+        scanned: int = 0
+
+    async def scenario() -> None:
+        mgr = get_job_manager()
+        progress = _Progress()
+
+        async def run() -> _Result:
+            progress.scanned = 42
+            return _Result(doubled=0)
+
+        record = await mgr.start(_Params(), run, progress=progress)
+        assert record.progress is progress
+        for _ in range(200):
+            if mgr.current().state != JobState.running:
+                break
+            await asyncio.sleep(0.01)
+        assert mgr.current().progress.model_dump() == {"scanned": 42}
+
+    asyncio.run(scenario())
+
+
 def test_manager_rejects_concurrent_start() -> None:
     async def scenario() -> None:
         mgr = get_job_manager()

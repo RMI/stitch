@@ -5,7 +5,11 @@ from contextlib import AbstractAsyncContextManager
 import pytest
 
 from stitch.entity_linkage import matching
-from stitch.entity_linkage.entities import FieldCandidate, FieldDetailCandidate
+from stitch.entity_linkage.entities import (
+    FieldCandidate,
+    FieldDetailCandidate,
+    LinkProgress,
+)
 from stitch.entity_linkage.errors import StitchAPIError
 
 
@@ -319,3 +323,71 @@ async def test_link_all_skips_groups_already_in_the_queue() -> None:
     assert response.merge_candidates_skipped == 1
     assert client.create_calls == []
     assert client.list_candidates_calls == 1
+
+
+@pytest.mark.anyio
+async def test_link_all_progress_matches_the_returned_summary() -> None:
+    # The record polled mid-run and the summary returned at the end read from
+    # the same counters, so they cannot drift apart.
+    client = FakeMatchingClient(
+        items=[
+            FieldCandidate(id=1, name="Alpha", country="US"),
+            FieldCandidate(id=2, name="alpha", country="US"),
+            FieldCandidate(id=3, name="Beta", country="US"),
+        ],
+        details_by_id={
+            1: FieldDetailCandidate(id=1, name="Alpha", country="US"),
+            2: FieldDetailCandidate(id=2, name="alpha", country="US"),
+            3: FieldDetailCandidate(id=3, name="Beta", country="US"),
+        },
+    )
+    progress = LinkProgress()
+
+    response = await matching.link_all(
+        client,
+        apply_merges=True,
+        page_size=200,
+        initiated_by="Tester",
+        progress=progress,
+    )
+
+    assert progress.resources_scanned == response.resources_scanned == 3
+    assert progress.match_groups_found == len(response.match_groups) == 1
+    assert progress.merge_candidates_created == response.merge_candidates_created == 1
+    assert progress.merge_candidates_skipped == response.merge_candidates_skipped == 0
+    assert progress.last_resource_id == 3
+
+
+@pytest.mark.anyio
+async def test_link_all_logs_progress_periodically(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A real pass logs every 100 resources; shrink the interval so the test
+    # doesn't need 100 fixtures to prove the event fires and carries counters.
+    monkeypatch.setattr(matching, "_PROGRESS_LOG_EVERY", 2)
+    client = FakeMatchingClient(
+        items=[
+            FieldCandidate(id=1, name="Alpha", country="US"),
+            FieldCandidate(id=2, name="Beta", country="US"),
+            FieldCandidate(id=3, name="Gamma", country="US"),
+        ],
+        details_by_id={
+            1: FieldDetailCandidate(id=1, name="Alpha", country="US"),
+            2: FieldDetailCandidate(id=2, name="Beta", country="US"),
+            3: FieldDetailCandidate(id=3, name="Gamma", country="US"),
+        },
+    )
+
+    with caplog.at_level("INFO", logger="stitch.entity_linkage"):
+        await matching.link_all(
+            client, apply_merges=False, page_size=200, initiated_by="Tester"
+        )
+
+    events = [
+        record.event
+        for record in caplog.records
+        if record.getMessage() == "linkage_progress"
+    ]
+    # One at the 2-resource mark, one final summary at the end of the pass.
+    assert [event["resources_scanned"] for event in events] == [2, 3]

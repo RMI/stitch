@@ -20,21 +20,29 @@ page at a time, so it never materializes the whole table either.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 
 from stitch.entity_linkage.client import StitchApiClient
 from stitch.entity_linkage.entities import (
     BulkLinkResponse,
+    LinkProgress,
     ResourceLinkResult,
     normalize_country,
     normalize_name,
 )
 from stitch.entity_linkage.errors import StitchAPIError
 
+logger = logging.getLogger("stitch.entity_linkage")
+
 # A 4xx from create-merge-candidate is an expected, non-fatal outcome during a
 # run: the API rejects a duplicate fingerprint (a candidate already exists) or a
 # resource that has already been merged. We skip those rather than aborting.
 _ALREADY_HANDLED_STATUS = 400
+
+# A pass runs for hours and previously logged nothing at all, so a run that died
+# partway left no record of how far it got. Emit a progress event this often.
+_PROGRESS_LOG_EVERY = 100
 
 
 def merge_fingerprint(resource_ids: Sequence[int]) -> str:
@@ -166,25 +174,35 @@ async def link_all(
     apply_merges: bool,
     page_size: int,
     initiated_by: str,
+    progress: LinkProgress | None = None,
 ) -> BulkLinkResponse:
     """Run the bounded matcher over every resource, streaming ids page by page.
 
     Groups are de-duplicated by fingerprint across the run, so each block is
     submitted at most once even though every member rediscovers it. Members of an
     already-formed block are skipped without re-searching.
+
+    ``progress`` is mutated in place as the pass runs, so a caller holding the
+    same object (the job record) can report live counters while it is still
+    going. Passing one is optional; the counters are kept there either way.
     """
+    # Single home for the counters, so the polled record and the returned
+    # summary can never disagree.
+    progress = progress if progress is not None else LinkProgress()
+
     # Only needed when we will actually POST; skip the (currently unpaginated)
     # candidate-list fetch entirely on a dry run.
     known_existing = await _existing_fingerprints(client) if apply_merges else None
 
     groups_by_fingerprint: dict[str, list[int]] = {}
     processed_ids: set[int] = set()
-    resources_scanned = 0
-    created = 0
-    skipped = 0
 
     async for candidate in client.iter_oil_gas_fields(page_size=page_size):
-        resources_scanned += 1
+        progress.resources_scanned += 1
+        progress.last_resource_id = candidate.id
+        if progress.resources_scanned % _PROGRESS_LOG_EVERY == 0:
+            _log_progress(progress)
+
         if candidate.id in processed_ids:
             continue
 
@@ -197,6 +215,7 @@ async def link_all(
         if fingerprint in groups_by_fingerprint:
             continue
         groups_by_fingerprint[fingerprint] = matched
+        progress.match_groups_found = len(groups_by_fingerprint)
 
         was_created, was_skipped = await _submit_group(
             client,
@@ -205,15 +224,28 @@ async def link_all(
             known_existing=known_existing,
         )
         if was_created:
-            created += 1
+            progress.merge_candidates_created += 1
         elif was_skipped:
-            skipped += 1
+            progress.merge_candidates_skipped += 1
+
+    # Final totals, so a completed run's numbers are in the logs too rather than
+    # only in the (in-memory, restart-losable) job record.
+    _log_progress(progress)
 
     return BulkLinkResponse(
         initiated_by=initiated_by,
         apply_merges=apply_merges,
-        resources_scanned=resources_scanned,
+        resources_scanned=progress.resources_scanned,
         match_groups=list(groups_by_fingerprint.values()),
-        merge_candidates_created=created,
-        merge_candidates_skipped=skipped,
+        merge_candidates_created=progress.merge_candidates_created,
+        merge_candidates_skipped=progress.merge_candidates_skipped,
     )
+
+
+def _log_progress(progress: LinkProgress) -> None:
+    """Emit one structured progress event.
+
+    The shared ``JsonFormatter`` flattens ``event`` to top-level keys, so the
+    counters are directly queryable rather than buried in a message string.
+    """
+    logger.info("linkage_progress", extra={"event": progress.model_dump()})
