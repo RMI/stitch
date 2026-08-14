@@ -104,6 +104,13 @@ class AsyncStitchClient:
         name: str | None = None,
         country: str | None = None,
     ) -> dict[str, Any]:
+        """One page of Oil & Gas Field resources.
+
+        Raises:
+            ValueError: if ``page``/``page_size`` are out of range.
+            StitchAPIError: on a non-2xx response.
+        """
+        self._validate_page_params(page, page_size)
         params: dict[str, Any] = {"page": page, "page_size": page_size}
         if q is not None:
             params["q"] = q
@@ -399,7 +406,11 @@ class AsyncStitchClient:
 
     @staticmethod
     def _validate_page_params(page: int, page_size: int) -> None:
-        """Reject out-of-range pagination locally rather than on a server 422."""
+        """Reject out-of-range pagination locally rather than on a server 422.
+
+        Applied by every paging entry point, so the ``iter_``/``collect_``
+        wrappers inherit it through the page fetch they delegate to.
+        """
         if page < 1:
             raise ValueError(f"page must be >= 1, got {page}")
         if not 1 <= page_size <= MAX_PAGE_SIZE:

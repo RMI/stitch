@@ -10,11 +10,11 @@ from stitch.ogsi.model import OGFieldResource
 
 from stitch.client import (
     AsyncStitchClient,
+    MAX_PAGE_SIZE,
     STITCH_CLIENT_BEARER_TOKEN_ENV_VAR,
     StitchAPIError,
     env_bearer_token_headers_provider,
 )
-from stitch.client.async_client import MAX_PAGE_SIZE
 
 
 def make_client(
@@ -688,6 +688,77 @@ async def test_create_merge_candidate_sends_expected_request() -> None:
     }
 
     await raw_client.aclose()
+
+
+@pytest.mark.parametrize("page_size", [0, 201, 1000])
+@pytest.mark.anyio
+async def test_list_oil_gas_fields_page_rejects_out_of_range_page_size(
+    page_size: int,
+) -> None:
+    """The resource list route shares the server's 1..200 cap."""
+    called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(200, json={"items": [], "total_pages": 1})
+
+    client, raw_client = make_client(handler)
+
+    with pytest.raises(ValueError) as exc_info:
+        await client.list_oil_gas_fields_page(page_size=page_size)
+
+    assert "page_size must be between 1 and 200" in str(exc_info.value)
+    assert called is False
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_iter_oil_gas_fields_rejects_out_of_range_page_size() -> None:
+    """The guard reaches the iter_/collect_ wrappers through the page fetch."""
+    called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(200, json={"items": [], "total_pages": 1})
+
+    client, raw_client = make_client(handler)
+
+    with pytest.raises(ValueError):
+        [item async for item in client.iter_oil_gas_fields(page_size=201)]
+
+    assert called is False
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_list_oil_gas_fields_page_rejects_page_below_one() -> None:
+    called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(200, json={"items": [], "total_pages": 1})
+
+    client, raw_client = make_client(handler)
+
+    with pytest.raises(ValueError, match="page must be >= 1"):
+        await client.list_oil_gas_fields_page(page=0)
+
+    assert called is False
+
+    await raw_client.aclose()
+
+
+def test_max_page_size_is_publicly_exported() -> None:
+    """Callers sizing a full scan should not reach into the private module."""
+    import stitch.client
+
+    assert stitch.client.MAX_PAGE_SIZE == 200
+    assert "MAX_PAGE_SIZE" in stitch.client.__all__
 
 
 @pytest.mark.anyio
