@@ -712,3 +712,99 @@ def test_raise_for_status_raises_stitch_api_error(
     )
     assert exc_info.value.status_code == status_code
     assert exc_info.value.response_text == text
+
+
+def make_flaky_client(
+    *,
+    failures: int,
+    exc: Exception | None = None,
+    max_retries: int = 2,
+) -> tuple[AsyncStitchClient, list[str]]:
+    """A client whose transport raises ``failures`` times before succeeding.
+
+    Returns the client and a list recording the method of every attempt, so a
+    test can assert how many times the request actually went out.
+    """
+    attempts: list[str] = []
+    error = exc if exc is not None else httpx.ReadTimeout("")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(request.method)
+        if len(attempts) <= failures:
+            raise error
+        return httpx.Response(200, json={"items": [], "total_count": 0})
+
+    raw_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url="http://example.test/api/v1",
+    )
+    client = AsyncStitchClient(
+        client=raw_client,
+        max_retries=max_retries,
+        retry_base_delay=0.0,
+        retry_max_delay=0.0,
+    )
+    return client, attempts
+
+
+@pytest.mark.anyio
+async def test_get_retries_transient_transport_error_then_succeeds() -> None:
+    # The incident shape: httpx.ReadTimeout with an empty message. One blip in a
+    # multi-hour pass should not end the run.
+    client, attempts = make_flaky_client(failures=1)
+
+    payload = await client.list_oil_gas_fields_page()
+
+    assert payload == {"items": [], "total_count": 0}
+    assert attempts == ["GET", "GET"]
+
+
+@pytest.mark.anyio
+async def test_get_reraises_after_exhausting_retries() -> None:
+    client, attempts = make_flaky_client(failures=99, max_retries=2)
+
+    with pytest.raises(httpx.ReadTimeout):
+        await client.list_oil_gas_fields_page()
+
+    # One initial attempt plus two retries.
+    assert attempts == ["GET", "GET", "GET"]
+
+
+@pytest.mark.anyio
+async def test_get_is_not_retried_when_retries_are_disabled() -> None:
+    client, attempts = make_flaky_client(failures=99, max_retries=0)
+
+    with pytest.raises(httpx.ReadTimeout):
+        await client.list_oil_gas_fields_page()
+
+    assert attempts == ["GET"]
+
+
+@pytest.mark.anyio
+async def test_post_is_not_retried() -> None:
+    # A timed-out POST may already have been applied server-side; replaying it
+    # could create a duplicate merge candidate.
+    client, attempts = make_flaky_client(failures=1)
+
+    with pytest.raises(httpx.ReadTimeout):
+        await client.create_merge_candidate([1, 2])
+
+    assert attempts == ["POST"]
+
+
+@pytest.mark.anyio
+async def test_error_status_is_not_retried() -> None:
+    # A 4xx is not transient, and callers depend on seeing the status verbatim.
+    attempts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(request.method)
+        return httpx.Response(400, text="bad request")
+
+    client, _ = make_client(handler)
+
+    with pytest.raises(StitchAPIError) as exc_info:
+        await client.list_oil_gas_fields_page()
+
+    assert exc_info.value.status_code == 400
+    assert attempts == ["GET"]

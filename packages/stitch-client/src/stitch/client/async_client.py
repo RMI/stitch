@@ -7,10 +7,44 @@ from typing import Any
 
 import httpx
 from stitch.ogsi.model import OGFieldResource
+from tenacity import (
+    AsyncRetrying,
+    RetryCallState,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 
 from .errors import StitchAPIError
 
 logger = logging.getLogger("stitch.client")
+
+# Only methods that are safe to repeat are retried. A timed-out POST may already
+# have been applied server-side, so replaying it could duplicate the write.
+_RETRYABLE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def _log_retry(operation: str, attempts: int) -> Callable[[RetryCallState], None]:
+    """Build a tenacity ``before_sleep`` hook that names the exception type.
+
+    Not ``tenacity.before_sleep_log``: that renders the exception with ``str()``,
+    which is empty for httpx's timeout exceptions -- the same blank-message trap
+    that made the original entity-linkage failure undiagnosable.
+    """
+
+    def log(retry_state: RetryCallState) -> None:
+        exc = retry_state.outcome.exception() if retry_state.outcome else None
+        logger.warning(
+            "%s failed (%s: %s); retrying in %.1fs (attempt %s of %s)",
+            operation,
+            type(exc).__name__,
+            exc,
+            retry_state.next_action.sleep if retry_state.next_action else 0.0,
+            retry_state.attempt_number,
+            attempts,
+        )
+
+    return log
 
 
 class AsyncStitchClient:
@@ -21,9 +55,17 @@ class AsyncStitchClient:
         timeout: float | None = None,
         headers_provider: Callable[[], Mapping[str, str]] | None = None,
         client: httpx.AsyncClient | None = None,
+        max_retries: int = 2,
+        retry_base_delay: float = 0.5,
+        retry_max_delay: float = 5.0,
     ) -> None:
         self._headers_provider = headers_provider
         self._owns_client = client is None
+        # Retry behavior is independent of the transport, so it applies whether
+        # or not the caller brought its own httpx client.
+        self._max_retries = max_retries
+        self._retry_base_delay = retry_base_delay
+        self._retry_max_delay = retry_max_delay
         if client is not None:
             if base_url is not None:
                 raise ValueError(
@@ -277,15 +319,65 @@ class AsyncStitchClient:
         params: Mapping[str, Any] | None = None,
         json: Mapping[str, Any] | None = None,
     ) -> Any:
-        response = await self._client.request(
+        response = await self._request_with_retries(
+            method=method,
+            path=path,
+            operation=operation,
+            params=params,
+            json=json,
+        )
+        self._raise_for_status(response, operation)
+        return response.json()
+
+    async def _request_with_retries(
+        self,
+        *,
+        method: str,
+        path: str,
+        operation: str,
+        params: Mapping[str, Any] | None,
+        json: Mapping[str, Any] | None,
+    ) -> httpx.Response:
+        """Send the request, retrying transient transport failures.
+
+        Only ``httpx.TransportError`` is retried -- it is the parent of the
+        timeout, network and protocol errors, i.e. the failures where nothing is
+        known to have reached the server. HTTP error *statuses* are deliberately
+        not retried here: a 4xx is not transient, and callers depend on seeing
+        specific statuses (a 400 from create-merge-candidate means "already
+        handled") rather than having them replayed.
+
+        Note httpx's own transport-level ``retries=`` is not a substitute: it
+        only covers connection establishment, so it never sees a read timeout.
+        """
+        attempts = 1
+        if method.upper() in _RETRYABLE_METHODS:
+            attempts += max(self._max_retries, 0)
+
+        retrying = AsyncRetrying(
+            retry=retry_if_exception_type(httpx.TransportError),
+            stop=stop_after_attempt(attempts),
+            # Jitter is scaled to the base delay rather than tenacity's fixed
+            # 1s default, so replicas retrying against a struggling API spread
+            # out proportionally -- and a zero base delay stays genuinely zero.
+            wait=wait_exponential_jitter(
+                initial=self._retry_base_delay,
+                max=self._retry_max_delay,
+                jitter=self._retry_base_delay,
+            ),
+            before_sleep=_log_retry(operation, attempts),
+            # Surface the underlying httpx error to callers rather than
+            # tenacity's RetryError wrapper.
+            reraise=True,
+        )
+        return await retrying(
+            self._client.request,
             method,
             path,
             params=params,
             json=json,
             headers=self._headers(),
         )
-        self._raise_for_status(response, operation)
-        return response.json()
 
     @staticmethod
     def _expect_dict(payload: Any, operation: str) -> dict[str, Any]:
