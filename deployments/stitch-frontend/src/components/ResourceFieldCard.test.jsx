@@ -12,7 +12,6 @@ import {
   updateFieldSourcePriority,
   createSourceForResource,
 } from "../queries/api";
-import { resourceKeys } from "../queries/resources";
 import { SOURCE_LABELS } from "../constants/sourceMeta";
 import { renderWithQueryClient } from "../test/utils";
 
@@ -494,7 +493,7 @@ describe("ResourceFieldCard", () => {
       // A save can change the coalesced winning value anywhere it appears
       // (list rows, detail, filter options), so the whole endpoint refreshes.
       expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: resourceKeys.all("oil-gas-fields"),
+        queryKey: ["oil-gas-fields"],
       });
 
       // Form closes on success.

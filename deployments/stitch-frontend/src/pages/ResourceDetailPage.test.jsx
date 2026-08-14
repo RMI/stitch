@@ -11,7 +11,6 @@ import {
 } from "../hooks/useResources";
 import { usePermissions } from "../hooks/usePermissions";
 import * as apiModule from "../queries/api";
-import { resourceKeys } from "../queries/resources";
 
 // Mock only the read hooks; the attach path exercises the real
 // useCreateSourceForResource mutation against a spied API module.
@@ -652,7 +651,7 @@ describe("ResourceDetailPage", () => {
     // The attach changes the resource's coalesced data, so everything cached
     // under the endpoint refreshes.
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: resourceKeys.all("oil-gas-fields"),
+      queryKey: ["oil-gas-fields"],
     });
     expect(mockNavigate).not.toHaveBeenCalled();
   });

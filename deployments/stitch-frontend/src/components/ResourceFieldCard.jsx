@@ -15,7 +15,7 @@ import {
 import { useConfig } from "../config/useConfig";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { updateFieldSourcePriority } from "../queries/api";
-import { resourceKeys } from "../queries/resources";
+import { resourceQueries } from "../queries/resources";
 import {
   SOURCES,
   SOURCE_COLORS,
@@ -283,10 +283,16 @@ function FieldSourcesPanel({
       // winner / collapsed value may have changed).
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: resourceKeys.fieldSources(endpoint, resourceId, fieldKey),
+          queryKey: resourceQueries.fieldSources(
+            config,
+            endpoint,
+            resourceId,
+            fieldKey,
+          ).queryKey,
         }),
         queryClient.invalidateQueries({
-          queryKey: resourceKeys.detail(endpoint, resourceId),
+          queryKey: resourceQueries.detail(config, endpoint, resourceId)
+            .queryKey,
         }),
       ]);
       stopEditing();
