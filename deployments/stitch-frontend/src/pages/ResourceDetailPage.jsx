@@ -352,7 +352,7 @@ function OrgPanel({ items, nameLabel }) {
           <FieldCard
             key={`stake-${idx}`}
             label="Stake"
-            value={`${o.stake}%`}
+            value={o.stake == null ? null : `${o.stake}%`}
           />,
         ])}
       </div>

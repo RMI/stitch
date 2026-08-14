@@ -39,8 +39,12 @@ const mockDetailView = {
     longitude: 47.95,
     location_type: "Onshore",
     name_local: null,
-    owners: [{ name: "Kuwait Oil Company", stake: 100 }],
-    operators: [{ name: "Kuwait Oil Company", stake: 100 }],
+    owners: [
+      { name: "Kuwait Oil Company", stake: 100 },
+      // Providers often name a party without stating a percentage.
+      { name: "Kuwait Petroleum Corporation", stake: null },
+    ],
+    operators: [{ name: "Kuwait Oil Company", stake: null }],
     field_status: "Producing",
     production_conventionality: "Conventional",
     primary_hydrocarbon_group: "Oil",
@@ -197,6 +201,20 @@ describe("ResourceDetailPage", () => {
 
     renderWithQueryClient(<ResourceDetailPage />);
     expect(screen.getAllByText("Kuwait Oil Company").length).toBeGreaterThan(0);
+  });
+
+  it("renders a stated stake but leaves an unstated stake blank", () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    expect(
+      screen.getAllByText("Kuwait Petroleum Corporation").length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText("100%")).toBeInTheDocument();
+    expect(screen.queryByText("null%")).not.toBeInTheDocument();
   });
 
   it("renders the Production and Geology section header", () => {
