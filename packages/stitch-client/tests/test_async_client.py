@@ -857,6 +857,52 @@ async def test_list_oil_gas_field_sources_page_rejects_empty_source() -> None:
     await raw_client.aclose()
 
 
+@pytest.mark.parametrize("source", ["gem", b"gem"])
+@pytest.mark.anyio
+async def test_list_oil_gas_field_sources_page_rejects_a_bare_string_source(
+    source: str | bytes,
+) -> None:
+    """A bare string is a Sequence, so list("gem") would send source=g&source=e
+    &source=m. The API rejects those as invalid enum values, surfacing a 422 far
+    from the actual mistake -- so refuse before the request."""
+    called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(200, json={"items": [], "total_pages": 1})
+
+    client, raw_client = make_client(handler)
+
+    with pytest.raises(TypeError) as exc_info:
+        await client.list_oil_gas_field_sources_page(source=source)
+
+    assert "not a bare" in str(exc_info.value)
+    assert called is False
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_iter_oil_gas_field_sources_rejects_a_bare_string_source() -> None:
+    """The guard reaches the streaming wrapper through the page fetch."""
+    called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(200, json={"items": [], "total_pages": 1})
+
+    client, raw_client = make_client(handler)
+
+    with pytest.raises(TypeError):
+        [item async for item in client.iter_oil_gas_field_sources(source="gem")]
+
+    assert called is False
+
+    await raw_client.aclose()
+
+
 @pytest.mark.parametrize("page_size", [0, 201, 1000])
 @pytest.mark.anyio
 async def test_list_oil_gas_field_sources_page_rejects_out_of_range_page_size(

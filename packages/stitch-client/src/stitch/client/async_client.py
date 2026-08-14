@@ -254,6 +254,7 @@ class AsyncStitchClient:
                 dropped -- only a token holding *none* of them gets a 403.
 
         Raises:
+            TypeError: if ``source`` is a bare string rather than a sequence.
             ValueError: if ``page``/``page_size`` are out of range, or ``source``
                 is an empty sequence.
             StitchAPIError: on a non-2xx response (403 when the token holds no
@@ -271,6 +272,15 @@ class AsyncStitchClient:
             "sort_order": "asc",
         }
         if source is not None:
+            if isinstance(source, (str, bytes)):
+                # A bare string is itself a Sequence, so list("gem") would
+                # expand to ["g", "e", "m"] and the request would go out as
+                # source=g&source=e&source=m. The API rejects those as invalid
+                # enum values, so the 422 surfaces far from the actual typo.
+                raise TypeError(
+                    "source must be a sequence of source keys, not a bare "
+                    f"{type(source).__name__} (did you mean [{source!r}]?)"
+                )
             source_keys = list(source)
             if not source_keys:
                 # httpx drops an empty sequence from the query string entirely,
@@ -297,8 +307,8 @@ class AsyncStitchClient:
         """Yield Oil & Gas Field source records one page at a time.
 
         Bounded-memory full scan: only a single page is held in memory at once,
-        so callers can fold the whole result set without materializing it. Page
-        -termination logic mirrors :meth:`iter_oil_gas_fields`.
+        so callers can fold the whole result set without materializing it.
+        Page-termination logic mirrors :meth:`iter_oil_gas_fields`.
         """
         pages_fetched = 0
         page = start_page
