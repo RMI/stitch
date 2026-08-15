@@ -123,7 +123,7 @@ describe("MergeCandidateReviewPage", () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
     expect(
-      screen.getByRole("heading", { name: "Merge Review" }),
+      screen.getByRole("heading", { name: "Merge review" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Queue" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Burgan" })).toBeInTheDocument();

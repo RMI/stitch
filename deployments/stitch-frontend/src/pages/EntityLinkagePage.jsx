@@ -261,11 +261,10 @@ export default function EntityLinkagePage() {
   return (
     <div className="mx-auto max-w-5xl">
       <div className="mb-6">
-        <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-          Batch workflow
-        </p>
-        <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2">
-          <h1 className="text-3xl font-semibold text-ink">Entity Linkage</h1>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">
+            Entity linkage
+          </h1>
           <StateBadge state={record?.state} />
         </div>
         <p className="mt-2 text-sm text-ink-muted">

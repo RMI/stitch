@@ -471,11 +471,8 @@ export default function MergeCandidateReviewPage() {
       <header className="border-b border-line pb-4">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-              Human decision queue
-            </p>
-            <h1 className="mt-1 text-3xl font-semibold text-ink">
-              Merge Review
+            <h1 className="text-2xl font-semibold tracking-tight text-ink">
+              Merge review
             </h1>
             <p className="mt-2 text-sm text-ink-muted">
               Review one candidate at a time.
@@ -483,16 +480,20 @@ export default function MergeCandidateReviewPage() {
           </div>
           <dl className="flex flex-wrap gap-3 text-sm">
             <div className="rounded-md border border-line bg-panel px-3 py-2">
-              <dt className="text-ink-muted">Pending</dt>
-              <dd className="font-semibold text-ink">{pendingCount}</dd>
+              <dt className="text-xs text-ink-muted">Pending</dt>
+              <dd className="font-mono text-lg font-medium tabular-nums text-ink">
+                {pendingCount}
+              </dd>
             </div>
             <div className="rounded-md border border-line bg-panel px-3 py-2">
-              <dt className="text-ink-muted">Reviewed</dt>
-              <dd className="font-semibold text-ink">{reviewedCount}</dd>
+              <dt className="text-xs text-ink-muted">Reviewed</dt>
+              <dd className="font-mono text-lg font-medium tabular-nums text-ink">
+                {reviewedCount}
+              </dd>
             </div>
             <div className="rounded-md border border-line bg-panel px-3 py-2">
-              <dt className="text-ink-muted">Total</dt>
-              <dd className="font-semibold text-ink">
+              <dt className="text-xs text-ink-muted">Total</dt>
+              <dd className="font-mono text-lg font-medium tabular-nums text-ink">
                 {candidates?.length ?? 0}
               </dd>
             </div>

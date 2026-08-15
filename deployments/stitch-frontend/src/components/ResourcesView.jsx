@@ -127,14 +127,20 @@ export default function ResourcesView({ className = "", endpoint }) {
     <div className={`mx-auto w-full max-w-6xl ${className}`}>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-            Asset inventory
-          </p>
-          <h1 className="mt-1 text-3xl font-semibold text-ink">Resources</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">
+            Resources
+          </h1>
           <p className="mt-1 text-sm text-ink-muted">
-            {data
-              ? `${totalCount.toLocaleString()} assets`
-              : "Awaiting resource count"}
+            {data ? (
+              <>
+                <span className="font-mono tabular-nums text-ink">
+                  {totalCount.toLocaleString()}
+                </span>{" "}
+                assets
+              </>
+            ) : (
+              "Awaiting resource count"
+            )}
           </p>
         </div>
 
@@ -166,9 +172,9 @@ export default function ResourcesView({ className = "", endpoint }) {
                 type="button"
                 onClick={handleSearchClear}
                 aria-label="Clear search"
-                className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-sm font-semibold text-ink-muted transition-colors hover:bg-rmiblue-100 hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-energy/60"
+                className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-base leading-none text-ink-muted transition-colors hover:bg-rmiblue-100 hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-energy/60"
               >
-                <span aria-hidden="true">X</span>
+                <span aria-hidden="true">×</span>
               </button>
             )}
           </div>
@@ -178,9 +184,6 @@ export default function ResourcesView({ className = "", endpoint }) {
         </form>
 
         <div className="mt-3 border-t border-line pt-3">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
-            Filters
-          </p>
           <FilterBar
             endpoint={endpoint}
             filters={filters}
@@ -189,11 +192,26 @@ export default function ResourcesView({ className = "", endpoint }) {
         </div>
       </div>
 
-      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-medium text-ink-muted">
-        <span>{resources.length.toLocaleString()} shown</span>
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink-muted">
+        <span>
+          <span className="font-mono tabular-nums text-ink">
+            {resources.length.toLocaleString()}
+          </span>{" "}
+          shown
+        </span>
         <span>Sort: {getSortLabel(sortConfig)}</span>
-        <span>{activeFilterCount} active filters</span>
-        {submittedSearch && <span>Search: {submittedSearch}</span>}
+        <span>
+          <span className="font-mono tabular-nums text-ink">
+            {activeFilterCount}
+          </span>{" "}
+          active filters
+        </span>
+        {submittedSearch && (
+          <span>
+            Search:{" "}
+            <span className="font-mono text-ink">{submittedSearch}</span>
+          </span>
+        )}
       </div>
 
       {isLoading && resources.length === 0 && (
