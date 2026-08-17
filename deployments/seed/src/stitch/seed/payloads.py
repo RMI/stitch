@@ -23,6 +23,18 @@ logger = logging.getLogger("stitch.seed")
 
 PRODUCER_NAME = "stitch-seed"
 
+# The canonical Region vocabulary the ETL emits (derived there from ISO3 country).
+# Seeding from the same set keeps the Region filter dropdown coherent locally.
+REGIONS = (
+    "Africa",
+    "Asia-Pacific",
+    "Europe",
+    "Latin America",
+    "Middle East",
+    "North America",
+    "Russia and Caspian Sea",
+)
+
 
 def _producer() -> str:
     try:
@@ -63,11 +75,43 @@ def _year_triplet(rng: random.Random) -> tuple[int | None, int | None, int | Non
     return discovery, production_start, fid
 
 
+def _company(fake: Faker) -> str:
+    # Faker likes commas in company names; drop them to keep values simple.
+    return fake.company().replace(",", "")
+
+
 def _fake_companyish(fake: Faker, rng: random.Random) -> str:
     # Faker company names can be long; keep it a bit field-like.
-    base = fake.company().replace(",", "")
     suffix = rng.choice(["Field", "Oil Field", "Gas Field", "Asset"])
-    return f"{base} {suffix}"
+    return f"{_company(fake)} {suffix}"
+
+
+def _stakes(rng: random.Random, count: int) -> list[float]:
+    """Split 100% across `count` parties, each > 0, summing to exactly 100."""
+    weights = [rng.randint(1, 100) for _ in range(count)]
+    total = sum(weights)
+    shares = [round(w * 100 / total, 2) for w in weights]
+    shares[-1] = round(100.0 - sum(shares[:-1]), 2)
+    return shares
+
+
+def _parties(
+    fake: Faker, rng: random.Random, *, stated_stakes: bool
+) -> list[dict[str, Any]]:
+    """
+    Ownership entries as `[{name, stake}]`.
+
+    `stake` is nullable upstream because most provider data is a bare company
+    name with no percentage; `stated_stakes=False` reproduces that shape.
+    """
+    count = rng.randint(1, 3)
+    names = [_company(fake) for _ in range(count)]
+    if not stated_stakes:
+        return [{"name": name, "stake": None} for name in names]
+    return [
+        {"name": name, "stake": stake}
+        for name, stake in zip(names, _stakes(rng, count))
+    ]
 
 
 def _null_probability(prob) -> float:
@@ -111,12 +155,22 @@ def build_og_field(
             lambda: " ".join(fake.words()).title(), rng=rng, null_prob=null_prob
         ),
         "state_province": _maybe(lambda: fake.state(), rng=rng, null_prob=null_prob),
-        "region": _maybe(lambda: fake.city(), rng=rng, null_prob=null_prob),
+        "region": _maybe(lambda: rng.choice(REGIONS), rng=rng, null_prob=null_prob),
         "basin": _maybe(
             lambda: f"{fake.word().title()} Basin", rng=rng, null_prob=null_prob
         ),
-        "owners": None,  # leave structural fields alone for now
-        "operators": None,
+        # Owners carry stated percentages, operators are names only — the two
+        # shapes real providers publish, so both `stake` paths get exercised.
+        "owners": _maybe(
+            lambda: _parties(fake, rng, stated_stakes=True),
+            rng=rng,
+            null_prob=null_prob,
+        ),
+        "operators": _maybe(
+            lambda: _parties(fake, rng, stated_stakes=False),
+            rng=rng,
+            null_prob=null_prob,
+        ),
         "location_type": _maybe(
             lambda: rng.choice(list(get_args(LocationType))),
             rng=rng,

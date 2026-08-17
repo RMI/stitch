@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useResource } from "../hooks/useResources";
 import FetchButton from "./FetchButton";
 import ClearCacheButton from "./ClearCacheButton";
 import JsonView from "./JsonView";
 import Input from "./Input";
-import { resourceKeys } from "../queries/resources";
+import { resourceQueries } from "../queries/resources";
 import { useConfig } from "../config/useConfig";
 
 export default function ResourceView({
@@ -18,19 +18,21 @@ export default function ResourceView({
   const queryClient = useQueryClient();
   const [inputId, setInputId] = useState(1);
   const id = initialID ?? inputId;
+  // Embedded mode (showControls=false, given a known id) loads right away;
+  // interactive mode waits for the user to click Fetch / press Enter, which
+  // call refetch() directly below — refetch() always runs regardless of
+  // `enabled`, so those still work while this stays false.
+  const autoFetch = !showControls && initialID != null;
   const { data, isLoading, isError, error, refetch } = useResource(
     endpoint,
     id,
+    autoFetch,
   );
 
-  useEffect(() => {
-    if (!showControls && initialID != null) {
-      refetch();
-    }
-  }, [showControls, initialID, refetch]);
-
   const handleClear = (id) => {
-    queryClient.resetQueries({ queryKey: resourceKeys.view(endpoint, id) });
+    queryClient.resetQueries({
+      queryKey: resourceQueries.view(config, endpoint, id).queryKey,
+    });
   };
 
   const handleKeyDown = (e) => {
