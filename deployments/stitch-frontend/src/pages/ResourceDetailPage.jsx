@@ -588,7 +588,7 @@ export default function ResourceDetailPage() {
             <h1 className="text-2xl font-semibold tracking-tight text-ink">
               {detailView.data.name}
             </h1>
-            {numericId != null && (
+            {validId && (
               <p className="mt-1 font-mono text-xs text-ink-muted">
                 {endpoint}/{numericId}
               </p>
