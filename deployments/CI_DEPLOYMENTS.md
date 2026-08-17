@@ -9,6 +9,10 @@ It uses three explicit workflow concepts, all resolved in
 - `deployment_name`: concrete runtime target name used for DB and app naming
 - `always_on`: whether this deployment keeps a warm Container App replica
 
+In Actions expressions these are the workflow's hyphenated outputs —
+`needs.resolve-context.outputs.deployment-lane`, `…deployment-name`,
+`…always-on`. The snake_case spellings below name the concept, not the key.
+
 Branch behavior is:
 
 - push to `main` -> `deployment_lane=development`, `deployment_name=main`
@@ -186,21 +190,19 @@ is only reachable at 2.0 vCPU**; there is no "low CPU + 4 GiB" option without
 moving the environment to a Dedicated workload profile. The inputs must be set
 together (the deploy validates one-without-the-other and fails fast).
 
-#### Keeping long-lived deployments awake (scale-to-zero policy)
+#### Keeping the production release awake (scale-to-zero policy)
 
 By default a Container App scales to zero (`min-replicas: 0`) when idle, so the
-first request after a quiet period pays a cold-start. That is right for a
-throwaway per-PR preview, which should cost nothing while nobody is looking at
-it, and wrong for anything people reach at a stable URL and expect to just work.
-
-The split is therefore by **deployment lifetime**, not by lane. `resolve-context`
-decides it once and exposes it as the `always-on` output:
+first request after a quiet period pays a cold-start. Only the production
+release is currently worth paying to avoid that; everywhere else we accept the
+cold start to hold the bill down. `resolve-context` decides this once and
+exposes it as the `always-on` output:
 
 | Deployment | `always-on` | Why |
 | --- | --- | --- |
-| push to `main` | `1` | long-lived; reachable at the dev lane's stable hostname |
-| push to `production` | `1` | long-lived; reachable at the release hostname |
-| `staging` lane PRs (into `production`, or from `demo/*`) | `1` | release candidates and demos get shown live |
+| push to `production` | `1` | the production release; must be responsive on first hit |
+| push to `main` | *(empty)* | cost |
+| `staging` lane PRs (into `production`, or from `demo/*`) | *(empty)* | cost |
 | `development` lane PRs | *(empty)* | throwaway preview, one per PR |
 
 The three long-running services — `api`, `entity-linkage`, `stitch-llm` — pass it
@@ -213,10 +215,15 @@ min-replicas: ${{ needs.resolve-context.outputs.always-on }}
 `1` means one warm replica with `max` left at the default, so they still scale
 out under load. Empty means the input is skipped entirely and the app keeps the
 default scale-to-zero. The ETL app is separate: it pins `min = max = 1` and only
-deploys on non-`development` lanes.
+deploys on non-`development` lanes, so it stays warm regardless of this policy.
 
-Note that `entity-linkage` runs at 2.0 vCPU / 4.0 GiB, so it dominates the cost
-of keeping a lane warm.
+`entity-linkage` runs at 2.0 vCPU / 4.0 GiB, so it dominates the cost of keeping
+any lane warm — which is why the policy is this narrow.
+
+Cold starts are most visible at sign-in, when the app's first API call lands on a
+sleeping container. The planned mitigation is to have the login page fire a cheap
+request at the API so it wakes while the user authenticates, rather than widening
+this policy.
 
 This only affects the Container Apps. The frontend is an Azure Static Web App
 (always served, no hibernation), and the PostgreSQL flexible server's
@@ -271,10 +278,18 @@ branch. `deploy-frontend` passes that branch to the Azure deploy action as
 `production-branch`, which is what decides whether a deployment lands in the
 site's **production** environment or in a **preview** environment.
 
-| Hostname | Lane | Branch | Static Web App | Default hostname |
-| --- | --- | --- | --- | --- |
-| `stitch.rmi.org` | `dress-rehearsal` | `production` | `stitch-staging` | `brave-cliff-09493391e.7.azurestaticapps.net` |
-| `stitch-dev.rmi.org` | `development` | `main` | `stitch-dev` | `witty-mushroom-017a3dc1e.1.azurestaticapps.net` |
+| Hostname | Status | Lane | Branch | Static Web App | Default hostname |
+| --- | --- | --- | --- | --- | --- |
+| `stitch-dev.rmi.org` | assigning now | `development` | `main` | `stitch-dev` | `witty-mushroom-017a3dc1e.1.azurestaticapps.net` |
+| `stitch.rmi.org` | planned | — | `production` | *(a prod Static Web App, not yet created)* | — |
+
+`stitch.rmi.org` is deliberately **not** pointed at the existing `stitch-staging`
+Static Web App. That resource serves the `dress-rehearsal` lane, which is a
+release rehearsal rather than production; the production hostname is held back
+until a real production Static Web App is stood up, so the name never has to move
+between resources. (Moving a bound domain between two Static Web Apps in the same
+slice requires downtime — see "Migrating domains between instances" in the Azure
+docs.)
 
 **Preview environments cannot have custom domains.** This is an Azure product
 limitation, not a configuration gap, so every PR preview stays on an

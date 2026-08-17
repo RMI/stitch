@@ -44,16 +44,14 @@ jobs:
 
           deployment_lane=""
           deployment_name=""
-          # Container App min-replicas. Long-lived deployments -- the ones people
-          # visit at a stable URL -- keep one warm replica so the first request
-          # after an idle period is not a cold start. Throwaway per-PR previews
-          # keep the default scale-to-zero so they cost nothing while idle.
+          # Container App min-replicas. Only the production release keeps a warm
+          # replica; everything else accepts a cold start on the first request
+          # after an idle period, to hold the bill down. Empty means "leave the
+          # Container App default", which is scale-to-zero.
           always_on=""
 
           case "$EVENT_NAME" in
             push|workflow_dispatch)
-              # Every push target is long-lived.
-              always_on="1"
               case "$REF_NAME" in
                 main)
                   deployment_lane="development"
@@ -62,6 +60,7 @@ jobs:
                 production)
                   deployment_lane="dress-rehearsal"
                   deployment_name="dress-rehearsal"
+                  always_on="1"
                   ;;
                 *)
                   echo "Unsupported push/dispatch target: $REF_NAME" >&2
@@ -78,9 +77,6 @@ jobs:
               pr_token="pr-$(printf '%04d' "$PR_NUMBER")"
               if [[ "$BASE_REF" == "production" || "$HEAD_REF" == demo/* ]]; then
                 deployment_lane="staging"
-                # Release candidates and demos get shown to people live, so they
-                # stay warm even though they are per-PR.
-                always_on="1"
                 # Staging/demo names carry a readable branch tag. The PR number already
                 # guarantees uniqueness; the hash lets a truncated tag be traced back to
                 # its branch. Size the whole name to <=27 chars so appending the longest
