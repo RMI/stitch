@@ -2,14 +2,20 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Auth0Provider } from "@auth0/auth0-react";
 import AuthGate from "./auth/AuthGate";
 import { ConfigProvider } from "./config/context-provider";
+import { shouldRetryQuery } from "./queries/retry";
 
 // Set global defaults for QueryClient
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
-      retry: 1,
+      // Retry transient failures only -- see queries/retry.js. A single retry
+      // was not enough to outlast a Container App waking from zero, and
+      // retrying a 4xx only delays an error that will not change.
+      retry: shouldRetryQuery,
     },
+    // Mutations keep the default of no retries: they are not idempotent, so a
+    // replay after a timeout could apply the same change twice.
   },
 });
 
