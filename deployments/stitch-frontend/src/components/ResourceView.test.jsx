@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithQueryClient } from "../test/utils";
 import ResourceView from "./ResourceView";
@@ -52,7 +52,9 @@ describe("ResourceView", () => {
   it("renders heading with default ID and endpoint information", () => {
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    expect(screen.getByText(/^Resource ID: \d+$/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /^Resource ID: \d+$/ }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/\/api\/v1\/resources\//)).toBeInTheDocument();
   });
 
@@ -87,7 +89,9 @@ describe("ResourceView", () => {
     await user.type(input, "42");
 
     expect(input).toHaveValue(42);
-    expect(screen.getByText(/^Resource ID: 42$/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /^Resource ID: 42$/ }),
+    ).toBeInTheDocument();
   });
 
   it("calls refetch when Fetch button is clicked", async () => {
@@ -136,14 +140,15 @@ describe("ResourceView", () => {
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    expect(screen.getByText("ID")).toBeInTheDocument();
-    expect(screen.getByText("1")).toBeInTheDocument();
-    expect(screen.getByText("Name")).toBeInTheDocument();
-    expect(screen.getByText("Test Resource")).toBeInTheDocument();
-    expect(screen.getByText("Type")).toBeInTheDocument();
-    expect(screen.getByText("example")).toBeInTheDocument();
-    expect(screen.getByText("Status")).toBeInTheDocument();
-    expect(screen.getByText("active")).toBeInTheDocument();
+    const dataScope = within(screen.getByLabelText("Resource data"));
+    expect(dataScope.getByText("ID")).toBeInTheDocument();
+    expect(dataScope.getByText("1")).toBeInTheDocument();
+    expect(dataScope.getByText("Name")).toBeInTheDocument();
+    expect(dataScope.getByText("Test Resource")).toBeInTheDocument();
+    expect(dataScope.getByText("Type")).toBeInTheDocument();
+    expect(dataScope.getByText("example")).toBeInTheDocument();
+    expect(dataScope.getByText("Status")).toBeInTheDocument();
+    expect(dataScope.getByText("active")).toBeInTheDocument();
   });
 
   it("displays error message when in error state", () => {

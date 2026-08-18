@@ -381,7 +381,7 @@ function AISuggestionPanel({ endpoint, resourceId }) {
 
   return (
     <section>
-      <SectionHeader title="AI Suggestion" />
+      <SectionHeader title="AI suggestion" />
       <div className="space-y-4 rounded-md border border-line bg-surface p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <label className="flex-1 text-sm text-ink">
@@ -685,16 +685,18 @@ export default function ResourceDetailPage() {
       {detailView && (
         <div className="space-y-10">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-              Curated resource
-            </p>
-            <h1 className="mt-1 text-3xl font-semibold text-ink">
+            <h1 className="text-2xl font-semibold tracking-tight text-ink">
               {detailView.data.name}
             </h1>
+            {validId && (
+              <p className="mt-1 font-mono text-xs text-ink-muted">
+                {endpoint}/{numericId}
+              </p>
+            )}
           </div>
 
           <section>
-            <SectionHeader title="Data Source Mix" />
+            <SectionHeader title="Data source mix" />
             <div className="rounded-md border border-line bg-panel p-4">
               <SourceMixBar provenance={detailView.provenance} showLabels />
             </div>

@@ -60,10 +60,17 @@ const COLUMNS = [
 
 function SortIndicator({ column, sortConfig }) {
   if (sortConfig.column !== column) {
-    return <span className="ml-1 text-line-strong">↕</span>;
+    return (
+      <span
+        aria-hidden="true"
+        className="ml-1 text-[0.65rem] text-line-strong/70"
+      >
+        ↕
+      </span>
+    );
   }
   return (
-    <span className="ml-1 text-ink">
+    <span aria-hidden="true" className="ml-1 text-[0.65rem] text-ink">
       {sortConfig.direction === "asc" ? "▲" : "▼"}
     </span>
   );
