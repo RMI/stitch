@@ -268,6 +268,7 @@ class AsyncStitchClient:
             # which a concurrent insert can land behind the paging cursor and
             # shift every later page, silently skipping rows. Sorting on the
             # source id makes new rows append past the last page instead.
+            # As such, `sort_by` and `sort_order` are deliberately NOT overrideable
             "sort_by": "id",
             "sort_order": "asc",
         }
