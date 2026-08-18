@@ -1,6 +1,45 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useIsFetching } from "@tanstack/react-query";
 import ColophonPanel from "./ColophonPanel";
 import { useConfig } from "../config/useConfig";
+
+// Long enough that a healthy request never trips it, short enough that the user
+// gets an explanation before they start wondering whether the page is broken.
+const WARMING_DELAY_MS = 2000;
+
+/**
+ * True once a request has been in flight long enough to look like a stall.
+ *
+ * Most deployments let their Container Apps scale to zero when idle (see
+ * `deployments/CI_DEPLOYMENTS.md`), so the first request of a session waits for
+ * a container to start. There is nothing to fix in that moment -- it just needs
+ * saying, so the wait reads as "starting up" rather than "nothing is happening".
+ */
+function useIsWarmingUp(delayMs = WARMING_DELAY_MS) {
+  // Deliberately a boolean, not the count: a second query starting must not
+  // restart the clock on the one that has already been waiting.
+  const isPending = useIsFetching() > 0;
+  const [hasStalled, setHasStalled] = useState(false);
+
+  useEffect(() => {
+    if (!isPending) {
+      return undefined;
+    }
+
+    const timer = setTimeout(() => setHasStalled(true), delayMs);
+
+    return () => {
+      clearTimeout(timer);
+      setHasStalled(false);
+    };
+  }, [isPending, delayMs]);
+
+  // `hasStalled` only ever latches on, from the timer. Pairing it with
+  // `isPending` here is what clears the notice the moment the request lands --
+  // cheaper than a second effect, and it keeps the effect body free of the
+  // synchronous setState that cascades renders.
+  return isPending && hasStalled;
+}
 
 function normalizeEnvLabel(value) {
   return (value ?? "").trim();
@@ -53,6 +92,7 @@ function getBannerAppearance(label) {
 export default function EnvironmentBanner() {
   const config = useConfig();
   const [isOpen, setIsOpen] = useState(false);
+  const isWarmingUp = useIsWarmingUp();
   const label = normalizeEnvLabel(config.appEnv);
   const bannerAppearance = getBannerAppearance(label);
 
@@ -67,9 +107,19 @@ export default function EnvironmentBanner() {
         style={bannerAppearance.style}
       >
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-2 text-sm font-medium sm:px-6 lg:px-8">
-          <span className="min-w-0 truncate rounded-md bg-bluespruce px-3 py-1 shadow-sm ring-1 ring-white/20">
-            {label.toUpperCase()} Environment
-          </span>
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="min-w-0 truncate rounded-md bg-bluespruce px-3 py-1 shadow-sm ring-1 ring-white/20">
+              {label.toUpperCase()} Environment
+            </span>
+
+            {isWarmingUp ? (
+              // role="status" announces this politely once it appears, rather
+              // than interrupting whatever a screen reader is already saying.
+              <span role="status" className="min-w-0 truncate font-normal">
+                Server is waking up — this can take a few seconds.
+              </span>
+            ) : null}
+          </div>
 
           <button
             type="button"

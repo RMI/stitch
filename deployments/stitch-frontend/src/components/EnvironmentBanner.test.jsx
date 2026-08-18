@@ -1,6 +1,7 @@
-import { screen } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useIsFetching } from "@tanstack/react-query";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setConfigForTests } from "../config/env";
 import { renderWithQueryClient } from "../test/utils";
 
@@ -31,6 +32,13 @@ vi.mock("./ColophonPanel", () => ({
       Diagnostics open: {String(diagnosticsOpen)}
     </div>
   ),
+}));
+
+// Only `useIsFetching` is faked; the real QueryClient/Provider are still needed
+// by renderWithQueryClient.
+vi.mock("@tanstack/react-query", async (importOriginal) => ({
+  ...(await importOriginal()),
+  useIsFetching: vi.fn(() => 0),
 }));
 
 describe("EnvironmentBanner", () => {
@@ -102,5 +110,66 @@ describe("EnvironmentBanner", () => {
       screen.getByRole("button", { name: "Show diagnostics" }),
     ).toBeInTheDocument();
     expect(screen.queryByTestId("colophon-panel")).not.toBeInTheDocument();
+  });
+
+  describe("waking-up notice", () => {
+    const WAKING_TEXT = /waking up/i;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    async function renderBanner() {
+      const { default: EnvironmentBanner } =
+        await import("./EnvironmentBanner");
+      return renderWithQueryClient(<EnvironmentBanner />);
+    }
+
+    it("stays quiet while nothing is pending, however long the page is open", async () => {
+      vi.mocked(useIsFetching).mockReturnValue(0);
+      await renderBanner();
+
+      act(() => vi.advanceTimersByTime(60_000));
+
+      expect(screen.queryByText(WAKING_TEXT)).not.toBeInTheDocument();
+    });
+
+    it("stays quiet for a request that is merely in flight", async () => {
+      vi.mocked(useIsFetching).mockReturnValue(1);
+      await renderBanner();
+
+      // A healthy request resolves well inside the delay, so the user should
+      // never see this for a normal page load.
+      act(() => vi.advanceTimersByTime(1_500));
+
+      expect(screen.queryByText(WAKING_TEXT)).not.toBeInTheDocument();
+    });
+
+    it("explains the wait once a request has stalled", async () => {
+      vi.mocked(useIsFetching).mockReturnValue(1);
+      await renderBanner();
+
+      act(() => vi.advanceTimersByTime(2_000));
+
+      expect(screen.getByRole("status")).toHaveTextContent(WAKING_TEXT);
+    });
+
+    it("clears the notice once the request lands", async () => {
+      vi.mocked(useIsFetching).mockReturnValue(1);
+      await renderBanner();
+
+      act(() => vi.advanceTimersByTime(2_000));
+      expect(screen.getByRole("status")).toBeInTheDocument();
+
+      // Fetching stops; the click is just a cheap way to force a re-render.
+      vi.mocked(useIsFetching).mockReturnValue(0);
+      fireEvent.click(screen.getByRole("button", { name: "Show diagnostics" }));
+
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    });
   });
 });
