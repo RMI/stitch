@@ -6,7 +6,7 @@
  * cold start. Bootstrap is the earliest useful moment to trigger one: it runs
  * before Auth0 mounts, so the container starts while the user is still being
  * redirected through login, and by the time the first real query fires the API
- * is may be already serving.
+ * may already be serving.
  */
 
 // `/health/details` rather than `/health`: it resolves the database engine, so

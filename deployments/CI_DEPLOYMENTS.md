@@ -219,10 +219,20 @@ out under load. Empty means the input is skipped entirely and the app keeps the
 default scale-to-zero. The ETL app is separate: it pins `min = max = 1` and only
 deploys on non-`development` lanes, so it stays warm regardless of this policy.
 
-Cold starts are most visible at sign-in, when the app's first API call lands on a
-sleeping container. The planned mitigation is to have the login page fire a cheap
-request at the API so it wakes while the user authenticates, rather than widening
-this policy.
+Cold starts are most visible at sign-in, when the app's first API call lands on
+a sleeping container. The frontend absorbs that, so the policy above does not
+have to widen to cover it:
+
+- it wakes the API during bootstrap, before Auth0 mounts, so the container starts
+  while the user is still being redirected through login;
+- queries retry transient failures, so a container that is not ready yet reads as
+  slow rather than broken;
+- the environment banner says the server is waking up once a request has been in
+  flight for more than a couple of seconds.
+
+entity-linkage and stitch-llm are deliberately left out. Waking them the same way
+was tried and set aside: the API is the one every session needs, and better
+options for the other two are still being explored.
 
 This only affects the Container Apps. The frontend is an Azure Static Web App
 (always served, no hibernation), and the PostgreSQL flexible server's
