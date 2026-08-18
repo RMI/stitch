@@ -334,7 +334,7 @@ jobs:
         OTEL_SERVICE_NAME=stitch-api
         OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: api
-      # Long-lived deployments stay warm; per-PR previews scale to zero.
+      # Only the production release stays warm; everything else scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.always-on }}
 
   deploy-entity-linkage:
@@ -363,12 +363,12 @@ jobs:
         OTEL_SERVICE_NAME=stitch-entity-linkage
         OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: entity-linkage
-      # Long-lived deployments stay warm; per-PR previews scale to zero.
+      # Only the production release stays warm; everything else scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.always-on }}
-      # Unoptimized service; needs more than the default ~0.5 vCPU / 1 GiB.
-      # 4 GiB on the Consumption profile is only valid paired with 2.0 vCPU.
-      cpu: "2.0"
-      memory: "4.0Gi"
+      # Deliberately unpinned: takes the platform default (~0.5 vCPU / 1 GiB),
+      # the same as the API. This service is I/O-bound waiting on sequential API
+      # responses, so the 2.0 vCPU it used to request bought little while giving
+      # the batch pass 4x the CPU of the API it hammers.
 
   deploy-stitch-llm:
     name: "Deploy stitch-llm"
@@ -400,7 +400,7 @@ jobs:
         OTEL_SERVICE_NAME=stitch-llm
         OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: stitch-llm
-      # Long-lived deployments stay warm; per-PR previews scale to zero.
+      # Only the production release stays warm; everything else scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.always-on }}
 
   deploy-etl:

@@ -180,9 +180,11 @@ self-healing — no manual Portal step needed, and it survives every redeploy.
 Like replica scaling, per-app CPU and memory are reasserted after deploy rather
 than left to the action's defaults (~0.5 vCPU / 1 GiB). `deploy-container.yml`
 takes optional `cpu` / `memory` inputs and folds them into the same post-deploy
-`az containerapp update` that pins replicas. `entity-linkage` and the `etl` app
-are unoptimized and need more memory, so both pass `cpu: "2.0"` /
-`memory: "4.0Gi"`.
+`az containerapp update` that pins replicas. The `etl` app is unoptimized and
+needs more memory, so it passes `cpu: "2.0"` / `memory: "4.0Gi"`.
+`entity-linkage` used to as well, but is deliberately unpinned now: it is
+I/O-bound waiting on sequential API responses, so the extra CPU bought little
+while giving its batch pass 4x the CPU of the API it calls.
 
 On the default **Consumption** workload profile, CPU and memory are not
 independent — only fixed pairs are valid, with memory (Gi) = 2× vCPU. So **4.0Gi
@@ -216,9 +218,6 @@ min-replicas: ${{ needs.resolve-context.outputs.always-on }}
 out under load. Empty means the input is skipped entirely and the app keeps the
 default scale-to-zero. The ETL app is separate: it pins `min = max = 1` and only
 deploys on non-`development` lanes, so it stays warm regardless of this policy.
-
-`entity-linkage` runs at 2.0 vCPU / 4.0 GiB, so it dominates the cost of keeping
-any lane warm — which is why the policy is this narrow.
 
 Cold starts are most visible at sign-in, when the app's first API call lands on a
 sleeping container. The planned mitigation is to have the login page fire a cheap

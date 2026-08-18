@@ -1,12 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthenticatedQuery } from "./useAuthenticatedQuery";
+import { useAuthenticatedMutation } from "./useAuthenticatedMutation";
 import { useConfig } from "../config/useConfig";
 import {
   resourceQueries,
-  resourceKeys,
   DEFAULT_PAGE_SIZE,
   DEFAULT_PAGE,
 } from "../queries/resources";
+import { createSourceForResource, reviewMergeCandidate } from "../queries/api";
 import mockResources from "../mockData/og_field_resources.json";
 import {
   getResourceField,
@@ -15,6 +16,12 @@ import {
 
 const USE_MOCK_DATA = import.meta.env.VITE_USE_MOCK_DATA === "true";
 const MOCK_RESOURCE_ITEMS = mockResources.map(normalizeResourceListItem);
+
+// Mock hooks never call the real API, but still need the exact queryKey a
+// real hook would use (so cache invalidation reaches them too). Building
+// that key means calling the real resourceQueries factory; the config it
+// closes over is never read, since queryFn is always overridden below.
+const UNUSED_MOCK_CONFIG = {};
 
 //--------------------------------
 // Real Implementations
@@ -59,31 +66,31 @@ function useResourceFilterOptionsReal(
   });
 }
 
-function useResourceReal(endpoint = "resources", id, enabled = false) {
+function useResourceReal(endpoint = "resources", id, enabled = true) {
   const config = useConfig();
   return useAuthenticatedQuery({
     ...resourceQueries.view(config, endpoint, id),
-    enabled,
+    enabled: enabled && id != null,
   });
 }
 
-function useResourceDetailReal(endpoint = "resources", id, enabled = false) {
+function useResourceDetailReal(endpoint = "resources", id, enabled = true) {
   const config = useConfig();
   return useAuthenticatedQuery({
     ...resourceQueries.detail(config, endpoint, id),
-    enabled,
+    enabled: enabled && id != null,
   });
 }
 
 function useSourceDetailReal(
   endpoint = "oil-gas-field-sources",
   id,
-  enabled = false,
+  enabled = true,
 ) {
   const config = useConfig();
   return useAuthenticatedQuery({
     ...resourceQueries.detail(config, endpoint, id),
-    enabled,
+    enabled: enabled && id != null,
   });
 }
 
@@ -91,7 +98,7 @@ function useFieldSourceValuesReal(
   endpoint = "oil-gas-fields",
   id,
   field,
-  enabled = false,
+  enabled = true,
 ) {
   const config = useConfig();
   return useAuthenticatedQuery({
@@ -100,7 +107,7 @@ function useFieldSourceValuesReal(
   });
 }
 
-function useMergeCandidatesReal(endpoint = "oil-gas-fields", enabled = false) {
+function useMergeCandidatesReal(endpoint = "oil-gas-fields", enabled = true) {
   const config = useConfig();
   return useAuthenticatedQuery({
     ...resourceQueries.mergeCandidates(config, endpoint),
@@ -111,12 +118,12 @@ function useMergeCandidatesReal(endpoint = "oil-gas-fields", enabled = false) {
 function useMergeCandidateReal(
   endpoint = "oil-gas-fields",
   id,
-  enabled = false,
+  enabled = true,
 ) {
   const config = useConfig();
   return useAuthenticatedQuery({
     ...resourceQueries.mergeCandidate(config, endpoint, id),
-    enabled,
+    enabled: enabled && id != null,
   });
 }
 
@@ -235,14 +242,16 @@ function useResourcesMock(
   } = {},
 ) {
   return useQuery({
-    queryKey: resourceKeys.list(endpoint, {
+    ...resourceQueries.list(
+      UNUSED_MOCK_CONFIG,
+      endpoint,
       page,
       page_size,
-      ...filters,
+      filters,
       q,
       sort_by,
       sort_order,
-    }),
+    ),
     queryFn: () =>
       Promise.resolve(
         getMockResourcePage({
@@ -264,39 +273,39 @@ function useResourceFilterOptionsMock(
   enabled = true,
 ) {
   return useQuery({
-    queryKey: resourceKeys.filterOptions(endpoint, field),
+    ...resourceQueries.filterOptions(UNUSED_MOCK_CONFIG, endpoint, field),
     queryFn: () => Promise.resolve(getMockFilterOptions(field)),
     enabled: enabled && Boolean(field),
   });
 }
 
-function useResourceMock(endpoint = "resources", id, enabled = false) {
+function useResourceMock(endpoint = "resources", id, enabled = true) {
   return useQuery({
-    queryKey: resourceKeys.detail(endpoint, id),
+    ...resourceQueries.view(UNUSED_MOCK_CONFIG, endpoint, id),
     queryFn: () =>
       Promise.resolve(mockResources.find((r) => r.id === id) ?? null),
-    enabled,
+    enabled: enabled && id != null,
   });
 }
 
-function useResourceDetailMock(endpoint = "resources", id, enabled = false) {
+function useResourceDetailMock(endpoint = "resources", id, enabled = true) {
   return useQuery({
-    queryKey: resourceKeys.detail(endpoint, id),
+    ...resourceQueries.detail(UNUSED_MOCK_CONFIG, endpoint, id),
     queryFn: () =>
       Promise.resolve(mockResources.find((r) => r.id === id) ?? null),
-    enabled,
+    enabled: enabled && id != null,
   });
 }
 
 function useSourceDetailMock(
   endpoint = "oil-gas-field-sources",
   id,
-  enabled = false,
+  enabled = true,
 ) {
   return useQuery({
-    queryKey: resourceKeys.detail(endpoint, id),
+    ...resourceQueries.detail(UNUSED_MOCK_CONFIG, endpoint, id),
     queryFn: () => Promise.resolve(null),
-    enabled,
+    enabled: enabled && id != null,
   });
 }
 
@@ -304,21 +313,21 @@ function useFieldSourceValuesMock(
   endpoint = "oil-gas-fields",
   id,
   field,
-  enabled = false,
+  enabled = true,
 ) {
   // Mock mode has no backend; the panel degrades to an empty state, matching
   // useSourceDetailMock. Real behavior is exercised against the API. Guard `id`
   // the same way the real hook does so the query key stays stable.
   return useQuery({
-    queryKey: resourceKeys.fieldSources(endpoint, id, field),
+    ...resourceQueries.fieldSources(UNUSED_MOCK_CONFIG, endpoint, id, field),
     queryFn: () => Promise.resolve([]),
     enabled: enabled && Boolean(field) && Number.isFinite(id),
   });
 }
 
-function useMergeCandidatesMock(endpoint = "oil-gas-fields", enabled = false) {
+function useMergeCandidatesMock(endpoint = "oil-gas-fields", enabled = true) {
   return useQuery({
-    queryKey: resourceKeys.mergeCandidates(endpoint),
+    ...resourceQueries.mergeCandidates(UNUSED_MOCK_CONFIG, endpoint),
     queryFn: () => Promise.resolve([]),
     enabled,
   });
@@ -327,12 +336,45 @@ function useMergeCandidatesMock(endpoint = "oil-gas-fields", enabled = false) {
 function useMergeCandidateMock(
   endpoint = "oil-gas-fields",
   id,
-  enabled = false,
+  enabled = true,
 ) {
   return useQuery({
-    queryKey: resourceKeys.mergeCandidate(endpoint, id),
+    ...resourceQueries.mergeCandidate(UNUSED_MOCK_CONFIG, endpoint, id),
     queryFn: () => Promise.resolve(null),
-    enabled,
+    enabled: enabled && id != null,
+  });
+}
+
+//--------------------------------
+// Mutations
+//--------------------------------
+// Mutations always hit the real API (mock mode hides the write affordances
+// behind permissions), so there are no mock variants. Each one invalidates
+// every cached query under the endpoint on success — lists, details, views,
+// field-sources, filter-options, and merge-candidates all share the
+// `[endpoint]` key prefix — so any save refreshes whatever is on screen.
+
+export function useCreateSourceForResource(endpoint = "oil-gas-fields") {
+  const config = useConfig();
+  const queryClient = useQueryClient();
+  return useAuthenticatedMutation({
+    mutationFn: (fetcher, { resourceId, payload }) =>
+      createSourceForResource(config, resourceId, payload, fetcher, endpoint),
+    // Every resourceQueries key is prefixed by [endpoint] (enforced by
+    // resources.test.js), so this one-segment key invalidates everything
+    // cached for the endpoint — lists, details, views, field-sources,
+    // filter-options, and merge-candidates.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [endpoint] }),
+  });
+}
+
+export function useReviewMergeCandidate(endpoint = "oil-gas-fields") {
+  const config = useConfig();
+  const queryClient = useQueryClient();
+  return useAuthenticatedMutation({
+    mutationFn: (fetcher, { id, action, reviewNotes }) =>
+      reviewMergeCandidate(config, id, action, fetcher, endpoint, reviewNotes),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [endpoint] }),
   });
 }
 
