@@ -1,77 +1,35 @@
-# stitch
+# Stitch
 
-See it live: 
+Stitch is an oil & gas asset data platform built by [RMI](https://rmi.org). It consolidates fragmented upstream datasets into a single, provenance-aware view of oil & gas fields, backed by a database and exposed through a UI and API. It's built for climate researchers, energy analysts, and policy teams who need trustworthy, source-attributed data.
 
-* DRESS-REHEARSAL (PROD-ish): https://brave-cliff-09493391e.7.azurestaticapps.net/
-* DEV (`main`): https://witty-mushroom-017a3dc1e.1.azurestaticapps.net/
+**What Stitch does:**
 
-Stitch is a platform that integrates diverse oil & gas asset datasets, applies AI-driven enrichment with human review, and delivers curated, trustworthy data.
+- **Consolidates** oil & gas asset data from multiple upstream sources into a unified schema
+- **Enriches** records with AI-driven inference where source data is incomplete
+- **Reviews** merges and enrichments through a human-in-the-loop workflow
+- **Serves** curated, source-attributed data through a UI and API, with permission-aware access by source
+
+**See it live:**
+
+- Dress rehearsal (prod-ish): https://brave-cliff-09493391e.7.azurestaticapps.net/
+- Dev (`main`): https://witty-mushroom-017a3dc1e.1.azurestaticapps.net/
 
 ## Local Development
 
-Local development is run via Docker Compose (DB + API + Frontend) with optional DB initialization/seeding.
+For the full development guide, see [HACKING.md](./HACKING.md).
 
-The stack uses two compose files:
+Quick start:
 
-- **`docker-compose.yml`** — base services (API, DB, frontend, etc.)
-- **`docker-compose.local.yml`** — local dev overrides (dev build target, debug logging, file-watch sync)
-
-### Prerequisites
-
-- Docker Desktop (includes Docker Engine + Docker Compose)
-
-Verify:
 ```bash
-docker --version
-docker compose version
-```
-
-### Setup
-
-Create your local environment file:
-``` bash
 cp env.example .env
-```
-
-Edit `.env` as needed (passwords, seed settings, etc.).
-Note that frontend configuration is handled through
-`./deployments/stitch-frontend/public/config.json`
-
-### Running the Application
-
-Start (and build) the stack:
-```bash
-docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
-```
-
-Or use `make dev-docker` (see [Make Targets](#make-targets)).
-
-Or, if already built:
-```bash
-docker compose -f docker-compose.yml -f docker-compose.local.yml up db api frontend
+make dev-docker
 ```
 
 Useful URLs:
+
 - Frontend: http://localhost:3000
 - API docs (Swagger): http://localhost:8000/docs
 - Adminer (DB UI): http://localhost:8081
-
-Note: The `db-init` service runs automatically (via `depends_on`) to apply schema and seed data based on `.env`:
-- `STITCH_DB_SCHEMA_MODE`
-- `STITCH_DB_SEED_MODE`
-- `STITCH_DB_SEED_PROFILE`
-
-## Reset (wipe DB volumes safely)
-
-Stop containers and delete the Postgres volume (this removes all local DB data):
-```bash
-docker compose -f docker-compose.yml -f docker-compose.local.yml down -v
-```
-
-Then start fresh:
-```bash
-docker compose -f docker-compose.yml -f docker-compose.local.yml up db api frontend
-```
 
 ## Make Targets
 
@@ -123,3 +81,10 @@ Python package discovery is automatic — any subdirectory of `packages/` with a
 | `make clean-cache` | Remove `.ruff_cache` and `.pytest_cache` |
 | `make clean-docker` | Stop containers and delete volumes |
 | `make frontend-clean` | Remove frontend `dist/`, `node_modules`, and stamps |
+
+## Documentation
+
+- [HACKING.md](./HACKING.md) — day-to-day development workflow
+- [CONTRIBUTING.md](./CONTRIBUTING.md) — how to open issues and pull requests
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — monorepo layout and structure
+- [AGENTS.md](./AGENTS.md) — instructions for AI coding agents working in this repo
