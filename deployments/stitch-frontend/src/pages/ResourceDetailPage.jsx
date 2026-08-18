@@ -171,18 +171,90 @@ function SuggestionResult({ result }) {
   );
 }
 
+function SuggestionCard({
+  fieldKey,
+  result,
+  error,
+  isGenerating,
+  canAttach,
+  persistState,
+  isPersisting,
+  onPersist,
+}) {
+  const fieldLabel = FIELD_META[fieldKey]?.label ?? fieldKey;
+
+  if (isGenerating) {
+    return (
+      <div className="rounded-md border border-line bg-panel p-4">
+        <p className="text-sm font-semibold text-ink">{fieldLabel}</p>
+        <p className="mt-1 text-sm text-ink-muted">Generating suggestion…</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-md border border-danger/25 bg-danger-soft p-4">
+        <p className="text-sm font-semibold text-ink">{fieldLabel}</p>
+        <p className="mt-1 text-sm text-danger">{error}</p>
+      </div>
+    );
+  }
+
+  if (!result) return null;
+
+  const canPersist = result.value != null;
+  const isPersistedCurrent =
+    persistState?.status === "success" &&
+    persistState.suggestionKey === getSuggestionSubmissionKey(result);
+
+  return (
+    <div className="space-y-3">
+      <SuggestionResult result={result} />
+      {canPersist && canAttach && (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <Button
+            onClick={onPersist}
+            disabled={isPersisting || isPersistedCurrent}
+            variant="secondary"
+          >
+            {isPersisting
+              ? "Adding…"
+              : isPersistedCurrent
+                ? "Added to resource"
+                : "Add to resource"}
+          </Button>
+
+          {isPersistedCurrent && (
+            <p className="text-sm text-green-700">Source added to resource.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AISuggestionPanel({ endpoint, resourceId }) {
   const config = useConfig();
   const { getAccessTokenSilently } = useAuth0();
   const fetcher = createAuthenticatedFetcher(config, getAccessTokenSilently);
   const createSource = useCreateSourceForResource(endpoint);
   const [selectedField, setSelectedField] = useState(AI_SUGGESTION_FIELDS[0]);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [persistState, setPersistState] = useState(null);
+  // Per-field state so the single-field and bulk "Enrich this resource" flows
+  // share the same rendering pipeline. `fieldOrder` preserves display order
+  // (single-field replaces it; bulk uses AI_SUGGESTION_FIELDS order).
+  const [fieldOrder, setFieldOrder] = useState([]);
+  const [resultsByField, setResultsByField] = useState({});
+  const [errorsByField, setErrorsByField] = useState({});
+  const [generatingFields, setGeneratingFields] = useState(() => new Set());
+  const [persistStateByField, setPersistStateByField] = useState({});
+  // Panel-level state that doesn't belong to any single field.
+  const [panelError, setPanelError] = useState("");
+  const [persistingField, setPersistingField] = useState(null);
 
-  const isPersisting = createSource.isPending;
+  const isBulkInFlight = generatingFields.size > 1;
+  const isSingleInFlight =
+    generatingFields.size === 1 && generatingFields.has(selectedField);
 
   // Read the cached /auth/me permissions once. `isLoading` lets us hold a
   // placeholder instead of flashing the panel in once it loads.
@@ -194,38 +266,61 @@ function AISuggestionPanel({ endpoint, resourceId }) {
   // Creating + attaching a source needs both the source and resource writes.
   const canAttach =
     hasPermission("source:write") && hasPermission("resource:write");
-  const canPersist = result?.value != null;
-  const isPersistedCurrentSuggestion =
-    result &&
-    persistState?.status === "success" &&
-    persistState.suggestionKey === getSuggestionSubmissionKey(result);
 
-  async function handleGenerateSuggestion() {
-    setIsLoading(true);
-    setError("");
-    setResult(null);
-    setPersistState(null);
+  function resetAllResults(nextOrder) {
+    setPanelError("");
+    setFieldOrder(nextOrder);
+    setResultsByField({});
+    setErrorsByField({});
+    setPersistStateByField({});
+    setPersistingField(null);
+  }
 
+  async function runFieldSuggestion(fieldKey) {
+    setGeneratingFields((prev) => {
+      const next = new Set(prev);
+      next.add(fieldKey);
+      return next;
+    });
     try {
       const suggestion = await createLLMSuggestion(
         config,
         resourceId,
-        selectedField,
+        fieldKey,
         fetcher,
         endpoint,
       );
-      setResult(suggestion);
+      setResultsByField((prev) => ({ ...prev, [fieldKey]: suggestion }));
     } catch (err) {
-      setError(err.message || "Failed to generate suggestion.");
+      setErrorsByField((prev) => ({
+        ...prev,
+        [fieldKey]: err.message || "Failed to generate suggestion.",
+      }));
     } finally {
-      setIsLoading(false);
+      setGeneratingFields((prev) => {
+        const next = new Set(prev);
+        next.delete(fieldKey);
+        return next;
+      });
     }
   }
 
-  async function handlePersistSuggestion() {
+  async function handleGenerateSuggestion() {
+    resetAllResults([selectedField]);
+    await runFieldSuggestion(selectedField);
+  }
+
+  async function handleEnrichResource() {
+    resetAllResults([...AI_SUGGESTION_FIELDS]);
+    await Promise.all(AI_SUGGESTION_FIELDS.map(runFieldSuggestion));
+  }
+
+  async function handlePersistSuggestion(fieldKey) {
+    const result = resultsByField[fieldKey];
     if (!result || result.value == null) return;
 
-    setError("");
+    setPanelError("");
+    setPersistingField(fieldKey);
 
     const persistIntentId = createPersistIntentId();
     const sourcePayload = buildLLMSourcePayload({
@@ -243,14 +338,23 @@ function AISuggestionPanel({ endpoint, resourceId }) {
         resourceId,
         payload: sourcePayload,
       });
-      setPersistState({
-        status: "success",
-        sourceId: createdSource.id,
-        suggestionKey,
-      });
+      setPersistStateByField((prev) => ({
+        ...prev,
+        [fieldKey]: {
+          status: "success",
+          sourceId: createdSource.id,
+          suggestionKey,
+        },
+      }));
     } catch (err) {
-      setPersistState(null);
-      setError(err.message || "Failed to add suggestion to resource.");
+      setPersistStateByField((prev) => {
+        const next = { ...prev };
+        delete next[fieldKey];
+        return next;
+      });
+      setPanelError(err.message || "Failed to add suggestion to resource.");
+    } finally {
+      setPersistingField(null);
     }
   }
 
@@ -270,6 +374,11 @@ function AISuggestionPanel({ endpoint, resourceId }) {
   // Hide the entire panel from users who can't run LLM suggestions.
   if (!canRunLlm) return null;
 
+  const bulkTotal = AI_SUGGESTION_FIELDS.length;
+  const bulkCompleted = fieldOrder.filter(
+    (fieldKey) => !generatingFields.has(fieldKey),
+  ).length;
+
   return (
     <section>
       <SectionHeader title="AI Suggestion" />
@@ -279,11 +388,8 @@ function AISuggestionPanel({ endpoint, resourceId }) {
             <span className="mb-1 block font-medium">Field</span>
             <select
               value={selectedField}
-              onChange={(event) => {
-                setSelectedField(event.target.value);
-                setError("");
-                setResult(null);
-              }}
+              onChange={(event) => setSelectedField(event.target.value)}
+              disabled={isBulkInFlight}
               className="w-full rounded-md border border-line bg-panel px-3 py-2 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
             >
               {AI_SUGGESTION_FIELDS.map((fieldKey) => (
@@ -295,41 +401,43 @@ function AISuggestionPanel({ endpoint, resourceId }) {
           </label>
           <Button
             onClick={handleGenerateSuggestion}
-            disabled={isLoading}
+            disabled={isSingleInFlight || isBulkInFlight}
             variant="secondary"
           >
-            {isLoading ? "Generating…" : "Generate suggestion"}
+            {isSingleInFlight ? "Generating…" : "Generate suggestion"}
+          </Button>
+          <Button
+            onClick={handleEnrichResource}
+            disabled={isBulkInFlight || isSingleInFlight}
+            variant="secondary"
+          >
+            {isBulkInFlight
+              ? `Enriching… ${bulkCompleted} / ${bulkTotal}`
+              : "Enrich this resource"}
           </Button>
         </div>
 
-        {error && (
+        {panelError && (
           <div className="rounded-md border border-danger/25 bg-danger-soft px-4 py-3 text-sm text-danger">
-            {error}
+            {panelError}
           </div>
         )}
 
-        {result && <SuggestionResult result={result} />}
-
-        {canPersist && canAttach && (
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <Button
-              onClick={handlePersistSuggestion}
-              disabled={isPersisting || isPersistedCurrentSuggestion}
-              variant="secondary"
-            >
-              {isPersisting
-                ? "Adding…"
-                : isPersistedCurrentSuggestion
-                  ? "Added to resource"
-                  : "Add to resource"}
-            </Button>
-
-            {persistState?.status === "success" &&
-              isPersistedCurrentSuggestion && (
-                <p className="text-sm text-green-700">
-                  Source added to resource.
-                </p>
-              )}
+        {fieldOrder.length > 0 && (
+          <div className="space-y-4">
+            {fieldOrder.map((fieldKey) => (
+              <SuggestionCard
+                key={fieldKey}
+                fieldKey={fieldKey}
+                result={resultsByField[fieldKey]}
+                error={errorsByField[fieldKey]}
+                isGenerating={generatingFields.has(fieldKey)}
+                canAttach={canAttach}
+                persistState={persistStateByField[fieldKey]}
+                isPersisting={persistingField === fieldKey}
+                onPersist={() => handlePersistSuggestion(fieldKey)}
+              />
+            ))}
           </div>
         )}
       </div>

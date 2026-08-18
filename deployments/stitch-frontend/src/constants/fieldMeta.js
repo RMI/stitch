@@ -69,8 +69,13 @@ export const MERGE_COMPARISON_OTHER_FIELDS = Object.keys(FIELD_META).filter(
 );
 
 export const AI_SUGGESTION_FIELDS = [
+  "name",
+  "name_local",
+  "country",
   "basin",
+  "region",
   "state_province",
+  "reservoir_formation",
   "discovery_year",
   "fid_year",
   "production_start_year",

@@ -184,7 +184,7 @@ describe("ResourceDetailPage", () => {
     });
 
     renderWithQueryClient(<ResourceDetailPage />);
-    expect(screen.getByText("Local Name")).toBeInTheDocument();
+    expect(screen.getAllByText("Local Name").length).toBeGreaterThan(0);
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 
