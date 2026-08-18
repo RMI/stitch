@@ -364,10 +364,10 @@ jobs:
       deployment-label: entity-linkage
       # Keep staging / dress-rehearsal always-on; development scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
-      # Unoptimized service; needs more than the default ~0.5 vCPU / 1 GiB.
-      # 4 GiB on the Consumption profile is only valid paired with 2.0 vCPU.
-      cpu: "2.0"
-      memory: "4.0Gi"
+      # Deliberately unpinned: takes the platform default (~0.5 vCPU / 1 GiB),
+      # the same as the API. This service is I/O-bound waiting on sequential API
+      # responses, so the 2.0 vCPU it used to request bought little while giving
+      # the batch pass 4x the CPU of the API it hammers.
 
   deploy-stitch-llm:
     name: "Deploy stitch-llm"
