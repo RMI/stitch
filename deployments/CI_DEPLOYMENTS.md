@@ -219,6 +219,24 @@ out under load. Empty means the input is skipped entirely and the app keeps the
 default scale-to-zero. The ETL app is separate: it pins `min = max = 1` and only
 deploys on non-`development` lanes, so it stays warm regardless of this policy.
 
+Apps that do scale to zero also get a widened **cooldown** — 900s rather than
+Azure's default 300s — reasserted after every deploy. Cooldown is how long an app
+stays up after its last request, so this covers the ordinary gaps inside a
+working session without keeping anything alive overnight. There is no CLI flag
+for it, so the deploy sets it with the same `show -> jq -> update --yaml`
+round-trip used for volume mounts. Always-on apps skip the step; an app that
+never scales to zero has no use for a cooldown.
+
+Cooldown only helps when requests cluster closer together than the cooldown
+itself, so be sceptical of raising it further without measuring. Over 13 days
+`main-api` ran in 11 of 312 hours, and the gaps between bursts of use were 40,
+110, 120 and 220 minutes — none of which 900s bridges. Worth re-measuring once a
+lane is in real daily use:
+
+```bash
+az monitor metrics list --resource "$(az containerapp show -n main-api -g STITCH-DEV-RG --query id -o tsv)" --metric Replicas --interval PT1H --start-time "$(date -u -v-13d +%Y-%m-%dT%H:%M:%SZ)" --end-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --aggregation Maximum -o table
+```
+
 Cold starts are most visible at sign-in, when the app's first API call lands on
 a sleeping container. The frontend absorbs that, so the policy above does not
 have to widen to cover it:

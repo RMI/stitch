@@ -283,6 +283,43 @@ jobs:
             --resource-group "${AZURE_RESOURCE_GROUP}" \
             --yaml /tmp/app.yaml
 
+      - name: Widen the scale-to-zero cooldown
+        # How long an app stays up after its last request before scaling to
+        # zero. Azure's default is 300s, so a five-minute pause costs a cold
+        # start. 900s covers the ordinary gaps inside a working session --
+        # reading code, writing a comment, a short interruption -- while still
+        # dropping to zero when someone stops for the day.
+        #
+        # There is no `--cooldown-period` flag on `az containerapp update`, so
+        # this uses the same show -> mutate -> update --yaml round-trip as the
+        # volume mount above, and runs after it so it re-reads that result.
+        #
+        # Skipped for always-on apps: an app that never scales to zero has no
+        # use for a cooldown.
+        if: ${{ inputs.min-replicas == '' }}
+        shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          COOLDOWN_SECONDS: "900"
+        run: |
+          set -euo pipefail
+
+          az containerapp show \
+            --name "${{ inputs.container-app-name }}" \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --output json > /tmp/app-cooldown.json
+
+          jq \
+            --argjson cd "${COOLDOWN_SECONDS}" \
+            'del(.systemData)
+             | .properties.template.scale.cooldownPeriod = $cd' \
+            /tmp/app-cooldown.json > /tmp/app-cooldown.yaml
+
+          az containerapp update \
+            --name "${{ inputs.container-app-name }}" \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --yaml /tmp/app-cooldown.yaml
+
       - name: Export application URL
         id: export-app-url
         shell: bash
