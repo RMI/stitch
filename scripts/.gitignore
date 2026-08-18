@@ -1,0 +1,3 @@
+# Fetched snapshots and review state are per-run and per-deployment.
+data/
+__pycache__/
