@@ -262,7 +262,13 @@ describe("ResourcesView", () => {
     renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
 
     expect(
-      screen.getByText(`${mockResourceData.total_count} assets`),
+      screen.getByText((_, node) => {
+        if (!node || node.tagName !== "P") return false;
+        return (
+          node.textContent?.replace(/\s+/g, " ").trim() ===
+          `${mockResourceData.total_count} assets`
+        );
+      }),
     ).toBeInTheDocument();
     expect(
       screen.queryByText(/awaiting resource count/i),
