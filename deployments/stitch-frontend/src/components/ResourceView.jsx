@@ -41,7 +41,7 @@ export default function ResourceView({
     }
   };
   const headingClass = showControls
-    ? "mb-3 text-2xl font-semibold text-ink"
+    ? "mb-3 text-2xl font-semibold tracking-tight text-ink"
     : "mb-3 text-lg font-semibold text-ink";
   const emptyMessage = showControls
     ? "No resource loaded. Click the button above to fetch a resource."
@@ -50,13 +50,12 @@ export default function ResourceView({
   return (
     <div className={`mx-auto max-w-4xl ${className}`}>
       <h1 className={headingClass}>
-        {showControls ? `Resource ID: ${id}` : `Resource #${id}`}
+        {showControls ? "Resource ID: " : "Resource #"}
+        <span className="font-mono text-[0.85em] font-medium">{id}</span>
       </h1>
       {showControls && (
-        <div className="pb-4 text-sm text-ink-muted">
-          <span className="font-semibold">
-            {config.apiBaseUrl}/{endpoint}
-          </span>
+        <div className="pb-4 font-mono text-xs text-ink-muted">
+          {config.apiBaseUrl}/{endpoint}
         </div>
       )}
 

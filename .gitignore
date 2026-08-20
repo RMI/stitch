@@ -224,3 +224,8 @@ __marimo__/
 
 # Local design notes and plans
 /docs/
+
+# impeccable design skill (local design context and live-mode config)
+/PRODUCT.md
+/DESIGN.md
+/.impeccable/
