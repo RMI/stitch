@@ -30,6 +30,8 @@ cp env.example .env
 make dev-docker
 ```
 
+To wipe local volumes (including the database) and rebuild everything from scratch, use `make reboot-docker`. To stop containers and clear volumes without rebuilding, use `make clean-docker`.
+
 Useful URLs:
 
 - Frontend: http://localhost:3000
