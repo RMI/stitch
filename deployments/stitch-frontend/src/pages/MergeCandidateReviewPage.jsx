@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import Button from "../components/Button";
 import MergeSourceComparison from "../components/MergeSourceComparison";
 import MergedResourceView from "../components/MergedResourceView";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useMergeCandidateName } from "../hooks/useMergeCandidateName";
 import { useMergedResourceDetail } from "../hooks/useMergedResourceDetail";
 import {
@@ -369,6 +370,7 @@ function CandidateDecisionPanel({
 }
 
 export default function MergeCandidateReviewPage() {
+  useDocumentTitle("Merge review");
   const [selectedId, setSelectedId] = useState(null);
   const [reviewNotes, setReviewNotes] = useState("");
 
