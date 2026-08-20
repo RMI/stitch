@@ -1,4 +1,4 @@
-# Stitch
+# 🪡 Stitch
 
 [![Python Checks](https://github.com/RMI/stitch/actions/workflows/python.yml/badge.svg?branch=main)](https://github.com/RMI/stitch/actions/workflows/python.yml)
 [![Node Checks](https://github.com/RMI/stitch/actions/workflows/node.yml/badge.svg?branch=main)](https://github.com/RMI/stitch/actions/workflows/node.yml)
