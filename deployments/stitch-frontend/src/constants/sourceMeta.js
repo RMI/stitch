@@ -25,7 +25,7 @@ export const SOURCE_LABELS = {
   ccr: "C&C Reservoirs",
   alb: "Alberta Energy Regulator",
   bc: "BC Energy Regulator",
-  rmi: "Custom",
+  rmi: "RMI",
 };
 
 export const UNKNOWN_SOURCE_LABEL = "Source unavailable";

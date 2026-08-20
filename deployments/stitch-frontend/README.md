@@ -691,7 +691,7 @@ export const SOURCE_COLORS = {
 export const SOURCE_LABELS = {
   gem: "GEM",
   wm: "Woodmac",
-  rmi: "Custom",
+  rmi: "RMI",
   llm: "LLM",
 };
 ```
