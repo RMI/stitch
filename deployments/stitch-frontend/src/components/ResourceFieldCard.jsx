@@ -4,18 +4,18 @@ import { useQueryClient } from "@tanstack/react-query";
 import { FieldCard } from "./FieldCard";
 import Button from "./Button";
 import Input from "./Input";
-import { useFieldSourceValues } from "../hooks/useResources";
+import {
+  useCreateSourceForResource,
+  useFieldSourceValues,
+} from "../hooks/useResources";
 import {
   useHasPermission,
   useHasAllPermissions,
 } from "../hooks/usePermissions";
 import { useConfig } from "../config/useConfig";
 import { createAuthenticatedFetcher } from "../auth/api";
-import {
-  updateFieldSourcePriority,
-  createSourceForResource,
-} from "../queries/api";
-import { resourceKeys } from "../queries/resources";
+import { updateFieldSourcePriority } from "../queries/api";
+import { resourceQueries } from "../queries/resources";
 import {
   SOURCES,
   SOURCE_COLORS,
@@ -36,7 +36,7 @@ function arraysEqual(a, b) {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
-// Build a bare "User Generated" (rmi) source that populates only `fieldKey`, to
+// Build a bare "RMI" (rmi) source that populates only `fieldKey`, to
 // be created and attached to the resource. `name`/`country` are required-present
 // keys on the field model (null unless the panel's field IS name/country — the
 // [fieldKey] spread then overrides the null). The curator's note and an audit
@@ -123,26 +123,23 @@ function MoveButtons({ onMoveUp, onMoveDown, canMoveUp, canMoveDown, label }) {
 }
 
 // The value entry form, revealed after the curator clicks "+". Lets them enter a
-// new "User Generated" value (with an optional note) for this field; on Save it
+// new "RMI" value (with an optional note) for this field; on Save it
 // creates and attaches an rmi source to the resource.
 function AddSourceForm({ endpoint, resourceId, fieldKey, onSaved }) {
-  const config = useConfig();
-  const { getAccessTokenSilently } = useAuth0();
-  const queryClient = useQueryClient();
+  const createSource = useCreateSourceForResource(endpoint);
 
   const [value, setValue] = useState("");
   const [note, setNote] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
 
   const trimmedValue = value.trim();
+  const isSaving = createSource.isPending;
+  const saveError = createSource.error
+    ? createSource.error.message || "Failed to add value."
+    : "";
 
   async function handleSave() {
     if (!trimmedValue || isSaving) return;
-    setIsSaving(true);
-    setSaveError("");
 
-    const fetcher = createAuthenticatedFetcher(config, getAccessTokenSilently);
     const payload = buildRmiSourcePayload({
       fieldKey,
       value: trimmedValue,
@@ -150,29 +147,13 @@ function AddSourceForm({ endpoint, resourceId, fieldKey, onSaved }) {
     });
 
     try {
-      await createSourceForResource(
-        config,
-        resourceId,
-        payload,
-        fetcher,
-        endpoint,
-      );
-      // Refresh this field's source list and the resource detail (coalesced
-      // value / provenance / Sources section) so the new value shows at once.
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: resourceKeys.fieldSources(endpoint, resourceId, fieldKey),
-        }),
-        queryClient.invalidateQueries({
-          queryKey: resourceKeys.detail(endpoint, resourceId),
-        }),
-      ]);
-      // Success unmounts this form (parent exits edit mode), so there is no
-      // `isSaving` to reset — only the error path below keeps the form mounted.
+      // Resolves after the mutation's cache invalidation, so the refreshed
+      // data is on its way before the form closes.
+      await createSource.mutateAsync({ resourceId, payload });
       onSaved();
-    } catch (err) {
-      setSaveError(err.message || "Failed to add value.");
-      setIsSaving(false);
+    } catch {
+      // Surfaced via `createSource.error` above; the form stays mounted with
+      // the draft intact so the curator can retry.
     }
   }
 
@@ -302,10 +283,16 @@ function FieldSourcesPanel({
       // winner / collapsed value may have changed).
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: resourceKeys.fieldSources(endpoint, resourceId, fieldKey),
+          queryKey: resourceQueries.fieldSources(
+            config,
+            endpoint,
+            resourceId,
+            fieldKey,
+          ).queryKey,
         }),
         queryClient.invalidateQueries({
-          queryKey: resourceKeys.detail(endpoint, resourceId),
+          queryKey: resourceQueries.detail(config, endpoint, resourceId)
+            .queryKey,
         }),
       ]);
       stopEditing();

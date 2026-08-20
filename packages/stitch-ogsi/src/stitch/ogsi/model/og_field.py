@@ -23,8 +23,8 @@ class OilGasOwner(BaseModel):
     name: str
     """Name of the company."""
 
-    stake: FractionalPercentage
-    """Ownership percentage (0–100)."""
+    stake: FractionalPercentage | None = None
+    """Ownership percentage (0–100). None when the source states no percentage."""
 
 
 class OilGasOperator(BaseModel):
@@ -33,8 +33,8 @@ class OilGasOperator(BaseModel):
     name: str
     """Name of the operating company."""
 
-    stake: FractionalPercentage
-    """Operating stake percentage (0–100)."""
+    stake: FractionalPercentage | None = None
+    """Operating stake percentage (0–100). None when the source states no percentage."""
 
 
 class OilGasFieldBase(BaseModel):

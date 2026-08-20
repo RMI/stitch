@@ -1,10 +1,15 @@
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useParams, useNavigate } from "react-router";
-import { useResourceDetail, useSourceDetail } from "../hooks/useResources";
+import {
+  useCreateSourceForResource,
+  useResourceDetail,
+  useSourceDetail,
+} from "../hooks/useResources";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { useConfig } from "../config/useConfig";
-import { createLLMSuggestion, createSourceForResource } from "../queries/api";
+import { createLLMSuggestion } from "../queries/api";
 import { usePermissions } from "../hooks/usePermissions";
 import SourceMixBar from "../components/SourceMixBar";
 import SectionHeader from "../components/SectionHeader";
@@ -167,16 +172,18 @@ function SuggestionResult({ result }) {
   );
 }
 
-function AISuggestionPanel({ endpoint, resourceId, onAttached }) {
+function AISuggestionPanel({ endpoint, resourceId }) {
   const config = useConfig();
   const { getAccessTokenSilently } = useAuth0();
   const fetcher = createAuthenticatedFetcher(config, getAccessTokenSilently);
+  const createSource = useCreateSourceForResource(endpoint);
   const [selectedField, setSelectedField] = useState(AI_SUGGESTION_FIELDS[0]);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [isPersisting, setIsPersisting] = useState(false);
   const [persistState, setPersistState] = useState(null);
+
+  const isPersisting = createSource.isPending;
 
   // Read the cached /auth/me permissions once. `isLoading` lets us hold a
   // placeholder instead of flashing the panel in once it loads.
@@ -219,7 +226,6 @@ function AISuggestionPanel({ endpoint, resourceId, onAttached }) {
   async function handlePersistSuggestion() {
     if (!result || result.value == null) return;
 
-    setIsPersisting(true);
     setError("");
 
     const persistIntentId = createPersistIntentId();
@@ -231,31 +237,21 @@ function AISuggestionPanel({ endpoint, resourceId, onAttached }) {
     const suggestionKey = getSuggestionSubmissionKey(result);
 
     try {
-      const createdSource = await createSourceForResource(
-        config,
+      // Resolves after the mutation's cache invalidation, so the newly
+      // attached source (and any change to the coalesced winning value)
+      // shows immediately.
+      const createdSource = await createSource.mutateAsync({
         resourceId,
-        sourcePayload,
-        fetcher,
-        endpoint,
-      );
+        payload: sourcePayload,
+      });
       setPersistState({
         status: "success",
         sourceId: createdSource.id,
         suggestionKey,
       });
-      // Refresh the resource so the newly attached source (and any change to
-      // the coalesced winning value) shows immediately. Best-effort: a failed
-      // refresh must not turn a successful attach into an error.
-      try {
-        await onAttached?.();
-      } catch {
-        // ignore refresh failures
-      }
     } catch (err) {
       setPersistState(null);
       setError(err.message || "Failed to add suggestion to resource.");
-    } finally {
-      setIsPersisting(false);
     }
   }
 
@@ -277,7 +273,7 @@ function AISuggestionPanel({ endpoint, resourceId, onAttached }) {
 
   return (
     <section>
-      <SectionHeader title="AI Suggestion" />
+      <SectionHeader title="AI suggestion" />
       <div className="space-y-4 rounded-md border border-line bg-surface p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <label className="flex-1 text-sm text-ink">
@@ -352,7 +348,7 @@ function OrgPanel({ items, nameLabel }) {
           <FieldCard
             key={`stake-${idx}`}
             label="Stake"
-            value={`${o.stake}%`}
+            value={o.stake == null ? null : `${o.stake}%`}
           />,
         ])}
       </div>
@@ -561,16 +557,15 @@ export default function ResourceDetailPage() {
   const numericId = Number(id);
   const validId = Number.isFinite(numericId);
   const endpoint = "oil-gas-fields";
+  // Enabled (not manually refetched) so that save mutations' cache
+  // invalidations refetch it — invalidation never refetches disabled queries.
   const {
     data: detailView,
     isLoading,
     isError,
-    refetch,
-  } = useResourceDetail(endpoint, numericId);
+  } = useResourceDetail(endpoint, numericId, validId);
 
-  useEffect(() => {
-    if (validId) refetch();
-  }, [numericId, validId, refetch]);
+  useDocumentTitle(detailView?.data?.name ?? "Resource");
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -585,16 +580,18 @@ export default function ResourceDetailPage() {
       {detailView && (
         <div className="space-y-10">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-              Curated resource
-            </p>
-            <h1 className="mt-1 text-3xl font-semibold text-ink">
+            <h1 className="text-2xl font-semibold tracking-tight text-ink">
               {detailView.data.name}
             </h1>
+            {validId && (
+              <p className="mt-1 font-mono text-xs text-ink-muted">
+                {endpoint}/{numericId}
+              </p>
+            )}
           </div>
 
           <section>
-            <SectionHeader title="Data Source Mix" />
+            <SectionHeader title="Data source mix" />
             <div className="rounded-md border border-line bg-panel p-4">
               <SourceMixBar provenance={detailView.provenance} showLabels />
             </div>
@@ -642,11 +639,7 @@ export default function ResourceDetailPage() {
             </FieldGrid>
           </section>
 
-          <AISuggestionPanel
-            endpoint={endpoint}
-            resourceId={numericId}
-            onAttached={refetch}
-          />
+          <AISuggestionPanel endpoint={endpoint} resourceId={numericId} />
 
           <SourcesSection sources={detailView.source_data} />
         </div>

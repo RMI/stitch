@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useConfig } from "../config/useConfig";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import StructuredDataView from "../components/StructuredDataView";
 import Button from "../components/Button";
 import Input from "../components/Input";
@@ -284,6 +285,7 @@ function EtlPanel({ title, description, baseUrl, fields, getToken }) {
 }
 
 export default function EtlPage() {
+  useDocumentTitle("ETL pipelines");
   const config = useConfig();
   const { getAccessTokenSilently } = useAuth0();
 
@@ -295,10 +297,9 @@ export default function EtlPage() {
   return (
     <div className="mx-auto max-w-6xl">
       <div className="mb-6">
-        <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-          Batch workflow
-        </p>
-        <h1 className="mt-1 text-3xl font-semibold text-ink">ETL Pipelines</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">
+          ETL pipelines
+        </h1>
         <p className="mt-2 text-sm text-ink-muted">
           Start an ETL run and check its status. Only one run per pipeline may
           be active at a time.

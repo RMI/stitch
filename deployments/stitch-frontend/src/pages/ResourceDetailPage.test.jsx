@@ -12,7 +12,14 @@ import {
 import { usePermissions } from "../hooks/usePermissions";
 import * as apiModule from "../queries/api";
 
-vi.mock("../hooks/useResources");
+// Mock only the read hooks; the attach path exercises the real
+// useCreateSourceForResource mutation against a spied API module.
+vi.mock("../hooks/useResources", async (importOriginal) => ({
+  ...(await importOriginal()),
+  useResourceDetail: vi.fn(),
+  useSourceDetail: vi.fn(),
+  useFieldSourceValues: vi.fn(),
+}));
 vi.mock("../hooks/usePermissions");
 
 let mockedRouteId = "1";
@@ -39,8 +46,12 @@ const mockDetailView = {
     longitude: 47.95,
     location_type: "Onshore",
     name_local: null,
-    owners: [{ name: "Kuwait Oil Company", stake: 100 }],
-    operators: [{ name: "Kuwait Oil Company", stake: 100 }],
+    owners: [
+      { name: "Kuwait Oil Company", stake: 100 },
+      // Providers often name a party without stating a percentage.
+      { name: "Kuwait Petroleum Corporation", stake: null },
+    ],
+    operators: [{ name: "Kuwait Oil Company", stake: null }],
     field_status: "Producing",
     production_conventionality: "Conventional",
     primary_hydrocarbon_group: "Oil",
@@ -197,6 +208,20 @@ describe("ResourceDetailPage", () => {
 
     renderWithQueryClient(<ResourceDetailPage />);
     expect(screen.getAllByText("Kuwait Oil Company").length).toBeGreaterThan(0);
+  });
+
+  it("renders a stated stake but leaves an unstated stake blank", () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    expect(
+      screen.getAllByText("Kuwait Petroleum Corporation").length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText("100%")).toBeInTheDocument();
+    expect(screen.queryByText("null%")).not.toBeInTheDocument();
   });
 
   it("renders the Production and Geology section header", () => {
@@ -523,12 +548,37 @@ describe("ResourceDetailPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("creates an llm source and attaches it to the resource, staying on the page", async () => {
-    const refetch = vi.fn();
+  it("enables the detail query only for a valid id, so invalidations refetch it", () => {
     vi.mocked(useResourceDetail).mockReturnValue({
       ...defaultHookReturn,
       data: mockDetailView,
-      refetch,
+    });
+
+    const { unmount } = renderWithQueryClient(<ResourceDetailPage />);
+    expect(useResourceDetail).toHaveBeenCalledWith("oil-gas-fields", 1, true);
+    // Unmount before re-rendering: mockedRouteId is a shared module variable
+    // read fresh by the mocked useParams() on every render, so a still-mounted
+    // first instance would pick up the new value on any later re-render and
+    // could call useResourceDetail again — racing the second instance's call
+    // and making toHaveBeenLastCalledWith flaky. (rerender() isn't an option
+    // here: renderWithQueryClient inlines its providers into one render()
+    // call rather than using RTL's `wrapper` option, so rerender() would
+    // replace the whole wrapped tree with an unwrapped one.)
+    unmount();
+
+    mockedRouteId = "not-a-number";
+    renderWithQueryClient(<ResourceDetailPage />);
+    expect(useResourceDetail).toHaveBeenLastCalledWith(
+      "oil-gas-fields",
+      NaN,
+      false,
+    );
+  });
+
+  it("creates an llm source and attaches it to the resource, staying on the page", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
     });
     vi.spyOn(apiModule, "createLLMSuggestion").mockResolvedValue({
       resource_id: 1,
@@ -549,7 +599,8 @@ describe("ResourceDetailPage", () => {
       .mockResolvedValue({ id: 123, source: "llm" });
     const user = userEvent.setup();
 
-    renderWithQueryClient(<ResourceDetailPage />);
+    const { queryClient } = renderWithQueryClient(<ResourceDetailPage />);
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
     await user.click(
       screen.getByRole("button", { name: /generate suggestion/i }),
     );
@@ -597,7 +648,11 @@ describe("ResourceDetailPage", () => {
     expect(
       await screen.findByText("Source added to resource."),
     ).toBeInTheDocument();
-    expect(refetch).toHaveBeenCalled();
+    // The attach changes the resource's coalesced data, so everything cached
+    // under the endpoint refreshes.
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["oil-gas-fields"],
+    });
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 

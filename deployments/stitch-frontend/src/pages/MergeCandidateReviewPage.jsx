@@ -1,19 +1,18 @@
-import { useMemo, useState } from "react";
-import { useAuth0 } from "@auth0/auth0-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Link } from "react-router";
 import Button from "../components/Button";
 import MergeSourceComparison from "../components/MergeSourceComparison";
 import MergedResourceView from "../components/MergedResourceView";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useMergeCandidateName } from "../hooks/useMergeCandidateName";
 import { useMergedResourceDetail } from "../hooks/useMergedResourceDetail";
-import { useMergeCandidates, useMergeCandidate } from "../hooks/useResources";
+import {
+  useMergeCandidates,
+  useMergeCandidate,
+  useReviewMergeCandidate,
+} from "../hooks/useResources";
 import { pickCompareName } from "../utils/candidateCompare";
 import { isEmptyValue } from "../utils/mergeComparison";
-import { createAuthenticatedFetcher } from "../auth/api";
-import { reviewMergeCandidate } from "../queries/api";
-import { useConfig } from "../config/useConfig";
-import { resourceKeys } from "../queries/resources";
 
 const ENDPOINT = "oil-gas-fields";
 
@@ -371,19 +370,18 @@ function CandidateDecisionPanel({
 }
 
 export default function MergeCandidateReviewPage() {
-  const config = useConfig();
-  const { getAccessTokenSilently } = useAuth0();
-  const queryClient = useQueryClient();
-  const fetcher = useMemo(
-    () => createAuthenticatedFetcher(config, getAccessTokenSilently),
-    [config, getAccessTokenSilently],
-  );
-
+  useDocumentTitle("Merge review");
   const [selectedId, setSelectedId] = useState(null);
   const [reviewNotes, setReviewNotes] = useState("");
-  const [actionError, setActionError] = useState(null);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [activeReviewAction, setActiveReviewAction] = useState(null);
+
+  const reviewMutation = useReviewMergeCandidate(ENDPOINT);
+  const actionLoading = reviewMutation.isPending;
+  const activeReviewAction = reviewMutation.isPending
+    ? reviewMutation.variables?.action
+    : null;
+  const actionError = reviewMutation.error
+    ? reviewMutation.error.message || String(reviewMutation.error)
+    : null;
 
   const {
     data: candidates,
@@ -422,48 +420,30 @@ export default function MergeCandidateReviewPage() {
   function handleSelect(id) {
     setSelectedId(id);
     setReviewNotes("");
-    setActionError(null);
+    // Clear any error left over from reviewing the previous candidate.
+    reviewMutation.reset();
   }
 
-  async function handleReview(action) {
+  function handleReview(action) {
     if (!candidate?.id) return;
 
-    setActionLoading(true);
-    setActiveReviewAction(action);
-    setActionError(null);
-
-    try {
-      await reviewMergeCandidate(
-        config,
-        candidate.id,
-        action,
-        fetcher,
-        ENDPOINT,
-        reviewNotes,
-      );
-
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: resourceKeys.mergeCandidates(ENDPOINT),
-        }),
-        queryClient.invalidateQueries({
-          queryKey: resourceKeys.mergeCandidate(ENDPOINT, candidate.id),
-        }),
-      ]);
-
-      const nextPending = candidates?.find(
-        (item) => item.id !== candidate.id && item.status === "PENDING",
-      );
-      if (nextPending) {
-        setSelectedId(nextPending.id);
-      }
-      setReviewNotes("");
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setActionLoading(false);
-      setActiveReviewAction(null);
-    }
+    reviewMutation.mutate(
+      { id: candidate.id, action, reviewNotes },
+      {
+        // Runs after the mutation's cache invalidation, so the queue advances
+        // once the refreshed data is on its way. Failures surface via
+        // `reviewMutation.error` and keep the current candidate selected.
+        onSuccess: () => {
+          const nextPending = candidates?.find(
+            (item) => item.id !== candidate.id && item.status === "PENDING",
+          );
+          if (nextPending) {
+            setSelectedId(nextPending.id);
+          }
+          setReviewNotes("");
+        },
+      },
+    );
   }
 
   return (
@@ -471,11 +451,8 @@ export default function MergeCandidateReviewPage() {
       <header className="border-b border-line pb-4">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-              Human decision queue
-            </p>
-            <h1 className="mt-1 text-3xl font-semibold text-ink">
-              Merge Review
+            <h1 className="text-2xl font-semibold tracking-tight text-ink">
+              Merge review
             </h1>
             <p className="mt-2 text-sm text-ink-muted">
               Review one candidate at a time.
@@ -483,16 +460,20 @@ export default function MergeCandidateReviewPage() {
           </div>
           <dl className="flex flex-wrap gap-3 text-sm">
             <div className="rounded-md border border-line bg-panel px-3 py-2">
-              <dt className="text-ink-muted">Pending</dt>
-              <dd className="font-semibold text-ink">{pendingCount}</dd>
+              <dt className="text-xs text-ink-muted">Pending</dt>
+              <dd className="font-mono text-lg font-medium tabular-nums text-ink">
+                {pendingCount}
+              </dd>
             </div>
             <div className="rounded-md border border-line bg-panel px-3 py-2">
-              <dt className="text-ink-muted">Reviewed</dt>
-              <dd className="font-semibold text-ink">{reviewedCount}</dd>
+              <dt className="text-xs text-ink-muted">Reviewed</dt>
+              <dd className="font-mono text-lg font-medium tabular-nums text-ink">
+                {reviewedCount}
+              </dd>
             </div>
             <div className="rounded-md border border-line bg-panel px-3 py-2">
-              <dt className="text-ink-muted">Total</dt>
-              <dd className="font-semibold text-ink">
+              <dt className="text-xs text-ink-muted">Total</dt>
+              <dd className="font-mono text-lg font-medium tabular-nums text-ink">
                 {candidates?.length ?? 0}
               </dd>
             </div>

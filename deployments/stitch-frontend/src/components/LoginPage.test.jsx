@@ -11,7 +11,7 @@ describe("LoginPage", () => {
 
     expect(screen.getByText("Stitch")).toBeInTheDocument();
     expect(
-      screen.getByText("Oil & Gas Asset Data Platform"),
+      screen.getByText("oil-and-gas asset data platform"),
     ).toBeInTheDocument();
   });
 

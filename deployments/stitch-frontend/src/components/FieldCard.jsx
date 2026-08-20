@@ -57,7 +57,7 @@ export function FieldCard({
   );
 
   const boxClasses =
-    "min-h-[2.5rem] w-full rounded-md border border-line bg-panel px-3 py-2 text-left text-sm text-ink";
+    "min-h-[2.5rem] w-full rounded-md border border-line border-l-4 bg-panel px-3 py-2 text-left text-sm text-ink";
 
   return (
     <div className="min-w-0">

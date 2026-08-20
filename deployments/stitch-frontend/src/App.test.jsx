@@ -46,13 +46,13 @@ describe("App", () => {
       "/",
     );
     expect(
-      screen.getByRole("link", { name: "Entity Linkage" }),
+      screen.getByRole("link", { name: "Entity linkage" }),
     ).toHaveAttribute("href", "/entity-linkage");
-    expect(screen.getByRole("link", { name: "Merge Review" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Merge review" })).toHaveAttribute(
       "href",
       "/merge-candidate-review",
     );
-    expect(screen.getByRole("link", { name: "ETL Pipelines" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "ETL pipelines" })).toHaveAttribute(
       "href",
       "/etl",
     );
