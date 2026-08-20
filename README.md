@@ -19,11 +19,7 @@ Stitch is an oil & gas asset data platform built by [RMI](https://rmi.org). It c
 - Dress rehearsal (prod-ish): https://brave-cliff-09493391e.7.azurestaticapps.net/
 - Dev (`main`): https://witty-mushroom-017a3dc1e.1.azurestaticapps.net/
 
-## Local Development
-
-For the full development guide, see [HACKING.md](./HACKING.md).
-
-Quick start:
+## Quick start
 
 ```bash
 cp env.example .env
@@ -37,6 +33,8 @@ Useful URLs:
 - Frontend: http://localhost:3000
 - API docs (Swagger): http://localhost:8000/docs
 - Adminer (DB UI): http://localhost:8081
+
+For the full development guide, see [HACKING.md](./HACKING.md).
 
 ## Make Targets
 
