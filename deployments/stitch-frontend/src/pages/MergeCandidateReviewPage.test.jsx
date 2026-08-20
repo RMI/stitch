@@ -172,9 +172,28 @@ describe("MergeCandidateReviewPage", () => {
     expect(within(pendingItem).queryByText("PENDING")).not.toBeInTheDocument();
 
     const approvedItem = await screen.findByRole("button", {
-      name: /Arabian Consolidated/,
+      name: /Arabian Merged/,
     });
     expect(within(approvedItem).getByText("APPROVED")).toBeInTheDocument();
+  });
+
+  it("resolves an approved queue item's name from the merged resource", async () => {
+    // Post-merge the source resources are null shells, so the queue must
+    // resolve the name from merged_resource_id, not from resource_ids.
+    vi.mocked(getResourceDetail).mockImplementation((_config, id) => {
+      if (id === 201 || id === 202) {
+        return Promise.resolve({ data: { name: null }, provenance: {} });
+      }
+      return Promise.resolve(resourceDetailsById[id]);
+    });
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      await screen.findByRole("button", { name: /Arabian Merged/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Candidate #12/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the compare-derived name in the detail panel heading", async () => {
