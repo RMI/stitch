@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useConfig } from "../config/useConfig";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import StructuredDataView from "../components/StructuredDataView";
 import Button from "../components/Button";
 import Input from "../components/Input";
@@ -284,6 +285,7 @@ function EtlPanel({ title, description, baseUrl, fields, getToken }) {
 }
 
 export default function EtlPage() {
+  useDocumentTitle("ETL pipelines");
   const config = useConfig();
   const { getAccessTokenSilently } = useAuth0();
 

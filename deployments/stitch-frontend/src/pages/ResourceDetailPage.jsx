@@ -6,6 +6,7 @@ import {
   useResourceDetail,
   useSourceDetail,
 } from "../hooks/useResources";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { useConfig } from "../config/useConfig";
 import { createLLMSuggestion } from "../queries/api";
@@ -563,6 +564,8 @@ export default function ResourceDetailPage() {
     isLoading,
     isError,
   } = useResourceDetail(endpoint, numericId, validId);
+
+  useDocumentTitle(detailView?.data?.name ?? "Resource");
 
   return (
     <div className="mx-auto max-w-4xl">

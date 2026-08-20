@@ -36,7 +36,7 @@ function arraysEqual(a, b) {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
-// Build a bare "User Generated" (rmi) source that populates only `fieldKey`, to
+// Build a bare "RMI" (rmi) source that populates only `fieldKey`, to
 // be created and attached to the resource. `name`/`country` are required-present
 // keys on the field model (null unless the panel's field IS name/country — the
 // [fieldKey] spread then overrides the null). The curator's note and an audit
@@ -123,7 +123,7 @@ function MoveButtons({ onMoveUp, onMoveDown, canMoveUp, canMoveDown, label }) {
 }
 
 // The value entry form, revealed after the curator clicks "+". Lets them enter a
-// new "User Generated" value (with an optional note) for this field; on Save it
+// new "RMI" value (with an optional note) for this field; on Save it
 // creates and attaches an rmi source to the resource.
 function AddSourceForm({ endpoint, resourceId, fieldKey, onSaved }) {
   const createSource = useCreateSourceForResource(endpoint);
