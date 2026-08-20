@@ -572,14 +572,30 @@ Add your SWA URL to:
 - Allowed Logout URLs
 - Allowed Web Origins
 
+The app passes `window.location.origin` as its `redirect_uri` and has no
+dedicated callback route, so all three settings take the **bare origin** — no
+trailing slash and no path. Auth0 matches these exactly; a trailing slash will
+not match.
+
 Example:
 
 ```text
-https://<your-swa>.azurestaticapps.net/
-https://<your-swa>.azurestaticapps.net/callback
+https://<your-swa>.azurestaticapps.net
+```
+
+Because the origin is whatever the browser is on, **every hostname the app is
+served from needs its own entry** — the generated `azurestaticapps.net`
+hostname, each PR preview hostname, and any custom domain:
+
+```text
+https://stitch.rmi.org
 ```
 
 Save.
+
+Register a custom domain here _before_ pointing the lane's
+`FRONTEND_PRODUCTION_URL` at it, or sign-in breaks on the first deploy. See
+"Custom domains" in [`../CI_DEPLOYMENTS.md`](../CI_DEPLOYMENTS.md).
 
 ---
 
