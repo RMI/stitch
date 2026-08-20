@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useConfig } from "../config/useConfig";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import StructuredDataView from "../components/StructuredDataView";
 import Button from "../components/Button";
 import StateBadge from "../components/StateBadge";
@@ -136,6 +137,7 @@ function RunResult({ record }) {
 }
 
 export default function EntityLinkagePage() {
+  useDocumentTitle("Entity linkage");
   const config = useConfig();
   const { getAccessTokenSilently } = useAuth0();
   const baseUrl = config.entityLinkageBaseUrl;

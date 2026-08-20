@@ -9,6 +9,11 @@ on:
       deployment-name:
         description: Concrete deployment target name
         value: ${{ jobs.resolve-context.outputs.deployment-name }}
+      always-on:
+        description: >-
+          Container App min-replicas for this deployment: "1" to keep one warm
+          replica, empty to leave the default scale-to-zero.
+        value: ${{ jobs.resolve-context.outputs.always-on }}
 
 jobs:
   resolve-context:
@@ -16,6 +21,7 @@ jobs:
     outputs:
       deployment-lane: ${{ steps.resolve.outputs.deployment-lane }}
       deployment-name: ${{ steps.resolve.outputs.deployment-name }}
+      always-on: ${{ steps.resolve.outputs.always-on }}
     steps:
       - name: Resolve lane and deployment name
         id: resolve
@@ -38,6 +44,11 @@ jobs:
 
           deployment_lane=""
           deployment_name=""
+          # Container App min-replicas. Only the production release keeps a warm
+          # replica; everything else accepts a cold start on the first request
+          # after an idle period, to hold the bill down. Empty means "leave the
+          # Container App default", which is scale-to-zero.
+          always_on=""
 
           case "$EVENT_NAME" in
             push|workflow_dispatch)
@@ -49,6 +60,7 @@ jobs:
                 production)
                   deployment_lane="dress-rehearsal"
                   deployment_name="dress-rehearsal"
+                  always_on="1"
                   ;;
                 *)
                   echo "Unsupported push/dispatch target: $REF_NAME" >&2
@@ -92,4 +104,5 @@ jobs:
           {
             echo "deployment-lane=$deployment_lane"
             echo "deployment-name=$deployment_name"
+            echo "always-on=$always_on"
           } >> "$GITHUB_OUTPUT"

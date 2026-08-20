@@ -1,4 +1,9 @@
-# Stitch
+# 🪡 Stitch
+
+[![Python Checks](https://github.com/RMI/stitch/actions/workflows/python.yml/badge.svg?branch=main)](https://github.com/RMI/stitch/actions/workflows/python.yml)
+[![Node Checks](https://github.com/RMI/stitch/actions/workflows/node.yml/badge.svg?branch=main)](https://github.com/RMI/stitch/actions/workflows/node.yml)
+[![Docker Checks](https://github.com/RMI/stitch/actions/workflows/docker.yml/badge.svg?branch=main)](https://github.com/RMI/stitch/actions/workflows/docker.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
 Stitch is an oil & gas asset data platform built by [RMI](https://rmi.org). It consolidates fragmented upstream datasets into a single, provenance-aware view of oil & gas fields, backed by a database and exposed through a UI and API. It's built for climate researchers, energy analysts, and policy teams who need trustworthy, source-attributed data.
 
@@ -14,22 +19,22 @@ Stitch is an oil & gas asset data platform built by [RMI](https://rmi.org). It c
 - Dress rehearsal (prod-ish): https://brave-cliff-09493391e.7.azurestaticapps.net/
 - Dev (`main`): https://witty-mushroom-017a3dc1e.1.azurestaticapps.net/
 
-## Local Development
-
-For the full development guide, see [HACKING.md](./HACKING.md).
-
-Quick start:
+## Quick start
 
 ```bash
 cp env.example .env
 make dev-docker
 ```
 
+To wipe local volumes (including the database) and rebuild everything from scratch, use `make reboot-docker`. To stop containers and clear volumes without rebuilding, use `make clean-docker`.
+
 Useful URLs:
 
 - Frontend: http://localhost:3000
 - API docs (Swagger): http://localhost:8000/docs
 - Adminer (DB UI): http://localhost:8081
+
+For the full development guide, see [HACKING.md](./HACKING.md).
 
 ## Make Targets
 

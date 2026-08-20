@@ -155,17 +155,18 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          TARGET_NAME: ${{ needs.resolve-context.outputs.deployment-name }}
-          DEPLOYMENT_LANE: ${{ needs.resolve-context.outputs.deployment-lane }}
         run: |
           set -euo pipefail
 
-          if [ "${DEPLOYMENT_LANE}" = "dress-rehearsal" ]; then
-            frontend_origin_url="${FRONTEND_PRODUCTION_URL}"
-          elif [ "${EVENT_NAME}" = "pull_request" ]; then
+          # This must match where the frontend actually lands, because it is the
+          # single origin the API/EL/LLM services allow for CORS. A pull request
+          # always deploys to a preview environment named for the PR number; any
+          # other event is a push to a lane's production branch, which deploys to
+          # that lane's Static Web App production environment.
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
             frontend_origin_url="${FRONTEND_PREVIEW_URL_TEMPLATE//\{name\}/${PR_NUMBER}}"
           else
-            frontend_origin_url="${FRONTEND_PREVIEW_URL_TEMPLATE//\{name\}/${TARGET_NAME}}"
+            frontend_origin_url="${FRONTEND_PRODUCTION_URL}"
           fi
 
           echo "frontend-origin-url=$frontend_origin_url" >> "$GITHUB_OUTPUT"
@@ -333,8 +334,8 @@ jobs:
         OTEL_SERVICE_NAME=stitch-api
         OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: api
-      # Keep staging / dress-rehearsal always-on; development scales to zero.
-      min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
+      # Only the production release stays warm; everything else scales to zero.
+      min-replicas: ${{ needs.resolve-context.outputs.always-on }}
 
   deploy-entity-linkage:
     name: "Deploy entity linkage"
@@ -362,12 +363,12 @@ jobs:
         OTEL_SERVICE_NAME=stitch-entity-linkage
         OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: entity-linkage
-      # Keep staging / dress-rehearsal always-on; development scales to zero.
-      min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
-      # Unoptimized service; needs more than the default ~0.5 vCPU / 1 GiB.
-      # 4 GiB on the Consumption profile is only valid paired with 2.0 vCPU.
-      cpu: "2.0"
-      memory: "4.0Gi"
+      # Only the production release stays warm; everything else scales to zero.
+      min-replicas: ${{ needs.resolve-context.outputs.always-on }}
+      # Deliberately unpinned: takes the platform default (~0.5 vCPU / 1 GiB),
+      # the same as the API. This service is I/O-bound waiting on sequential API
+      # responses, so the 2.0 vCPU it used to request bought little while giving
+      # the batch pass 4x the CPU of the API it hammers.
 
   deploy-stitch-llm:
     name: "Deploy stitch-llm"
@@ -399,8 +400,8 @@ jobs:
         OTEL_SERVICE_NAME=stitch-llm
         OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: stitch-llm
-      # Keep staging / dress-rehearsal always-on; development scales to zero.
-      min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
+      # Only the production release stays warm; everything else scales to zero.
+      min-replicas: ${{ needs.resolve-context.outputs.always-on }}
 
   deploy-etl:
     name: "Deploy ETL"
@@ -482,7 +483,13 @@ jobs:
       auth0-domain: ${{ needs.lane-config-validate.outputs.auth0-domain }}
       auth0-client-id: ${{ needs.lane-config-validate.outputs.auth0-client-id }}
       auth0-audience: ${{ needs.lane-config-validate.outputs.auth0-audience }}
-      production-branch: production
+      # Each lane has its own Static Web App, so each has its own production
+      # branch: the development lane's SWA is fed by `main`, the staging and
+      # dress-rehearsal lanes' SWA by `production`. A push to the matching
+      # branch deploys to that SWA's production environment -- the only
+      # environment Azure lets us attach a custom domain to. Pull requests are
+      # always preview environments regardless of this value.
+      production-branch: ${{ needs.resolve-context.outputs.deployment-lane == 'development' && 'main' || 'production' }}
 
   comment-summary:
     # always() ignores the resolve-context guard's skips, so repeat it here too --
