@@ -689,9 +689,9 @@ export const SOURCE_COLORS = {
 };
 
 export const SOURCE_LABELS = {
-  gem: "GEM Database",
-  wm: "Woodmac Database",
-  rmi: "User Generated",
+  gem: "GEM",
+  wm: "Woodmac",
+  rmi: "Custom",
   llm: "LLM",
 };
 ```

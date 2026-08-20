@@ -20,12 +20,12 @@ export const SOURCE_COLORS = {
 
 export const SOURCE_LABELS = {
   llm: "LLM",
-  gem: "GEM Database",
-  wm: "Woodmac Database",
+  gem: "GEM",
+  wm: "Woodmac",
   ccr: "C&C Reservoirs",
   alb: "Alberta Energy Regulator",
   bc: "BC Energy Regulator",
-  rmi: "User Generated",
+  rmi: "Custom",
 };
 
 export const UNKNOWN_SOURCE_LABEL = "Source unavailable";
