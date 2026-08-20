@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { prewarmApi } from "./prewarm";
 
 describe("prewarmApi", () => {
@@ -7,6 +7,10 @@ describe("prewarmApi", () => {
   beforeEach(() => {
     fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("requests the API health endpoint that also opens a database connection", async () => {
@@ -61,6 +65,15 @@ describe("prewarmApi", () => {
   it("does nothing when no API base URL is configured", async () => {
     await expect(prewarmApi({})).resolves.toBeUndefined();
     await expect(prewarmApi(undefined)).resolves.toBeUndefined();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the base URL is not a string, rather than throwing", async () => {
+    // The contract is that this never rejects, because bootstrap does not await
+    // it -- a synchronous throw would escape and take the app down with it.
+    await expect(prewarmApi({ apiBaseUrl: 42 })).resolves.toBeUndefined();
+    await expect(prewarmApi({ apiBaseUrl: {} })).resolves.toBeUndefined();
 
     expect(fetchMock).not.toHaveBeenCalled();
   });

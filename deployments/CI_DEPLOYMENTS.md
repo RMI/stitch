@@ -228,13 +228,13 @@ round-trip used for volume mounts. Always-on apps skip the step; an app that
 never scales to zero has no use for a cooldown.
 
 Cooldown only helps when requests cluster closer together than the cooldown
-itself, so be sceptical of raising it further without measuring. Over 13 days
-`main-api` ran in 11 of 312 hours, and the gaps between bursts of use were 40,
-110, 120 and 220 minutes — none of which 900s bridges. Worth re-measuring once a
-lane is in real daily use:
+itself, so be sceptical of raising it further without measuring. Sampled over a
+13-day window, `main-api` was running for roughly one hour in twenty, and the
+gaps between bursts of use were 40, 110, 120 and 220 minutes — none of which
+900s bridges. Worth re-measuring once a lane is in real daily use:
 
 ```bash
-az monitor metrics list --resource "$(az containerapp show -n main-api -g STITCH-DEV-RG --query id -o tsv)" --metric Replicas --interval PT1H --start-time "$(date -u -v-13d +%Y-%m-%dT%H:%M:%SZ)" --end-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --aggregation Maximum -o table
+az monitor metrics list --resource "$(az containerapp show -n main-api -g STITCH-DEV-RG --query id -o tsv)" --metric Replicas --interval PT1H --offset 13d --aggregation Maximum -o table
 ```
 
 Cold starts are most visible at sign-in, when the app's first API call lands on

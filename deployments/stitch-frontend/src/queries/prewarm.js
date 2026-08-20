@@ -30,7 +30,11 @@ function healthUrl(baseUrl) {
 export function prewarmApi(config) {
   const baseUrl = config?.apiBaseUrl;
 
-  if (!baseUrl) {
+  // `loadConfig` already rejects a non-string `apiUrl`, so this only guards
+  // callers that build a config by hand. It is here because the contract above
+  // says this never rejects, and `main.jsx` relies on that: a synchronous throw
+  // would escape `bootstrap()` and swap the app for the config-error screen.
+  if (typeof baseUrl !== "string" || !baseUrl) {
     return Promise.resolve();
   }
 
