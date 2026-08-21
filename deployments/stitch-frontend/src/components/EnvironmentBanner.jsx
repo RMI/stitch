@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useIsFetching } from "@tanstack/react-query";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import ColophonPanel from "./ColophonPanel";
 import { useConfig } from "../config/useConfig";
 
@@ -8,18 +8,35 @@ import { useConfig } from "../config/useConfig";
 const WARMING_DELAY_MS = 2000;
 
 /**
- * True once a request has been in flight long enough to look like a stall.
+ * True once a request has been in flight long enough to look like a stall, and
+ * only while a stall is plausibly a container starting up.
  *
  * Most deployments let their Container Apps scale to zero when idle (see
  * `deployments/CI_DEPLOYMENTS.md`), so the first request of a session waits for
  * a container to start. There is nothing to fix in that moment -- it just needs
  * saying, so the wait reads as "starting up" rather than "nothing is happening".
+ *
+ * It is deliberately silent once anything has come back from the server. A slow
+ * filter over a large result set, or the refetch after a save, is slow for some
+ * other reason, and blaming a cold start there sends the reader looking for a
+ * problem that is not the one they have.
  */
 function useIsWarmingUp(delayMs = WARMING_DELAY_MS) {
+  const queryClient = useQueryClient();
   // Deliberately a boolean, not the count: a second query starting must not
   // restart the clock on the one that has already been waiting.
   const isPending = useIsFetching() > 0;
   const [hasStalled, setHasStalled] = useState(false);
+
+  // One successful query proves the container is serving. Read straight from the
+  // cache rather than latching into state: a query keeps `status: "success"`
+  // through later refetches, so this stays true for the rest of the session
+  // without a ref or an effect -- and if every query is eventually garbage
+  // collected, going quiet-then-cold is exactly when the notice is wanted again.
+  const hasServerAnswered = queryClient
+    .getQueryCache()
+    .getAll()
+    .some((query) => query.state.status === "success");
 
   useEffect(() => {
     if (!isPending) {
@@ -38,7 +55,7 @@ function useIsWarmingUp(delayMs = WARMING_DELAY_MS) {
   // `isPending` here is what clears the notice the moment the request lands --
   // cheaper than a second effect, and it keeps the effect body free of the
   // synchronous setState that cascades renders.
-  return isPending && hasStalled;
+  return isPending && hasStalled && !hasServerAnswered;
 }
 
 function normalizeEnvLabel(value) {

@@ -158,6 +158,22 @@ describe("EnvironmentBanner", () => {
       expect(screen.getByRole("status")).toHaveTextContent(WAKING_TEXT);
     });
 
+    it("stays silent once the server has answered something, however slow a later request is", async () => {
+      vi.mocked(useIsFetching).mockReturnValue(1);
+      const { queryClient } = await renderBanner();
+
+      // A successful query proves the container is serving, so a later stall is
+      // slow for some other reason and must not be blamed on a cold start.
+      queryClient.setQueryData(["already-loaded"], { ok: true });
+
+      // useIsFetching is mocked, so the cache write does not re-render on its
+      // own; the toggle is just a cheap way to force one.
+      fireEvent.click(screen.getByRole("button", { name: "Show diagnostics" }));
+      act(() => vi.advanceTimersByTime(10_000));
+
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    });
+
     it("clears the notice once the request lands", async () => {
       vi.mocked(useIsFetching).mockReturnValue(1);
       await renderBanner();
