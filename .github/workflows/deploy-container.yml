@@ -292,11 +292,22 @@ jobs:
         #
         # There is no `--cooldown-period` flag on `az containerapp update`, so
         # this uses the same show -> mutate -> update --yaml round-trip as the
-        # volume mount above, and runs after it so it re-reads that result.
+        # volume mount above.
         #
         # Skipped for always-on apps: an app that never scales to zero has no
         # use for a cooldown.
+        #
+        # `continue-on-error` because this is a comfort setting, not a
+        # correctness one, and for `api` and `stitch-llm` on a scale-to-zero
+        # lane it is the only post-deploy ARM write -- the reassert step above
+        # is skipped when no cpu/memory/replica overrides are passed. The deploy
+        # action has just created a revision, so this can lose a race and get a
+        # 409 while that is still provisioning. Failing the job over it would
+        # cascade: every later service and the frontend deploy depend on this
+        # one, so a PR would lose its whole preview environment over a cooldown
+        # tweak. A failed step stays visible in the run summary.
         if: ${{ inputs.min-replicas == '' }}
+        continue-on-error: true
         shell: bash
         env:
           AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
@@ -308,6 +319,20 @@ jobs:
             --name "${{ inputs.container-app-name }}" \
             --resource-group "${AZURE_RESOURCE_GROUP}" \
             --output json > /tmp/app-cooldown.json
+
+          # Read before writing: the value survives a redeploy, so on most runs
+          # it is already correct and the write would be a no-op that can still
+          # fail. Only pay for the round-trip when it actually changes something.
+          current="$(jq -r \
+            '.properties.template.scale.cooldownPeriod // "unset"' \
+            /tmp/app-cooldown.json)"
+
+          if [ "${current}" = "${COOLDOWN_SECONDS}" ]; then
+            echo "Cooldown already ${COOLDOWN_SECONDS}s; leaving it alone."
+            exit 0
+          fi
+
+          echo "Cooldown is ${current}s; setting ${COOLDOWN_SECONDS}s."
 
           jq \
             --argjson cd "${COOLDOWN_SECONDS}" \
