@@ -7,6 +7,12 @@ concurrency: rulesets-checks
 
 jobs:
   rulesets:
+    # Declared explicitly rather than relying on the repo/org default token
+    # permissions. NOTE: GITHUB_TOKEN has no `administration` scope; the ruleset
+    # read works with the default read grants, so contents:read is the minimal
+    # useful declaration here (checkout in the called workflow).
+    permissions:
+      contents: read
     # Delegates to the centrally-maintained check in RMI/actions.
     # Pinned to the feat/rulesets-check branch (RMI/actions PR #10) while that PR
     # is in draft; switch to @main once PR #10 is merged.
