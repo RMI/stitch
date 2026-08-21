@@ -1,6 +1,12 @@
 {
   "template": "gitflow-main",
   "rules": {
+    "pull_request": {
+      "parameters": {
+        "dismiss_stale_reviews_on_push": false,
+        "require_last_push_approval": false
+      }
+    },
     "required_status_checks": {
       "parameters": {
         "required_status_checks": [
