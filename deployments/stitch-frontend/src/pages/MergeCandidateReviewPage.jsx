@@ -55,8 +55,18 @@ function candidateSourcesTitle(candidate) {
 }
 
 function CandidateQueueItem({ candidate, isSelected, onSelect }) {
-  const name = useMergeCandidateName(ENDPOINT, candidate.resource_ids);
-  const displayName = name ?? `Candidate #${candidate.id}`;
+  const sourceName = useMergeCandidateName(ENDPOINT, candidate.resource_ids);
+  // Post-merge, the source resources are null shells, so the merged resource
+  // is the authoritative name source. The hook is disabled until an id exists,
+  // so pending candidates skip the fetch.
+  const { data: mergedResource } = useMergedResourceDetail(
+    ENDPOINT,
+    candidate.merged_resource_id,
+  );
+  const mergedName = isEmptyValue(mergedResource?.data?.name)
+    ? null
+    : mergedResource.data.name;
+  const displayName = mergedName ?? sourceName ?? `Candidate #${candidate.id}`;
 
   return (
     <button
