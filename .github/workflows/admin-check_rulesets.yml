@@ -13,4 +13,4 @@ jobs:
     # Delegates to the centrally-maintained check in RMI/actions.
     # Pinned to the feat/rulesets-check branch (RMI/actions PR #10) while that PR
     # is in draft; switch to @main once PR #10 is merged.
-    uses: RMI/actions/.github/workflows/admin/check-rulesets.yml@feat/rulesets-check
+    uses: RMI/actions/.github/workflows/admin-check-rulesets.yml@feat/rulesets-check
