@@ -5,80 +5,12 @@ on:
 name: Rulesets Checks
 concurrency: rulesets-checks
 
+permissions:
+  contents: read
+
 jobs:
   rulesets:
-    name: "Check GH rulesets"
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Get all existing Rulesets from Remote Repo
-        id: get-all-rulesets-remote
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api "${{ format('/repos/{0}/rulesets', github.repository) }}" > /tmp/all_rulesets.json
-
-          jq '[ .[] | .id ]' /tmp/all_rulesets.json > /tmp/ruleset_ids.json
-          cat /tmp/ruleset_ids.json
-
-      - name: Get Rulesets details from Remote Repo
-        id: get-rulesets-details-remote
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-
-          mkdir /tmp/remote_rulesets
-          jq -rc '.[]' /tmp/ruleset_ids.json | while read ID
-          do
-            echo "ID=$ID"
-            gh api "${{ format('/repos/{0}/rulesets', github.repository) }}/$ID" | \
-            jq 'del(
-              .id,
-              .current_user_can_bypass,
-              ._links,
-              .node_id,
-              .created_at,
-              .updated_at,
-              .bypass_actors
-            )' \
-            > "/tmp/remote_rulesets/${ID}.json"
-            RULESET_NAME="$(jq -rc '.name' /tmp/remote_rulesets/${ID}.json)"
-            echo "RULESET_NAME=$RULESET_NAME"
-            SANITIZED_RULESET_NAME="$(echo "$RULESET_NAME" | tr -c 'a-zA-Z0-9.-_' '_')"
-            mv "/tmp/remote_rulesets/${ID}.json" "/tmp/remote_rulesets/${SANITIZED_RULESET_NAME}.json"
-          done
-
-      - name: Show Remote Repo Rules
-        run: cat /tmp/remote_rulesets/*
-
-      - name: Prepare local rulesets
-        run: |
-
-          mkdir /tmp/local_rulesets
-          for FILE in .github/rulesets/*.json
-          do
-            ID="$(jq -rc '.id' $FILE)"
-            RULESET_NAME="$(jq -rc '.name' $FILE)"
-            echo "$FILE: $ID, $RULESET_NAME"
-            SANITIZED_RULESET_NAME="$(echo "$RULESET_NAME" | tr -c 'a-zA-Z0-9.-_' '_')"
-            jq 'del(
-              .id,
-              .bypass_actors
-            )' $FILE \
-            > "/tmp/local_rulesets/${SANITIZED_RULESET_NAME}.json"
-          done
-
-      - name: Diff directories
-        run: |
-
-          diff \
-            --recursive \
-            --unified \
-            --new-file \
-            --color=auto \
-            /tmp/remote_rulesets/ \
-            /tmp/local_rulesets/
+    # Delegates to the centrally-maintained check in RMI/actions.
+    # Pinned to the feat/rulesets-check branch (RMI/actions PR #10) while that PR
+    # is in draft; switch to @main once PR #10 is merged.
+    uses: RMI/actions/.github/workflows/admin/check-rulesets.yml@feat/rulesets-check
