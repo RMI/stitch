@@ -349,7 +349,7 @@ hostname still serves the app directly instead of redirecting to it).
 Confirm which origin the backend currently allows with a preflight request:
 
 ```bash
-curl -i -X OPTIONS '<api-origin>/api/v1/oil-gas-fields/filter-options?field=field_status' \
+curl -i -X OPTIONS '<api-origin>/api/v1/health' \
   -H 'Origin: https://<custom-domain>' \
   -H 'Access-Control-Request-Method: GET'
 ```
