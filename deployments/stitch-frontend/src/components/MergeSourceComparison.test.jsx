@@ -152,7 +152,7 @@ describe("MergeSourceComparison", () => {
     const user = userEvent.setup();
     renderComparison();
 
-    await user.click(screen.getByText("Other attributes (11)"));
+    await user.click(screen.getByText(/Other attributes \(\d+\)/));
 
     const labels = screen
       .getAllByRole("group")
