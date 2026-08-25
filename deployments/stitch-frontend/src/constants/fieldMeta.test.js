@@ -5,6 +5,9 @@ import {
   MERGE_COMPARISON_OTHER_FIELDS,
 } from "./fieldMeta";
 
+// Mirrors MERGE_COMPARISON_LEAD_OTHER_FIELDS, which is private to the module.
+const LEAD_FIELDS = ["field_status", "production_start_year"];
+
 describe("merge comparison field constants", () => {
   it("defines the core comparison fields in display order", () => {
     expect(MERGE_COMPARISON_CORE_FIELDS).toEqual([
@@ -38,15 +41,22 @@ describe("merge comparison field constants", () => {
     ]);
   });
 
+  it("keeps every other field a known FIELD_META key and excludes core/org fields", () => {
+    for (const key of MERGE_COMPARISON_OTHER_FIELDS) {
+      expect(FIELD_META[key]).toBeDefined();
+      expect(FIELD_META[key].section).not.toBe("organizations");
+      expect(MERGE_COMPARISON_CORE_FIELDS).not.toContain(key);
+    }
+  });
+
   it("leads the other fields with the most decision-relevant attributes", () => {
-    expect(MERGE_COMPARISON_OTHER_FIELDS.slice(0, 2)).toEqual([
-      "field_status",
-      "production_start_year",
-    ]);
+    expect(MERGE_COMPARISON_OTHER_FIELDS.slice(0, LEAD_FIELDS.length)).toEqual(
+      LEAD_FIELDS,
+    );
   });
 
   it("keeps FIELD_META order for the remaining other fields", () => {
-    const remaining = MERGE_COMPARISON_OTHER_FIELDS.slice(2);
+    const remaining = MERGE_COMPARISON_OTHER_FIELDS.slice(LEAD_FIELDS.length);
     const fieldMetaOrder = Object.keys(FIELD_META).filter((key) =>
       remaining.includes(key),
     );
