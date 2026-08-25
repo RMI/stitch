@@ -24,17 +24,33 @@ describe("merge comparison field constants", () => {
 
   it("derives the other fields from FIELD_META, excluding core and organizations", () => {
     expect(MERGE_COMPARISON_OTHER_FIELDS).toEqual([
+      "field_status",
+      "production_start_year",
       "name_local",
       "latitude",
       "longitude",
       "location_type",
-      "field_status",
       "production_conventionality",
       "primary_hydrocarbon_group",
       "reservoir_formation",
       "discovery_year",
-      "production_start_year",
       "fid_year",
     ]);
+  });
+
+  it("leads the other fields with the most decision-relevant attributes", () => {
+    expect(MERGE_COMPARISON_OTHER_FIELDS.slice(0, 2)).toEqual([
+      "field_status",
+      "production_start_year",
+    ]);
+  });
+
+  it("keeps FIELD_META order for the remaining other fields", () => {
+    const remaining = MERGE_COMPARISON_OTHER_FIELDS.slice(2);
+    const fieldMetaOrder = Object.keys(FIELD_META).filter((key) =>
+      remaining.includes(key),
+    );
+
+    expect(remaining).toEqual(fieldMetaOrder);
   });
 });
