@@ -204,7 +204,7 @@ describe("MergeCandidateReviewPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("links each source resource id to its detail page", () => {
+  it("links each source resource id for a candidate that has not been merged", () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
     expect(screen.getByRole("link", { name: "101" })).toHaveAttribute(
@@ -215,6 +215,26 @@ describe("MergeCandidateReviewPage", () => {
       "href",
       "/oil-gas-fields/102",
     );
+  });
+
+  it("shows source resource ids as plain text once the candidate is approved", () => {
+    // After a merge the source resources are null shells whose links would only
+    // redirect to the merged resource, so they are shown as plain text.
+    const mergedCandidate = candidates[1];
+    vi.mocked(useMergeCandidates).mockReturnValue({
+      ...defaultHookReturn,
+      data: [mergedCandidate],
+    });
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: mergedCandidate,
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    const sourcesDd = screen.getByText("Source resources").nextElementSibling;
+    expect(sourcesDd).toHaveTextContent("201, 202");
+    expect(within(sourcesDd).queryByRole("link")).not.toBeInTheDocument();
   });
 
   it("shows the source comparison instead of the merged preview", () => {

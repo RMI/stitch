@@ -138,6 +138,10 @@ function QueuePanel({
 function CandidateFacts({ candidate }) {
   const { moves } = readCandidateStaleness(candidate);
   const movedTo = new Map(moves.map((m) => [m.resource_id, m.repointed_to]));
+  // Once approved, the source resources are null shells whose links only
+  // redirect to the merged resource, so show them as plain text. A candidate
+  // that hasn't been merged still links to its live source resources.
+  const isApproved = candidate.status === "APPROVED";
   return (
     <dl className="grid gap-3 text-sm sm:grid-cols-3">
       <div>
@@ -150,12 +154,16 @@ function CandidateFacts({ candidate }) {
           {candidate.resource_ids.map((id, index) => (
             <span key={id}>
               {index > 0 ? ", " : null}
-              <Link
-                to={`/${ENDPOINT}/${id}`}
-                className="text-primary underline"
-              >
-                {id}
-              </Link>
+              {isApproved ? (
+                id
+              ) : (
+                <Link
+                  to={`/${ENDPOINT}/${id}`}
+                  className="text-primary underline"
+                >
+                  {id}
+                </Link>
+              )}
               {movedTo.has(id) ? (
                 <span className="text-ink-muted">
                   {" "}
