@@ -889,4 +889,46 @@ describe("ResourceDetailPage", () => {
       await screen.findByRole("button", { name: /added to resource/i }),
     ).toBeDisabled();
   });
+
+  it("redirects to the merged-into resource when the returned id differs from the URL", () => {
+    // STIT-418: the API resolved a merged-away id (123) to its terminal
+    // resource (456), so the page redirects to the canonical URL.
+    mockedRouteId = "123";
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: { ...mockDetailView, id: 456, requested_resource_id: 123 },
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith("/oil-gas-fields/456", {
+      replace: true,
+    });
+  });
+
+  it("does not redirect when the returned resource is the one requested", () => {
+    mockedRouteId = "1";
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView, // id 1 === route id 1
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("does not redirect again once on the canonical resource", () => {
+    // Landed on the root: id matches the URL, so no further redirect (no loop).
+    mockedRouteId = "456";
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: { ...mockDetailView, id: 456, requested_resource_id: null },
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
 });
