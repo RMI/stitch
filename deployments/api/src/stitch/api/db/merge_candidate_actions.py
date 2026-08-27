@@ -22,6 +22,7 @@ from stitch.api.entities import (
     MergeCandidateReviewRequest,
     MergeCandidateStatus,
     MergeCandidateView,
+    RepointedResourceView,
 )
 from stitch.ogsi.model import OGFieldSource
 from stitch.ogsi.model.og_field import OilGasFieldBase
@@ -33,7 +34,7 @@ from .model import (
     OGFieldSourcePriority,
     ResourceModel,
 )
-from .og_field_resource_actions import apply_resource_merge
+from .og_field_resource_actions import apply_resource_merge, repointed_merge_error
 from .utils import coalesce_resources_with_sources
 
 
@@ -62,11 +63,7 @@ async def _load_mergeable_resources(
 
     repointed = [r for r in results if r.repointed_id is not None]
     if repointed:
-        reprs = map(repr, repointed)
-        msg = f"Repointed: [{','.join(reprs)}]"
-        raise ResourceIntegrityError(
-            f"Cannot merge any resource that has already been merged. {msg}"
-        )
+        raise ResourceIntegrityError(await repointed_merge_error(session, repointed))
 
     return results
 
@@ -75,7 +72,13 @@ def _fingerprint(resource_ids: Sequence[int]) -> str:
     return ":".join(map(str, sorted(set(resource_ids))))
 
 
-def _candidate_to_view(model: MergeCandidateModel) -> MergeCandidateView:
+def _candidate_to_view(
+    model: MergeCandidateModel,
+    repointed_resources: Sequence[RepointedResourceView],
+) -> MergeCandidateView:
+    # `repointed_resources` is required so no caller can silently emit an empty
+    # staleness signal; resolve it with `_resolve_candidates` (batched) or
+    # `_candidate_to_view_resolved` (single).
     return MergeCandidateView(
         id=model.id,
         resource_ids=[
@@ -90,7 +93,52 @@ def _candidate_to_view(model: MergeCandidateModel) -> MergeCandidateView:
         last_updated_by_id=model.last_updated_by_id,
         reviewed_at=model.reviewed_at,
         reviewed_by_id=model.reviewed_by_id,
+        repointed_resources=list(repointed_resources),
     )
+
+
+async def _resolve_candidates(
+    session: AsyncSession,
+    candidates: Sequence[MergeCandidateModel],
+) -> dict[int, list[RepointedResourceView]]:
+    """Map each candidate id to the members that have since been merged away.
+
+    Only PENDING candidates are resolved; terminal-status candidates map to an
+    empty list. An APPROVED candidate's own members are repointed at its own
+    merge result, so resolving them would make every approved candidate flag
+    itself as stale -- one status check here beats a compensating rule in the
+    client.
+
+    Batched: a single ``root_id_by_resource_id`` over the union of all pending
+    members' ids keeps the query count constant, because ``GET /merge-candidates``
+    is unpaginated and per-candidate resolution would be an unbounded N+1.
+    """
+    result: dict[int, list[RepointedResourceView]] = {c.id: [] for c in candidates}
+    pending = [c for c in candidates if c.status == MergeCandidateStatus.PENDING]
+    if not pending:
+        return result
+
+    all_ids = {item.resource_id for c in pending for item in c.items}
+    roots = await ResourceModel.root_id_by_resource_id(session, all_ids)
+    for candidate in pending:
+        moved = [
+            RepointedResourceView(
+                resource_id=item.resource_id,
+                repointed_to=roots[item.resource_id],
+            )
+            for item in sorted(candidate.items, key=lambda i: i.position)
+            if roots.get(item.resource_id, item.resource_id) != item.resource_id
+        ]
+        result[candidate.id] = moved
+    return result
+
+
+async def _candidate_to_view_resolved(
+    session: AsyncSession, model: MergeCandidateModel
+) -> MergeCandidateView:
+    """Single-candidate convenience: resolve staleness, then build the view."""
+    resolution = await _resolve_candidates(session, [model])
+    return _candidate_to_view(model, resolution[model.id])
 
 
 def _comparison_status(resource_values: Sequence[Any]) -> str:
@@ -173,11 +221,12 @@ async def _default_source_priority(session: AsyncSession) -> dict[str, int]:
 def _candidate_to_detail_view(
     model: MergeCandidateModel,
     compare: Sequence[FieldComparisonView],
+    repointed_resources: Sequence[RepointedResourceView],
 ) -> MergeCandidateDetailView:
     # MergeCandidateDetailView is MergeCandidateView + `compare`; reuse the base
     # mapping so the shared fields stay defined in one place.
     return MergeCandidateDetailView(
-        **_candidate_to_view(model).model_dump(),
+        **_candidate_to_view(model, repointed_resources).model_dump(),
         compare=list(compare),
     )
 
@@ -205,7 +254,11 @@ async def list_merge_candidates(session: AsyncSession) -> list[MergeCandidateVie
         .order_by(MergeCandidateModel.created.desc())
     )
     candidates = (await session.scalars(stmt)).all()
-    return [_candidate_to_view(candidate) for candidate in candidates]
+    resolution = await _resolve_candidates(session, candidates)
+    return [
+        _candidate_to_view(candidate, resolution[candidate.id])
+        for candidate in candidates
+    ]
 
 
 async def get_merge_candidate(
@@ -245,7 +298,8 @@ async def get_merge_candidate(
     resource_views = [by_id[rid].view for rid in resource_ids]
     compare = _build_comparison(resource_views, sources_with_priority)
 
-    return _candidate_to_detail_view(candidate, compare)
+    resolution = await _resolve_candidates(session, [candidate])
+    return _candidate_to_detail_view(candidate, compare, resolution[candidate.id])
 
 
 async def create_merge_candidate(
@@ -291,7 +345,7 @@ async def create_merge_candidate(
     )
     await session.flush()
     await session.refresh(candidate, ["items"])
-    return _candidate_to_view(candidate)
+    return await _candidate_to_view_resolved(session, candidate)
 
 
 async def approve_merge_candidate(
@@ -325,7 +379,7 @@ async def approve_merge_candidate(
     await session.flush()
 
     candidate = await _load_candidate_model(session, candidate_id)
-    return _candidate_to_view(candidate)
+    return await _candidate_to_view_resolved(session, candidate)
 
 
 async def deny_merge_candidate(
@@ -347,4 +401,4 @@ async def deny_merge_candidate(
     candidate.last_updated_by_id = user.id
     await session.flush()
     candidate = await _load_candidate_model(session, candidate_id)
-    return _candidate_to_view(candidate)
+    return await _candidate_to_view_resolved(session, candidate)

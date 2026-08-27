@@ -463,4 +463,54 @@ describe("MergeCandidateReviewPage", () => {
       screen.queryByRole("heading", { name: "Candidate #11" }),
     ).not.toBeInTheDocument();
   });
+
+  describe("stale candidates", () => {
+    const staleDetail = {
+      ...pendingDetail,
+      repointed_resources: [{ resource_id: 102, repointed_to: 301 }],
+    };
+
+    it("shows a stale banner and hides the decision controls when a member was merged away", async () => {
+      vi.mocked(useMergeCandidate).mockReturnValue({
+        ...defaultHookReturn,
+        data: staleDetail,
+      });
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      // Banner explains the move, naming both the old id and the new one...
+      expect(await screen.findByText(/was merged into/i)).toBeInTheDocument();
+      const links301 = screen.getAllByRole("link", { name: "301" });
+      expect(links301[0]).toHaveAttribute("href", "/oil-gas-fields/301");
+
+      // ...and Approve/Deny/notes are gone (not merely disabled): approving
+      // would fail and denying would record a judgment no one made.
+      expect(
+        screen.queryByRole("button", { name: "Approve merge" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Deny merge" }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Decision notes")).not.toBeInTheDocument();
+    });
+
+    it("annotates the moved source resource with its new resource in the facts", () => {
+      vi.mocked(useMergeCandidate).mockReturnValue({
+        ...defaultHookReturn,
+        data: staleDetail,
+      });
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      expect(screen.getByText(/\(now/)).toBeInTheDocument();
+    });
+
+    it("shows no banner and keeps the controls when no member has been merged away", () => {
+      // Compat guard: a payload without `repointed_resources` renders as before.
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      expect(screen.queryByText(/was merged into/i)).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Approve merge" }),
+      ).toBeInTheDocument();
+    });
+  });
 });
