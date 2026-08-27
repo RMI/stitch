@@ -20,10 +20,5 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      # Calls the composite action directly (not the reusable-workflow wrapper)
-      # while RMI/actions PR #10 is unmerged: the wrapper on that branch already
-      # points at the composite @main, which doesn't exist until #10 lands.
-      # Pinned to the PR #10 branch for now; once #10 merges, this can become the
-      # one-line wrapper call:
-      #   uses: RMI/actions/.github/workflows/admin-check-rulesets.yml@main
-      - uses: RMI/actions/actions/admin/rulesets-check@feat/rulesets-check
+      # Calls the centrally-maintained composite action in RMI/actions.
+      - uses: RMI/actions/actions/admin/rulesets-check@main
