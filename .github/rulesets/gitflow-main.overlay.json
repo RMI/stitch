@@ -1,49 +1,14 @@
 {
-  "id": 12424386,
-  "name": "gitflow-main",
-  "target": "branch",
-  "source_type": "Repository",
-  "source": "RMI/stitch",
-  "enforcement": "active",
-  "conditions": {
-    "ref_name": {
-      "exclude": [],
-      "include": [
-        "~DEFAULT_BRANCH",
-        "refs/heads/main"
-      ]
-    }
-  },
-  "rules": [
-    {
-      "type": "deletion"
-    },
-    {
-      "type": "non_fast_forward"
-    },
-    {
-      "type": "pull_request",
+  "template": "gitflow-main",
+  "rules": {
+    "pull_request": {
       "parameters": {
-        "required_approving_review_count": 1,
         "dismiss_stale_reviews_on_push": false,
-        "required_reviewers": [],
-        "require_code_owner_review": true,
-        "dismissal_restriction": {
-          "enabled": false,
-          "allowed_actors": []
-        },
-        "require_last_push_approval": false,
-        "required_review_thread_resolution": false,
-        "allowed_merge_methods": [
-          "merge"
-        ]
+        "require_last_push_approval": false
       }
     },
-    {
-      "type": "required_status_checks",
+    "required_status_checks": {
       "parameters": {
-        "strict_required_status_checks_policy": false,
-        "do_not_enforce_on_create": false,
         "required_status_checks": [
           {
             "context": "Linting / Linting (frontend)",
@@ -83,16 +48,6 @@
           }
         ]
       }
-    },
-    {
-      "type": "creation"
-    },
-    {
-      "type": "copilot_code_review",
-      "parameters": {
-        "review_on_push": false,
-        "review_draft_pull_requests": false
-      }
     }
-  ]
+  }
 }
