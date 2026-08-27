@@ -154,9 +154,7 @@ async def get_resolved(
     by construction (``apply_resource_merge`` always targets a brand-new row), so
     ``get_root`` terminates.
     """
-    model = await session.scalar(
-        select(ResourceModel).where(ResourceModel.id == id)
-    )
+    model = await session.scalar(select(ResourceModel).where(ResourceModel.id == id))
     if model is None:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND, detail=f"No Resource with id `{id}` found."
@@ -330,6 +328,26 @@ async def create(
     return await resource_model_to_entity(session, model)
 
 
+async def repointed_merge_error(
+    session: AsyncSession, repointed: Sequence[ResourceModel]
+) -> str:
+    """Message naming each already-merged resource and its terminal target.
+
+    Shared by the two merge guards (here and in ``merge_candidate_actions``) so a
+    curator sees "resource 102 is now resource 301" instead of a ``repr()`` memory
+    address. The root lookup runs only on the error path. Fixed here rather than in
+    ``ResourceModel.__repr__`` because a repr cannot name the terminal target.
+    """
+    roots = await ResourceModel.root_id_by_resource_id(
+        session, [r.id for r in repointed]
+    )
+    moves = "; ".join(
+        f"resource {r.id} is now resource {roots.get(r.id, r.id)}"
+        for r in sorted(repointed, key=lambda r: r.id)
+    )
+    return f"Cannot merge a resource that has already been merged: {moves}."
+
+
 async def apply_resource_merge(
     session: AsyncSession,
     user: CurrentUser,
@@ -357,12 +375,8 @@ async def apply_resource_merge(
         msg = f"Resources not found for ids: [{','.join(map(str, missing_ids))}]"
         raise ResourceNotFoundError(msg)
 
-    if len(repointed := [r for r in results if r.repointed_id is not None]) > 0:
-        reprs = map(repr, repointed)
-        msg = f"Repointed: [{','.join(reprs)}]"
-        raise ResourceIntegrityError(
-            f"Cannot merge any resource that has already been merged. {msg}"
-        )
+    if repointed := [r for r in results if r.repointed_id is not None]:
+        raise ResourceIntegrityError(await repointed_merge_error(session, repointed))
 
     # all ids exist, none have already been repointed
     #
