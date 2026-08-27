@@ -331,6 +331,35 @@ specific record takes precedence over it.
    it only once the certificate is valid. Update the links in the top-level
    `README.md` at the same time.
 
+#### Troubleshooting: CORS errors after a new hostname goes live
+
+Symptom — the frontend loads at the new custom domain, but API calls fail in the
+browser console with:
+
+> `No 'Access-Control-Allow-Origin' header is present on the requested resource`
+
+This means the browser's `Origin` (the custom domain) does not match the single
+origin the backend allows. Because each backend service accepts exactly one CORS
+origin (the API's `FRONTEND_ORIGIN_URL`, fed from the lane's
+`FRONTEND_PRODUCTION_URL`), it happens when the cutover above is only half-done —
+typically step 5 (`FRONTEND_PRODUCTION_URL` is still the old `azurestaticapps.net`
+hostname) and/or step 3 (the custom domain is not set as default, so the old
+hostname still serves the app directly instead of redirecting to it).
+
+Confirm which origin the backend currently allows with a preflight request:
+
+```bash
+curl -i -X OPTIONS '<api-origin>/api/v1/health' \
+  -H 'Origin: https://<custom-domain>' \
+  -H 'Access-Control-Request-Method: GET'
+```
+
+A working origin returns `200` with `access-control-allow-origin: <custom-domain>`;
+a blocked one returns no `access-control-allow-origin` header. Resolve by
+completing step 3 (**Set default**, so the old hostname 301-redirects and stops
+originating requests) and step 5 (`FRONTEND_PRODUCTION_URL = https://<custom-domain>`),
+then redeploy the lane so the backend containers pick up the new origin.
+
 ## Azure Permissions
 
 Permissions for Azure Resources are handled through a managed identity, which GH
