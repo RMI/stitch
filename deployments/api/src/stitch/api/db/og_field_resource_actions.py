@@ -139,6 +139,32 @@ async def get(
     )
 
 
+async def get_resolved(
+    session: AsyncSession,
+    id: int,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> OGFieldResource:
+    """Return resource ``id``, following repoints to the terminal (root) resource.
+
+    Read-only endpoints use this so that a request for a merged-away resource
+    returns the resource it was merged into. The write-path ``get`` intentionally
+    does NOT resolve -- merges must operate on the exact requested row. Resolution
+    collapses the whole chain: ``A -> C -> F -> J`` returns ``J`` for a request of
+    ``A``. A non-repointed id returns itself. The ``repointed_id`` graph is acyclic
+    by construction (``apply_resource_merge`` always targets a brand-new row), so
+    ``get_root`` terminates.
+    """
+    model = await session.scalar(
+        select(ResourceModel).where(ResourceModel.id == id)
+    )
+    if model is None:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND, detail=f"No Resource with id `{id}` found."
+        )
+    root_id = id if model.repointed_id is None else (await model.get_root(session)).id
+    return await get(session, root_id, licensed_sources=licensed_sources)
+
+
 async def field_source_values(
     session: AsyncSession,
     id: int,

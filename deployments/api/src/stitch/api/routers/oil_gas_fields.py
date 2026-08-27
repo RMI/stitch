@@ -244,10 +244,11 @@ async def deny_merge_candidate(
 async def get_resource(
     *, uow: UnitOfWorkDep, user: CurrentUser, claims: Claims, id: int
 ) -> OGFieldView:
-    res: OGFieldResource = await resource_actions.get(
+    res: OGFieldResource = await resource_actions.get_resolved(
         session=uow.session, id=id, licensed_sources=licensed_sources(claims)
     )
-    return resource_to_view(resource=res)
+    requested = id if res.id != id else None
+    return resource_to_view(resource=res, requested_resource_id=requested)
 
 
 @router.get(
@@ -258,10 +259,11 @@ async def get_resource(
 async def get_resource_detail(
     *, uow: UnitOfWorkDep, user: CurrentUser, claims: Claims, id: int
 ) -> OGFieldDetailView:
-    res: OGFieldResource = await resource_actions.get(
+    res: OGFieldResource = await resource_actions.get_resolved(
         session=uow.session, id=id, licensed_sources=licensed_sources(claims)
     )
-    return resource_to_detail_view(resource=res)
+    requested = id if res.id != id else None
+    return resource_to_detail_view(resource=res, requested_resource_id=requested)
 
 
 @router.get(

@@ -201,6 +201,78 @@ class TestGetResourceActionIntegration:
         assert exc_info.value.status_code == 404
 
 
+class TestGetResolvedResourceAction:
+    """resource_actions.get_resolved() follows repoints to the terminal resource."""
+
+    @pytest.mark.anyio
+    async def test_resolves_multi_hop_chain_to_root(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        # Build the chain root-first so each repointed_to target already exists:
+        # A -> C -> F -> J, each a distinct row carrying its own data. Only J is
+        # a root (repointed_to is None). Three hops, not two: a 2-hop chain can
+        # pass an implementation that only handles one extra level.
+        session = seeded_integration_session
+        j = await _create_resource_with_sources(
+            session, test_user, {"source": "gem", "name": "Root J", "country": "USA"}
+        )
+        f = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "gem", "name": "Mid F", "country": "USA"},
+            repointed_to=j,
+        )
+        c = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "gem", "name": "Mid C", "country": "USA"},
+            repointed_to=f,
+        )
+        a = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "gem", "name": "Leaf A", "country": "USA"},
+            repointed_to=c,
+        )
+
+        # Every non-root id in the chain resolves to J with J's real data.
+        for origin in (a, c, f):
+            resolved = await resource_actions.get_resolved(session, origin)
+            assert resolved.id == j
+            assert resolved.view is not None
+            assert resolved.view.name == "Root J"
+
+    @pytest.mark.anyio
+    async def test_non_repointed_returns_self(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        session = seeded_integration_session
+        rid = await _create_resource_with_sources(
+            session, test_user, {"source": "gem", "name": "Live", "country": "USA"}
+        )
+
+        resolved = await resource_actions.get_resolved(session, rid)
+
+        assert resolved.id == rid
+        assert resolved.view is not None
+        assert resolved.view.name == "Live"
+
+    @pytest.mark.anyio
+    async def test_nonexistent_raises_404(
+        self,
+        seeded_integration_session: AsyncSession,
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await resource_actions.get_resolved(
+                session=seeded_integration_session, id=99999
+            )
+        assert exc_info.value.status_code == 404
+
+
 class TestResourceQueryAction:
     """Integration tests for resource_actions.query() and count()."""
 

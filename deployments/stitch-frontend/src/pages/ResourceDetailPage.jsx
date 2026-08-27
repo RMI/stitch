@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useParams, useNavigate } from "react-router";
 import {
@@ -566,6 +566,22 @@ export default function ResourceDetailPage() {
   } = useResourceDetail(endpoint, numericId, validId);
 
   useDocumentTitle(detailView?.data?.name ?? "Resource");
+
+  // STIT-418: the API returns the merged-into (root) resource for a repointed
+  // id, so detailView.id can differ from the id in the URL. Redirect to the
+  // canonical URL. replace:true is mandatory: without it, Back returns to the
+  // old id, which re-resolves and redirects again, trapping Back. No cycle guard
+  // is needed beyond the id check — repointing always targets a brand-new row,
+  // so the chain is acyclic and the root never redirects again.
+  useEffect(() => {
+    if (
+      detailView &&
+      Number.isFinite(detailView.id) &&
+      detailView.id !== numericId
+    ) {
+      navigate(`/${endpoint}/${detailView.id}`, { replace: true });
+    }
+  }, [detailView, numericId, endpoint, navigate]);
 
   return (
     <div className="mx-auto max-w-4xl">
