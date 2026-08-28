@@ -23,6 +23,7 @@ vi.mock("../hooks/useResources", async (importOriginal) => ({
 vi.mock("../hooks/usePermissions");
 
 let mockedRouteId = "1";
+let mockLocationState = null;
 const mockNavigate = vi.fn();
 
 vi.mock("react-router", async () => {
@@ -31,6 +32,7 @@ vi.mock("react-router", async () => {
     ...actual,
     useParams: () => ({ id: mockedRouteId }),
     useNavigate: () => mockNavigate,
+    useLocation: () => ({ state: mockLocationState }),
   };
 });
 
@@ -90,6 +92,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.unstubAllGlobals();
   mockedRouteId = "1";
+  mockLocationState = null;
   mockNavigate.mockReset();
   vi.mocked(useAuth0).mockReturnValue(auth0TestDefaults);
   vi.mocked(useResourceDetail).mockReturnValue({
@@ -904,7 +907,40 @@ describe("ResourceDetailPage", () => {
     expect(mockNavigate).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledWith("/oil-gas-fields/456", {
       replace: true,
+      state: { redirectedFrom: 123 },
     });
+  });
+
+  it("shows an ephemeral notice on the destination when arrived via redirect", () => {
+    // Simulates having landed on the canonical resource via the redirect above:
+    // the router carries the original id in location state.
+    mockedRouteId = "456";
+    mockLocationState = { redirectedFrom: 123 };
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: { ...mockDetailView, id: 456, requested_resource_id: null },
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(screen.getByText(/merged into this record/i)).toBeInTheDocument();
+    expect(screen.getByText("123")).toBeInTheDocument();
+    // It's a notice, not a redirect: no further navigation.
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("shows no redirect notice on a normal visit (no router state)", () => {
+    mockedRouteId = "1";
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(
+      screen.queryByText(/merged into this record/i),
+    ).not.toBeInTheDocument();
   });
 
   it("does not redirect when the returned resource is the one requested", () => {

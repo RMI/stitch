@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
-import { useParams, useNavigate } from "react-router";
+import { useParams, useNavigate, useLocation } from "react-router";
 import {
   useCreateSourceForResource,
   useResourceDetail,
@@ -554,9 +554,15 @@ function SourcesSection({ sources }) {
 export default function ResourceDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const numericId = Number(id);
   const validId = Number.isFinite(numericId);
   const endpoint = "oil-gas-fields";
+  // STIT-418: set by the redirect below when a merged-away id is bounced to its
+  // canonical resource. Ephemeral by design — it lives in router state, so a
+  // fresh load, refresh, or new tab of this URL carries none and shows no
+  // notice; it appears only when the user actually got redirected here.
+  const redirectedFrom = location.state?.redirectedFrom ?? null;
   // Enabled (not manually refetched) so that save mutations' cache
   // invalidations refetch it — invalidation never refetches disabled queries.
   const {
@@ -579,7 +585,10 @@ export default function ResourceDetailPage() {
       Number.isFinite(detailView.id) &&
       detailView.id !== numericId
     ) {
-      navigate(`/${endpoint}/${detailView.id}`, { replace: true });
+      navigate(`/${endpoint}/${detailView.id}`, {
+        replace: true,
+        state: { redirectedFrom: numericId },
+      });
     }
   }, [detailView, numericId, endpoint, navigate]);
 
@@ -588,6 +597,13 @@ export default function ResourceDetailPage() {
       <Button onClick={() => navigate(-1)} variant="ghost" className="mb-6">
         ← Back
       </Button>
+
+      {redirectedFrom != null && (
+        <div className="mb-6 rounded-md border border-line bg-surface px-4 py-3 text-sm text-ink">
+          Resource <span className="font-medium">{redirectedFrom}</span> was
+          merged into this record, so you were brought here.
+        </div>
+      )}
 
       {!validId && <p className="text-danger">Invalid resource ID.</p>}
       {isLoading && <p className="text-ink-muted">Loading…</p>}
