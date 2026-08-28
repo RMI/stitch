@@ -154,9 +154,7 @@ async def get_resolved(
     by construction (``apply_resource_merge`` always targets a brand-new row), so
     ``get_root`` terminates.
     """
-    model = await session.scalar(
-        select(ResourceModel).where(ResourceModel.id == id)
-    )
+    model = await session.scalar(select(ResourceModel).where(ResourceModel.id == id))
     if model is None:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND, detail=f"No Resource with id `{id}` found."
