@@ -178,11 +178,28 @@ async def get_resolved(
 ) -> OGFieldResource:
     """Return resource ``id``, following repoints to the terminal (root) resource.
 
-    Read-only wrapper over ``resolve_root_id`` + ``get``; see ``resolve_root_id``
-    for the resolution semantics.
+    Loads the row once: a non-repointed id (the common case) is built from that
+    row directly, avoiding the second fetch a ``resolve_root_id`` + ``get`` round
+    trip would cost. A repointed id resolves via ``resolve_root_id`` (which also
+    maps a broken chain to 404) and loads the terminal resource.
     """
-    root_id = await resolve_root_id(session, id)
-    return await get(session, root_id, licensed_sources=licensed_sources)
+    stmt = (
+        select(ResourceModel)
+        .options(selectinload(ResourceModel.memberships))
+        .where(ResourceModel.id == id)
+    )
+    model = await session.scalar(stmt)
+    if model is None:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND, detail=f"No Resource with id `{id}` found."
+        )
+    if model.repointed_id is not None:
+        root_id = await resolve_root_id(session, id)
+        return await get(session, root_id, licensed_sources=licensed_sources)
+    await session.refresh(model, ["memberships"])
+    return await resource_model_to_entity(
+        session, model, licensed_sources=licensed_sources
+    )
 
 
 async def field_source_values(

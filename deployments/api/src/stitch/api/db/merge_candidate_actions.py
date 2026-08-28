@@ -345,7 +345,10 @@ async def create_merge_candidate(
     )
     await session.flush()
     await session.refresh(candidate, ["items"])
-    return await _candidate_to_view_resolved(session, candidate)
+    # A newly created candidate's members were just validated as unrepointed, so
+    # nothing is stale yet -- pass an empty resolution instead of running the
+    # (always-empty) root lookup.
+    return _candidate_to_view(candidate, [])
 
 
 async def approve_merge_candidate(
