@@ -967,4 +967,34 @@ describe("ResourceDetailPage", () => {
 
     expect(mockNavigate).not.toHaveBeenCalled();
   });
+
+  it("redirects correctly when the API returns the id as a string", () => {
+    mockedRouteId = "123";
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: { ...mockDetailView, id: "456", requested_resource_id: 123 },
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith("/oil-gas-fields/456", {
+      replace: true,
+      state: { redirectedFrom: 123 },
+    });
+  });
+
+  it("does not loop when a string id already matches the URL", () => {
+    // A strict `!==` against the numeric URL id would treat "456" !== 456 as a
+    // mismatch and redirect forever; the numeric coercion prevents that.
+    mockedRouteId = "456";
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: { ...mockDetailView, id: "456", requested_resource_id: null },
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
 });

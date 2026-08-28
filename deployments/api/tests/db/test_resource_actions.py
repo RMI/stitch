@@ -9,7 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db import utils
-from stitch.api.db.errors import InvalidActionError, ResourceIntegrityError
+from stitch.api.db.errors import (
+    InvalidActionError,
+    ResourceIntegrityError,
+    ResourceNotFoundError,
+)
 from stitch.api.db.model import (
     MembershipModel,
     MembershipStatus,
@@ -270,6 +274,36 @@ class TestGetResolvedResourceAction:
             await resource_actions.get_resolved(
                 session=seeded_integration_session, id=99999
             )
+        assert exc_info.value.status_code == 404
+
+    @pytest.mark.anyio
+    async def test_broken_chain_raises_404_not_500(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+        monkeypatch,
+    ):
+        # Defensive: an unresolvable repoint chain (corrupt data, impossible under
+        # current invariants) must surface as a 404, not an unhandled
+        # ResourceNotFoundError that FastAPI turns into a 500.
+        session = seeded_integration_session
+        root_id = await _create_resource_with_sources(
+            session, test_user, {"source": "gem", "name": "Root", "country": "USA"}
+        )
+        old_id = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "gem", "name": "Old", "country": "USA"},
+            repointed_to=root_id,
+        )
+
+        async def _boom(self, _session):
+            raise ResourceNotFoundError("no root")
+
+        monkeypatch.setattr(ResourceModel, "get_root", _boom)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await resource_actions.resolve_root_id(session, old_id)
         assert exc_info.value.status_code == 404
 
 
@@ -1379,6 +1413,32 @@ class TestFieldSourceValues:
                 seeded_integration_session, 9_999_999, "name"
             )
         assert exc.value.status_code == 404
+
+    @pytest.mark.anyio
+    async def test_repointed_resource_resolves_to_root(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        # STIT-418: a merged-away id returns the terminal resource's field
+        # sources, matching the redirect on the single-resource read endpoints.
+        session = seeded_integration_session
+        root_id = await self._seed(session, test_user)
+        old_id = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "gem", "name": "Old Shell", "country": "USA"},
+            repointed_to=root_id,
+        )
+
+        via_old = await resource_actions.field_source_values(session, old_id, "name")
+        via_root = await resource_actions.field_source_values(session, root_id, "name")
+
+        assert [(r.source, r.value) for r in via_old] == [
+            (r.source, r.value) for r in via_root
+        ]
+        # It resolves to the root's data, not the old shell's.
+        assert ("wm", "WM Name") in [(r.source, r.value) for r in via_old]
 
 
 class TestSetFieldSourcePriority:

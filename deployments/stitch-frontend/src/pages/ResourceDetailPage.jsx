@@ -574,23 +574,24 @@ export default function ResourceDetailPage() {
   useDocumentTitle(detailView?.data?.name ?? "Resource");
 
   // STIT-418: the API returns the merged-into (root) resource for a repointed
-  // id, so detailView.id can differ from the id in the URL. Redirect to the
+  // id, so the resolved id can differ from the id in the URL. Redirect to the
   // canonical URL. replace:true is mandatory: without it, Back returns to the
   // old id, which re-resolves and redirects again, trapping Back. No cycle guard
   // is needed beyond the id check — repointing always targets a brand-new row,
   // so the chain is acyclic and the root never redirects again.
+  //
+  // Coerce with Number() so a string id in the payload still compares and
+  // navigates as a number (a strict `!==` against the numeric URL id would
+  // otherwise loop); NaN when detailView is absent, which the finite check skips.
+  const resolvedId = Number(detailView?.id);
   useEffect(() => {
-    if (
-      detailView &&
-      Number.isFinite(detailView.id) &&
-      detailView.id !== numericId
-    ) {
-      navigate(`/${endpoint}/${detailView.id}`, {
+    if (Number.isFinite(resolvedId) && resolvedId !== numericId) {
+      navigate(`/${endpoint}/${resolvedId}`, {
         replace: true,
         state: { redirectedFrom: numericId },
       });
     }
-  }, [detailView, numericId, endpoint, navigate]);
+  }, [resolvedId, numericId, endpoint, navigate]);
 
   return (
     <div className="mx-auto max-w-4xl">

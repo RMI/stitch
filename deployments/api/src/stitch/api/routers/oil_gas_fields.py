@@ -236,6 +236,12 @@ async def deny_merge_candidate(
         )
 
 
+def _requested_resource_id(requested_id: int, resolved: OGFieldResource) -> int | None:
+    """The originally-requested id when the resolver returned a different resource
+    (i.e. the request was redirected through a merge); ``None`` otherwise."""
+    return requested_id if resolved.id != requested_id else None
+
+
 @router.get(
     "/{id}",
     response_model=OGFieldView,
@@ -247,8 +253,9 @@ async def get_resource(
     res: OGFieldResource = await resource_actions.get_resolved(
         session=uow.session, id=id, licensed_sources=licensed_sources(claims)
     )
-    requested = id if res.id != id else None
-    return resource_to_view(resource=res, requested_resource_id=requested)
+    return resource_to_view(
+        resource=res, requested_resource_id=_requested_resource_id(id, res)
+    )
 
 
 @router.get(
@@ -262,8 +269,9 @@ async def get_resource_detail(
     res: OGFieldResource = await resource_actions.get_resolved(
         session=uow.session, id=id, licensed_sources=licensed_sources(claims)
     )
-    requested = id if res.id != id else None
-    return resource_to_detail_view(resource=res, requested_resource_id=requested)
+    return resource_to_detail_view(
+        resource=res, requested_resource_id=_requested_resource_id(id, res)
+    )
 
 
 @router.get(
