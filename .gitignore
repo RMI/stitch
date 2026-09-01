@@ -70,6 +70,7 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/
 
 # PyBuilder
 .pybuilder/
@@ -220,3 +221,11 @@ __marimo__/
 
 # macOS
 **/.DS_Store
+
+# Local design notes and plans
+/docs/
+
+# impeccable design skill (local design context and live-mode config)
+/PRODUCT.md
+/DESIGN.md
+/.impeccable/

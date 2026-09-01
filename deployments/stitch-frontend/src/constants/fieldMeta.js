@@ -46,6 +46,28 @@ export const PRODUCTION_FIELDS = Object.entries(FIELD_META)
   .filter(([, v]) => v.section === "production")
   .map(([k]) => k);
 
+/**
+ * Fields always shown side by side in the Merge Review source comparison.
+ * Order is display order.
+ */
+export const MERGE_COMPARISON_CORE_FIELDS = [
+  "name",
+  "country",
+  "region",
+  "basin",
+  "state_province",
+];
+
+/**
+ * Remaining scalar fields for the collapsed "Other attributes" accordion.
+ * Organizations (owners/operators) are nested lists and are not compared.
+ */
+export const MERGE_COMPARISON_OTHER_FIELDS = Object.keys(FIELD_META).filter(
+  (key) =>
+    !MERGE_COMPARISON_CORE_FIELDS.includes(key) &&
+    FIELD_META[key].section !== "organizations",
+);
+
 export const AI_SUGGESTION_FIELDS = [
   "basin",
   "state_province",

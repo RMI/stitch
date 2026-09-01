@@ -5,7 +5,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field, computed_field
 
-from stitch.ogsi.model import GEM_SRC, LLM_SRC, RMI_SRC, WM_SRC
+from stitch.ogsi.model import (
+    SOURCE_PRIORITY,
+    OGFieldSourceValueView,
+)
 from stitch.ogsi.model.types import (
     FieldStatus,
     LocationType,
@@ -13,9 +16,8 @@ from stitch.ogsi.model.types import (
     PrimaryHydrocarbonGroup,
     ProductionConventionality,
 )
-from stitch.ogsi.model.og_field import OilGasFieldBase
 
-OGSI_SOURCE_DEFAULT: tuple[OGSISrcKey, ...] = (RMI_SRC, GEM_SRC, WM_SRC, LLM_SRC)
+OGSI_SOURCE_DEFAULT: tuple[OGSISrcKey, ...] = SOURCE_PRIORITY
 
 
 class Timestamped(BaseModel):
@@ -158,6 +160,17 @@ class MergeCandidateReviewRequest(BaseModel):
     review_notes: str | None = None
 
 
+class SetFieldPriorityRequest(BaseModel):
+    """New source ordering for one field, best-first.
+
+    ``ordered_source_pks`` must list *exactly* the source records that currently
+    carry a value for the field (same set the read endpoint returns), each once.
+    Index 0 becomes the coalesced winner.
+    """
+
+    ordered_source_pks: list[int]
+
+
 class MergeCandidateView(BaseModel):
     id: int
     resource_ids: list[int]
@@ -172,7 +185,49 @@ class MergeCandidateView(BaseModel):
     reviewed_by_id: int | None = None
 
 
-class OGFieldMergePreviewView(BaseModel):
-    resource_ids: list[int]
-    data: OilGasFieldBase
-    provenance: dict[str, OGSISrcKey | None]
+class ComparisonValueView(OGFieldSourceValueView):
+    """A source's value in a merge comparison, tagged with ``resource_id`` --
+    the candidate resource the source is currently attached to.
+
+    ``priority`` here is the *default global* source order -- the order the
+    merged resource will use, since a merge drops per-resource priority
+    overrides -- not the effective per-resource ranking. So the winner-ordering
+    of these values can differ from ``FieldComparisonView.status`` (each
+    resource's current effective coalesced value) whenever a per-resource
+    override is active. That divergence is expected: ``values`` predicts the
+    post-merge winner, ``status`` describes the current state.
+    """
+
+    resource_id: int
+
+
+class FieldComparisonView(BaseModel):
+    """One field compared across a merge candidate's resources.
+
+    ``values`` lists every source (across all candidate resources) that carries a
+    value for the field, winner-first (lowest ``priority`` wins). Each entry
+    carries the ``resource_id`` it is attached to, so the client can group values
+    by resource without a separate per-resource payload.
+
+    ``status`` compares the resources' coalesced values for the field:
+
+    - ``match`` -- every resource resolves to the same value (all equal,
+      including the case where every resource is null).
+    - ``different`` -- the resources disagree, including when one resource has a
+      value and another is null.
+
+    Equality is Python ``==``, which errs toward ``different`` (exact float
+    equality; ordered ``owners``/``operators`` comparison).
+
+    NOTE: ``values`` (and the derived ``status``) are a best guess at what the
+    merge will persist -- overrides are dropped on merge, so the merged resource
+    can resolve to a value that differs from any single parent's current winner.
+    """
+
+    field: str
+    status: Literal["match", "different"]
+    values: list[ComparisonValueView]
+
+
+class MergeCandidateDetailView(MergeCandidateView):
+    compare: list[FieldComparisonView]

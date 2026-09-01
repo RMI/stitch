@@ -1,4 +1,4 @@
-import { Routes, Route, Link, NavLink } from "react-router-dom";
+import { Routes, Route, Link, NavLink } from "react-router";
 import EnvironmentBanner from "./components/EnvironmentBanner";
 import HomePage from "./pages/HomePage";
 import ResourceDetailPage from "./pages/ResourceDetailPage";
@@ -9,9 +9,9 @@ import { LogoutButton } from "./components/LogoutButton";
 
 const NAV_ITEMS = [
   { to: "/", label: "Resources", end: true },
-  { to: "/entity-linkage", label: "Entity Linkage" },
-  { to: "/merge-candidate-review", label: "Merge Review" },
-  { to: "/etl", label: "ETL Pipelines" },
+  { to: "/entity-linkage", label: "Entity linkage" },
+  { to: "/merge-candidate-review", label: "Merge review" },
+  { to: "/etl", label: "ETL pipelines" },
 ];
 
 function getNavLinkClassName({ isActive }) {

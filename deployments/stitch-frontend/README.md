@@ -572,14 +572,89 @@ Add your SWA URL to:
 - Allowed Logout URLs
 - Allowed Web Origins
 
+The app passes `window.location.origin` as its `redirect_uri` and has no
+dedicated callback route, so all three settings take the **bare origin** — no
+trailing slash and no path. Auth0 matches these exactly; a trailing slash will
+not match.
+
 Example:
 
 ```text
-https://<your-swa>.azurestaticapps.net/
-https://<your-swa>.azurestaticapps.net/callback
+https://<your-swa>.azurestaticapps.net
+```
+
+Because the origin is whatever the browser is on, **every hostname the app is
+served from needs its own entry** — the generated `azurestaticapps.net`
+hostname, each PR preview hostname, and any custom domain:
+
+```text
+https://stitch.rmi.org
 ```
 
 Save.
+
+Register a custom domain here _before_ pointing the lane's
+`FRONTEND_PRODUCTION_URL` at it, or sign-in breaks on the first deploy. See
+"Custom domains" in [`../CI_DEPLOYMENTS.md`](../CI_DEPLOYMENTS.md).
+
+---
+
+### Configure Auth0 for session persistence (refresh tokens)
+
+The frontend keeps users signed in across page reloads by caching Auth0 tokens
+in the browser's `localStorage` and renewing them with rotating refresh tokens
+(see `src/AppProviders.jsx`: `cacheLocation="localstorage"` + `useRefreshTokens`).
+For this to work reliably across browsers, the Auth0 tenant must actually issue
+refresh tokens. If it does not, the SDK falls back to hidden-iframe silent
+authentication, which Safari (ITP) and Chrome (third-party-cookie blocking)
+block — so users are bounced to the login screen once their cached access token
+expires. (This was the STIT-581 reload regression.)
+
+Configure the following in the Auth0 Dashboard for the tenant serving this
+environment.
+
+**On the API** — Applications → APIs → _Stitch API_ → Settings → Access Settings:
+
+- **Allow Offline Access: ON.** Required so Auth0 issues refresh tokens for this
+  API (audience). The React SDK automatically requests the `offline_access`
+  scope when refresh tokens are enabled; with _Allow Skipping User Consent_ on
+  and the app marked First Party, users are not shown a consent prompt.
+
+**On the Application** — Applications → Applications → _Stitch SPA_ → Settings:
+
+- **Allow Refresh Token Rotation: ON.** Each refresh token is invalidated after
+  use and exchanged for a new one, limiting the value of a leaked token —
+  recommended when tokens live in `localStorage`. See
+  [Refresh Token Rotation](https://auth0.com/docs/secure/tokens/refresh-tokens/refresh-token-rotation).
+- **Rotation Overlap Period: 3 seconds.** A small non-zero leeway so concurrent
+  requests, multiple open tabs, or a lost rotation response do not invalidate
+  the session or trigger false-positive breach detection. `0` is stricter but
+  fragile for SPAs. Auth0 documents the setting's purpose (leeway before reuse
+  detection) but does not prescribe a value; 3s is our choice for SPA
+  concurrency. See
+  [Configure Refresh Token Rotation](https://auth0.com/docs/secure/tokens/refresh-tokens/configure-refresh-token-rotation).
+- **Set Maximum Refresh Token Lifetime: ON** (required for rotation), e.g.
+  `2592000` (30 days) — the absolute session ceiling, after which the user must
+  re-authenticate regardless of activity.
+- **Set Idle Refresh Token Lifetime: ON**, e.g. `1296000` (15 days) — the
+  session ends after this much inactivity; each token use resets the idle clock.
+  See
+  [Configure Refresh Token Expiration](https://auth0.com/docs/secure/tokens/refresh-tokens/configure-refresh-token-expiration).
+
+**Verify** it works: after logging in, open DevTools → Application → Local
+Storage and confirm the `@@auth0spajs@@…` entry contains a `refresh_token` (the
+`/oauth/token` network response should include one). To exercise the
+cross-browser path specifically, test in Safari — log in, clear cookies (leaving
+`localStorage` intact), then reload; you should remain authenticated via the
+refresh token rather than the now-blocked silent-auth iframe.
+
+> **Security note:** storing tokens in `localStorage` makes them readable by any
+> script on the page, which raises the impact of an XSS vulnerability. Refresh
+> token rotation shortens the window of a leaked token, but the primary defense
+> is a Content-Security-Policy, which is not yet configured (tracked as a
+> follow-up). See Auth0's
+> [Token Storage](https://auth0.com/docs/secure/security-guidance/data-security/token-storage)
+> guidance.
 
 ---
 
@@ -630,9 +705,9 @@ export const SOURCE_COLORS = {
 };
 
 export const SOURCE_LABELS = {
-  gem: "GEM Database",
-  wm: "Woodmac Database",
-  rmi: "User Generated",
+  gem: "GEM",
+  wm: "Woodmac",
+  rmi: "RMI",
   llm: "LLM",
 };
 ```

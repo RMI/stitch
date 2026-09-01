@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 
 import pytest
+from pydantic import TypeAdapter
 
-from stitch.seed.payloads import iter_payloads
+from stitch.ogsi.model import OGFieldSource
+from stitch.seed.payloads import REGIONS, iter_payloads
 
 
 def test_iter_payloads_adds_source_record_to_faker_payloads() -> None:
@@ -34,6 +36,40 @@ def test_iter_payloads_adds_source_record_to_faker_payloads() -> None:
     original_source = dict(source)
     original_source.pop("source_record")
     assert source_record["payload"]["source"] == original_source
+
+
+def test_faker_payloads_populate_region_and_ownership() -> None:
+    payloads = list(
+        iter_payloads(
+            static_payload_dir=None,
+            faker_count=40,
+            random_seed=7,
+            seed_source="mixed",
+            null_prob=0.2,
+        )
+    )
+    sources = [payload["source_data"][0] for payload in payloads]
+
+    regions = {source["region"] for source in sources} - {None}
+    assert regions
+    assert regions <= set(REGIONS)
+
+    owner_lists = [source["owners"] for source in sources if source["owners"]]
+    operator_lists = [source["operators"] for source in sources if source["operators"]]
+    assert owner_lists
+    assert operator_lists
+
+    for owners in owner_lists:
+        assert all(owner["stake"] is not None for owner in owners)
+        assert sum(owner["stake"] for owner in owners) == pytest.approx(100.0)
+    for operators in operator_lists:
+        assert all(operator["stake"] is None for operator in operators)
+
+    # Everything generated must validate against the real model — including the
+    # null-stake entries that the now-nullable `stake` permits.
+    adapter = TypeAdapter(OGFieldSource)
+    for source in sources:
+        adapter.validate_python(source)
 
 
 def test_iter_payloads_adds_source_record_to_static_payloads(tmp_path) -> None:

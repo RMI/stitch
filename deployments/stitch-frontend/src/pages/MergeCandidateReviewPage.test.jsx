@@ -1,28 +1,36 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useAuth0 } from "@auth0/auth0-react";
 import { auth0TestDefaults, renderWithQueryClient } from "../test/utils";
 import MergeCandidateReviewPage from "./MergeCandidateReviewPage";
-import {
-  useMergeCandidates,
-  useMergeCandidate,
-  useMergeCandidatePreview,
-} from "../hooks/useResources";
-import { reviewMergeCandidate } from "../queries/api";
+import { useMergeCandidates, useMergeCandidate } from "../hooks/useResources";
+import { reviewMergeCandidate, getResourceDetail } from "../queries/api";
 
-vi.mock("../hooks/useResources", () => ({
+// Mock only the read hooks; the review path exercises the real
+// useReviewMergeCandidate mutation against the mocked API module.
+vi.mock("../hooks/useResources", async (importOriginal) => ({
+  ...(await importOriginal()),
   useMergeCandidates: vi.fn(),
   useMergeCandidate: vi.fn(),
-  useMergeCandidatePreview: vi.fn(),
 }));
 
 vi.mock("../queries/api", () => ({
   reviewMergeCandidate: vi.fn(),
+  getResourceDetail: vi.fn(),
 }));
 
-vi.mock("../components/ResourceView", () => ({
-  default: ({ initialID }) => <div>Resource evidence {initialID}</div>,
+vi.mock("../components/MergeSourceComparison", () => ({
+  default: ({ resourceIds, compare, isLoading }) => (
+    <div>
+      Source comparison for {resourceIds.join(", ")}
+      {compare ? " (compare loaded)" : isLoading ? " (loading)" : ""}
+    </div>
+  ),
+}));
+
+vi.mock("../components/MergedResourceView", () => ({
+  default: ({ resourceId }) => <div>Merged resource {resourceId}</div>,
 }));
 
 const candidates = [
@@ -41,18 +49,39 @@ const candidates = [
 ];
 
 const pendingCandidate = candidates[0];
+
+// Detail responses layer `compare` on top of the list schema. The panel
+// heading must come from this, not from per-resource fetches.
+const pendingDetail = {
+  ...pendingCandidate,
+  compare: [
+    {
+      field: "name",
+      status: "different",
+      values: [
+        {
+          source: "gem",
+          source_id: 1,
+          value: "Burgan",
+          priority: 0,
+          resource_id: 101,
+        },
+        {
+          source: "wm",
+          source_id: 2,
+          value: "Bergan",
+          priority: 1,
+          resource_id: 102,
+        },
+      ],
+    },
+  ],
+};
 const nextPendingCandidate = {
   id: 13,
   status: "PENDING",
   resource_ids: [301, 302],
   merged_resource_id: null,
-};
-const preview = {
-  resource_ids: [101, 102],
-  data: {
-    name: "Merged Burgan Field",
-    basin: "Arabian",
-  },
 };
 
 const defaultHookReturn = {
@@ -61,6 +90,17 @@ const defaultHookReturn = {
   isError: false,
   error: null,
   refetch: vi.fn(),
+};
+
+// 101/102 are two spellings of the same field. "wm" outranks "gem" in
+// SOURCE_PRIORITY, so the resolved name is the wm spelling ("Bergan") even
+// though the gem resource comes first — priority wins over resource order.
+const resourceDetailsById = {
+  101: { data: { name: "Burgan" }, provenance: { name: "gem" } },
+  102: { data: { name: "Bergan" }, provenance: { name: "wm" } },
+  201: { data: { name: "Arabian Consolidated" }, provenance: { name: "rmi" } },
+  202: { data: { name: "Arabian Duplicate" }, provenance: { name: "gem" } },
+  301: { data: { name: "Arabian Merged" }, provenance: { name: "rmi" } },
 };
 
 beforeEach(() => {
@@ -72,15 +112,13 @@ beforeEach(() => {
   });
   vi.mocked(useMergeCandidate).mockReturnValue({
     ...defaultHookReturn,
-    data: pendingCandidate,
-    refetch: vi.fn(),
-  });
-  vi.mocked(useMergeCandidatePreview).mockReturnValue({
-    ...defaultHookReturn,
-    data: preview,
+    data: pendingDetail,
     refetch: vi.fn(),
   });
   vi.mocked(reviewMergeCandidate).mockResolvedValue({});
+  vi.mocked(getResourceDetail).mockImplementation((_config, id) =>
+    Promise.resolve(resourceDetailsById[id]),
+  );
 });
 
 describe("MergeCandidateReviewPage", () => {
@@ -88,12 +126,10 @@ describe("MergeCandidateReviewPage", () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
     expect(
-      screen.getByRole("heading", { name: "Merge Review" }),
+      screen.getByRole("heading", { name: "Merge review" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Queue" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Candidate #11" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Burgan" })).toBeInTheDocument();
 
     expect(
       screen.queryByRole("heading", { name: "Summary" }),
@@ -106,42 +142,100 @@ describe("MergeCandidateReviewPage", () => {
     expect(screen.getByText("Total")).toBeInTheDocument();
   });
 
-  it("places the decision controls after preview evidence", () => {
+  it("shows the resolved candidate name in the queue, hiding raw resource ids", async () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
-    const previewHeading = screen.getByText("Merged preview");
-    const decisionNotes = screen.getByLabelText("Decision notes");
-    const sourceResources = screen.getByText("Source resources (2)");
+    const queueItem = await screen.findByRole("button", { name: /Bergan/ });
+    expect(within(queueItem).queryByText(/101/)).not.toBeInTheDocument();
+    expect(within(queueItem).queryByText(/Resources/)).not.toBeInTheDocument();
+    expect(within(queueItem).queryByText(/Merged/)).not.toBeInTheDocument();
+    expect(queueItem).toHaveAttribute("title", "Source resources: 101, 102");
+  });
 
-    expect(decisionNotes).toBeInTheDocument();
+  it("falls back to the candidate id when the compare object has no name", () => {
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: { ...pendingCandidate, compare: [] },
+    });
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      screen.getByRole("heading", { name: "Candidate #11" }),
+    ).toBeInTheDocument();
+  });
+
+  it('labels a pending item\'s status badge "CANDIDATE" instead of "PENDING"', async () => {
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    const pendingItem = await screen.findByRole("button", { name: /Bergan/ });
+    expect(within(pendingItem).getByText("CANDIDATE")).toBeInTheDocument();
+    expect(within(pendingItem).queryByText("PENDING")).not.toBeInTheDocument();
+
+    const approvedItem = await screen.findByRole("button", {
+      name: /Arabian Merged/,
+    });
+    expect(within(approvedItem).getByText("APPROVED")).toBeInTheDocument();
+  });
+
+  it("resolves an approved queue item's name from the merged resource", async () => {
+    // Post-merge the source resources are null shells, so the queue must
+    // resolve the name from merged_resource_id, not from resource_ids.
+    vi.mocked(getResourceDetail).mockImplementation((_config, id) => {
+      if (id === 201 || id === 202) {
+        return Promise.resolve({ data: { name: null }, provenance: {} });
+      }
+      return Promise.resolve(resourceDetailsById[id]);
+    });
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      await screen.findByRole("button", { name: /Arabian Merged/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Candidate #12/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the compare-derived name in the detail panel heading", async () => {
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Burgan" }),
+    ).toBeInTheDocument();
+  });
+
+  it("links each source resource id to its detail page", () => {
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(screen.getByRole("link", { name: "101" })).toHaveAttribute(
+      "href",
+      "/oil-gas-fields/101",
+    );
+    expect(screen.getByRole("link", { name: "102" })).toHaveAttribute(
+      "href",
+      "/oil-gas-fields/102",
+    );
+  });
+
+  it("shows the source comparison instead of the merged preview", () => {
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    const comparison = screen.getByText(
+      "Source comparison for 101, 102 (compare loaded)",
+    );
+    const decisionNotes = screen.getByLabelText("Decision notes");
+
     expect(
       screen.getByRole("button", { name: "Approve merge" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Deny merge" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Merged preview")).toBeInTheDocument();
-    expect(screen.getByLabelText("Merged preview data")).toHaveTextContent(
-      "Merged Burgan Field",
-    );
-    expect(previewHeading.compareDocumentPosition(decisionNotes)).toBe(
+    expect(screen.queryByText("Merged preview")).not.toBeInTheDocument();
+    expect(screen.queryByText("Source resources (2)")).not.toBeInTheDocument();
+    expect(comparison.compareDocumentPosition(decisionNotes)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(decisionNotes.compareDocumentPosition(sourceResources)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-  });
-
-  it("keeps source resource evidence hidden until requested", async () => {
-    const user = userEvent.setup();
-    renderWithQueryClient(<MergeCandidateReviewPage />);
-
-    expect(screen.queryByText("Resource evidence 101")).not.toBeInTheDocument();
-
-    await user.click(screen.getByText("Source resources (2)"));
-
-    expect(screen.getByText("Resource evidence 101")).toBeInTheDocument();
-    expect(screen.getByText("Resource evidence 102")).toBeInTheDocument();
   });
 
   it("submits the selected review decision with notes", async () => {
@@ -160,6 +254,22 @@ describe("MergeCandidateReviewPage", () => {
         "oil-gas-fields",
         "Looks safe",
       );
+    });
+  });
+
+  it("refreshes all cached oil-gas-fields data after a review", async () => {
+    const user = userEvent.setup();
+    const { queryClient } = renderWithQueryClient(<MergeCandidateReviewPage />);
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    await user.click(screen.getByRole("button", { name: "Approve merge" }));
+
+    // An approved merge changes the resources themselves, so everything under
+    // the endpoint (lists, details, merge candidates) must be refetched.
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["oil-gas-fields"],
+      });
     });
   });
 
@@ -188,5 +298,169 @@ describe("MergeCandidateReviewPage", () => {
       ).toBeInTheDocument();
     });
     expect(screen.getByLabelText("Decision notes")).toHaveValue("");
+  });
+
+  it("keeps the candidate panel in place while the detail query loads", () => {
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: null,
+      isLoading: true,
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      screen.getByRole("heading", { name: "Candidate #11" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Source comparison for 101, 102 (loading)"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Approve merge" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Loading candidate…")).not.toBeInTheDocument();
+  });
+
+  it("shows the queue-cached name while the detail query loads, not the id fallback", async () => {
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: null,
+      isLoading: true,
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Bergan" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Candidate #11" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("approves with the queue's candidate id while the detail query loads", async () => {
+    const user = userEvent.setup();
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: null,
+      isLoading: true,
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+    await user.click(screen.getByRole("button", { name: "Approve merge" }));
+
+    await waitFor(() => {
+      expect(reviewMergeCandidate).toHaveBeenCalledWith(
+        expect.any(Object),
+        11,
+        "approve",
+        expect.any(Function),
+        "oil-gas-fields",
+        "",
+      );
+    });
+  });
+
+  it("renders the panel with a banner when the detail query fails", () => {
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: null,
+      isError: true,
+      error: new Error("detail boom"),
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      screen.getByRole("heading", { name: "Candidate #11" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Approve merge" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/could not be refreshed/)).toBeInTheDocument();
+    expect(screen.getByText(/detail boom/)).toBeInTheDocument();
+  });
+
+  it("shows the merged resource instead of the source comparison once merged_resource_id is set", () => {
+    const mergedCandidate = candidates[1];
+    vi.mocked(useMergeCandidates).mockReturnValue({
+      ...defaultHookReturn,
+      data: [mergedCandidate],
+    });
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: mergedCandidate,
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(screen.getByText("Merged resource 301")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Source comparison for 201, 202"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the merged resource's name in the heading once merged", async () => {
+    const mergedCandidate = candidates[1];
+    vi.mocked(useMergeCandidates).mockReturnValue({
+      ...defaultHookReturn,
+      data: [mergedCandidate],
+    });
+    // Post-merge, the originals are null shells: compare carries no name.
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: { ...mergedCandidate, compare: [] },
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Arabian Merged" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Candidate #12" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("links the merged resource id to its detail page", () => {
+    const mergedCandidate = candidates[1];
+    vi.mocked(useMergeCandidates).mockReturnValue({
+      ...defaultHookReturn,
+      data: [mergedCandidate],
+    });
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: mergedCandidate,
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(screen.getByRole("link", { name: "301" })).toHaveAttribute(
+      "href",
+      "/oil-gas-fields/301",
+    );
+  });
+
+  it("blocks with an error when the detail query fails and the queue has no item", () => {
+    vi.mocked(useMergeCandidates).mockReturnValue({
+      ...defaultHookReturn,
+      data: [],
+      refetch: vi.fn(),
+    });
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: null,
+      isError: true,
+      error: new Error("detail boom"),
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      screen.getByText("No merge candidates to review."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Candidate #11" }),
+    ).not.toBeInTheDocument();
   });
 });

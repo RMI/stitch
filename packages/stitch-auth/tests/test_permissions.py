@@ -8,6 +8,9 @@ from stitch.auth.permissions import (
     RESOURCE_READ,
     RESOURCE_WRITE,
     SERVICE_LLM_SUGGEST,
+    SOURCE_READ_ALB,
+    SOURCE_READ_BC,
+    SOURCE_READ_CCR,
     SOURCE_READ_GEM,
     SOURCE_READ_PERMISSIONS,
     SOURCE_READ_RMI,
@@ -33,6 +36,45 @@ def test_all_permissions_contains_defined_route_permissions():
         SERVICE_LLM_SUGGEST,
         *SOURCE_READ_PERMISSIONS,
     }.issubset(ALL_PERMISSIONS)
+
+
+def test_ccr_source_read_permission_is_registered():
+    assert SOURCE_READ_CCR == "source:read:ccr"
+    assert SOURCE_READ_CCR in SOURCE_READ_PERMISSIONS
+    assert SOURCE_READ_CCR in ALL_PERMISSIONS
+
+
+def test_source_read_sources_resolves_ccr():
+    assert source_read_sources(
+        [SOURCE_READ_CCR],
+        valid_sources={"ccr"},
+    ) == frozenset({"ccr"})
+
+
+def test_bc_source_read_permission_is_registered():
+    assert SOURCE_READ_BC == "source:read:bc"
+    assert SOURCE_READ_BC in SOURCE_READ_PERMISSIONS
+    assert SOURCE_READ_BC in ALL_PERMISSIONS
+
+
+def test_source_read_sources_resolves_bc():
+    assert source_read_sources(
+        [SOURCE_READ_BC],
+        valid_sources={"bc"},
+    ) == frozenset({"bc"})
+
+
+def test_alb_source_read_permission_is_registered():
+    assert SOURCE_READ_ALB == "source:read:alb"
+    assert SOURCE_READ_ALB in SOURCE_READ_PERMISSIONS
+    assert SOURCE_READ_ALB in ALL_PERMISSIONS
+
+
+def test_source_read_sources_resolves_alb():
+    assert source_read_sources(
+        [SOURCE_READ_ALB],
+        valid_sources={"alb"},
+    ) == frozenset({"alb"})
 
 
 def test_missing_permissions_uses_exact_matching():

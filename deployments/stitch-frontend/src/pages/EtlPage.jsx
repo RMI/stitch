@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useConfig } from "../config/useConfig";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import StructuredDataView from "../components/StructuredDataView";
 import Button from "../components/Button";
 import Input from "../components/Input";
+import StateBadge from "../components/StateBadge";
 
 // Per-ETL run parameters. Empty number/text fields are omitted from the
 // request body so the service falls back to its env-derived defaults.
@@ -22,6 +24,44 @@ const GEM_FIELDS = [
     help: "Excel sheet name to load. Leave blank to use the configured default.",
   },
 ];
+
+const CCR_FIELDS = [
+  {
+    key: "payload_limit",
+    label: "Payload limit",
+    type: "number",
+    help: "Optional cap on payloads posted this run. Leave blank to post all.",
+  },
+  {
+    key: "xlsx_sheet",
+    label: "CCR xlsx sheet",
+    type: "text",
+    placeholder: "Reservoirs",
+    help: "Excel sheet name to load. Leave blank to use the configured default.",
+  },
+];
+
+// Mirrors stitch-etl-poc's BcStartRequest (payload_limit + use_cached); the BC
+// ETL fetches live from the BCER API + reserves CSV, so there is no sheet input.
+const BC_FIELDS = [
+  {
+    key: "payload_limit",
+    label: "Payload limit",
+    type: "number",
+    help: "Optional cap on payloads posted this run. Leave blank to post all.",
+  },
+  {
+    key: "use_cached",
+    label: "Reuse cached BCER data (if within TTL)",
+    type: "checkbox",
+  },
+];
+
+// No run parameters yet: the Alberta dataset hasn't been added to
+// stitch-etl-poc, so the real request-body shape is unknown. Leave empty (no
+// inputs, empty body) until the dataset lands and the fields can be defined to
+// match it.
+const ALB_FIELDS = [];
 
 const WOODMAC_FIELDS = [
   {
@@ -42,26 +82,6 @@ const WOODMAC_FIELDS = [
     type: "checkbox",
   },
 ];
-
-const STATE_STYLES = {
-  running: "border-warning/30 bg-warning-soft text-warning",
-  succeeded: "border-success/25 bg-success-soft text-success-strong",
-  failed: "border-danger/25 bg-danger-soft text-danger",
-};
-
-function StateBadge({ state }) {
-  if (!state) return null;
-
-  const classes = STATE_STYLES[state] ?? "border-line bg-surface text-ink";
-
-  return (
-    <span
-      className={`rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${classes}`}
-    >
-      {state}
-    </span>
-  );
-}
 
 async function parseJsonResponse(response) {
   const text = await response.text();
@@ -265,6 +285,7 @@ function EtlPanel({ title, description, baseUrl, fields, getToken }) {
 }
 
 export default function EtlPage() {
+  useDocumentTitle("ETL pipelines");
   const config = useConfig();
   const { getAccessTokenSilently } = useAuth0();
 
@@ -276,29 +297,49 @@ export default function EtlPage() {
   return (
     <div className="mx-auto max-w-6xl">
       <div className="mb-6">
-        <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-          Batch workflow
-        </p>
-        <h1 className="mt-1 text-3xl font-semibold text-ink">ETL Pipelines</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">
+          ETL pipelines
+        </h1>
         <p className="mt-2 text-sm text-ink-muted">
           Start an ETL run and check its status. Only one run per pipeline may
           be active at a time.
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-3">
         <EtlPanel
           title="GEM"
           description="Load GEM oil & gas data from the configured spreadsheet and post it to Stitch."
-          baseUrl={config.etlGemBaseUrl}
+          baseUrl={`${config.etlBaseUrl}/gem`}
           fields={GEM_FIELDS}
           getToken={getToken}
         />
         <EtlPanel
           title="WoodMac"
           description="Fetch WoodMac query results and post them to Stitch."
-          baseUrl={config.etlWoodmacBaseUrl}
+          baseUrl={`${config.etlBaseUrl}/wm`}
           fields={WOODMAC_FIELDS}
+          getToken={getToken}
+        />
+        <EtlPanel
+          title="CCR"
+          description="Load C&C Reservoirs field data from the configured spreadsheet and post it to Stitch."
+          baseUrl={`${config.etlBaseUrl}/ccr`}
+          fields={CCR_FIELDS}
+          getToken={getToken}
+        />
+        <EtlPanel
+          title="BC"
+          description="Fetch BC Energy Regulator (BCER) field data and post it to Stitch."
+          baseUrl={`${config.etlBaseUrl}/bc`}
+          fields={BC_FIELDS}
+          getToken={getToken}
+        />
+        <EtlPanel
+          title="Alberta"
+          description="Load Alberta Energy Regulator field data from the configured spreadsheet and post it to Stitch."
+          baseUrl={`${config.etlBaseUrl}/alb`}
+          fields={ALB_FIELDS}
           getToken={getToken}
         />
       </div>

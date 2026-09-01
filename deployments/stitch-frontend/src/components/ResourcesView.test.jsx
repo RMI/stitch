@@ -226,10 +226,54 @@ describe("ResourcesView", () => {
     ).toBeInTheDocument();
   });
 
-  it("does not show filter bar when no data", () => {
+  it("shows filter bar even before any data has loaded", () => {
     renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
 
-    expect(screen.queryByTestId("filter-bar")).not.toBeInTheDocument();
+    expect(screen.getByTestId("filter-bar")).toBeInTheDocument();
+  });
+
+  it("keeps filter bar visible while a new query is loading", () => {
+    // Mirrors a refetch triggered by a filter change: TanStack Query resets
+    // `data` to undefined and `isLoading` to true for the new query key.
+    vi.mocked(useResources).mockReturnValue({
+      ...defaultHookReturn,
+      data: undefined,
+      isLoading: true,
+      isFetching: true,
+    });
+
+    renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+    expect(screen.getByTestId("filter-bar")).toBeInTheDocument();
+  });
+
+  it("keeps showing the previous data (assets count, rows) during a background refetch", () => {
+    // With placeholderData: keepPreviousData on the query, a refetch
+    // triggered by a filter/page/sort change keeps `data` populated:
+    // isFetching is true but isLoading is false, and data is still the
+    // previous result rather than resetting to undefined.
+    vi.mocked(useResources).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockResourceData,
+      isLoading: false,
+      isFetching: true,
+    });
+
+    renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+    expect(
+      screen.getByText((_, node) => {
+        if (!node || node.tagName !== "P") return false;
+        return (
+          node.textContent?.replace(/\s+/g, " ").trim() ===
+          `${mockResourceData.total_count} assets`
+        );
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/awaiting resource count/i),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Burgan Field")).toBeInTheDocument();
   });
 
   it("shows filter bar when the current result set is empty", () => {
@@ -260,6 +304,20 @@ describe("ResourcesView", () => {
       vi.mocked(useResources).mockReturnValue({
         ...defaultHookReturn,
         data: { ...mockResourceData, total_pages: 5, total_count: 250 },
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      expect(screen.getByLabelText("Previous page")).toBeInTheDocument();
+      expect(screen.getByLabelText("Next page")).toBeInTheDocument();
+    });
+
+    it("keeps pagination visible during a background refetch", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: { ...mockResourceData, total_pages: 3, total_count: 150 },
+        isLoading: false,
+        isFetching: true,
       });
 
       renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);

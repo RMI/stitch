@@ -1,18 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
-import { useAuth0 } from "@auth0/auth0-react";
-import { useQueryClient } from "@tanstack/react-query";
-import ResourceView from "../components/ResourceView";
+import { useState } from "react";
+import { Link } from "react-router";
 import Button from "../components/Button";
+import MergeSourceComparison from "../components/MergeSourceComparison";
+import MergedResourceView from "../components/MergedResourceView";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import { useMergeCandidateName } from "../hooks/useMergeCandidateName";
+import { useMergedResourceDetail } from "../hooks/useMergedResourceDetail";
 import {
   useMergeCandidates,
   useMergeCandidate,
-  useMergeCandidatePreview,
+  useReviewMergeCandidate,
 } from "../hooks/useResources";
-import { createAuthenticatedFetcher } from "../auth/api";
-import { reviewMergeCandidate } from "../queries/api";
-import { useConfig } from "../config/useConfig";
-import { resourceKeys } from "../queries/resources";
-import StructuredDataView from "../components/StructuredDataView";
+import { pickCompareName } from "../utils/candidateCompare";
+import { isEmptyValue } from "../utils/mergeComparison";
 
 const ENDPOINT = "oil-gas-fields";
 
@@ -29,42 +29,63 @@ function getStatusClasses(status) {
   return "border-line bg-surface text-ink";
 }
 
+// PENDING reads as "CANDIDATE": it isn't a real merged resource yet.
+function getStatusLabel(status) {
+  return status === "PENDING" ? "CANDIDATE" : status;
+}
+
 function StatusBadge({ status }) {
   return (
     <span
-      className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusClasses(status)}`}
+      className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${getStatusClasses(status)}`}
     >
-      {status}
+      {getStatusLabel(status)}
     </span>
   );
 }
 
+// Resource and merged ids aren't shown as list text, but stay one hover away
+// via the title attribute (and remain visible in the detail view facts).
+function candidateSourcesTitle(candidate) {
+  const parts = [`Source resources: ${candidate.resource_ids.join(", ")}`];
+  if (candidate.merged_resource_id) {
+    parts.push(`Merged resource: ${candidate.merged_resource_id}`);
+  }
+  return parts.join(" · ");
+}
+
 function CandidateQueueItem({ candidate, isSelected, onSelect }) {
+  const sourceName = useMergeCandidateName(ENDPOINT, candidate.resource_ids);
+  // Post-merge, the source resources are null shells, so the merged resource
+  // is the authoritative name source. The hook is disabled until an id exists,
+  // so pending candidates skip the fetch.
+  const { data: mergedResource } = useMergedResourceDetail(
+    ENDPOINT,
+    candidate.merged_resource_id,
+  );
+  const mergedName = isEmptyValue(mergedResource?.data?.name)
+    ? null
+    : mergedResource.data.name;
+  const displayName = mergedName ?? sourceName ?? `Candidate #${candidate.id}`;
+
   return (
     <button
       type="button"
       onClick={() => onSelect(candidate.id)}
       aria-pressed={isSelected}
+      title={candidateSourcesTitle(candidate)}
       className={`w-full rounded-md border px-3 py-3 text-left transition ${
         isSelected
           ? "border-primary bg-primary-soft"
           : "border-transparent bg-panel hover:border-line hover:bg-surface"
       } focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2`}
     >
-      <span className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-semibold text-ink">
-          Candidate #{candidate.id}
+      <span className="flex items-start justify-between gap-2">
+        <span className="min-w-0 break-words font-semibold text-ink">
+          {displayName}
         </span>
         <StatusBadge status={candidate.status} />
       </span>
-      <span className="mt-2 block break-words text-sm text-ink-muted">
-        Resources {candidate.resource_ids.join(", ")}
-      </span>
-      {candidate.merged_resource_id ? (
-        <span className="mt-1 block break-words text-sm text-ink-muted">
-          Merged {candidate.merged_resource_id}
-        </span>
-      ) : null}
     </button>
   );
 }
@@ -123,13 +144,32 @@ function CandidateFacts({ candidate }) {
       <div>
         <dt className="font-semibold text-ink-muted">Source resources</dt>
         <dd className="mt-1 break-words text-ink">
-          {candidate.resource_ids.join(", ")}
+          {candidate.resource_ids.map((id, index) => (
+            <span key={id}>
+              {index > 0 ? ", " : null}
+              <Link
+                to={`/${ENDPOINT}/${id}`}
+                className="text-primary underline"
+              >
+                {id}
+              </Link>
+            </span>
+          ))}
         </dd>
       </div>
       <div>
         <dt className="font-semibold text-ink-muted">Merged resource</dt>
         <dd className="mt-1 break-words text-ink">
-          {candidate.merged_resource_id ?? "Not created"}
+          {candidate.merged_resource_id ? (
+            <Link
+              to={`/${ENDPOINT}/${candidate.merged_resource_id}`}
+              className="text-primary underline"
+            >
+              {candidate.merged_resource_id}
+            </Link>
+          ) : (
+            "Not created"
+          )}
         </dd>
       </div>
     </dl>
@@ -200,89 +240,9 @@ function DecisionControls({
   );
 }
 
-function PreviewPanel({
-  candidate,
-  shouldShowPreview,
-  preview,
-  isLoading,
-  isError,
-  error,
-}) {
-  return (
-    <section className="border-t border-line px-5 py-5">
-      <h3 className="text-base font-semibold text-ink">Merged preview</h3>
-
-      <div className="mt-3">
-        {shouldShowPreview ? (
-          isLoading ? (
-            <p className="text-sm text-ink-muted">Loading preview…</p>
-          ) : isError ? (
-            <p className="text-sm text-danger">
-              {error?.message ?? "Failed to load preview."}
-            </p>
-          ) : preview?.data ? (
-            <div className="space-y-3">
-              <p className="text-sm text-ink-muted">
-                Created from resources {preview.resource_ids.join(", ")}.
-              </p>
-              <div className="rounded-md border border-line bg-surface p-3">
-                <StructuredDataView
-                  data={preview.data}
-                  label="Merged preview data"
-                />
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-ink-muted">No preview available.</p>
-          )
-        ) : (
-          <div className="space-y-2 text-sm text-ink-muted">
-            <p>Preview is available only while a candidate is pending.</p>
-            {candidate.merged_resource_id ? (
-              <p>Merged resource: {candidate.merged_resource_id}</p>
-            ) : null}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function SourceResources({ resourceIds, isOpen, onToggle }) {
-  if (!resourceIds?.length) return null;
-
-  return (
-    <details
-      open={isOpen}
-      onToggle={(event) => onToggle(event.currentTarget.open)}
-      className="border-t border-line px-5 py-4"
-    >
-      <summary className="cursor-pointer text-sm font-semibold text-ink">
-        Source resources ({resourceIds.length})
-      </summary>
-
-      {isOpen ? (
-        <div className="mt-4 grid gap-4 xl:grid-cols-2">
-          {resourceIds.map((resourceId) => (
-            <section
-              key={resourceId}
-              className="min-w-0 rounded-md border border-line bg-panel p-4"
-            >
-              <ResourceView
-                endpoint={ENDPOINT}
-                initialID={resourceId}
-                showControls={false}
-              />
-            </section>
-          ))}
-        </div>
-      ) : null}
-    </details>
-  );
-}
-
 function CandidateDecisionPanel({
   selectedId,
+  listCandidate,
   candidateQuery,
   reviewNotes,
   onReviewNotesChange,
@@ -290,23 +250,33 @@ function CandidateDecisionPanel({
   actionError,
   actionLoading,
   activeReviewAction,
-  shouldShowPreview,
-  previewQuery,
-  showSourceResources,
-  onToggleSourceResources,
 }) {
   const {
-    data: candidate,
+    data: detailCandidate,
     isLoading: candidateLoading,
     isError: candidateError,
     error: candidateErrorObj,
   } = candidateQuery;
-  const {
-    data: preview,
-    isLoading: previewLoading,
-    isError: previewError,
-    error: previewErrorObj,
-  } = previewQuery;
+
+  const candidate = detailCandidate ?? listCandidate;
+  // The compare-derived name is authoritative once the detail lands. Until
+  // then the queue's name stands in — it reads the same cached query the
+  // queue items already issued, so no extra requests — because falling back
+  // to the id would flash "Candidate #N" on first selection.
+  const queueName = useMergeCandidateName(ENDPOINT, candidate?.resource_ids);
+  // Post-merge, the source resources are null shells and compare carries no
+  // name, so the merged resource is the authoritative source. It shares the
+  // cache entry MergedResourceView fetches, so this adds no requests.
+  const { data: mergedResource } = useMergedResourceDetail(
+    ENDPOINT,
+    candidate?.merged_resource_id,
+  );
+  const mergedName = isEmptyValue(mergedResource?.data?.name)
+    ? null
+    : mergedResource.data.name;
+  const name =
+    mergedName ??
+    (detailCandidate ? pickCompareName(detailCandidate.compare) : queueName);
 
   if (!selectedId) {
     return (
@@ -316,15 +286,10 @@ function CandidateDecisionPanel({
     );
   }
 
-  if (candidateLoading) {
-    return (
-      <section className="rounded-md border border-line bg-panel p-5">
-        <p className="text-sm text-ink-muted">Loading candidate…</p>
-      </section>
-    );
-  }
-
-  if (candidateError) {
+  // A detail error only blocks when there is nothing to show. When the queue
+  // item is present it carries every field the panel renders, so the panel
+  // degrades to a banner rather than disappearing.
+  if (candidateError && !candidate) {
     return (
       <section className="rounded-md border border-line bg-panel p-5">
         <p className="text-sm text-danger">
@@ -344,11 +309,18 @@ function CandidateDecisionPanel({
 
   return (
     <article className="min-w-0 overflow-hidden rounded-md border border-line bg-panel">
+      {candidateError ? (
+        <p className="border-b border-danger/25 bg-danger-soft px-5 py-4 text-sm text-danger">
+          These details could not be refreshed and may be out of date.{" "}
+          {candidateErrorObj?.message ?? "Failed to load candidate."}
+        </p>
+      ) : null}
+
       <div className="space-y-4 px-5 py-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-2xl font-semibold text-ink">
-              Candidate #{candidate.id}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="break-words text-2xl font-semibold text-ink">
+              {name ?? `Candidate #${candidate.id}`}
             </h2>
             <p className="mt-1 text-sm text-ink-muted">
               Decide whether these resources should become one curated record.
@@ -373,14 +345,20 @@ function CandidateDecisionPanel({
         ) : null}
       </div>
 
-      <PreviewPanel
-        candidate={candidate}
-        shouldShowPreview={shouldShowPreview}
-        preview={preview}
-        isLoading={previewLoading}
-        isError={previewError}
-        error={previewErrorObj}
-      />
+      {candidate.merged_resource_id ? (
+        <MergedResourceView
+          endpoint={ENDPOINT}
+          resourceId={candidate.merged_resource_id}
+        />
+      ) : (
+        <MergeSourceComparison
+          resourceIds={candidate.resource_ids}
+          compare={detailCandidate?.compare}
+          isLoading={candidateLoading}
+          isError={candidateError}
+          error={candidateErrorObj}
+        />
+      )}
 
       {candidate.status === "PENDING" ? (
         <DecisionControls
@@ -397,31 +375,23 @@ function CandidateDecisionPanel({
           {actionError}
         </p>
       ) : null}
-
-      <SourceResources
-        resourceIds={candidate.resource_ids}
-        isOpen={showSourceResources}
-        onToggle={onToggleSourceResources}
-      />
     </article>
   );
 }
 
 export default function MergeCandidateReviewPage() {
-  const config = useConfig();
-  const { getAccessTokenSilently } = useAuth0();
-  const queryClient = useQueryClient();
-  const fetcher = useMemo(
-    () => createAuthenticatedFetcher(config, getAccessTokenSilently),
-    [config, getAccessTokenSilently],
-  );
-
+  useDocumentTitle("Merge review");
   const [selectedId, setSelectedId] = useState(null);
   const [reviewNotes, setReviewNotes] = useState("");
-  const [actionError, setActionError] = useState(null);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [activeReviewAction, setActiveReviewAction] = useState(null);
-  const [showSourceResources, setShowSourceResources] = useState(false);
+
+  const reviewMutation = useReviewMergeCandidate(ENDPOINT);
+  const actionLoading = reviewMutation.isPending;
+  const activeReviewAction = reviewMutation.isPending
+    ? reviewMutation.variables?.action
+    : null;
+  const actionError = reviewMutation.error
+    ? reviewMutation.error.message || String(reviewMutation.error)
+    : null;
 
   const {
     data: candidates,
@@ -430,27 +400,26 @@ export default function MergeCandidateReviewPage() {
     error: listErrorObj,
   } = useMergeCandidates(ENDPOINT, true);
 
-  useEffect(() => {
-    if (!selectedId && candidates?.length) {
-      const firstPending = candidates.find((c) => c.status === "PENDING");
-      setSelectedId(firstPending?.id ?? candidates[0].id);
-    }
-  }, [candidates, selectedId]);
+  // Default to the first pending candidate once the list loads. Done during
+  // render (not in an effect) so the selection is set before the first paint
+  // and without triggering a cascading re-render.
+  if (!selectedId && candidates?.length) {
+    const firstPending = candidates.find((c) => c.status === "PENDING");
+    setSelectedId(firstPending?.id ?? candidates[0].id);
+  }
 
   const candidateQuery = useMergeCandidate(
     ENDPOINT,
     selectedId,
     Boolean(selectedId),
   );
-  const candidate = candidateQuery.data;
-
-  const shouldShowPreview = candidate?.status === "PENDING";
-
-  const previewQuery = useMergeCandidatePreview(
-    ENDPOINT,
-    selectedId,
-    Boolean(selectedId) && shouldShowPreview,
-  );
+  // The detail endpoint layers `compare` on top of the list schema, so the
+  // already-loaded queue item stands in for everything except the comparison
+  // until the detail query lands. Without this, review actions dead-click
+  // while the detail is in flight.
+  const listCandidate =
+    candidates?.find((item) => item.id === selectedId) ?? null;
+  const candidate = candidateQuery.data ?? listCandidate;
 
   const pendingCount =
     candidates?.filter((c) => c.status === "PENDING").length ?? 0;
@@ -461,53 +430,30 @@ export default function MergeCandidateReviewPage() {
   function handleSelect(id) {
     setSelectedId(id);
     setReviewNotes("");
-    setActionError(null);
-    setShowSourceResources(false);
+    // Clear any error left over from reviewing the previous candidate.
+    reviewMutation.reset();
   }
 
-  async function handleReview(action) {
+  function handleReview(action) {
     if (!candidate?.id) return;
 
-    setActionLoading(true);
-    setActiveReviewAction(action);
-    setActionError(null);
-
-    try {
-      await reviewMergeCandidate(
-        config,
-        candidate.id,
-        action,
-        fetcher,
-        ENDPOINT,
-        reviewNotes,
-      );
-
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: resourceKeys.mergeCandidates(ENDPOINT),
-        }),
-        queryClient.invalidateQueries({
-          queryKey: resourceKeys.mergeCandidate(ENDPOINT, candidate.id),
-        }),
-        queryClient.invalidateQueries({
-          queryKey: resourceKeys.preview(ENDPOINT, candidate.id),
-        }),
-      ]);
-
-      const nextPending = candidates?.find(
-        (item) => item.id !== candidate.id && item.status === "PENDING",
-      );
-      if (nextPending) {
-        setSelectedId(nextPending.id);
-      }
-      setReviewNotes("");
-      setShowSourceResources(false);
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setActionLoading(false);
-      setActiveReviewAction(null);
-    }
+    reviewMutation.mutate(
+      { id: candidate.id, action, reviewNotes },
+      {
+        // Runs after the mutation's cache invalidation, so the queue advances
+        // once the refreshed data is on its way. Failures surface via
+        // `reviewMutation.error` and keep the current candidate selected.
+        onSuccess: () => {
+          const nextPending = candidates?.find(
+            (item) => item.id !== candidate.id && item.status === "PENDING",
+          );
+          if (nextPending) {
+            setSelectedId(nextPending.id);
+          }
+          setReviewNotes("");
+        },
+      },
+    );
   }
 
   return (
@@ -515,11 +461,8 @@ export default function MergeCandidateReviewPage() {
       <header className="border-b border-line pb-4">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-              Human decision queue
-            </p>
-            <h1 className="mt-1 text-3xl font-semibold text-ink">
-              Merge Review
+            <h1 className="text-2xl font-semibold tracking-tight text-ink">
+              Merge review
             </h1>
             <p className="mt-2 text-sm text-ink-muted">
               Review one candidate at a time.
@@ -527,16 +470,20 @@ export default function MergeCandidateReviewPage() {
           </div>
           <dl className="flex flex-wrap gap-3 text-sm">
             <div className="rounded-md border border-line bg-panel px-3 py-2">
-              <dt className="text-ink-muted">Pending</dt>
-              <dd className="font-semibold text-ink">{pendingCount}</dd>
+              <dt className="text-xs text-ink-muted">Pending</dt>
+              <dd className="font-mono text-lg font-medium tabular-nums text-ink">
+                {pendingCount}
+              </dd>
             </div>
             <div className="rounded-md border border-line bg-panel px-3 py-2">
-              <dt className="text-ink-muted">Reviewed</dt>
-              <dd className="font-semibold text-ink">{reviewedCount}</dd>
+              <dt className="text-xs text-ink-muted">Reviewed</dt>
+              <dd className="font-mono text-lg font-medium tabular-nums text-ink">
+                {reviewedCount}
+              </dd>
             </div>
             <div className="rounded-md border border-line bg-panel px-3 py-2">
-              <dt className="text-ink-muted">Total</dt>
-              <dd className="font-semibold text-ink">
+              <dt className="text-xs text-ink-muted">Total</dt>
+              <dd className="font-mono text-lg font-medium tabular-nums text-ink">
                 {candidates?.length ?? 0}
               </dd>
             </div>
@@ -556,6 +503,7 @@ export default function MergeCandidateReviewPage() {
 
         <CandidateDecisionPanel
           selectedId={selectedId}
+          listCandidate={listCandidate}
           candidateQuery={candidateQuery}
           reviewNotes={reviewNotes}
           onReviewNotesChange={setReviewNotes}
@@ -563,10 +511,6 @@ export default function MergeCandidateReviewPage() {
           actionError={actionError}
           actionLoading={actionLoading}
           activeReviewAction={activeReviewAction}
-          shouldShowPreview={shouldShowPreview}
-          previewQuery={previewQuery}
-          showSourceResources={showSourceResources}
-          onToggleSourceResources={setShowSourceResources}
         />
       </div>
     </div>

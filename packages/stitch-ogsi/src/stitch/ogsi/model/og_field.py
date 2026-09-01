@@ -1,4 +1,4 @@
-from typing import ClassVar
+from typing import ClassVar, Literal, get_args
 from pydantic import BaseModel, ConfigDict, Field
 
 from stitch.models.types import (
@@ -23,8 +23,8 @@ class OilGasOwner(BaseModel):
     name: str
     """Name of the company."""
 
-    stake: FractionalPercentage
-    """Ownership percentage (0–100)."""
+    stake: FractionalPercentage | None = None
+    """Ownership percentage (0–100). None when the source states no percentage."""
 
 
 class OilGasOperator(BaseModel):
@@ -33,8 +33,8 @@ class OilGasOperator(BaseModel):
     name: str
     """Name of the operating company."""
 
-    stake: FractionalPercentage
-    """Operating stake percentage (0–100)."""
+    stake: FractionalPercentage | None = None
+    """Operating stake percentage (0–100). None when the source states no percentage."""
 
 
 class OilGasFieldBase(BaseModel):
@@ -93,3 +93,38 @@ class OilGasFieldBase(BaseModel):
 
     field_status: FieldStatus | None = None
     """Current status of the field."""
+
+
+# Canonical names of the coalesced ``OilGasFieldBase`` fields, as a Literal so
+# API boundaries (path params, request models) validate a field name at the
+# schema level -- returning a 422 with the allowed set instead of failing deeper
+# in the query layer -- and so the allowed values are self-documenting in the
+# OpenAPI spec. Spelled out because a Literal cannot be built dynamically for
+# static typing; the runtime check below fails fast if it ever drifts from
+# ``OilGasFieldBase`` (mirroring the ``ATTRIBUTE_KINDS`` guard in the API layer).
+OGFieldName = Literal[
+    "name",
+    "country",
+    "latitude",
+    "longitude",
+    "name_local",
+    "state_province",
+    "region",
+    "basin",
+    "owners",
+    "operators",
+    "location_type",
+    "production_conventionality",
+    "primary_hydrocarbon_group",
+    "reservoir_formation",
+    "discovery_year",
+    "production_start_year",
+    "fid_year",
+    "field_status",
+]
+
+if set(get_args(OGFieldName)) != set(OilGasFieldBase.model_fields):
+    raise RuntimeError(
+        "OGFieldName out of sync with OilGasFieldBase fields: "
+        f"{set(get_args(OGFieldName)) ^ set(OilGasFieldBase.model_fields)}"
+    )

@@ -16,7 +16,9 @@ export async function getResources(
   const url = `${config.apiBaseUrl}/${endpoint}/?${params}`;
   const response = await fetcher(url);
   if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
+    const error = new Error(`HTTP error! status: ${response.status}`);
+    error.status = response.status;
+    throw error;
   }
   return await response.json();
 }
@@ -31,7 +33,9 @@ export async function getResourceFilterOptions(
   const url = `${config.apiBaseUrl}/${endpoint}/filter-options?${params}`;
   const response = await fetcher(url);
   if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
+    const error = new Error(`HTTP error! status: ${response.status}`);
+    error.status = response.status;
+    throw error;
   }
   return await response.json();
 }
@@ -63,6 +67,53 @@ export async function getResourceDetail(
   }
   const data = await response.json();
   return data;
+}
+
+export async function getFieldSourceValues(
+  config,
+  id,
+  field,
+  fetcher,
+  endpoint = "oil-gas-fields",
+) {
+  const url = `${config.apiBaseUrl}/${endpoint}/${id}/fields/${encodeURIComponent(
+    field,
+  )}/sources`;
+  const response = await fetcher(url);
+  if (!response.ok) {
+    const error = new Error(`HTTP error! status: ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+  return await response.json();
+}
+
+export async function updateFieldSourcePriority(
+  config,
+  id,
+  field,
+  orderedSourcePks,
+  fetcher,
+  endpoint = "oil-gas-fields",
+) {
+  const url = `${config.apiBaseUrl}/${endpoint}/${id}/fields/${encodeURIComponent(
+    field,
+  )}/sources/priority`;
+  const response = await fetcher(url, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ ordered_source_pks: orderedSourcePks }),
+  });
+  if (!response.ok) {
+    const detail = await getErrorDetail(response);
+    const error = new Error(detail);
+    error.status = response.status;
+    throw error;
+  }
+  return await response.json();
 }
 
 export async function createLLMSuggestion(
@@ -114,40 +165,18 @@ async function getErrorDetail(response) {
   }
 }
 
-export async function createResource(
+export async function createSourceForResource(
   config,
-  payload,
+  resourceId,
+  sourcePayload,
   fetcher,
   endpoint = "oil-gas-fields",
 ) {
-  const url = `${config.apiBaseUrl}/${endpoint}/`;
+  const url = `${config.apiBaseUrl}/${endpoint}/${resourceId}/sources`;
   const response = await fetcher(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    const detail = await getErrorDetail(response);
-    const error = new Error(detail);
-    error.status = response.status;
-    throw error;
-  }
-
-  return await response.json();
-}
-
-export async function createMergeCandidate(
-  config,
-  resource_ids,
-  fetcher,
-  endpoint = "oil-gas-fields",
-) {
-  const url = `${config.apiBaseUrl}/${endpoint}/merge-candidates`;
-  const response = await fetcher(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ resource_ids }),
+    body: JSON.stringify(sourcePayload),
   });
 
   if (!response.ok) {
@@ -213,24 +242,6 @@ export async function reviewMergeCandidate(
   if (!response.ok) {
     const detail = await getErrorDetail(response);
     const error = new Error(detail);
-    error.status = response.status;
-    throw error;
-  }
-
-  return await response.json();
-}
-
-export async function getMergeCandidatePreview(
-  config,
-  id,
-  fetcher,
-  endpoint = "oil-gas-fields",
-) {
-  const url = `${config.apiBaseUrl}/${endpoint}/merge-candidates/${id}/preview`;
-  const response = await fetcher(url);
-
-  if (!response.ok) {
-    const error = new Error(`HTTP error! status: ${response.status}`);
     error.status = response.status;
     throw error;
   }

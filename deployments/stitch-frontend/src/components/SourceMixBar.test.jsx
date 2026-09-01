@@ -68,7 +68,7 @@ describe("SourceMixBar", () => {
     render(<SourceMixBar provenance={mixedSources} />);
     expect(
       screen.getByRole("group", {
-        name: /data source mix: gem database: 1 field \(50%\); woodmac database: 1 field \(50%\)/i,
+        name: /data source mix: woodmac: 1 field \(50%\); gem: 1 field \(50%\)/i,
       }),
     ).toBeInTheDocument();
   });

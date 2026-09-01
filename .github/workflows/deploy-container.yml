@@ -48,6 +48,16 @@ on:
         required: false
         default: ""
         type: string
+      cpu:
+        description: "Optional. vCPU allocation to reassert after deploy (e.g. '2.0'). Must be set together with memory. On the Consumption profile only fixed pairs are valid (memory Gi = 2x cpu)."
+        required: false
+        default: ""
+        type: string
+      memory:
+        description: "Optional. Memory allocation to reassert after deploy (e.g. '4.0Gi'). Must be set together with cpu."
+        required: false
+        default: ""
+        type: string
       storage-name:
         description: "Optional. Name of an Azure Files storage already registered on the Container Apps environment. When set, it is mounted into the app after deploy."
         required: false
@@ -106,6 +116,8 @@ jobs:
           REGISTRY_PASSWORD: ${{ secrets.registry-password }}
           STORAGE_NAME: ${{ inputs.storage-name }}
           MOUNT_PATH: ${{ inputs.storage-mount-path }}
+          CPU: ${{ inputs.cpu }}
+          MEMORY: ${{ inputs.memory }}
         run: |
           set -euo pipefail
           : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
@@ -131,6 +143,19 @@ jobs:
           fi
           if [ -n "${MOUNT_PATH:-}" ] && [ -z "${STORAGE_NAME:-}" ]; then
             echo "::error::storage-mount-path is set but storage-name is empty (check the lane's ETL_STORAGE_NAME variable)" >&2
+            exit 1
+          fi
+
+          # Container Apps requires cpu and memory to be set together, and on the
+          # Consumption profile only fixed pairs are valid (memory Gi = 2x cpu, so
+          # 4.0Gi pairs with 2.0). Fail fast on one-without-the-other rather than
+          # letting `az containerapp update` reject it later.
+          if [ -n "${CPU:-}" ] && [ -z "${MEMORY:-}" ]; then
+            echo "::error::cpu is set but memory is empty (Container Apps requires both together)" >&2
+            exit 1
+          fi
+          if [ -n "${MEMORY:-}" ] && [ -z "${CPU:-}" ]; then
+            echo "::error::memory is set but cpu is empty (Container Apps requires both together)" >&2
             exit 1
           fi
 
@@ -171,6 +196,14 @@ jobs:
           echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Build and deploy Container App
+        # Pinned to v1 deliberately. v2 chooses the env-var flag from an
+        # ingress/credentials heuristic instead of from whether the app exists:
+        # creating a NEW app without registry credentials makes it emit the
+        # update-only `--replace-env-vars` flag on `az containerapp create`,
+        # which fails with "unrecognized arguments". This breaks every first
+        # (create) deploy of a per-PR preview app (e.g. the API). v1 keys the
+        # flag on app existence and is correct. No fixed v2.x point release
+        # exists yet -- revisit when Azure/container-apps-deploy-action ships one.
         uses: azure/container-apps-deploy-action@v1
         with:
           imageToDeploy: ${{ inputs.full-image-name }}
@@ -187,21 +220,26 @@ jobs:
           registryUsername: ${{ inputs.registry-username }}
           registryPassword: ${{ secrets.registry-password }}
 
-      - name: Pin replica scaling
+      - name: Reassert resources and replica scaling
         # `az containerapp up` (the deploy action) does not reliably preserve
-        # scale settings, so reassert them after every deploy when requested.
-        # Single-job apps (the ETLs) pass min=max=1 to avoid multiple replicas.
-        if: ${{ inputs.min-replicas != '' || inputs.max-replicas != '' }}
+        # resource (cpu/memory) or scale settings, so reassert them after every
+        # deploy when requested. Single-job apps (the ETLs) pass min=max=1 to
+        # avoid multiple replicas; memory-heavy apps pass cpu/memory.
+        if: ${{ inputs.min-replicas != '' || inputs.max-replicas != '' || inputs.cpu != '' || inputs.memory != '' }}
         shell: bash
         env:
           AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
           MIN_REPLICAS: ${{ inputs.min-replicas }}
           MAX_REPLICAS: ${{ inputs.max-replicas }}
+          CPU: ${{ inputs.cpu }}
+          MEMORY: ${{ inputs.memory }}
         run: |
           set -euo pipefail
           args=()
           [ -n "${MIN_REPLICAS}" ] && args+=(--min-replicas "${MIN_REPLICAS}")
           [ -n "${MAX_REPLICAS}" ] && args+=(--max-replicas "${MAX_REPLICAS}")
+          [ -n "${CPU}" ] && args+=(--cpu "${CPU}")
+          [ -n "${MEMORY}" ] && args+=(--memory "${MEMORY}")
           az containerapp update \
             --name "${{ inputs.container-app-name }}" \
             --resource-group "${AZURE_RESOURCE_GROUP}" \
@@ -244,6 +282,68 @@ jobs:
             --name "${{ inputs.container-app-name }}" \
             --resource-group "${AZURE_RESOURCE_GROUP}" \
             --yaml /tmp/app.yaml
+
+      - name: Widen the scale-to-zero cooldown
+        # How long an app stays up after its last request before scaling to
+        # zero. Azure's default is 300s, so a five-minute pause costs a cold
+        # start. 900s covers the ordinary gaps inside a working session --
+        # reading code, writing a comment, a short interruption -- while still
+        # dropping to zero when someone stops for the day.
+        #
+        # There is no `--cooldown-period` flag on `az containerapp update`, so
+        # this uses the same show -> mutate -> update --yaml round-trip as the
+        # volume mount above.
+        #
+        # Skipped for always-on apps: an app that never scales to zero has no
+        # use for a cooldown.
+        #
+        # `continue-on-error` because this is a comfort setting, not a
+        # correctness one, and for `api` and `stitch-llm` on a scale-to-zero
+        # lane it is the only post-deploy ARM write -- the reassert step above
+        # is skipped when no cpu/memory/replica overrides are passed. The deploy
+        # action has just created a revision, so this can lose a race and get a
+        # 409 while that is still provisioning. Failing the job over it would
+        # cascade: every later service and the frontend deploy depend on this
+        # one, so a PR would lose its whole preview environment over a cooldown
+        # tweak. A failed step stays visible in the run summary.
+        if: ${{ inputs.min-replicas == '' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          COOLDOWN_SECONDS: "900"
+        run: |
+          set -euo pipefail
+
+          az containerapp show \
+            --name "${{ inputs.container-app-name }}" \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --output json > /tmp/app-cooldown.json
+
+          # Read before writing: the value survives a redeploy, so on most runs
+          # it is already correct and the write would be a no-op that can still
+          # fail. Only pay for the round-trip when it actually changes something.
+          current="$(jq -r \
+            '.properties.template.scale.cooldownPeriod // "unset"' \
+            /tmp/app-cooldown.json)"
+
+          if [ "${current}" = "${COOLDOWN_SECONDS}" ]; then
+            echo "Cooldown already ${COOLDOWN_SECONDS}s; leaving it alone."
+            exit 0
+          fi
+
+          echo "Cooldown is ${current}s; setting ${COOLDOWN_SECONDS}s."
+
+          jq \
+            --argjson cd "${COOLDOWN_SECONDS}" \
+            'del(.systemData)
+             | .properties.template.scale.cooldownPeriod = $cd' \
+            /tmp/app-cooldown.json > /tmp/app-cooldown.yaml
+
+          az containerapp update \
+            --name "${{ inputs.container-app-name }}" \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --yaml /tmp/app-cooldown.yaml
 
       - name: Export application URL
         id: export-app-url
@@ -301,7 +401,7 @@ jobs:
 
       - name: Upload comment JSON artifact
         if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: comment-json-deploy-${{ inputs.deployment-label }}
           path: /tmp/comment-json/*.json

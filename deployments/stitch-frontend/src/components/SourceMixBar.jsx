@@ -56,7 +56,7 @@ export default function SourceMixBar({ provenance, showLabels = false }) {
         aria-label="Data source mix: no source data available"
       >
         <div
-          className="h-3 w-full rounded-sm bg-surface-tint"
+          className="h-4 w-full rounded-sm bg-surface-tint ring-1 ring-line"
           title="No source data"
           aria-hidden="true"
         />

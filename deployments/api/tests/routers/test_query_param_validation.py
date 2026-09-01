@@ -71,6 +71,25 @@ class TestResourceRouterParamValidation:
         )
         assert resp.status_code == 422
 
+    @pytest.mark.anyio
+    async def test_unknown_field_in_sources_path_returns_422(
+        self, async_client: AsyncClient
+    ):
+        """The {field} path segment on the per-field sources route is an OGFieldName."""
+        resp = await async_client.get("/oil-gas-fields/1/fields/not_a_field/sources")
+        assert resp.status_code == 422
+
+    @pytest.mark.anyio
+    async def test_unknown_field_in_priority_path_returns_422(
+        self, async_client: AsyncClient
+    ):
+        """The {field} path segment on the priority route is an OGFieldName."""
+        resp = await async_client.put(
+            "/oil-gas-fields/1/fields/not_a_field/sources/priority",
+            json={"ordered_source_pks": [1, 2]},
+        )
+        assert resp.status_code == 422
+
 
 class TestSourceRouterParamValidation:
     """Verify FastAPI/Pydantic rejects invalid filter/sort params on GET /oil-gas-field-sources/."""

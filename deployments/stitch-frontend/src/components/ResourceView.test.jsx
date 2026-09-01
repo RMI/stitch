@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithQueryClient } from "../test/utils";
 import ResourceView from "./ResourceView";
@@ -23,10 +23,38 @@ beforeEach(() => {
 });
 
 describe("ResourceView", () => {
+  it("stays disabled in interactive mode until Fetch/Enter is used", () => {
+    renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
+
+    expect(useResource).toHaveBeenLastCalledWith(
+      "/api/v1/resources/{id}",
+      1,
+      false,
+    );
+  });
+
+  it("auto-fetches in embedded mode (showControls=false with a known id)", () => {
+    renderWithQueryClient(
+      <ResourceView
+        endpoint="/api/v1/resources/{id}"
+        showControls={false}
+        initialID={7}
+      />,
+    );
+
+    expect(useResource).toHaveBeenLastCalledWith(
+      "/api/v1/resources/{id}",
+      7,
+      true,
+    );
+  });
+
   it("renders heading with default ID and endpoint information", () => {
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    expect(screen.getByText(/^Resource ID: \d+$/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /^Resource ID: \d+$/ }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/\/api\/v1\/resources\//)).toBeInTheDocument();
   });
 
@@ -61,7 +89,9 @@ describe("ResourceView", () => {
     await user.type(input, "42");
 
     expect(input).toHaveValue(42);
-    expect(screen.getByText(/^Resource ID: 42$/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /^Resource ID: 42$/ }),
+    ).toBeInTheDocument();
   });
 
   it("calls refetch when Fetch button is clicked", async () => {
@@ -110,14 +140,15 @@ describe("ResourceView", () => {
 
     renderWithQueryClient(<ResourceView endpoint="/api/v1/resources/{id}" />);
 
-    expect(screen.getByText("ID")).toBeInTheDocument();
-    expect(screen.getByText("1")).toBeInTheDocument();
-    expect(screen.getByText("Name")).toBeInTheDocument();
-    expect(screen.getByText("Test Resource")).toBeInTheDocument();
-    expect(screen.getByText("Type")).toBeInTheDocument();
-    expect(screen.getByText("example")).toBeInTheDocument();
-    expect(screen.getByText("Status")).toBeInTheDocument();
-    expect(screen.getByText("active")).toBeInTheDocument();
+    const dataScope = within(screen.getByLabelText("Resource data"));
+    expect(dataScope.getByText("ID")).toBeInTheDocument();
+    expect(dataScope.getByText("1")).toBeInTheDocument();
+    expect(dataScope.getByText("Name")).toBeInTheDocument();
+    expect(dataScope.getByText("Test Resource")).toBeInTheDocument();
+    expect(dataScope.getByText("Type")).toBeInTheDocument();
+    expect(dataScope.getByText("example")).toBeInTheDocument();
+    expect(dataScope.getByText("Status")).toBeInTheDocument();
+    expect(dataScope.getByText("active")).toBeInTheDocument();
   });
 
   it("displays error message when in error state", () => {
@@ -175,13 +206,20 @@ describe("ResourceView", () => {
     const { queryClient } = renderWithQueryClient(
       <ResourceView endpoint="/api/v1/resources/{id}" />,
     );
+    // useResource is mocked, so nothing populates the cache on its own.
+    // Seed the real cache entry under the "view" key (what useResource
+    // actually uses) so this test can prove Clear Cache removes it, rather
+    // than passing vacuously because nothing was ever there.
+    const viewKey = ["/api/v1/resources/{id}", "view", 1];
+    queryClient.setQueryData(viewKey, { id: 1, name: "Test Resource" });
 
     await user.click(screen.getByRole("button", { name: /clear cache/i }));
 
+    // resetQueries clears cached data back to its initial (pending) state;
+    // it doesn't deregister the query entirely, so assert on the data, not
+    // on getQueryState being undefined.
     await waitFor(() => {
-      expect(
-        queryClient.getQueryState(["resources", "detail", 1]),
-      ).toBeUndefined();
+      expect(queryClient.getQueryData(viewKey)).toBeUndefined();
     });
   });
 });

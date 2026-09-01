@@ -12,6 +12,9 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from stitch.ogsi.model import (
+    ALBSource,
+    BCSource,
+    CCRSource,
     GemSource,
     OGFieldDetailView,
     OGFieldResource,
@@ -19,6 +22,7 @@ from stitch.ogsi.model import (
     SourceRecord,
     WoodMacSource,
 )
+from stitch.ogsi.model import OilGasOperator, OilGasOwner
 from stitch.ogsi.model.og_field import OilGasFieldBase
 
 
@@ -47,6 +51,30 @@ class TestOGFieldSourceDiscriminator:
         assert isinstance(obj, WoodMacSource)
         assert obj.source == "wm"
 
+    def test_ccr_source_from_json(self):
+        obj = _source_adapter.validate_json(
+            '{"source": "ccr", "name": "Test Field", "country": "USA", "source_record": {"observed_at": "2026-01-01T00:00:00Z", "producer": "test", "payload": {"kind": "fixture"}}}'
+        )
+        assert isinstance(obj, CCRSource)
+        assert obj.source == "ccr"
+        assert obj.name == "Test Field"
+
+    def test_bc_source_from_json(self):
+        obj = _source_adapter.validate_json(
+            '{"source": "bc", "name": "Test Field", "country": "CAN", "source_record": {"observed_at": "2026-01-01T00:00:00Z", "producer": "test", "payload": {"kind": "fixture"}}}'
+        )
+        assert isinstance(obj, BCSource)
+        assert obj.source == "bc"
+        assert obj.name == "Test Field"
+
+    def test_alb_source_from_json(self):
+        obj = _source_adapter.validate_json(
+            '{"source": "alb", "name": "Test Field", "country": "CAN", "source_record": {"observed_at": "2026-01-01T00:00:00Z", "producer": "test", "payload": {"kind": "fixture"}}}'
+        )
+        assert isinstance(obj, ALBSource)
+        assert obj.source == "alb"
+        assert obj.name == "Test Field"
+
     def test_invalid_source_key_rejected(self):
         with pytest.raises(ValidationError):
             _source_adapter.validate_json(
@@ -72,6 +100,54 @@ class TestOGFieldSourceDiscriminator:
             producer="stitch-seed/0.1.0",
             payload={"kind": "seed_faker", "source": {"name": "Test Field"}},
         )
+
+
+# ---------------------------------------------------------------------------
+# Ownership
+# ---------------------------------------------------------------------------
+
+
+class TestOwnershipStake:
+    """`stake` is optional: providers often name a party without a percentage."""
+
+    @pytest.mark.parametrize("model", [OilGasOwner, OilGasOperator])
+    def test_stake_defaults_to_none_when_omitted(self, model):
+        party = model(name="Acme Energy")
+        assert party.stake is None
+
+    @pytest.mark.parametrize("model", [OilGasOwner, OilGasOperator])
+    def test_explicit_null_stake_accepted(self, model):
+        party = model.model_validate({"name": "Acme Energy", "stake": None})
+        assert party.stake is None
+
+    @pytest.mark.parametrize("model", [OilGasOwner, OilGasOperator])
+    def test_stated_stake_is_parsed(self, model):
+        party = model(name="Acme Energy", stake=53.14)
+        assert party.stake == 53.14
+
+    @pytest.mark.parametrize("model", [OilGasOwner, OilGasOperator])
+    def test_out_of_range_stake_still_rejected(self, model):
+        with pytest.raises(ValidationError):
+            model(name="Acme Energy", stake=150)
+
+    def test_field_round_trips_mixed_stated_and_null_stakes(self):
+        field = OilGasFieldBase(
+            name="Alpha",
+            country="USA",
+            owners=[
+                OilGasOwner(name="Sval Energi AS", stake=20.0),
+                OilGasOwner(name="Petoro AS"),
+            ],
+            operators=[OilGasOperator(name="Equinor Energy AS")],
+        )
+
+        dumped = field.model_dump()
+        assert dumped["owners"] == [
+            {"name": "Sval Energi AS", "stake": 20.0},
+            {"name": "Petoro AS", "stake": None},
+        ]
+        assert dumped["operators"] == [{"name": "Equinor Energy AS", "stake": None}]
+        assert OilGasFieldBase.model_validate(dumped) == field
 
 
 # ---------------------------------------------------------------------------

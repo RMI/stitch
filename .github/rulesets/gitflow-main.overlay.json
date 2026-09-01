@@ -1,0 +1,53 @@
+{
+  "template": "gitflow-main",
+  "rules": {
+    "pull_request": {
+      "parameters": {
+        "dismiss_stale_reviews_on_push": false,
+        "require_last_push_approval": false
+      }
+    },
+    "required_status_checks": {
+      "parameters": {
+        "required_status_checks": [
+          {
+            "context": "Linting / Linting (frontend)",
+            "integration_id": 15368
+          },
+          {
+            "context": "Linting / linting (ruff)",
+            "integration_id": 15368
+          },
+          {
+            "context": "Tests / Run Unit Tests (frontend)",
+            "integration_id": 15368
+          },
+          {
+            "context": "Tests / tests (pytest)",
+            "integration_id": 15368
+          },
+          {
+            "context": "Format / formatting (ruff)",
+            "integration_id": 15368
+          },
+          {
+            "context": "Formatting / Format Check (frontend)",
+            "integration_id": 15368
+          },
+          {
+            "context": "Build / Build",
+            "integration_id": 15368
+          },
+          {
+            "context": "Build / Build Frontend",
+            "integration_id": 15368
+          },
+          {
+            "context": "docker compose build / docker compose build",
+            "integration_id": 15368
+          }
+        ]
+      }
+    }
+  }
+}

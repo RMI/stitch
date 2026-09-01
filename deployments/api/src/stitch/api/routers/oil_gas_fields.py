@@ -8,26 +8,31 @@ from stitch.auth.permissions import (
     MERGE_CANDIDATE_REVIEW,
     RESOURCE_READ,
     RESOURCE_WRITE,
+    SOURCE_READ_PERMISSIONS,
+    SOURCE_WRITE,
 )
 
 from stitch.api.entities import (
     OGFieldFilterOptionsParams,
     OGFieldFilterOptionsResponse,
     MergeCandidateCreateRequest,
+    MergeCandidateDetailView,
     MergeCandidateReviewRequest,
     MergeCandidateView,
-    OGFieldMergePreviewView,
     OGFieldQueryParams,
     PaginatedResponse,
+    SetFieldPriorityRequest,
 )
 
 from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db import merge_candidate_actions
+from stitch.api.db import og_field_source_actions
 from stitch.api.db.config import UnitOfWorkDep
 from stitch.api.db.errors import (
     InvalidActionError,
     ResourceNotFoundError,
     ResourceIntegrityError,
+    SourceIntegrityError,
 )
 from stitch.api.auth import Claims, CurrentUser, require_permissions
 from stitch.api.db.utils import (
@@ -39,8 +44,12 @@ from stitch.api.permissions import licensed_sources
 from stitch.ogsi.model import (
     OGFieldDetailView,
     OGFieldListItemView,
+    OGFieldName,
     OGFieldResource,
     OGFieldResourceView,
+    OGFieldSource,
+    OGFieldSourceValueView,
+    OGFieldSourceView,
     OGFieldView,
 )
 
@@ -104,49 +113,20 @@ async def list_merge_candidates(
 
 @router.get(
     "/merge-candidates/{id}",
-    response_model=MergeCandidateView,
+    response_model=MergeCandidateDetailView,
     dependencies=[Depends(require_permissions(MERGE_CANDIDATE_READ))],
 )
 async def get_merge_candidate(
-    *, uow: UnitOfWorkDep, _user: CurrentUser, id: int
-) -> MergeCandidateView:
+    *, uow: UnitOfWorkDep, _user: CurrentUser, claims: Claims, id: int
+) -> MergeCandidateDetailView:
     try:
         return await merge_candidate_actions.get_merge_candidate(
             session=uow.session,
             candidate_id=id,
+            licensed_sources=licensed_sources(claims),
         )
     except ResourceNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-
-
-@router.get(
-    "/merge-candidates/{id}/preview",
-    response_model=OGFieldMergePreviewView,
-    dependencies=[Depends(require_permissions(MERGE_CANDIDATE_READ))],
-)
-async def preview_merge_candidate(
-    *,
-    uow: UnitOfWorkDep,
-    _user: CurrentUser,
-    id: int,
-) -> OGFieldMergePreviewView:
-    try:
-        return await merge_candidate_actions.preview_merge_candidate(
-            session=uow.session,
-            candidate_id=id,
-        )
-    except (InvalidActionError, ResourceIntegrityError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except ResourceNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception("Error while previewing merge candidate %s: %s", id, exc)
-        raise HTTPException(
-            status_code=500,
-            detail="Internal error during merge candidate preview",
-        )
 
 
 @router.post(
@@ -284,6 +264,76 @@ async def get_resource_detail(
     return resource_to_detail_view(resource=res)
 
 
+@router.get(
+    "/{id}/fields/{field}/sources",
+    response_model=list[OGFieldSourceValueView],
+    dependencies=[Depends(require_permissions(RESOURCE_READ))],
+)
+async def get_field_source_values(
+    *,
+    uow: UnitOfWorkDep,
+    user: CurrentUser,
+    claims: Claims,
+    id: int,
+    field: OGFieldName,
+) -> list[OGFieldSourceValueView]:
+    return await resource_actions.field_source_values(
+        session=uow.session,
+        id=id,
+        field=field,
+        licensed_sources=licensed_sources(claims),
+    )
+
+
+# Reordering rewrites the whole per-field override set, so a curator who cannot
+# read every source could otherwise clobber rankings for sources they can't see.
+# Require read access to *all* sources (not just this resource's) on top of write
+# -- matching the curator role in Auth0 -- so the write always acts on a complete
+# picture. (Scoped to this endpoint for now; other write actions to follow.)
+@router.put(
+    "/{id}/fields/{field}/sources/priority",
+    response_model=list[OGFieldSourceValueView],
+    dependencies=[
+        Depends(require_permissions(RESOURCE_WRITE, *SOURCE_READ_PERMISSIONS))
+    ],
+)
+async def set_field_source_priority(
+    *,
+    uow: UnitOfWorkDep,
+    user: CurrentUser,
+    claims: Claims,
+    id: int,
+    field: OGFieldName,
+    request: SetFieldPriorityRequest,
+) -> list[OGFieldSourceValueView]:
+    try:
+        return await resource_actions.set_field_source_priority(
+            session=uow.session,
+            user=user,
+            id=id,
+            field=field,
+            ordered_source_pks=request.ordered_source_pks,
+            licensed_sources=licensed_sources(claims),
+        )
+    except (InvalidActionError, ResourceIntegrityError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ResourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(
+            "Error setting field-source priority for resource %s field %s: %s",
+            id,
+            field,
+            exc,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Internal error while setting field source priority",
+        )
+
+
 @router.post(
     "/",
     response_model=OGFieldResourceView,
@@ -295,3 +345,37 @@ async def create_resource(
     return await resource_actions.create(
         session=uow.session, user=user, resource=resource_in
     )
+
+
+@router.post(
+    "/{id}/sources",
+    response_model=OGFieldSourceView,
+    dependencies=[Depends(require_permissions(RESOURCE_WRITE, SOURCE_WRITE))],
+)
+async def create_and_attach_source(
+    *, uow: UnitOfWorkDep, user: CurrentUser, id: int, source: OGFieldSource
+) -> OGFieldSourceView:
+    """Create a new source and attach it to resource ``id`` in one step.
+
+    The source body must not carry an ``id`` (it is always created). Requires
+    both ``source:write`` (creating the source) and ``resource:write``
+    (managing the attachment).
+    """
+    try:
+        return await og_field_source_actions.create_and_attach_source(
+            session=uow.session, user=user, source=source, resource_id=id
+        )
+    except ResourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except (ResourceIntegrityError, SourceIntegrityError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(
+            "Error while creating and attaching source to resource %s: %s", id, exc
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Internal error during source creation and attachment",
+        )

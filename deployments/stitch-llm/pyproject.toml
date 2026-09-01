@@ -6,12 +6,13 @@ readme = "README.md"
 authors = [{ name = "RMI", email = "stitch@rmi.org" }]
 requires-python = ">=3.12.12"
 dependencies = [
-  "fastapi[standard-no-fastapi-cloud-cli]>=0.135.1",
+  "fastapi[standard-no-fastapi-cloud-cli]>=0.141.1",
   "httpx>=0.28.0",
-  "pydantic-settings>=2.12.0",
+  "pydantic-settings>=2.15.0",
   "stitch-auth",
   "stitch-client",
   "stitch-models",
+  "stitch-observability[asgi]",
   "stitch-ogsi",
 ]
 
@@ -19,7 +20,7 @@ dependencies = [
 stitch-llm = "stitch.llm.__main__:main"
 
 [build-system]
-requires = ["uv_build>=0.9.16,<0.10.0"]
+requires = ["uv_build>=0.12.5,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
@@ -27,7 +28,7 @@ module-name = "stitch.llm"
 
 [dependency-groups]
 dev = [
-  "pytest>=8.0",
+  "pytest>=9.1.1",
   "pytest-anyio>=0.0.0",
   "httpx>=0.28.0",
 ]
@@ -43,4 +44,5 @@ addopts = ["-v", "--strict-markers", "--tb=short"]
 stitch-auth = { workspace = true }
 stitch-client = { workspace = true }
 stitch-models = { workspace = true }
+stitch-observability = { workspace = true }
 stitch-ogsi = { workspace = true }

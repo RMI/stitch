@@ -27,6 +27,7 @@ router = APIRouter(prefix="/oil-gas-field-sources", tags=["oil_gas_field_sources
     "/",
     response_model=OGFieldSourceView,
     dependencies=[Depends(require_permissions(SOURCE_WRITE))],
+    deprecated=True,
 )
 async def create_oil_gas_field_source(
     source: OGFieldSource,
@@ -34,6 +35,11 @@ async def create_oil_gas_field_source(
     user: CurrentUser,
 ) -> OGFieldSourceView:
     """Create and return a bare Oil & Gas Field Source. Does not create memberships or associated resource.
+
+    Deprecated: creates a source detached from any resource, which breaks the
+    invariant that a source is always attached to at least one resource. Use
+    ``POST /oil-gas-fields/{id}/sources`` to create a source and attach it to a
+    resource. This route will be removed once STIT-527 lands.
 
     Args:
         source: raw source data

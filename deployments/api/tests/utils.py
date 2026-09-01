@@ -12,6 +12,9 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 from stitch.ogsi.model import (
+    ALBSource,
+    BCSource,
+    CCRSource,
     GemSource,
     LLMSource,
     OGSISrcKey,
@@ -73,7 +76,7 @@ def make_source_model(
     model.values = [
         OilGasFieldSourceValueModel.from_attribute(colname, value)
         for colname, value in attrs.items()
-        if colname in ATTRIBUTE_NAMES and value is not None
+        if colname in ATTRIBUTE_NAMES and value is not None and value != ""
     ]
     return model
 
@@ -108,6 +111,12 @@ def make_source(
             return WoodMacSource(**kwargs)
         case "gem":
             return GemSource(**kwargs)
+        case "ccr":
+            return CCRSource(**kwargs)
+        case "alb":
+            return ALBSource(**kwargs)
+        case "bc":
+            return BCSource(**kwargs)
 
 
 def make_resource(

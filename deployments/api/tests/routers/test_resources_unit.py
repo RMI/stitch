@@ -257,6 +257,8 @@ class TestGetResourceFilterOptionsUnit:
         assert response.status_code == 200
         mock_repo.filter_options.assert_awaited_once()
         call_kwargs = mock_repo.filter_options.call_args.kwargs
-        assert call_kwargs["licensed_sources"] == frozenset({"rmi", "gem", "wm", "llm"})
+        assert call_kwargs["licensed_sources"] == frozenset(
+            {"rmi", "gem", "wm", "ccr", "alb", "bc", "llm"}
+        )
         assert call_kwargs["params"].field == "country"
         assert call_kwargs["params"].source == ["gem", "wm"]

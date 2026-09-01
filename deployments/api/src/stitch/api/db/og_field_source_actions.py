@@ -20,8 +20,7 @@ from .model import (
     MembershipModel,
 )
 from .queries import (
-    construct_sources_count_statement,
-    construct_sources_query_statement,
+    base_source_query,
 )
 from .utils import resource_model_to_entity
 
@@ -39,6 +38,88 @@ async def create_source(
     session.add(model)
     await session.flush()
     return model.as_entity()
+
+
+async def _get_attachable_resource(
+    session: AsyncSession, resource_id: int
+) -> ResourceModel:
+    """Fetch a resource that is a valid attachment target.
+
+    Raises:
+        ResourceNotFoundError: if no resource exists for ``resource_id``.
+        ResourceIntegrityError: if the resource has been merged (repointed);
+            memberships on it would never surface in coalescing/queries.
+    """
+    resource = await session.get(ResourceModel, resource_id)
+    if resource is None:
+        raise ResourceNotFoundError(f"No resource found for id: {resource_id}")
+    if resource.repointed_id is not None:
+        raise ResourceIntegrityError(
+            f"Cannot attach sources to a resource that has been merged "
+            f"(id: `{resource_id}`, repointed to: `{resource.repointed_id}`)."
+        )
+    return resource
+
+
+async def create_and_attach_sources(
+    session: AsyncSession,
+    user: User,
+    sources: Sequence[OGFieldSource],
+    resource_id: int,
+) -> Sequence[OGFieldSource]:
+    """Create new sources and attach them to an existing resource.
+
+    Each source is always created (never resolved by id here), then linked to
+    ``resource_id`` via an ACTIVE membership, all within the caller's unit of
+    work. The resource is validated first, so an invalid target fails before any
+    source is written.
+
+    Args:
+        session: db session (transaction context)
+        user: the logged in User (recorded as creator)
+        sources: raw source data; none may carry an ``id``
+        resource_id: the resource to attach the new sources to
+
+    Returns:
+        The created OGFieldSources, each with its assigned id, in input order.
+
+    Raises:
+        SourceIntegrityError: if any source carries a non-None id.
+        ResourceNotFoundError: if ``resource_id`` does not exist.
+        ResourceIntegrityError: if the resource has been merged (repointed).
+    """
+    supplied_ids = [src.id for src in sources if src.id is not None]
+    if supplied_ids:
+        raise SourceIntegrityError(
+            f"Cannot create sources with client-supplied ids: {supplied_ids}"
+        )
+    # Fail fast: validate the target before creating any source, so an invalid
+    # resource_id never leaves a source insert to roll back.
+    resource = await _get_attachable_resource(session, resource_id)
+
+    models = await _create_source_models(session, user, sources)
+    await _attach_source_models(session, resource, models, user)
+    return [model.as_entity() for model in models]
+
+
+async def create_and_attach_source(
+    session: AsyncSession,
+    user: User,
+    source: OGFieldSource,
+    resource_id: int,
+) -> OGFieldSource:
+    """Create a single source and attach it to an existing resource.
+
+    Thin convenience wrapper over :func:`create_and_attach_sources` for the
+    common single-source path; see that function for full semantics.
+
+    Raises:
+        SourceIntegrityError: if ``source`` carries a non-None id.
+        ResourceNotFoundError: if ``resource_id`` does not exist.
+        ResourceIntegrityError: if the resource has been merged (repointed).
+    """
+    [created] = await create_and_attach_sources(session, user, [source], resource_id)
+    return created
 
 
 async def get_or_create_sources(
@@ -94,26 +175,13 @@ async def _get_source_models(
     return (await session.scalars(stmt)).all()
 
 
-async def attach_sources_to_resource(
+async def _attach_source_models(
     session: AsyncSession,
-    resource_id: int,
-    source_rows: Sequence[OGFieldSource],
+    resource: ResourceModel,
+    src_models: Sequence[OilGasFieldSourceModel],
     user: User,
-) -> OGFieldResource:
-    """Link an OG field source to a resource via membership."""
-    resource = await session.get(ResourceModel, resource_id)
-    if resource is None:
-        raise ResourceNotFoundError(f"No resource found for id: {resource_id}")
-    if len(source_rows) < 1:
-        raise ResourceIntegrityError(
-            f"Must pass at least 1 source row to attach to resource (id: `{resource_id}`)."
-        )
-
-    src_models = await _get_or_create_source_models(session, user, source_rows)
-
-    # flush the session, new ids are added
-    await session.flush()
-
+) -> None:
+    """Create ACTIVE memberships linking each source model to ``resource``."""
     memberships = [
         MembershipModel.create(
             created_by=user,
@@ -125,6 +193,23 @@ async def attach_sources_to_resource(
     ]
     session.add_all(memberships)
     await session.flush()
+
+
+async def attach_sources_to_resource(
+    session: AsyncSession,
+    resource_id: int,
+    source_rows: Sequence[OGFieldSource],
+    user: User,
+) -> OGFieldResource:
+    """Link an OG field source to a resource via membership."""
+    resource = await _get_attachable_resource(session, resource_id)
+    if len(source_rows) < 1:
+        raise ResourceIntegrityError(
+            f"Must pass at least 1 source row to attach to resource (id: `{resource_id}`)."
+        )
+
+    src_models = await _get_or_create_source_models(session, user, source_rows)
+    await _attach_source_models(session, resource, src_models, user)
     return await resource_model_to_entity(session, resource)
 
 
@@ -164,14 +249,11 @@ async def query(
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> tuple[Sequence[OGFieldSource], int]:
     """Filtered/sorted/paginated source records (id-ordered) plus total count."""
-    stmt = construct_sources_query_statement(params, licensed_sources)
+    stmt = base_source_query(params, licensed_sources)
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = (await session.scalar(count_stmt)) or 0
+    stmt = stmt.limit(params.limit).offset(params.offset)
     ids = list((await session.scalars(stmt)).all())
-
-    count_stmt = construct_sources_count_statement(params, licensed_sources)
-    total = (
-        await session.scalar(select(func.count()).select_from(count_stmt.subquery()))
-        or 0
-    )
 
     if not ids:
         return (), total

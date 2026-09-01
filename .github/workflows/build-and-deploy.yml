@@ -2,12 +2,70 @@ name: CD Pipeline
 
 on:
   pull_request:
+    # labeled/unlabeled are included so toggling the 'no-deploy' label (see the
+    # resolve-context guard) takes effect immediately instead of waiting for the
+    # next push. The default types must be listed explicitly once any are named.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main, production]
   workflow_dispatch:
 
+# Serialize per PR (or per pushed ref) so a new commit -- or the 'no-deploy'
+# label event -- supersedes an in-flight deploy for the same target. The group
+# key deliberately omits the event type so 'labeled' and 'synchronize' share a
+# lane and can cancel each other; github.workflow keeps this separate from the
+# node/python check workflows.
+#
+# cancel-in-progress fires for code changes (synchronize/opened/reopened) and for
+# the 'no-deploy' label specifically, but NOT for other label changes: this
+# workflow triggers on every labeled/unlabeled event, and adding an unrelated
+# label (e.g. 'bug') must not interrupt and restart an in-flight deploy. Non-PR
+# events (push/dispatch to main/production) are never cancelled, so they run their
+# migrations to completion.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: >-
+    ${{ github.event_name == 'pull_request'
+    && ((github.event.action != 'labeled' && github.event.action != 'unlabeled')
+    || github.event.label.name == 'no-deploy') }}
+
 jobs:
+  # This pipeline deploys per-PR preview environments and needs repository
+  # secrets, which the pull_request event withholds from two kinds of PR: PRs
+  # opened from a fork (secrets never flow to forks) and bot-authored PRs
+  # (Dependabot in particular always runs without secrets, and other bots can't
+  # be reliably told apart from it). Gate on both so those PRs skip the pipeline
+  # instead of failing: require the PR to originate from this repo (not a fork)
+  # and to be authored by a human -- user.type == 'User' excludes every bot,
+  # current or future, with no denylist to maintain.
+  #
+  # NB: author_association is deliberately NOT used. It reports MEMBER only for
+  # *public* org members, so our private-membership humans surface as
+  # CONTRIBUTOR -- indistinguishable from Dependabot -- which silently skips
+  # every internal PR.
+  #
+  # Future option: to let a human opt a specific bot PR into deploying, add a
+  # label trigger (on.pull_request.types: [..., labeled]) and OR a label check
+  # into these guards, e.g.
+  # contains(github.event.pull_request.labels.*.name, 'deploy-preview').
+  # (Dependabot PRs still receive no secrets even when labeled; those need a
+  # human to re-push the branch under their own PR.)
+  #
+  # A PR labeled 'no-deploy' opts out of the build/deploy pipeline entirely: the
+  # guard fails, resolve-context is skipped, and the rest of the pipeline skips
+  # with it. The language-level checks (Node / Python workflows) are separate and
+  # still run. Toggling the label re-runs this workflow (see on.pull_request.types
+  # above), so removing it re-enables deploys without needing a new push.
+  #
+  # Every job transitively needs resolve-context, so skipping it here skips the
+  # rest -- except deploy-frontend and comment-summary, whose always()/!failure()
+  # conditions ignore skipped dependencies and so repeat this guard explicitly.
   resolve-context:
+    if: >-
+      ${{ github.event_name != 'pull_request'
+      || (github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.type == 'User'
+      && !contains(github.event.pull_request.labels.*.name, 'no-deploy')) }}
     uses: ./.github/workflows/resolve-deployment-context.yml
 
   lane-config-validate:
@@ -97,17 +155,18 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          TARGET_NAME: ${{ needs.resolve-context.outputs.deployment-name }}
-          DEPLOYMENT_LANE: ${{ needs.resolve-context.outputs.deployment-lane }}
         run: |
           set -euo pipefail
 
-          if [ "${DEPLOYMENT_LANE}" = "dress-rehearsal" ]; then
-            frontend_origin_url="${FRONTEND_PRODUCTION_URL}"
-          elif [ "${EVENT_NAME}" = "pull_request" ]; then
+          # This must match where the frontend actually lands, because it is the
+          # single origin the API/EL/LLM services allow for CORS. A pull request
+          # always deploys to a preview environment named for the PR number; any
+          # other event is a push to a lane's production branch, which deploys to
+          # that lane's Static Web App production environment.
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
             frontend_origin_url="${FRONTEND_PREVIEW_URL_TEMPLATE//\{name\}/${PR_NUMBER}}"
           else
-            frontend_origin_url="${FRONTEND_PREVIEW_URL_TEMPLATE//\{name\}/${TARGET_NAME}}"
+            frontend_origin_url="${FRONTEND_PRODUCTION_URL}"
           fi
 
           echo "frontend-origin-url=$frontend_origin_url" >> "$GITHUB_OUTPUT"
@@ -272,9 +331,11 @@ jobs:
         POSTGRES_DB=${{ needs.deploy-db.outputs.postgres-db }}
         POSTGRES_USER=${{ needs.deploy-db.outputs.postgres-user }}
         PGSSLMODE=${{ needs.deploy-db.outputs.postgres-sslmode }}
+        OTEL_SERVICE_NAME=stitch-api
+        OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: api
-      # Keep staging / dress-rehearsal always-on; development scales to zero.
-      min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
+      # Only the production release stays warm; everything else scales to zero.
+      min-replicas: ${{ needs.resolve-context.outputs.always-on }}
 
   deploy-entity-linkage:
     name: "Deploy entity linkage"
@@ -288,7 +349,7 @@ jobs:
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       full-image-name: ${{ needs.build-entity-linkage-docker-image.outputs.digest-image-name }}
-      container-app-name: ${{ format('{0}-entity-linkage', needs.resolve-context.outputs.deployment-name) }}
+      container-app-name: ${{ format('{0}-el', needs.resolve-context.outputs.deployment-name) }}
       environment-variables: >-
         LOG_LEVEL=info
         AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
@@ -299,9 +360,15 @@ jobs:
         AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
         ENTITY_LINKAGE_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
         ENTITY_LINKAGE_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
+        OTEL_SERVICE_NAME=stitch-entity-linkage
+        OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: entity-linkage
-      # Keep staging / dress-rehearsal always-on; development scales to zero.
-      min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
+      # Only the production release stays warm; everything else scales to zero.
+      min-replicas: ${{ needs.resolve-context.outputs.always-on }}
+      # Deliberately unpinned: takes the platform default (~0.5 vCPU / 1 GiB),
+      # the same as the API. This service is I/O-bound waiting on sequential API
+      # responses, so the 2.0 vCPU it used to request bought little while giving
+      # the batch pass 4x the CPU of the API it hammers.
 
   deploy-stitch-llm:
     name: "Deploy stitch-llm"
@@ -316,7 +383,7 @@ jobs:
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       full-image-name: ${{ needs.build-stitch-llm-docker-image.outputs.digest-image-name }}
-      container-app-name: ${{ format('{0}-stitch-llm', needs.resolve-context.outputs.deployment-name) }}
+      container-app-name: ${{ format('{0}-llm', needs.resolve-context.outputs.deployment-name) }}
       environment-variables: >-
         STITCH_LLM_LOG_LEVEL=info
         AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
@@ -330,48 +397,14 @@ jobs:
         STITCH_LLM_AZURE_OPENAI_BASE_URL=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-base-url }}
         STITCH_LLM_AZURE_OPENAI_MODEL=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-model }}
         STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-timeout-seconds }}
+        OTEL_SERVICE_NAME=stitch-llm
+        OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: stitch-llm
-      # Keep staging / dress-rehearsal always-on; development scales to zero.
-      min-replicas: ${{ needs.resolve-context.outputs.deployment-lane != 'development' && '1' || '' }}
+      # Only the production release stays warm; everything else scales to zero.
+      min-replicas: ${{ needs.resolve-context.outputs.always-on }}
 
-  deploy-etl-gem:
-    name: "Deploy ETL GEM"
-    if: ${{ needs.resolve-context.outputs.deployment-lane != 'development' }}
-    needs: [resolve-context, lane-config-validate, deploy-api]
-    uses: ./.github/workflows/deploy-container.yml
-    secrets:
-      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      stitch-client-bearer-token: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
-      registry-password: ${{ secrets.GHCR_ETL_PULL_TOKEN }}
-    with:
-      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      full-image-name: ghcr.io/rmi/stitch-etl-poc-etl-gem:${{ vars.ETL_GEM_IMAGE_TAG || 'main' }}
-      container-app-name: ${{ format('{0}-etl-gem', needs.resolve-context.outputs.deployment-name) }}
-      registry-server: ghcr.io
-      registry-username: ${{ needs.lane-config-validate.outputs.ghcr-etl-pull-username }}
-      # Single job at a time + in-memory /status state: keep exactly one replica.
-      min-replicas: "1"
-      max-replicas: "1"
-      environment-variables: >-
-        LOG_LEVEL=info
-        AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
-        DEPLOYMENT_LANE=${{ needs.resolve-context.outputs.deployment-lane }}
-        DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
-        AUTH_ISSUER=${{ needs.lane-config-validate.outputs.auth-issuer }}
-        AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
-        AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
-        API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
-        ETL_GEM_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
-        GEM_FILE_DIR=/mnt/data/gem
-      deployment-label: etl-gem
-      # Mount the lane's Azure Files share; GEM reads its xlsx from the gem/ subdir.
-      storage-name: ${{ needs.lane-config-validate.outputs.etl-storage-name }}
-      storage-mount-path: /mnt/data
-
-  deploy-etl-woodmac:
-    name: "Deploy ETL WoodMac"
+  deploy-etl:
+    name: "Deploy ETL"
     if: ${{ needs.resolve-context.outputs.deployment-lane != 'development' }}
     needs: [resolve-context, lane-config-validate, deploy-api]
     uses: ./.github/workflows/deploy-container.yml
@@ -384,26 +417,29 @@ jobs:
       registry-password: ${{ secrets.GHCR_ETL_PULL_TOKEN }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      full-image-name: ghcr.io/rmi/stitch-etl-poc-etl-woodmac:${{ vars.ETL_WOODMAC_IMAGE_TAG || 'main' }}
-      container-app-name: ${{ format('{0}-etl-woodmac', needs.resolve-context.outputs.deployment-name) }}
+      full-image-name: ghcr.io/rmi/stitch-etl-poc:${{ vars.ETL_IMAGE_TAG || 'main' }}
+      container-app-name: ${{ format('{0}-etl', needs.resolve-context.outputs.deployment-name) }}
       registry-server: ghcr.io
       registry-username: ${{ needs.lane-config-validate.outputs.ghcr-etl-pull-username }}
-      # Single job at a time + in-memory /status state: keep exactly one replica.
+      # One job per dataset + in-memory /status state: keep exactly one replica.
       min-replicas: "1"
       max-replicas: "1"
+      # WoodMac is unoptimized; needs more than the default ~0.5 vCPU / 1 GiB.
+      # 4 GiB on the Consumption profile is only valid paired with 2.0 vCPU.
+      cpu: "2.0"
+      memory: "4.0Gi"
       environment-variables: >-
-        LOG_LEVEL=info
+        ETL_LOG_LEVEL=info
         AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
-        DEPLOYMENT_LANE=${{ needs.resolve-context.outputs.deployment-lane }}
-        DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
         AUTH_ISSUER=${{ needs.lane-config-validate.outputs.auth-issuer }}
         AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
         AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
         API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
-        ETL_WOODMAC_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
+        ETL_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
+        GEM_FILE_DIR=/mnt/data/gem
         WOODMAC_DATA_DIR=/mnt/data/woodmac
-      deployment-label: etl-woodmac
-      # Mount the lane's Azure Files share; WoodMac caches under the woodmac/ subdir.
+      deployment-label: etl
+      # Mount the lane's Azure Files share; GEM reads gem/, WoodMac caches under woodmac/.
       storage-name: ${{ needs.lane-config-validate.outputs.etl-storage-name }}
       storage-mount-path: /mnt/data
 
@@ -424,8 +460,15 @@ jobs:
     name: "Deploy frontend"
     # ETL deploys are skipped in the development lane; gate on no-failure rather
     # than all-success so the frontend still deploys when they are skipped.
-    if: ${{ !failure() && !cancelled() }}
-    needs: [resolve-context, lane-config-validate, build-frontend, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl-gem, deploy-etl-woodmac]
+    # The human-author clause repeats the resolve-context guard because
+    # !failure() also passes when upstream jobs were skipped by that guard.
+    if: >-
+      ${{ (!failure() && !cancelled())
+      && (github.event_name != 'pull_request'
+      || (github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.type == 'User'
+      && !contains(github.event.pull_request.labels.*.name, 'no-deploy'))) }}
+    needs: [resolve-context, lane-config-validate, build-frontend, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl]
     uses: ./.github/workflows/azure-static-web-apps.yml
     secrets:
       azure-static-web-apps-deploy-token: ${{ secrets.AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN }}
@@ -436,15 +479,26 @@ jobs:
       api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
       entity-linkage-url: ${{ format('{0}/api/v1', needs.deploy-entity-linkage.outputs.container-app-url) }}
       stitch-llm-url: ${{ format('{0}/api/v1', needs.deploy-stitch-llm.outputs.container-app-url) }}
-      etl-gem-url: ${{ needs.deploy-etl-gem.result == 'success' && format('{0}/api/v1', needs.deploy-etl-gem.outputs.container-app-url) || '' }}
-      etl-woodmac-url: ${{ needs.deploy-etl-woodmac.result == 'success' && format('{0}/api/v1', needs.deploy-etl-woodmac.outputs.container-app-url) || '' }}
+      etl-url: ${{ needs.deploy-etl.result == 'success' && format('{0}/api/v1/etl', needs.deploy-etl.outputs.container-app-url) || '' }}
       auth0-domain: ${{ needs.lane-config-validate.outputs.auth0-domain }}
       auth0-client-id: ${{ needs.lane-config-validate.outputs.auth0-client-id }}
       auth0-audience: ${{ needs.lane-config-validate.outputs.auth0-audience }}
-      production-branch: production
+      # Each lane has its own Static Web App, so each has its own production
+      # branch: the development lane's SWA is fed by `main`, the staging and
+      # dress-rehearsal lanes' SWA by `production`. A push to the matching
+      # branch deploys to that SWA's production environment -- the only
+      # environment Azure lets us attach a custom domain to. Pull requests are
+      # always preview environments regardless of this value.
+      production-branch: ${{ needs.resolve-context.outputs.deployment-lane == 'development' && 'main' || 'production' }}
 
   comment-summary:
-    if: ${{ always() && github.event_name == 'pull_request' }}
+    # always() ignores the resolve-context guard's skips, so repeat it here too --
+    # including the 'no-deploy' exclusion, so a skipped pipeline posts no summary.
+    if: >-
+      ${{ always() && github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.type == 'User'
+      && !contains(github.event.pull_request.labels.*.name, 'no-deploy') }}
     uses: ./.github/workflows/comment-pr-summary.yml
     secrets: inherit
-    needs: [resolve-context, build-api-docker-image, build-entity-linkage-docker-image, build-stitch-llm-docker-image, build-seed-docker-image, deploy-db, run-db-migrations, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl-gem, deploy-etl-woodmac, run-seed, deploy-frontend]
+    needs: [resolve-context, build-api-docker-image, build-entity-linkage-docker-image, build-stitch-llm-docker-image, build-seed-docker-image, deploy-db, run-db-migrations, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl, run-seed, deploy-frontend]
