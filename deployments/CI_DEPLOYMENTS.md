@@ -219,10 +219,38 @@ out under load. Empty means the input is skipped entirely and the app keeps the
 default scale-to-zero. The ETL app is separate: it pins `min = max = 1` and only
 deploys on non-`development` lanes, so it stays warm regardless of this policy.
 
-Cold starts are most visible at sign-in, when the app's first API call lands on a
-sleeping container. The planned mitigation is to have the login page fire a cheap
-request at the API so it wakes while the user authenticates, rather than widening
-this policy.
+Apps that do scale to zero also get a widened **cooldown** — 900s rather than
+Azure's default 300s — reasserted after every deploy. Cooldown is how long an app
+stays up after its last request, so this covers the ordinary gaps inside a
+working session without keeping anything alive overnight. There is no CLI flag
+for it, so the deploy sets it with the same `show -> jq -> update --yaml`
+round-trip used for volume mounts. Always-on apps skip the step; an app that
+never scales to zero has no use for a cooldown.
+
+Cooldown only helps when requests cluster closer together than the cooldown
+itself, so be sceptical of raising it further without measuring. Sampled over a
+13-day window, `main-api` was running for roughly one hour in twenty, and the
+gaps between bursts of use were 40, 110, 120 and 220 minutes — none of which
+900s bridges. Worth re-measuring once a lane is in real daily use:
+
+```bash
+az monitor metrics list --resource "$(az containerapp show -n main-api -g STITCH-DEV-RG --query id -o tsv)" --metric Replicas --interval PT1H --offset 13d --aggregation Maximum -o table
+```
+
+Cold starts are most visible at sign-in, when the app's first API call lands on
+a sleeping container. The frontend absorbs that, so the policy above does not
+have to widen to cover it:
+
+- it wakes the API during bootstrap, before Auth0 mounts, so the container starts
+  while the user is still being redirected through login;
+- queries retry transient failures, so a container that is not ready yet reads as
+  slow rather than broken;
+- the environment banner says the server is waking up once a request has been in
+  flight for more than a couple of seconds.
+
+entity-linkage and stitch-llm are deliberately left out. Waking them the same way
+was tried and set aside: the API is the one every session needs, and better
+options for the other two are still being explored.
 
 This only affects the Container Apps. The frontend is an Azure Static Web App
 (always served, no hibernation), and the PostgreSQL flexible server's
@@ -330,6 +358,35 @@ specific record takes precedence over it.
    the single CORS origin the backend services accept on the next deploy, so do
    it only once the certificate is valid. Update the links in the top-level
    `README.md` at the same time.
+
+#### Troubleshooting: CORS errors after a new hostname goes live
+
+Symptom — the frontend loads at the new custom domain, but API calls fail in the
+browser console with:
+
+> `No 'Access-Control-Allow-Origin' header is present on the requested resource`
+
+This means the browser's `Origin` (the custom domain) does not match the single
+origin the backend allows. Because each backend service accepts exactly one CORS
+origin (the API's `FRONTEND_ORIGIN_URL`, fed from the lane's
+`FRONTEND_PRODUCTION_URL`), it happens when the cutover above is only half-done —
+typically step 5 (`FRONTEND_PRODUCTION_URL` is still the old `azurestaticapps.net`
+hostname) and/or step 3 (the custom domain is not set as default, so the old
+hostname still serves the app directly instead of redirecting to it).
+
+Confirm which origin the backend currently allows with a preflight request:
+
+```bash
+curl -i -X OPTIONS '<api-origin>/api/v1/health' \
+  -H 'Origin: https://<custom-domain>' \
+  -H 'Access-Control-Request-Method: GET'
+```
+
+A working origin returns `200` with `access-control-allow-origin: <custom-domain>`;
+a blocked one returns no `access-control-allow-origin` header. Resolve by
+completing step 3 (**Set default**, so the old hostname 301-redirects and stops
+originating requests) and step 5 (`FRONTEND_PRODUCTION_URL = https://<custom-domain>`),
+then redeploy the lane so the backend containers pick up the new origin.
 
 ## Azure Permissions
 
