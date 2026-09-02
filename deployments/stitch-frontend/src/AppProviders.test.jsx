@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Auth0Provider } from "@auth0/auth0-react";
 import { AppProviders } from "./AppProviders";
 
@@ -45,6 +46,43 @@ describe("AppProviders", () => {
       cacheLocation: "localstorage",
       useRefreshTokens: true,
     });
+  });
+
+  it("hands the cold-start retry policy down to every query", () => {
+    // The predicate itself is unit-tested in queries/retry.test.js, but nothing
+    // otherwise proves it reaches the app: renderWithQueryClient builds its own
+    // client with `retry: false`, so component tests never exercise this
+    // default. Without this test, dropping the wiring keeps the suite green and
+    // only surfaces as failed first loads against a sleeping container.
+    let defaults;
+    function Probe() {
+      defaults = useQueryClient().getDefaultOptions();
+      return null;
+    }
+
+    render(
+      <AppProviders config={TEST_CONFIG}>
+        <Probe />
+      </AppProviders>,
+    );
+
+    const retry = defaults.queries?.retry;
+
+    // A number here would mean someone reverted to `retry: 1`; undefined would
+    // mean the option was dropped, restoring TanStack's default of retrying
+    // everything three times, 4xx included.
+    expect(typeof retry).toBe("function");
+
+    const httpError = (status) => Object.assign(new Error(status), { status });
+
+    expect(retry(1, httpError(503))).toBe(true);
+    expect(retry(1, new TypeError("Failed to fetch"))).toBe(true);
+    expect(retry(1, httpError(404))).toBe(false);
+    expect(retry(99, httpError(503))).toBe(false);
+
+    // Mutations are deliberately left on the default of no retries: replaying a
+    // non-idempotent write after a timeout is worse than the error.
+    expect(defaults.mutations?.retry).toBeUndefined();
   });
 
   it("renders children through AuthGate when authenticated", () => {
