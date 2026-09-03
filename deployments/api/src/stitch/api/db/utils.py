@@ -245,9 +245,15 @@ def _require_view(resource: OGFieldResource) -> OilGasFieldBase:
     return resource.view
 
 
-def resource_to_view(resource: OGFieldResource) -> OGFieldView:
+def resource_to_view(
+    resource: OGFieldResource, requested_resource_id: int | None = None
+) -> OGFieldView:
     view = _require_view(resource)
-    return OGFieldView(id=resource.id, **view.model_dump())
+    return OGFieldView(
+        id=resource.id,
+        requested_resource_id=requested_resource_id,
+        **view.model_dump(),
+    )
 
 
 def resource_to_list_item_view(resource: OGFieldResource) -> OGFieldListItemView:
@@ -263,10 +269,13 @@ def resource_to_list_item_view(resource: OGFieldResource) -> OGFieldListItemView
     )
 
 
-def resource_to_detail_view(resource: OGFieldResource) -> OGFieldDetailView:
+def resource_to_detail_view(
+    resource: OGFieldResource, requested_resource_id: int | None = None
+) -> OGFieldDetailView:
     base = resource_to_list_item_view(resource)
     return OGFieldDetailView(
         **base.model_dump(),
+        requested_resource_id=requested_resource_id,
         source_data=[
             OG_FIELD_SOURCE_VIEW_ADAPTER.validate_python(source)
             for source in resource.source_data
