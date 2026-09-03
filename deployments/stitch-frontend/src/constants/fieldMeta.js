@@ -59,14 +59,29 @@ export const MERGE_COMPARISON_CORE_FIELDS = [
 ];
 
 /**
+ * Attributes reviewers weigh most heavily when judging a merge candidate.
+ * Shown first in the "Other attributes" accordion so they do not have to be
+ * scanned for. Order is display order.
+ */
+const MERGE_COMPARISON_LEAD_OTHER_FIELDS = [
+  "field_status",
+  "production_start_year",
+];
+
+/**
  * Remaining scalar fields for the collapsed "Other attributes" accordion.
  * Organizations (owners/operators) are nested lists and are not compared.
+ * The lead fields come first; the rest keep FIELD_META order.
  */
-export const MERGE_COMPARISON_OTHER_FIELDS = Object.keys(FIELD_META).filter(
-  (key) =>
-    !MERGE_COMPARISON_CORE_FIELDS.includes(key) &&
-    FIELD_META[key].section !== "organizations",
-);
+export const MERGE_COMPARISON_OTHER_FIELDS = [
+  ...MERGE_COMPARISON_LEAD_OTHER_FIELDS,
+  ...Object.keys(FIELD_META).filter(
+    (key) =>
+      !MERGE_COMPARISON_CORE_FIELDS.includes(key) &&
+      !MERGE_COMPARISON_LEAD_OTHER_FIELDS.includes(key) &&
+      FIELD_META[key].section !== "organizations",
+  ),
+];
 
 export const AI_SUGGESTION_FIELDS = [
   "basin",
