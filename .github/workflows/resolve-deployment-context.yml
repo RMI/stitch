@@ -58,8 +58,8 @@ jobs:
                   deployment_name="main"
                   ;;
                 production)
-                  deployment_lane="dress-rehearsal"
-                  deployment_name="dress-rehearsal"
+                  deployment_lane="production"
+                  deployment_name="production"
                   always_on="1"
                   ;;
                 *)
