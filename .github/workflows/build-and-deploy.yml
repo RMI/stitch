@@ -96,7 +96,6 @@ jobs:
       AUTH_JWKS_URI: ${{ vars.AUTH_JWKS_URI }}
       AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
       AUTH0_CLIENT_ID: ${{ vars.AUTH0_CLIENT_ID }}
-      AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
       STITCH_LLM_AZURE_OPENAI_BASE_URL: ${{ vars.STITCH_LLM_AZURE_OPENAI_BASE_URL }}
       STITCH_LLM_AZURE_OPENAI_MODEL: ${{ vars.STITCH_LLM_AZURE_OPENAI_MODEL }}
       STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS: ${{ vars.STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS }}
@@ -116,7 +115,11 @@ jobs:
           : "${AUTH_DISABLED:?Missing required variable AUTH_DISABLED}"
           : "${AUTH0_DOMAIN:?Missing required variable AUTH0_DOMAIN}"
           : "${AUTH0_CLIENT_ID:?Missing required variable AUTH0_CLIENT_ID}"
-          : "${AUTH0_AUDIENCE:?Missing required variable AUTH0_AUDIENCE}"
+          # AUTH_AUDIENCE is the single source for the Auth0 API audience; it feeds
+          # both the backend services and the frontend's auth0Audience, so it is
+          # required on every lane -- including auth-disabled ones, where the
+          # frontend still configures its Auth0 client.
+          : "${AUTH_AUDIENCE:?Missing required variable AUTH_AUDIENCE}"
           : "${STITCH_APP_PASSWORD:?Missing required secret STITCH_APP_PASSWORD}"
           : "${STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN:?Missing required secret STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN}"
           : "${STITCH_CLIENT_LLM_BEARER_TOKEN:?Missing required secret STITCH_CLIENT_LLM_BEARER_TOKEN}"
@@ -129,11 +132,9 @@ jobs:
               ;;
           esac
 
-          if [ "${AUTH_DISABLED}" = "false" ]; then
-            : "${AUTH_ISSUER:?Missing required variable AUTH_ISSUER}"
-            : "${AUTH_AUDIENCE:?Missing required variable AUTH_AUDIENCE}"
-            : "${AUTH_JWKS_URI:?Missing required variable AUTH_JWKS_URI}"
-          fi
+          # AUTH_ISSUER and AUTH_JWKS_URI are optional overrides: when unset they
+          # are derived from AUTH0_DOMAIN in the "Export auth config" step below,
+          # so there is nothing lane-specific to require here.
 
           has_llm_base_url=false
           has_llm_model=false
@@ -176,13 +177,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Issuer and JWKS URI derive from the Auth0 tenant domain by default;
+          # an explicit AUTH_ISSUER / AUTH_JWKS_URI variable overrides the derived
+          # value for lanes on an Auth0 custom domain, where the host differs.
+          auth_issuer="${AUTH_ISSUER:-https://${AUTH0_DOMAIN}/}"
+          auth_jwks_uri="${AUTH_JWKS_URI:-https://${AUTH0_DOMAIN}/.well-known/jwks.json}"
           echo "auth-disabled=${AUTH_DISABLED}" >> "$GITHUB_OUTPUT"
-          echo "auth-issuer=${AUTH_ISSUER}" >> "$GITHUB_OUTPUT"
+          echo "auth-issuer=${auth_issuer}" >> "$GITHUB_OUTPUT"
           echo "auth-audience=${AUTH_AUDIENCE}" >> "$GITHUB_OUTPUT"
-          echo "auth-jwks-uri=${AUTH_JWKS_URI}" >> "$GITHUB_OUTPUT"
+          echo "auth-jwks-uri=${auth_jwks_uri}" >> "$GITHUB_OUTPUT"
           echo "auth0-domain=${AUTH0_DOMAIN}" >> "$GITHUB_OUTPUT"
           echo "auth0-client-id=${AUTH0_CLIENT_ID}" >> "$GITHUB_OUTPUT"
-          echo "auth0-audience=${AUTH0_AUDIENCE}" >> "$GITHUB_OUTPUT"
+          # The frontend's auth0Audience is the same value as the backend audience.
+          echo "auth0-audience=${AUTH_AUDIENCE}" >> "$GITHUB_OUTPUT"
           echo "stitch-llm-azure-openai-base-url=${STITCH_LLM_AZURE_OPENAI_BASE_URL}" >> "$GITHUB_OUTPUT"
           echo "stitch-llm-azure-openai-model=${STITCH_LLM_AZURE_OPENAI_MODEL}" >> "$GITHUB_OUTPUT"
           echo "stitch-llm-azure-openai-timeout-seconds=${STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS:-30}" >> "$GITHUB_OUTPUT"

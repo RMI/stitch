@@ -461,12 +461,18 @@ named:
   (example: `https://stitch-dev.rmi.org`). See "Custom domains" below.
 - `FRONTEND_PREVIEW_URL_TEMPLATE` (example: `https://witty-mushroom-017a3dc1e-{name}.westus2.1.azurestaticapps.net`)
 - `AUTH_DISABLED` (example: `true` for `development`, `false` for `staging` / `dress-rehearsal`)
-- `AUTH_ISSUER` (example: `https://rmi-spd.us.auth0.com/`)
-- `AUTH_AUDIENCE` (example: `https://stitch-api.local`)
-- `AUTH_JWKS_URI` (example: `https://rmi-spd.us.auth0.com/.well-known/jwks.json`)
-- `AUTH0_DOMAIN` (example: `rmi-spd.us.auth0.com`)
+- `AUTH_AUDIENCE` (example: `https://stitch-api.local`) — the Auth0 API audience. Single
+  source: feeds both the backend services' `AUTH_AUDIENCE` and the frontend's `auth0Audience`.
+- `AUTH0_DOMAIN` (example: `rmi-spd.us.auth0.com`) — the Auth0 tenant domain. Feeds the
+  frontend's `auth0Domain` and, by default, derives the backend `AUTH_ISSUER`
+  (`https://<domain>/`) and `AUTH_JWKS_URI` (`https://<domain>/.well-known/jwks.json`).
 - `AUTH0_CLIENT_ID` (example: `<public-client-id>`)
-- `AUTH0_AUDIENCE` (example: `https://stitch-api.local`)
+- `AUTH_ISSUER` (optional; example: `https://rmi-spd.us.auth0.com/`) — override for the value
+  derived from `AUTH0_DOMAIN`. Only set on lanes using an Auth0 custom domain whose issuer
+  differs from the raw tenant host.
+- `AUTH_JWKS_URI` (optional; example: `https://rmi-spd.us.auth0.com/.well-known/jwks.json`) —
+  override for the value derived from `AUTH0_DOMAIN`. Same custom-domain caveat as
+  `AUTH_ISSUER`.
 - `STITCH_LLM_AZURE_OPENAI_BASE_URL` (example: `https://stitch-foundry-dev.openai.azure.com/openai/v1`)
 - `STITCH_LLM_AZURE_OPENAI_MODEL` (example: `gpt-5.1-chat`)
 - `STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS` (example: `30`)
@@ -516,12 +522,9 @@ Current validation behavior:
   - `FRONTEND_PRODUCTION_URL`
   - `FRONTEND_PREVIEW_URL_TEMPLATE`
   - `AUTH_DISABLED`
-  - `AUTH_ISSUER`
   - `AUTH_AUDIENCE`
-  - `AUTH_JWKS_URI`
   - `AUTH0_DOMAIN`
   - `AUTH0_CLIENT_ID`
-  - `AUTH0_AUDIENCE`
   - `STITCH_APP_PASSWORD`
   - `STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN`
   - `STITCH_CLIENT_LLM_BEARER_TOKEN`
