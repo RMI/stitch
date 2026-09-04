@@ -417,7 +417,10 @@ jobs:
       registry-password: ${{ secrets.GHCR_ETL_PULL_TOKEN }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      full-image-name: ghcr.io/rmi/stitch-etl-poc:${{ vars.ETL_IMAGE_TAG || 'main' }}
+      # demo/alb: pinned to stitch-etl-poc PR #26 (feat/add-alb-etl) for this demo.
+      # Intentionally hardcoded instead of `vars.ETL_IMAGE_TAG || 'main'` so a lane
+      # variable can't override the pin. Revert to the vars-based line before merging.
+      full-image-name: ghcr.io/rmi/stitch-etl-poc:pr-26
       container-app-name: ${{ format('{0}-etl', needs.resolve-context.outputs.deployment-name) }}
       registry-server: ghcr.io
       registry-username: ${{ needs.lane-config-validate.outputs.ghcr-etl-pull-username }}
