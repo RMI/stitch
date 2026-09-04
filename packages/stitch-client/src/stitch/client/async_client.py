@@ -24,6 +24,20 @@ excluded. Statuses below 500 (429, 408) are unprocessed/pre-processing and retry
 regardless of method.
 """
 
+_UNSENT_TRANSPORT_ERRORS = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.PoolTimeout,
+)
+"""Transport failures that occur before the request is put on the wire.
+
+The connection was never established (or never acquired from the pool), so the
+server cannot have seen the request -- these are safe to retry on any method,
+idempotent or not. Every other transport error (a read/write timeout, a dropped
+connection mid-response, a bare ``OSError``) may follow a request the server
+already applied, so it is only retried on an idempotent method.
+"""
+
 
 class AsyncStitchClient:
     def __init__(
@@ -39,6 +53,10 @@ class AsyncStitchClient:
     ) -> None:
         if max_attempts < 1:
             raise ValueError(f"max_attempts must be >= 1, got {max_attempts}")
+        if backoff_base_seconds < 0:
+            raise ValueError(
+                f"backoff_base_seconds must be >= 0, got {backoff_base_seconds}"
+            )
         self._headers_provider = headers_provider
         # Bounded exponential-backoff retry for transient failures (see
         # ``_request_with_retry``). ``max_attempts`` is the total number of tries
@@ -49,7 +67,8 @@ class AsyncStitchClient:
         # HTTP statuses to treat as transient and retry (e.g. ``{429, 503}``).
         # Empty by default, so a completed response fast-fails unless a caller
         # opts in -- a bulk poster wants 429/5xx retried, an interactive caller
-        # usually does not. Transport failures are always retried regardless.
+        # usually does not. Transport failures are retried independently of this
+        # (see ``_transport_error_is_retryable``).
         self._retry_statuses = frozenset(retry_statuses)
         self._owns_client = client is None
         if client is not None:
@@ -454,17 +473,20 @@ class AsyncStitchClient:
     ) -> httpx.Response:
         """Send one request, retrying transient failures with bounded backoff.
 
-        Two kinds are retried: transport failures (``httpx.TransportError`` --
-        every timeout and network error, ``ReadTimeout``/``ConnectError``/... --
-        and ``OSError``), which never reached a response; and, when the caller
-        opted in via ``retry_statuses``, a completed response carrying one of
-        those statuses (e.g. 429/503), which honours a ``Retry-After`` header
-        when present and otherwise the exponential backoff. A listed status
-        ``>= 500`` is only retried on an idempotent method (see
-        ``_IDEMPOTENT_METHODS``): a 5xx may follow a side effect the server
-        already applied, so retrying a POST could duplicate it. Any other
-        exception propagates, and any non-retried status is returned for the
-        caller to raise on.
+        Two kinds are retried: transport failures (``httpx.TransportError`` and
+        ``OSError``), and -- when the caller opted in via ``retry_statuses`` -- a
+        completed response carrying one of those statuses (e.g. 429/503), which
+        honours a ``Retry-After`` header when present and otherwise the
+        exponential backoff.
+
+        Both are gated on idempotency so a non-idempotent POST is never
+        duplicated. A listed status ``>= 500`` (which may follow a side effect
+        the server already applied) is retried only on an idempotent method (see
+        ``_IDEMPOTENT_METHODS``); a transport failure is retried on any method
+        only when the request provably never reached the server (see
+        ``_UNSENT_TRANSPORT_ERRORS``), and otherwise only on an idempotent
+        method. Any other exception propagates, and any non-retried status is
+        returned for the caller to raise on.
         """
         for attempt in range(1, self._max_attempts + 1):
             try:
@@ -476,7 +498,10 @@ class AsyncStitchClient:
                     headers=self._headers(),
                 )
             except (httpx.TransportError, OSError) as exc:
-                if attempt >= self._max_attempts:
+                if (
+                    not self._transport_error_is_retryable(method, exc)
+                    or attempt >= self._max_attempts
+                ):
                     raise
                 delay = self._backoff_base_seconds * 2 ** (attempt - 1)
                 logger.warning(
@@ -513,6 +538,19 @@ class AsyncStitchClient:
         # Unreachable: the loop either returns a response or re-raises on the
         # final attempt, but keeps the type checker satisfied.
         raise RuntimeError(f"{operation} exhausted retries without a response")
+
+    @staticmethod
+    def _transport_error_is_retryable(method: str, exc: Exception) -> bool:
+        """Whether a transport failure may be safely retried.
+
+        Connect-phase failures (``_UNSENT_TRANSPORT_ERRORS``) never reached the
+        server, so they retry on any method. Every other transport error may have
+        been applied before the failure, so it retries only on an idempotent
+        method -- a non-idempotent POST is not re-sent.
+        """
+        if isinstance(exc, _UNSENT_TRANSPORT_ERRORS):
+            return True
+        return method.upper() in _IDEMPOTENT_METHODS
 
     def _should_retry_status(self, method: str, status_code: int) -> bool:
         """Whether a completed response's status should be retried.

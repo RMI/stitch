@@ -382,6 +382,53 @@ async def test_post_is_retried_on_429_status() -> None:
 
 
 @pytest.mark.anyio
+async def test_post_is_not_retried_on_post_send_transport_error() -> None:
+    """A read timeout may follow a write the server already applied, so it is not
+    retried on a non-idempotent POST."""
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(len(calls) + 1)
+        raise httpx.ReadTimeout("read timed out", request=request)
+
+    client, raw_client = make_client(handler, backoff_base_seconds=0)
+
+    with pytest.raises(httpx.ReadTimeout):
+        await client.create_merge_candidate([1, 2])
+
+    assert calls == [1]  # POST + post-send transport error: no retry
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_post_is_retried_on_connect_error() -> None:
+    """A connect failure never reached the server, so it is safe to retry even a
+    non-idempotent POST."""
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(len(calls) + 1)
+        if len(calls) == 1:
+            raise httpx.ConnectError("connection refused", request=request)
+        return httpx.Response(200, json={"id": 5})
+
+    client, raw_client = make_client(handler, backoff_base_seconds=0)
+
+    assert await client.create_merge_candidate([1, 2]) == {"id": 5}
+    assert calls == [1, 2]
+
+    await raw_client.aclose()
+
+
+def test_negative_backoff_base_seconds_is_rejected() -> None:
+    with pytest.raises(ValueError, match="backoff_base_seconds must be >= 0"):
+        AsyncStitchClient(
+            base_url="http://example.test/api/v1", backoff_base_seconds=-1.0
+        )
+
+
+@pytest.mark.anyio
 async def test_retry_after_header_is_honored(monkeypatch: pytest.MonkeyPatch) -> None:
     import stitch.client.async_client as async_client_module
 
