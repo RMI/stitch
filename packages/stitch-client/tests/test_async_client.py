@@ -22,6 +22,7 @@ def make_client(
     *,
     base_url: str = "http://example.test/api/v1",
     headers_provider=None,
+    **client_kwargs,
 ) -> tuple[AsyncStitchClient, httpx.AsyncClient]:
     raw_client = httpx.AsyncClient(
         transport=httpx.MockTransport(handler),
@@ -30,6 +31,7 @@ def make_client(
     client = AsyncStitchClient(
         headers_provider=headers_provider,
         client=raw_client,
+        **client_kwargs,
     )
     return client, raw_client
 
@@ -244,6 +246,119 @@ async def test_wait_for_health_raises_after_retries_are_exhausted() -> None:
         await client.wait_for_health(retries=2, delay=0)
 
     assert str(exc_info.value) == "GET /health did not become ready in time"
+
+    await raw_client.aclose()
+
+
+# --- opt-in retry on transient statuses -------------------------------------
+
+
+@pytest.mark.anyio
+async def test_retry_statuses_retries_then_succeeds() -> None:
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(len(calls) + 1)
+        if len(calls) == 1:
+            return httpx.Response(503, text="unavailable")
+        return httpx.Response(200, json={"ok": True})
+
+    client, raw_client = make_client(
+        handler, retry_statuses=frozenset({503}), backoff_base_seconds=0
+    )
+
+    assert await client.get_auth_me() == {"ok": True}
+    assert calls == [1, 2]
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_retry_statuses_raises_after_attempts_exhausted() -> None:
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(len(calls) + 1)
+        return httpx.Response(503, text="still unavailable")
+
+    client, raw_client = make_client(
+        handler,
+        retry_statuses=frozenset({503}),
+        max_attempts=3,
+        backoff_base_seconds=0,
+    )
+
+    with pytest.raises(StitchAPIError) as exc_info:
+        await client.get_auth_me()
+
+    assert exc_info.value.status_code == 503
+    assert calls == [1, 2, 3]
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_status_not_in_retry_set_fast_fails() -> None:
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(len(calls) + 1)
+        return httpx.Response(422, text="unprocessable")
+
+    client, raw_client = make_client(handler, retry_statuses=frozenset({503}))
+
+    with pytest.raises(StitchAPIError) as exc_info:
+        await client.get_auth_me()
+
+    assert exc_info.value.status_code == 422
+    assert calls == [1]  # a non-listed status is never retried
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_default_client_does_not_retry_statuses() -> None:
+    """No ``retry_statuses`` (the default) preserves fast-fail on a 5xx, so
+    existing callers are unaffected."""
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(len(calls) + 1)
+        return httpx.Response(503, text="unavailable")
+
+    client, raw_client = make_client(handler)
+
+    with pytest.raises(StitchAPIError):
+        await client.get_auth_me()
+
+    assert calls == [1]
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_retry_after_header_is_honored(monkeypatch: pytest.MonkeyPatch) -> None:
+    import stitch.client.async_client as async_client_module
+
+    slept: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        slept.append(delay)
+
+    monkeypatch.setattr(async_client_module.asyncio, "sleep", fake_sleep)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if not slept:
+            return httpx.Response(429, headers={"Retry-After": "7"})
+        return httpx.Response(200, json={"ok": True})
+
+    client, raw_client = make_client(
+        handler, retry_statuses=frozenset({429}), backoff_base_seconds=0.5
+    )
+
+    assert await client.get_auth_me() == {"ok": True}
+    # The header wins over the 0.5s exponential backoff.
+    assert slept == [7.0]
 
     await raw_client.aclose()
 
