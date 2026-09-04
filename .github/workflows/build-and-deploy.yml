@@ -133,8 +133,17 @@ jobs:
           esac
 
           # AUTH_ISSUER and AUTH_JWKS_URI are optional overrides: when unset they
-          # are derived from AUTH0_DOMAIN in the "Export auth config" step below,
-          # so there is nothing lane-specific to require here.
+          # are derived from AUTH0_DOMAIN in the "Export auth config" step below.
+          # To avoid mismatched overrides (common with Auth0 custom domains), require
+          # that they are either both set or both unset.
+          if [ -n "${AUTH_ISSUER:-}" ] && [ -z "${AUTH_JWKS_URI:-}" ]; then
+            echo "AUTH_JWKS_URI must be set when AUTH_ISSUER is set." >&2
+            exit 1
+          fi
+          if [ -z "${AUTH_ISSUER:-}" ] && [ -n "${AUTH_JWKS_URI:-}" ]; then
+            echo "AUTH_ISSUER must be set when AUTH_JWKS_URI is set." >&2
+            exit 1
+          fi
 
           has_llm_base_url=false
           has_llm_model=false
