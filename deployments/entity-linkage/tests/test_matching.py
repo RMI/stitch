@@ -367,6 +367,34 @@ async def test_link_all_isolates_and_counts_a_failing_resource() -> None:
 
 
 @pytest.mark.anyio
+async def test_link_all_failed_submit_is_counted_not_reported_as_matched() -> None:
+    # When _submit_group raises (a non-400 downstream error), the block is
+    # counted as failed and must NOT appear in match_groups.
+    client = FakeMatchingClient(
+        items=[
+            FieldCandidate(id=1, name="Alpha", country="US"),
+            FieldCandidate(id=2, name="alpha", country="US"),
+        ],
+        details_by_id={
+            1: FieldDetailCandidate(id=1, name="Alpha", country="US"),
+            2: FieldDetailCandidate(id=2, name="alpha", country="US"),
+        },
+        create_error=StitchAPIError("boom", status_code=500),
+    )
+
+    response = await matching.link_all(
+        client, apply_merges=True, page_size=200, initiated_by="Tester"
+    )
+
+    assert response.resources_failed == 1
+    assert response.match_groups == []
+    assert response.merge_candidates_created == 0
+    # Marked processed on first failure, so the block is attempted once, not
+    # once per member.
+    assert client.create_calls == [[1, 2]]
+
+
+@pytest.mark.anyio
 async def test_link_all_does_not_swallow_programming_errors() -> None:
     # A KeyError is a bug, not a transient failure: it must abort the run rather
     # than be counted as a skipped resource.

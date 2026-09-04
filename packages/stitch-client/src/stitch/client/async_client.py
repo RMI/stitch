@@ -24,15 +24,24 @@ class AsyncStitchClient:
         timeout: float | None = None,
         headers_provider: Callable[[], Mapping[str, str]] | None = None,
         client: httpx.AsyncClient | None = None,
-        max_retries: int = 3,
+        max_attempts: int = 3,
         backoff_base_seconds: float = 0.5,
+        retry_statuses: frozenset[int] = frozenset(),
     ) -> None:
+        if max_attempts < 1:
+            raise ValueError(f"max_attempts must be >= 1, got {max_attempts}")
         self._headers_provider = headers_provider
-        # Bounded exponential-backoff retry for transient transport failures
-        # (see ``_request_json``). Applies whether the httpx client is owned or
-        # injected, so retry behaviour is exercised in tests too.
-        self._max_retries = max_retries
+        # Bounded exponential-backoff retry for transient failures (see
+        # ``_request_with_retry``). ``max_attempts`` is the total number of tries
+        # per request -- ``1`` disables retries. Applies whether the httpx client
+        # is owned or injected, so retry behaviour is exercised in tests too.
+        self._max_attempts = max_attempts
         self._backoff_base_seconds = backoff_base_seconds
+        # HTTP statuses to treat as transient and retry (e.g. ``{429, 503}``).
+        # Empty by default, so a completed response fast-fails unless a caller
+        # opts in -- a bulk poster wants 429/5xx retried, an interactive caller
+        # usually does not. Transport failures are always retried regardless.
+        self._retry_statuses = frozenset(retry_statuses)
         self._owns_client = client is None
         if client is not None:
             if base_url is not None:
@@ -419,9 +428,9 @@ class AsyncStitchClient:
             params=params,
             json=json,
         )
-        # Status errors are raised *after* the retry loop: a 4xx/5xx is a
-        # completed response, not a transport failure, so it fast-fails without
-        # being retried.
+        # A non-retryable status (or one whose retries were exhausted) raises
+        # here: the retry loop returns the completed response and lets this map
+        # it to a ``StitchAPIError``.
         self._raise_for_status(response, operation)
         return response.json()
 
@@ -434,16 +443,20 @@ class AsyncStitchClient:
         params: Mapping[str, Any] | None,
         json: Mapping[str, Any] | None,
     ) -> httpx.Response:
-        """Send one request, retrying only transient transport failures.
+        """Send one request, retrying transient failures with bounded backoff.
 
-        Retries ``httpx.TransportError`` (which includes every timeout and
-        network error -- ``ReadTimeout``, ``ConnectError``, etc.) and ``OSError``
-        with bounded exponential backoff. Any other exception, and every HTTP
-        status response, propagates immediately.
+        Two kinds are retried: transport failures (``httpx.TransportError`` --
+        every timeout and network error, ``ReadTimeout``/``ConnectError``/... --
+        and ``OSError``), which never reached a response; and, when the caller
+        opted in via ``retry_statuses``, a completed response carrying one of
+        those statuses (e.g. 429/503), which honours a ``Retry-After`` header
+        when present and otherwise the exponential backoff. Any other exception
+        propagates, and any non-listed status is returned for the caller to
+        raise on.
         """
-        for attempt in range(1, self._max_retries + 1):
+        for attempt in range(1, self._max_attempts + 1):
             try:
-                return await self._client.request(
+                response = await self._client.request(
                     method,
                     path,
                     params=params,
@@ -451,7 +464,7 @@ class AsyncStitchClient:
                     headers=self._headers(),
                 )
             except (httpx.TransportError, OSError) as exc:
-                if attempt >= self._max_retries:
+                if attempt >= self._max_attempts:
                     raise
                 delay = self._backoff_base_seconds * 2 ** (attempt - 1)
                 logger.warning(
@@ -460,12 +473,51 @@ class AsyncStitchClient:
                     exc,
                     delay,
                     attempt,
-                    self._max_retries,
+                    self._max_attempts,
                 )
                 await asyncio.sleep(delay)
+                continue
+
+            if (
+                response.status_code not in self._retry_statuses
+                or attempt >= self._max_attempts
+            ):
+                return response
+            retry_after = self._retry_after_seconds(response)
+            delay = (
+                retry_after
+                if retry_after is not None
+                else self._backoff_base_seconds * 2 ** (attempt - 1)
+            )
+            logger.warning(
+                "%s returned status %s, retrying in %.1fs (attempt %s/%s)",
+                operation,
+                response.status_code,
+                delay,
+                attempt,
+                self._max_attempts,
+            )
+            await asyncio.sleep(delay)
         # Unreachable: the loop either returns a response or re-raises on the
         # final attempt, but keeps the type checker satisfied.
         raise RuntimeError(f"{operation} exhausted retries without a response")
+
+    @staticmethod
+    def _retry_after_seconds(response: httpx.Response) -> float | None:
+        """Seconds to wait per a ``Retry-After`` header, or None if unusable.
+
+        Only the delta-seconds form (``Retry-After: 5``) is honoured; the
+        HTTP-date form is ignored (falls back to backoff) to avoid depending on
+        client/server clock agreement. A negative or non-numeric value is
+        likewise ignored.
+        """
+        value = response.headers.get("Retry-After")
+        if value is None:
+            return None
+        value = value.strip()
+        if not value.isdigit():
+            return None
+        return float(value)
 
     @staticmethod
     def _validate_page_params(page: int, page_size: int) -> None:

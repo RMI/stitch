@@ -204,11 +204,13 @@ async def link_all(
             if not matched:
                 continue
 
+            # Mark members processed before submitting so they are not
+            # re-searched later even if the submit fails -- a failing block is
+            # counted once, not once per member.
             processed_ids.update(matched)
             fingerprint = merge_fingerprint(matched)
             if fingerprint in groups_by_fingerprint:
                 continue
-            groups_by_fingerprint[fingerprint] = matched
 
             was_created, was_skipped = await _submit_group(
                 client,
@@ -221,6 +223,10 @@ async def link_all(
             logger.warning("Skipping resource %s after error: %s", candidate.id, exc)
             continue
 
+        # Record the group only once it has been handled without error, so
+        # match_groups reflects successfully processed blocks rather than ones
+        # whose submission raised.
+        groups_by_fingerprint[fingerprint] = matched
         if was_created:
             created += 1
         elif was_skipped:

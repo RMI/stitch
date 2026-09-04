@@ -1131,7 +1131,7 @@ def test_raise_for_status_raises_stitch_api_error(
 def _retry_client(
     handler,
     *,
-    max_retries: int = 3,
+    max_attempts: int = 3,
 ) -> tuple[AsyncStitchClient, httpx.AsyncClient]:
     """Build a client whose transport runs ``handler`` with zero backoff delay."""
     raw_client = httpx.AsyncClient(
@@ -1140,7 +1140,7 @@ def _retry_client(
     )
     client = AsyncStitchClient(
         client=raw_client,
-        max_retries=max_retries,
+        max_attempts=max_attempts,
         backoff_base_seconds=0.0,
     )
     return client, raw_client
@@ -1168,7 +1168,7 @@ async def test_transient_timeout_is_retried_then_succeeds() -> None:
 
 
 @pytest.mark.anyio
-async def test_persistent_transient_error_reraises_after_max_retries() -> None:
+async def test_persistent_transient_error_reraises_after_max_attempts() -> None:
     calls = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -1176,7 +1176,7 @@ async def test_persistent_transient_error_reraises_after_max_retries() -> None:
         calls += 1
         raise httpx.ReadTimeout("read timed out", request=request)
 
-    client, raw_client = _retry_client(handler, max_retries=3)
+    client, raw_client = _retry_client(handler, max_attempts=3)
 
     with pytest.raises(httpx.ReadTimeout):
         await client.list_oil_gas_fields_page()
@@ -1204,3 +1204,27 @@ async def test_status_error_is_not_retried() -> None:
     assert calls == 1
 
     await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_max_attempts_one_disables_retry() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise httpx.ReadTimeout("read timed out", request=request)
+
+    client, raw_client = _retry_client(handler, max_attempts=1)
+
+    with pytest.raises(httpx.ReadTimeout):
+        await client.list_oil_gas_fields_page()
+
+    assert calls == 1
+
+    await raw_client.aclose()
+
+
+def test_max_attempts_below_one_is_rejected() -> None:
+    with pytest.raises(ValueError, match="max_attempts must be >= 1"):
+        AsyncStitchClient(base_url="http://example.test/api/v1", max_attempts=0)
