@@ -492,7 +492,7 @@ jobs:
       auth0-audience: ${{ needs.lane-config-validate.outputs.auth0-audience }}
       # Each lane has its own Static Web App, so each has its own production
       # branch: the development lane's SWA is fed by `main`, the staging and
-      # dress-rehearsal lanes' SWA by `production`. A push to the matching
+      # production lanes' SWA by `production`. A push to the matching
       # branch deploys to that SWA's production environment -- the only
       # environment Azure lets us attach a custom domain to. Pull requests are
       # always preview environments regardless of this value.
