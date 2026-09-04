@@ -16,6 +16,7 @@ from stitch.entity_linkage.client import (
     StitchApiClient,
     validate_downstream_auth_config_at_startup,
 )
+from stitch.entity_linkage.settings import get_settings
 
 
 def make_client(
@@ -97,6 +98,23 @@ async def test_post_merge_sends_current_branch_payload_shape(
     }
 
     await client.aclose()
+
+
+@pytest.mark.anyio
+async def test_client_timeout_is_read_from_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "token-123")
+    monkeypatch.setenv("ENTITY_LINKAGE_API_TIMEOUT_SECONDS", "45")
+    get_settings.cache_clear()
+    try:
+        client = StitchApiClient()
+        # httpx expands a scalar timeout to all four phases; read is the one the
+        # bug was about.
+        assert client._client._client.timeout.read == 45.0
+        await client.aclose()
+    finally:
+        get_settings.cache_clear()
 
 
 @pytest.mark.parametrize(

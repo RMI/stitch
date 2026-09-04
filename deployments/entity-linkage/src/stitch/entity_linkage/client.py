@@ -33,7 +33,7 @@ class StitchApiClient:
         headers_provider = env_bearer_token_headers_provider()
         self._client = AsyncStitchClient(
             base_url=_get_api_base_url(),
-            timeout=30.0,
+            timeout=get_settings().api_timeout_seconds,
             headers_provider=headers_provider,
         )
 
