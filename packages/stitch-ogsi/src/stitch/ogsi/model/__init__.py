@@ -156,6 +156,10 @@ OG_FIELD_SOURCE_VIEW_ADAPTER = TypeAdapter(OGFieldSourceView)
 
 class OGFieldView(OilGasFieldBase):
     id: int
+    # STIT-418: when a request for a merged-away resource is redirected to the
+    # resource it was merged into, this holds the id the caller originally asked
+    # for. ``None`` when the caller received exactly the resource it requested.
+    requested_resource_id: int | None = None
 
 
 class OGFieldListItemView(BaseModel):
@@ -166,6 +170,9 @@ class OGFieldListItemView(BaseModel):
 
 class OGFieldDetailView(OGFieldListItemView):
     source_data: list[OGFieldSourceView] = Field(default_factory=list)
+    # STIT-418: see ``OGFieldView.requested_resource_id``. Set when the detail
+    # endpoint redirected a merged-away resource to its terminal resource.
+    requested_resource_id: int | None = None
 
     @field_validator("source_data", mode="before")
     @classmethod

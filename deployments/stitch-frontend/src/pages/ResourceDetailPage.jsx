@@ -1,6 +1,6 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
-import { useParams, useNavigate } from "react-router";
+import { useParams, useNavigate, useLocation } from "react-router";
 import {
   useCreateSourceForResource,
   useResourceDetail,
@@ -554,9 +554,15 @@ function SourcesSection({ sources }) {
 export default function ResourceDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const numericId = Number(id);
   const validId = Number.isFinite(numericId);
   const endpoint = "oil-gas-fields";
+  // STIT-418: set by the redirect below when a merged-away id is bounced to its
+  // canonical resource. Ephemeral by design — it lives in router state, so a
+  // fresh load, refresh, or new tab of this URL carries none and shows no
+  // notice; it appears only when the user actually got redirected here.
+  const redirectedFrom = location.state?.redirectedFrom ?? null;
   // Enabled (not manually refetched) so that save mutations' cache
   // invalidations refetch it — invalidation never refetches disabled queries.
   const {
@@ -567,11 +573,38 @@ export default function ResourceDetailPage() {
 
   useDocumentTitle(detailView?.data?.name ?? "Resource");
 
+  // STIT-418: the API returns the merged-into (root) resource for a repointed
+  // id, so the resolved id can differ from the id in the URL. Redirect to the
+  // canonical URL. replace:true is mandatory: without it, Back returns to the
+  // old id, which re-resolves and redirects again, trapping Back. No cycle guard
+  // is needed beyond the id check — repointing always targets a brand-new row,
+  // so the chain is acyclic and the root never redirects again.
+  //
+  // Coerce with Number() so a string id in the payload still compares and
+  // navigates as a number (a strict `!==` against the numeric URL id would
+  // otherwise loop); NaN when detailView is absent, which the finite check skips.
+  const resolvedId = Number(detailView?.id);
+  useEffect(() => {
+    if (Number.isFinite(resolvedId) && resolvedId !== numericId) {
+      navigate(`/${endpoint}/${resolvedId}`, {
+        replace: true,
+        state: { redirectedFrom: numericId },
+      });
+    }
+  }, [resolvedId, numericId, endpoint, navigate]);
+
   return (
     <div className="mx-auto max-w-4xl">
       <Button onClick={() => navigate(-1)} variant="ghost" className="mb-6">
         ← Back
       </Button>
+
+      {redirectedFrom != null && (
+        <div className="mb-6 rounded-md border border-line bg-surface px-4 py-3 text-sm text-ink">
+          Resource <span className="font-medium">{redirectedFrom}</span> was
+          merged into this record, so you were brought here.
+        </div>
+      )}
 
       {!validId && <p className="text-danger">Invalid resource ID.</p>}
       {isLoading && <p className="text-ink-muted">Loading…</p>}

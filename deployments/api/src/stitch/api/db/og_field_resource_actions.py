@@ -139,6 +139,52 @@ async def get(
     )
 
 
+async def resolve_root_id(session: AsyncSession, id: int) -> int:
+    """Resolve a resource id to its terminal (root) resource id, following repoints.
+
+    404 if ``id`` does not exist; a non-repointed id returns itself. Read-only
+    endpoints use this so a request for a merged-away resource acts on the
+    resource it was merged into. The write path (merges, priority edits)
+    intentionally does NOT resolve -- it must act on the exact requested row.
+
+    Resolution collapses the whole chain: ``A -> C -> F -> J`` resolves ``A`` to
+    ``J``. The ``repointed_id`` graph is acyclic by construction
+    (``apply_resource_merge`` always targets a brand-new row), so ``get_root``
+    terminates.
+    """
+    model = await session.scalar(select(ResourceModel).where(ResourceModel.id == id))
+    if model is None:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND, detail=f"No Resource with id `{id}` found."
+        )
+    if model.repointed_id is None:
+        return id
+    try:
+        return (await model.get_root(session)).id
+    except ResourceNotFoundError as exc:
+        # Unreachable under current invariants (FK + acyclic merges + the
+        # self-reference validator), but a corrupt repoint chain must not surface
+        # as an unhandled 500 on a read path.
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"Resource `{id}` could not be resolved to a current resource.",
+        ) from exc
+
+
+async def get_resolved(
+    session: AsyncSession,
+    id: int,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> OGFieldResource:
+    """Return resource ``id``, following repoints to the terminal (root) resource.
+
+    Read-only wrapper over ``resolve_root_id`` + ``get``; see ``resolve_root_id``
+    for the resolution semantics.
+    """
+    root_id = await resolve_root_id(session, id)
+    return await get(session, root_id, licensed_sources=licensed_sources)
+
+
 async def field_source_values(
     session: AsyncSession,
     id: int,
@@ -159,16 +205,16 @@ async def field_source_values(
             status_code=422,
             detail=f"field={field} is not a known resource field.",
         )
-    if await session.get(ResourceModel, id) is None:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND, detail=f"No Resource with id `{id}` found."
-        )
+    # Resolve repoints so a merged-away id returns the terminal resource's field
+    # sources (and 404s a genuinely missing id), consistent with the
+    # single-resource read endpoints.
+    root_id = await resolve_root_id(session, id)
 
     # field_source_candidates ranks in SQL by the same tiered key as the coalesce
     # winner, so the row order is winner-first and rank is just the enumerate
     # index. Empty text can't be persisted, so every returned row is a real value.
     rows = (
-        await session.execute(field_source_candidates(id, field, licensed_sources))
+        await session.execute(field_source_candidates(root_id, field, licensed_sources))
     ).all()
     return [
         OGFieldSourceValueView(

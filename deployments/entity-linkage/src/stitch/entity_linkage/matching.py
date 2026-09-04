@@ -20,7 +20,10 @@ page at a time, so it never materializes the whole table either.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
+
+import httpx
 
 from stitch.entity_linkage.client import StitchApiClient
 from stitch.entity_linkage.entities import (
@@ -30,6 +33,8 @@ from stitch.entity_linkage.entities import (
     normalize_name,
 )
 from stitch.entity_linkage.errors import StitchAPIError
+
+logger = logging.getLogger(__name__)
 
 # A 4xx from create-merge-candidate is an expected, non-fatal outcome during a
 # run: the API rejects a duplicate fingerprint (a candidate already exists) or a
@@ -182,28 +187,46 @@ async def link_all(
     resources_scanned = 0
     created = 0
     skipped = 0
+    failed = 0
 
     async for candidate in client.iter_oil_gas_fields(page_size=page_size):
         resources_scanned += 1
         if candidate.id in processed_ids:
             continue
 
-        matched = await find_match_group_for_resource(client, candidate.id)
-        if not matched:
+        # Isolate each resource: a transient error already exhausted the shared
+        # client's retries, or the API rejected this one resource. Skipping and
+        # counting it keeps a multi-hour run alive instead of aborting on a
+        # single bad resource. Only network/API errors are caught -- a
+        # programming error still propagates so real bugs surface.
+        try:
+            matched = await find_match_group_for_resource(client, candidate.id)
+            if not matched:
+                continue
+
+            # Mark members processed before submitting so they are not
+            # re-searched later even if the submit fails -- a failing block is
+            # counted once, not once per member.
+            processed_ids.update(matched)
+            fingerprint = merge_fingerprint(matched)
+            if fingerprint in groups_by_fingerprint:
+                continue
+
+            was_created, was_skipped = await _submit_group(
+                client,
+                matched,
+                apply_merges=apply_merges,
+                known_existing=known_existing,
+            )
+        except (StitchAPIError, httpx.HTTPError, OSError) as exc:
+            failed += 1
+            logger.warning("Skipping resource %s after error: %s", candidate.id, exc)
             continue
 
-        processed_ids.update(matched)
-        fingerprint = merge_fingerprint(matched)
-        if fingerprint in groups_by_fingerprint:
-            continue
+        # Record the group only once it has been handled without error, so
+        # match_groups reflects successfully processed blocks rather than ones
+        # whose submission raised.
         groups_by_fingerprint[fingerprint] = matched
-
-        was_created, was_skipped = await _submit_group(
-            client,
-            matched,
-            apply_merges=apply_merges,
-            known_existing=known_existing,
-        )
         if was_created:
             created += 1
         elif was_skipped:
@@ -216,4 +239,5 @@ async def link_all(
         match_groups=list(groups_by_fingerprint.values()),
         merge_candidates_created=created,
         merge_candidates_skipped=skipped,
+        resources_failed=failed,
     )

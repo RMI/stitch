@@ -63,3 +63,13 @@ def test_openapi_exposes_client_library_contract():
 
     assert detail_component["type"] == "object"
     assert {"id", "data"}.issubset(detail_component["properties"])
+
+    # STIT-418: the single-resource read views expose the redirect flag so a
+    # client can tell the returned resource is not the one it requested.
+    get_operation = paths["/api/v1/oil-gas-fields/{id}"]["get"]
+    get_schema = get_operation["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ]
+    get_component = _resolve_component_schema(schema, get_schema)
+    assert "requested_resource_id" in get_component["properties"]
+    assert "requested_resource_id" in detail_component["properties"]

@@ -23,6 +23,7 @@ vi.mock("../hooks/useResources", async (importOriginal) => ({
 vi.mock("../hooks/usePermissions");
 
 let mockedRouteId = "1";
+let mockLocationState = null;
 const mockNavigate = vi.fn();
 
 vi.mock("react-router", async () => {
@@ -31,6 +32,7 @@ vi.mock("react-router", async () => {
     ...actual,
     useParams: () => ({ id: mockedRouteId }),
     useNavigate: () => mockNavigate,
+    useLocation: () => ({ state: mockLocationState }),
   };
 });
 
@@ -90,6 +92,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.unstubAllGlobals();
   mockedRouteId = "1";
+  mockLocationState = null;
   mockNavigate.mockReset();
   vi.mocked(useAuth0).mockReturnValue(auth0TestDefaults);
   vi.mocked(useResourceDetail).mockReturnValue({
@@ -888,5 +891,110 @@ describe("ResourceDetailPage", () => {
     expect(
       await screen.findByRole("button", { name: /added to resource/i }),
     ).toBeDisabled();
+  });
+
+  it("redirects to the merged-into resource when the returned id differs from the URL", () => {
+    // STIT-418: the API resolved a merged-away id (123) to its terminal
+    // resource (456), so the page redirects to the canonical URL.
+    mockedRouteId = "123";
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: { ...mockDetailView, id: 456, requested_resource_id: 123 },
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith("/oil-gas-fields/456", {
+      replace: true,
+      state: { redirectedFrom: 123 },
+    });
+  });
+
+  it("shows an ephemeral notice on the destination when arrived via redirect", () => {
+    // Simulates having landed on the canonical resource via the redirect above:
+    // the router carries the original id in location state.
+    mockedRouteId = "456";
+    mockLocationState = { redirectedFrom: 123 };
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: { ...mockDetailView, id: 456, requested_resource_id: null },
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(screen.getByText(/merged into this record/i)).toBeInTheDocument();
+    expect(screen.getByText("123")).toBeInTheDocument();
+    // It's a notice, not a redirect: no further navigation.
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("shows no redirect notice on a normal visit (no router state)", () => {
+    mockedRouteId = "1";
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(
+      screen.queryByText(/merged into this record/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not redirect when the returned resource is the one requested", () => {
+    mockedRouteId = "1";
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView, // id 1 === route id 1
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("does not redirect again once on the canonical resource", () => {
+    // Landed on the root: id matches the URL, so no further redirect (no loop).
+    mockedRouteId = "456";
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: { ...mockDetailView, id: 456, requested_resource_id: null },
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("redirects correctly when the API returns the id as a string", () => {
+    mockedRouteId = "123";
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: { ...mockDetailView, id: "456", requested_resource_id: 123 },
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith("/oil-gas-fields/456", {
+      replace: true,
+      state: { redirectedFrom: 123 },
+    });
+  });
+
+  it("does not loop when a string id already matches the URL", () => {
+    // A strict `!==` against the numeric URL id would treat "456" !== 456 as a
+    // mismatch and redirect forever; the numeric coercion prevents that.
+    mockedRouteId = "456";
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: { ...mockDetailView, id: "456", requested_resource_id: null },
+    });
+
+    renderWithQueryClient(<ResourceDetailPage />);
+
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });
