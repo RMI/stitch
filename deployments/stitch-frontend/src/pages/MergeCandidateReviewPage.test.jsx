@@ -84,6 +84,8 @@ const nextPendingCandidate = {
   merged_resource_id: null,
 };
 
+const SHOW_APPROVED = "Show approved merges";
+
 const defaultHookReturn = {
   data: null,
   isLoading: false,
@@ -171,6 +173,8 @@ describe("MergeCandidateReviewPage", () => {
     expect(within(pendingItem).getByText("CANDIDATE")).toBeInTheDocument();
     expect(within(pendingItem).queryByText("PENDING")).not.toBeInTheDocument();
 
+    await userEvent.setup().click(screen.getByLabelText(SHOW_APPROVED));
+
     const approvedItem = await screen.findByRole("button", {
       name: /Arabian Merged/,
     });
@@ -187,6 +191,7 @@ describe("MergeCandidateReviewPage", () => {
       return Promise.resolve(resourceDetailsById[id]);
     });
     renderWithQueryClient(<MergeCandidateReviewPage />);
+    await userEvent.setup().click(screen.getByLabelText(SHOW_APPROVED));
 
     expect(
       await screen.findByRole("button", { name: /Arabian Merged/ }),
@@ -381,7 +386,7 @@ describe("MergeCandidateReviewPage", () => {
     expect(screen.getByText(/detail boom/)).toBeInTheDocument();
   });
 
-  it("shows the merged resource instead of the source comparison once merged_resource_id is set", () => {
+  it("shows the merged resource instead of the source comparison once merged_resource_id is set", async () => {
     const mergedCandidate = candidates[1];
     vi.mocked(useMergeCandidates).mockReturnValue({
       ...defaultHookReturn,
@@ -393,6 +398,9 @@ describe("MergeCandidateReviewPage", () => {
     });
 
     renderWithQueryClient(<MergeCandidateReviewPage />);
+    // The only candidate is approved, and approved merges are filtered out of
+    // the queue by default; reveal it so it can be selected.
+    await userEvent.setup().click(screen.getByLabelText(SHOW_APPROVED));
 
     expect(screen.getByText("Merged resource 301")).toBeInTheDocument();
     expect(
@@ -413,6 +421,9 @@ describe("MergeCandidateReviewPage", () => {
     });
 
     renderWithQueryClient(<MergeCandidateReviewPage />);
+    // The only candidate is approved, and approved merges are filtered out of
+    // the queue by default; reveal it so it can be selected.
+    await userEvent.setup().click(screen.getByLabelText(SHOW_APPROVED));
 
     expect(
       await screen.findByRole("heading", { name: "Arabian Merged" }),
@@ -422,7 +433,7 @@ describe("MergeCandidateReviewPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("links the merged resource id to its detail page", () => {
+  it("links the merged resource id to its detail page", async () => {
     const mergedCandidate = candidates[1];
     vi.mocked(useMergeCandidates).mockReturnValue({
       ...defaultHookReturn,
@@ -434,6 +445,9 @@ describe("MergeCandidateReviewPage", () => {
     });
 
     renderWithQueryClient(<MergeCandidateReviewPage />);
+    // The only candidate is approved, and approved merges are filtered out of
+    // the queue by default; reveal it so it can be selected.
+    await userEvent.setup().click(screen.getByLabelText(SHOW_APPROVED));
 
     expect(screen.getByRole("link", { name: "301" })).toHaveAttribute(
       "href",
@@ -511,6 +525,129 @@ describe("MergeCandidateReviewPage", () => {
       expect(
         screen.getByRole("button", { name: "Approve merge" }),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe("approved-merge filtering", () => {
+    const deniedCandidate = {
+      id: 14,
+      status: "DENIED",
+      resource_ids: [401, 402],
+      merged_resource_id: null,
+    };
+    const approvedCandidate = candidates[1];
+
+    // The header counts live in a <dt>/<dd> pair; read the value beside a label.
+    function countFor(label) {
+      return screen.getByText(label).parentElement.querySelector("dd")
+        .textContent;
+    }
+
+    // Item names resolve asynchronously, so absence-by-name is racy: a name
+    // that has not loaded yet looks the same as a filtered-out row. Counting
+    // the queue's buttons does not depend on name resolution.
+    function queueItems() {
+      const queue = screen
+        .getByRole("heading", { name: "Queue" })
+        .closest("aside");
+      return within(queue).queryAllByRole("button");
+    }
+
+    it("hides approved candidates from the queue by default", async () => {
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      expect(
+        await screen.findByRole("button", { name: /Bergan/ }),
+      ).toBeInTheDocument();
+      // Two candidates exist (one pending, one approved); only one is listed.
+      await waitFor(() => expect(queueItems()).toHaveLength(1));
+      expect(
+        screen.queryByRole("button", { name: /Arabian Merged/ }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("reveals approved candidates once the reviewer opts in", async () => {
+      const user = userEvent.setup();
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      await waitFor(() => expect(queueItems()).toHaveLength(1));
+
+      await user.click(screen.getByLabelText(SHOW_APPROVED));
+
+      expect(
+        await screen.findByRole("button", { name: /Arabian Merged/ }),
+      ).toBeInTheDocument();
+      expect(queueItems()).toHaveLength(2);
+    });
+
+    it("keeps denied candidates visible by default", async () => {
+      vi.mocked(useMergeCandidates).mockReturnValue({
+        ...defaultHookReturn,
+        data: [pendingCandidate, deniedCandidate, approvedCandidate],
+      });
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      const user = userEvent.setup();
+
+      expect(
+        await screen.findByRole("button", { name: /Candidate #14/ }),
+      ).toBeInTheDocument();
+      // Pending + denied listed, approved filtered out.
+      await waitFor(() => expect(queueItems()).toHaveLength(2));
+
+      // Revealing the approved row proves the count reflects filtering rather
+      // than a name that simply had not loaded yet.
+      await user.click(screen.getByLabelText(SHOW_APPROVED));
+      await waitFor(() => expect(queueItems()).toHaveLength(3));
+    });
+
+    it("counts all candidates in the header regardless of the filter", async () => {
+      const user = userEvent.setup();
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      expect(countFor("Pending")).toBe("1");
+      expect(countFor("Reviewed")).toBe("1");
+      expect(countFor("Total")).toBe("2");
+
+      await user.click(screen.getByLabelText(SHOW_APPROVED));
+
+      expect(countFor("Pending")).toBe("1");
+      expect(countFor("Reviewed")).toBe("1");
+      expect(countFor("Total")).toBe("2");
+    });
+
+    it("does not select a hidden approved candidate by default", async () => {
+      // No pending work left: the fallback selection must land on the visible
+      // denied candidate, never on the filtered-out approved one.
+      vi.mocked(useMergeCandidates).mockReturnValue({
+        ...defaultHookReturn,
+        data: [approvedCandidate, deniedCandidate],
+      });
+      vi.mocked(useMergeCandidate).mockReturnValue({
+        ...defaultHookReturn,
+        data: { ...deniedCandidate, compare: [] },
+      });
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      const deniedItem = await screen.findByRole("button", {
+        name: /Candidate #14/,
+      });
+      expect(deniedItem).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("explains an empty queue caused by the filter", async () => {
+      vi.mocked(useMergeCandidates).mockReturnValue({
+        ...defaultHookReturn,
+        data: [approvedCandidate],
+      });
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      expect(
+        await screen.findByText(/approved merges are hidden/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText("No merge candidates to review."),
+      ).not.toBeInTheDocument();
     });
   });
 });
