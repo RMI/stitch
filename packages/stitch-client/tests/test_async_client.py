@@ -337,6 +337,51 @@ async def test_default_client_does_not_retry_statuses() -> None:
 
 
 @pytest.mark.anyio
+async def test_post_is_not_retried_on_5xx_status() -> None:
+    """A listed 5xx is not retried on a non-idempotent POST: the request may
+    have already taken effect, so re-sending it could duplicate the write."""
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(len(calls) + 1)
+        return httpx.Response(503, text="unavailable")
+
+    client, raw_client = make_client(
+        handler, retry_statuses=frozenset({503}), backoff_base_seconds=0
+    )
+
+    with pytest.raises(StitchAPIError) as exc_info:
+        await client.create_merge_candidate([1, 2])
+
+    assert exc_info.value.status_code == 503
+    assert calls == [1]  # POST + 5xx: fast-fail, no retry
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_post_is_retried_on_429_status() -> None:
+    """A listed status < 500 (e.g. 429) is unprocessed, so it retries even on a
+    non-idempotent POST."""
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(len(calls) + 1)
+        if len(calls) == 1:
+            return httpx.Response(429, text="slow down")
+        return httpx.Response(200, json={"id": 5})
+
+    client, raw_client = make_client(
+        handler, retry_statuses=frozenset({429}), backoff_base_seconds=0
+    )
+
+    assert await client.create_merge_candidate([1, 2]) == {"id": 5}
+    assert calls == [1, 2]
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
 async def test_retry_after_header_is_honored(monkeypatch: pytest.MonkeyPatch) -> None:
     import stitch.client.async_client as async_client_module
 

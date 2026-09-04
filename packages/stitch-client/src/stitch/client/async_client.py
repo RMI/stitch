@@ -15,6 +15,15 @@ logger = logging.getLogger("stitch.client")
 MAX_PAGE_SIZE = 200
 """Server cap on ``page_size`` (``PaginationParams.page_size`` is ``Field(50, ge=1, le=200)``)."""
 
+_IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE", "PUT", "DELETE"})
+"""Methods safe to retry after a completed 5xx response (RFC 7231 idempotent set).
+
+A 5xx may follow a request the server already partially applied, so retrying it
+is only safe when repeating the request has no additional effect. POST/PATCH are
+excluded. Statuses below 500 (429, 408) are unprocessed/pre-processing and retry
+regardless of method.
+"""
+
 
 class AsyncStitchClient:
     def __init__(
@@ -450,9 +459,12 @@ class AsyncStitchClient:
         and ``OSError``), which never reached a response; and, when the caller
         opted in via ``retry_statuses``, a completed response carrying one of
         those statuses (e.g. 429/503), which honours a ``Retry-After`` header
-        when present and otherwise the exponential backoff. Any other exception
-        propagates, and any non-listed status is returned for the caller to
-        raise on.
+        when present and otherwise the exponential backoff. A listed status
+        ``>= 500`` is only retried on an idempotent method (see
+        ``_IDEMPOTENT_METHODS``): a 5xx may follow a side effect the server
+        already applied, so retrying a POST could duplicate it. Any other
+        exception propagates, and any non-retried status is returned for the
+        caller to raise on.
         """
         for attempt in range(1, self._max_attempts + 1):
             try:
@@ -479,7 +491,7 @@ class AsyncStitchClient:
                 continue
 
             if (
-                response.status_code not in self._retry_statuses
+                not self._should_retry_status(method, response.status_code)
                 or attempt >= self._max_attempts
             ):
                 return response
@@ -501,6 +513,19 @@ class AsyncStitchClient:
         # Unreachable: the loop either returns a response or re-raises on the
         # final attempt, but keeps the type checker satisfied.
         raise RuntimeError(f"{operation} exhausted retries without a response")
+
+    def _should_retry_status(self, method: str, status_code: int) -> bool:
+        """Whether a completed response's status should be retried.
+
+        The status must be opted in via ``retry_statuses``. A ``>= 500`` status
+        is additionally gated on an idempotent method, so a non-idempotent POST
+        is never retried on a 5xx that may have already taken effect.
+        """
+        if status_code not in self._retry_statuses:
+            return False
+        if status_code >= 500 and method.upper() not in _IDEMPOTENT_METHODS:
+            return False
+        return True
 
     @staticmethod
     def _retry_after_seconds(response: httpx.Response) -> float | None:
