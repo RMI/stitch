@@ -52,6 +52,9 @@ class FakeMergedResource:
 class FakeSession:
     scalar_result: object | None = None
     scalars_result: list[object] = field(default_factory=list)
+    # (origin_id, root_id) rows returned by root_id_by_resource_id's query;
+    # empty means nothing is repointed, so no candidate is stale.
+    execute_result: list[tuple[int, int]] = field(default_factory=list)
     added: list[object] = field(default_factory=list)
     added_all: list[object] = field(default_factory=list)
     flush_calls: int = 0
@@ -62,6 +65,9 @@ class FakeSession:
 
     async def scalars(self, _stmt):
         return SimpleNamespace(all=lambda: list(self.scalars_result))
+
+    async def execute(self, _stmt):
+        return SimpleNamespace(all=lambda: list(self.execute_result))
 
     def add(self, obj):
         self.added.append(obj)
@@ -105,11 +111,58 @@ def test_candidate_to_view_sorts_items_by_position():
         ],
     )
 
-    view = mca._candidate_to_view(candidate)
+    view = mca._candidate_to_view(candidate, [])
 
     assert view.resource_ids == [18, 19]
     assert view.status == MergeCandidateStatus.PENDING
     assert view.id == 1
+    assert view.repointed_resources == []
+
+
+@pytest.mark.anyio
+async def test_resolve_candidates_batches_root_lookup_once(monkeypatch):
+    # Two pending candidates sharing member 19; the resolver must look up roots
+    # in ONE batched call over the union of member ids (GET /merge-candidates is
+    # unpaginated, so per-candidate lookups would be an unbounded N+1).
+    c1 = FakeCandidate(
+        id=1,
+        status=MergeCandidateStatus.PENDING,
+        items=[FakeItem(18, 0), FakeItem(19, 1)],
+    )
+    c2 = FakeCandidate(
+        id=2,
+        status=MergeCandidateStatus.PENDING,
+        items=[FakeItem(19, 0), FakeItem(20, 1)],
+    )
+    root_lookup = AsyncMock(return_value={18: 18, 19: 31, 20: 20})
+    monkeypatch.setattr(mca.ResourceModel, "root_id_by_resource_id", root_lookup)
+
+    result = await mca._resolve_candidates(AsyncMock(), [c1, c2])
+
+    root_lookup.assert_awaited_once()
+    _session, ids = root_lookup.call_args.args
+    assert set(ids) == {18, 19, 20}
+    # Only member 19 moved (19 -> 31); it surfaces on both candidates.
+    assert [(m.resource_id, m.repointed_to) for m in result[1]] == [(19, 31)]
+    assert [(m.resource_id, m.repointed_to) for m in result[2]] == [(19, 31)]
+
+
+@pytest.mark.anyio
+async def test_resolve_candidates_skips_terminal_status(monkeypatch):
+    # An APPROVED candidate's own members are repointed at its own merge result,
+    # so resolving them would make every approved candidate flag itself as stale.
+    approved = FakeCandidate(
+        id=5,
+        status=MergeCandidateStatus.APPROVED,
+        items=[FakeItem(18, 0), FakeItem(19, 1)],
+    )
+    root_lookup = AsyncMock()
+    monkeypatch.setattr(mca.ResourceModel, "root_id_by_resource_id", root_lookup)
+
+    result = await mca._resolve_candidates(AsyncMock(), [approved])
+
+    assert result == {5: []}
+    root_lookup.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -446,9 +499,13 @@ async def test_get_merge_candidate_returns_detail_view_in_item_order(monkeypatch
     async def fake_default_priority(session_arg):
         return {"rmi": 1, "gem": 2, "wm": 3, "llm": 4}
 
+    async def fake_resolve(session_arg, candidates):
+        return {c.id: [] for c in candidates}
+
     monkeypatch.setattr(mca, "_load_candidate_model", fake_load_candidate_model)
     monkeypatch.setattr(mca, "coalesce_resources_with_sources", fake_coalesce)
     monkeypatch.setattr(mca, "_default_source_priority", fake_default_priority)
+    monkeypatch.setattr(mca, "_resolve_candidates", fake_resolve)
 
     view = await mca.get_merge_candidate(
         AsyncMock(), candidate_id=1, licensed_sources=["gem"]
