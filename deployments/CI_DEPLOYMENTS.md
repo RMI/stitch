@@ -105,10 +105,24 @@ NFS forces CLI/YAML) per lane (`staging`, `production`), in that lane's
 resource group and Container Apps environment. Each lane gets its own storage
 account / share / environment-storage name:
 
+> **Reminder — when adding a new lane:** this storage registration is a required
+> manual step, not something CI wires up. Setting `ETL_STORAGE_NAME` only tells the
+> pipeline which env-storage name to mount; if the SMB share is not actually
+> registered on the lane's Container Apps environment (steps below), the `etl`
+> Container App fails to boot — it validates every dataset's config at startup and
+> reads its GEM spreadsheet from the mount. For the `production` lane the env
+> storage name is `etl-prod` on the `stitch-prod` Container Apps environment.
+
 | Lane              | Storage account | File share            | Env storage name (`ETL_STORAGE_NAME`) |
 | ----------------- | --------------- | --------------------- | ------------------------------------- |
 | `staging`         | `stitchstaging` | `etl-staging`         | `etl-staging`                         |
-| `production`      | _(TODO: confirm)_ | `etl-prod`          | `etl-prod`                            |
+| `production`      | `rmistitchprod` | `etl-prod`            | `etl-prod`                            |
+
+Note: the `production` storage account is `rmistitchprod`, which does **not**
+follow the `stitch<lane>` pattern that `stitchstaging` uses — don't assume
+`stitchprod`. The share is reachable at
+`https://rmistitchprod.file.core.windows.net/etl-prod`. The file share and
+env-storage names (`etl-prod`) do follow the usual `etl-<lane>` convention.
 
 1. **Create a storage account + file share.** Create a Storage account (Standard
    LRS, StorageV2) or reuse one, then under **File shares** add a share (for
