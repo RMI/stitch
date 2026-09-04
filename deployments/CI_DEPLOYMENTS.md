@@ -415,6 +415,13 @@ Environment. The `environment:*` subjects are also required because the
 lane-scoped deploy jobs authenticate from GitHub Environments named
 `development`, `staging`, and `production`.
 
+> **Reminder — when adding a new lane / GitHub Environment:** creating the
+> Environment and populating its variables/secrets is not enough. You must also
+> add a matching `repo:RMI/stitch:environment:<lane>` federated-credential subject
+> to the `GHActions-stitch-cicd` managed identity, or every deploy job in that
+> lane fails at `azure/login` with an OIDC error. (This was the final wiring step
+> when the `production` lane replaced `dress-rehearsal`.)
+
 All federated credential fields must match exactly:
 
 - Issuer: `https://token.actions.githubusercontent.com`
@@ -424,11 +431,21 @@ All federated credential fields must match exactly:
 If Azure starts returning `AADSTS7002138`, recreating the affected federated
 credential is usually faster than editing it in place.
 
-Managed identity roles:
+Managed identity roles (grant per lane, on that lane's resource group and
+Container Apps environment):
 
 - `Reader` on `stitch-dev` (Container Apps Environment)
 - `Reader` on `STITCH-DEV-RG` (Resource Group)
 - `Container Apps Contributor` on `STITCH-DEV-RG` (Resource Group)
+- `Reader` on `stitch-prod` (Container Apps Environment)
+- `Reader` on `STITCH-PROD-RG` (Resource Group)
+- `Container Apps Contributor` on `STITCH-PROD-RG` (Resource Group)
+
+> **Reminder — when adding a new lane:** the federated-credential subject above
+> only lets the identity authenticate; it still needs these role assignments on
+> the new lane's resource group and Container Apps environment, or deploys fail
+> with authorization errors even though login succeeds. Grant the same
+> `Reader` + `Container Apps Contributor` set that the other lanes have.
 
 ## Setup Notes
 
