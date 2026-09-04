@@ -24,8 +24,15 @@ class AsyncStitchClient:
         timeout: float | None = None,
         headers_provider: Callable[[], Mapping[str, str]] | None = None,
         client: httpx.AsyncClient | None = None,
+        max_retries: int = 3,
+        backoff_base_seconds: float = 0.5,
     ) -> None:
         self._headers_provider = headers_provider
+        # Bounded exponential-backoff retry for transient transport failures
+        # (see ``_request_json``). Applies whether the httpx client is owned or
+        # injected, so retry behaviour is exercised in tests too.
+        self._max_retries = max_retries
+        self._backoff_base_seconds = backoff_base_seconds
         self._owns_client = client is None
         if client is not None:
             if base_url is not None:
@@ -405,15 +412,60 @@ class AsyncStitchClient:
         params: Mapping[str, Any] | None = None,
         json: Mapping[str, Any] | None = None,
     ) -> Any:
-        response = await self._client.request(
-            method,
-            path,
+        response = await self._request_with_retry(
+            method=method,
+            path=path,
+            operation=operation,
             params=params,
             json=json,
-            headers=self._headers(),
         )
+        # Status errors are raised *after* the retry loop: a 4xx/5xx is a
+        # completed response, not a transport failure, so it fast-fails without
+        # being retried.
         self._raise_for_status(response, operation)
         return response.json()
+
+    async def _request_with_retry(
+        self,
+        *,
+        method: str,
+        path: str,
+        operation: str,
+        params: Mapping[str, Any] | None,
+        json: Mapping[str, Any] | None,
+    ) -> httpx.Response:
+        """Send one request, retrying only transient transport failures.
+
+        Retries ``httpx.TransportError`` (which includes every timeout and
+        network error -- ``ReadTimeout``, ``ConnectError``, etc.) and ``OSError``
+        with bounded exponential backoff. Any other exception, and every HTTP
+        status response, propagates immediately.
+        """
+        for attempt in range(1, self._max_retries + 1):
+            try:
+                return await self._client.request(
+                    method,
+                    path,
+                    params=params,
+                    json=json,
+                    headers=self._headers(),
+                )
+            except (httpx.TransportError, OSError) as exc:
+                if attempt >= self._max_retries:
+                    raise
+                delay = self._backoff_base_seconds * 2 ** (attempt - 1)
+                logger.warning(
+                    "%s failed (%s), retrying in %.1fs (attempt %s/%s)",
+                    operation,
+                    exc,
+                    delay,
+                    attempt,
+                    self._max_retries,
+                )
+                await asyncio.sleep(delay)
+        # Unreachable: the loop either returns a response or re-raises on the
+        # final attempt, but keeps the type checker satisfied.
+        raise RuntimeError(f"{operation} exhausted retries without a response")
 
     @staticmethod
     def _validate_page_params(page: int, page_size: int) -> None:

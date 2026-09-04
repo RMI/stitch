@@ -1126,3 +1126,81 @@ def test_raise_for_status_raises_stitch_api_error(
     )
     assert exc_info.value.status_code == status_code
     assert exc_info.value.response_text == text
+
+
+def _retry_client(
+    handler,
+    *,
+    max_retries: int = 3,
+) -> tuple[AsyncStitchClient, httpx.AsyncClient]:
+    """Build a client whose transport runs ``handler`` with zero backoff delay."""
+    raw_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url="http://example.test/api/v1",
+    )
+    client = AsyncStitchClient(
+        client=raw_client,
+        max_retries=max_retries,
+        backoff_base_seconds=0.0,
+    )
+    return client, raw_client
+
+
+@pytest.mark.anyio
+async def test_transient_timeout_is_retried_then_succeeds() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise httpx.ReadTimeout("read timed out", request=request)
+        return httpx.Response(200, json={"items": [], "total_pages": 1})
+
+    client, raw_client = _retry_client(handler)
+
+    payload = await client.list_oil_gas_fields_page()
+
+    assert payload == {"items": [], "total_pages": 1}
+    assert calls == 2
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_persistent_transient_error_reraises_after_max_retries() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise httpx.ReadTimeout("read timed out", request=request)
+
+    client, raw_client = _retry_client(handler, max_retries=3)
+
+    with pytest.raises(httpx.ReadTimeout):
+        await client.list_oil_gas_fields_page()
+
+    assert calls == 3
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_status_error_is_not_retried() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(404, text="missing")
+
+    client, raw_client = _retry_client(handler)
+
+    with pytest.raises(StitchAPIError) as exc_info:
+        await client.list_oil_gas_fields_page()
+
+    assert exc_info.value.status_code == 404
+    assert calls == 1
+
+    await raw_client.aclose()
