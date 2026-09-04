@@ -32,7 +32,7 @@ from stitch.entity_linkage.entities import (
     normalize_country,
     normalize_name,
 )
-from stitch.entity_linkage.errors import StitchAPIError
+from stitch.entity_linkage.errors import MalformedResourceError, StitchAPIError
 
 logger = logging.getLogger(__name__)
 
@@ -195,10 +195,11 @@ async def link_all(
             continue
 
         # Isolate each resource: a transient error already exhausted the shared
-        # client's retries, or the API rejected this one resource. Skipping and
-        # counting it keeps a multi-hour run alive instead of aborting on a
-        # single bad resource. Only network/API errors are caught -- a
-        # programming error still propagates so real bugs surface.
+        # client's retries, the API rejected this one resource, or its payload
+        # was malformed. Skipping and counting it keeps a multi-hour run alive
+        # instead of aborting on a single bad resource. Only network/API and
+        # malformed-payload errors are caught -- a programming error (e.g. a bug
+        # raising a bare KeyError) still propagates so real bugs surface.
         try:
             matched = await find_match_group_for_resource(client, candidate.id)
             if not matched:
@@ -218,7 +219,12 @@ async def link_all(
                 apply_merges=apply_merges,
                 known_existing=known_existing,
             )
-        except (StitchAPIError, httpx.HTTPError, OSError) as exc:
+        except (
+            StitchAPIError,
+            httpx.HTTPError,
+            OSError,
+            MalformedResourceError,
+        ) as exc:
             failed += 1
             logger.warning("Skipping resource %s after error: %s", candidate.id, exc)
             continue

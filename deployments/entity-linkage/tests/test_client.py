@@ -16,6 +16,7 @@ from stitch.entity_linkage.client import (
     StitchApiClient,
     validate_downstream_auth_config_at_startup,
 )
+from stitch.entity_linkage.errors import MalformedResourceError
 from stitch.entity_linkage.settings import get_settings
 
 
@@ -132,6 +133,33 @@ async def test_client_opts_into_transient_status_retry(
         await client.aclose()
     finally:
         get_settings.cache_clear()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "detail_payload",
+    [
+        {"data": {"name": "Alpha", "country": "US"}},  # missing "id"
+        {"id": None, "data": {"name": "Alpha", "country": "US"}},  # null "id"
+    ],
+)
+async def test_get_detail_raises_malformed_on_bad_payload(
+    detail_payload: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "token-123")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=detail_payload)
+
+    client = make_client(handler)
+
+    with pytest.raises(MalformedResourceError) as exc_info:
+        await client.get_oil_gas_field_detail(42)
+
+    assert exc_info.value.resource_id == 42
+
+    await client.aclose()
 
 
 @pytest.mark.parametrize(
