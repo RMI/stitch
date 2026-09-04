@@ -96,6 +96,7 @@ class BulkLinkResponse(BaseModel):
     match_groups: list[list[int]]
     merge_candidates_created: int
     merge_candidates_skipped: int
+    resources_failed: int = 0
 
 
 class PaginationParams(BaseModel):
