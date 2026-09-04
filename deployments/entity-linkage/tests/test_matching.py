@@ -7,7 +7,7 @@ import pytest
 
 from stitch.entity_linkage import matching
 from stitch.entity_linkage.entities import FieldCandidate, FieldDetailCandidate
-from stitch.entity_linkage.errors import MalformedResourceError, StitchAPIError
+from stitch.entity_linkage.errors import StitchAPIError
 
 
 class FakeMatchingClient(AbstractAsyncContextManager["FakeMatchingClient"]):
@@ -395,37 +395,9 @@ async def test_link_all_failed_submit_is_counted_not_reported_as_matched() -> No
 
 
 @pytest.mark.anyio
-async def test_link_all_isolates_and_counts_a_malformed_resource() -> None:
-    # A malformed payload for one resource (surfaced as MalformedResourceError by
-    # the client mapping) is skipped and counted, not fatal to the run.
-    client = _FailingDetailClient(
-        fail_id=3,
-        fail_error=MalformedResourceError("bad shape", resource_id=3),
-        items=[
-            FieldCandidate(id=1, name="Alpha", country="US"),
-            FieldCandidate(id=2, name="alpha", country="US"),
-            FieldCandidate(id=3, name="Gamma", country="US"),
-        ],
-        details_by_id={
-            1: FieldDetailCandidate(id=1, name="Alpha", country="US"),
-            2: FieldDetailCandidate(id=2, name="alpha", country="US"),
-        },
-    )
-
-    response = await matching.link_all(
-        client, apply_merges=True, page_size=200, initiated_by="Tester"
-    )
-
-    assert response.resources_failed == 1
-    assert response.match_groups == [[1, 2]]
-    assert response.merge_candidates_created == 1
-
-
-@pytest.mark.anyio
 async def test_link_all_does_not_swallow_programming_errors() -> None:
-    # A bare KeyError (here, a lookup miss standing in for a logic bug -- not a
-    # malformed-payload MalformedResourceError) must abort the run rather than be
-    # counted as a skipped resource.
+    # A KeyError is a bug, not a transient failure: it must abort the run rather
+    # than be counted as a skipped resource.
     client = FakeMatchingClient(
         items=[FieldCandidate(id=1, name="Alpha", country="US")],
         details_by_id={},  # detail lookup raises KeyError

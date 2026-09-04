@@ -3,11 +3,9 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Any
 
-from pydantic import ValidationError
 from stitch.client import AsyncStitchClient, env_bearer_token_headers_provider
 
 from stitch.entity_linkage.entities import FieldCandidate, FieldDetailCandidate
-from stitch.entity_linkage.errors import MalformedResourceError
 from stitch.entity_linkage.settings import get_settings
 
 # Transient HTTP statuses the bulk run retries. 429/408 are unprocessed and the
@@ -83,32 +81,20 @@ class StitchApiClient:
     @staticmethod
     def _to_candidate(item: dict[str, Any]) -> FieldCandidate:
         data = item.get("data") or {}
-        try:
-            return FieldCandidate(
-                id=item["id"],
-                name=data.get("name"),
-                country=data.get("country"),
-            )
-        except (KeyError, ValidationError) as exc:
-            raise MalformedResourceError(
-                f"list item has an invalid shape: {exc}",
-                resource_id=item.get("id"),
-            ) from exc
+        return FieldCandidate(
+            id=item["id"],
+            name=data.get("name"),
+            country=data.get("country"),
+        )
 
     async def get_oil_gas_field_detail(self, resource_id: int) -> FieldDetailCandidate:
         payload = await self._client.get_oil_gas_field_detail(resource_id)
         data = payload.get("data") or {}
-        try:
-            return FieldDetailCandidate(
-                id=payload["id"],
-                name=data.get("name"),
-                country=data.get("country"),
-            )
-        except (KeyError, ValidationError) as exc:
-            raise MalformedResourceError(
-                f"resource {resource_id} detail has an invalid shape: {exc}",
-                resource_id=resource_id,
-            ) from exc
+        return FieldDetailCandidate(
+            id=payload["id"],
+            name=data.get("name"),
+            country=data.get("country"),
+        )
 
     async def create_merge_candidate(
         self,
