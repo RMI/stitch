@@ -125,10 +125,10 @@ async def test_client_opts_into_transient_status_retry(
     get_settings.cache_clear()
     try:
         client = StitchApiClient()
-        # 429 (rate limit) + 502/503/504 (gateway/unavailable/timeout); 500 is
-        # deliberately excluded. The shared client's method gate keeps 5xx from
-        # retrying the create-merge POST.
-        assert client._client._retry_statuses == frozenset({429, 502, 503, 504})
+        # 408 (request timeout) + 429 (rate limit) + 502/503/504
+        # (gateway/unavailable/timeout); 500 is deliberately excluded. The shared
+        # client's method gate keeps 5xx from retrying the create-merge POST.
+        assert client._client._retry_statuses == frozenset({408, 429, 502, 503, 504})
         await client.aclose()
     finally:
         get_settings.cache_clear()

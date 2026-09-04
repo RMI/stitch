@@ -8,12 +8,12 @@ from stitch.client import AsyncStitchClient, env_bearer_token_headers_provider
 from stitch.entity_linkage.entities import FieldCandidate, FieldDetailCandidate
 from stitch.entity_linkage.settings import get_settings
 
-# Transient HTTP statuses the bulk run retries. 429/408 are unprocessed and the
+# Transient HTTP statuses the bulk run retries. 408/429 are unprocessed and the
 # shared client retries them on any method; 502/503/504 are retried only on the
 # idempotent reads (its method gate never retries the create-merge POST on a
 # 5xx). 500 is deliberately excluded: a deterministic 500 would just burn every
 # attempt (~timeout per try) before failing this resource.
-_RETRY_STATUSES = frozenset({429, 502, 503, 504})
+_RETRY_STATUSES = frozenset({408, 429, 502, 503, 504})
 
 
 def _get_api_base_url() -> str:
