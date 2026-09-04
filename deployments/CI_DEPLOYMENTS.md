@@ -108,7 +108,7 @@ account / share / environment-storage name:
 | Lane              | Storage account | File share            | Env storage name (`ETL_STORAGE_NAME`) |
 | ----------------- | --------------- | --------------------- | ------------------------------------- |
 | `staging`         | `stitchstaging` | `etl-staging`         | `etl-staging`                         |
-| `production`      | _(TODO: confirm)_ | _(TODO: confirm)_   | _(TODO: confirm `ETL_STORAGE_NAME`)_  |
+| `production`      | _(TODO: confirm)_ | `etl-prod`          | `etl-prod`                            |
 
 1. **Create a storage account + file share.** Create a Storage account (Standard
    LRS, StorageV2) or reuse one, then under **File shares** add a share (for
@@ -307,7 +307,7 @@ site's **production** environment or in a **preview** environment.
 | Hostname | Status | Lane | Branch | Static Web App | Default hostname |
 | --- | --- | --- | --- | --- | --- |
 | `stitch-dev.rmi.org` | assigning now | `development` | `main` | `stitch-dev` | `witty-mushroom-017a3dc1e.1.azurestaticapps.net` |
-| `stitch.rmi.org` | planned | `production` | `production` | *(TODO: prod Static Web App name)* | *(TODO: default hostname)* |
+| `stitch.rmi.org` | planned | `production` | `production` | `stitch-prod` | `salmon-bush-05721e11e.6.azurestaticapps.net` |
 
 `stitch.rmi.org` is deliberately **not** pointed at the existing `stitch-staging`
 Static Web App. That resource serves the `staging` lane (PR previews into
