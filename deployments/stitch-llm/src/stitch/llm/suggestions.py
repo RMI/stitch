@@ -4,7 +4,7 @@ from typing import Any, Literal, get_args
 
 from pydantic import ValidationError
 
-from stitch.llm.errors import FieldAlreadyPopulatedError, ModelOutputError
+from stitch.llm.errors import ModelOutputError
 from stitch.ogsi.model import OGFieldDetailView, OG_FIELD_SOURCE_VIEW_ADAPTER
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import (
@@ -15,8 +15,13 @@ from stitch.ogsi.model.types import (
 )
 
 AllowedSuggestionField = Literal[
+    "name",
+    "name_local",
+    "country",
     "basin",
+    "region",
     "state_province",
+    "reservoir_formation",
     "discovery_year",
     "fid_year",
     "production_start_year",
@@ -26,7 +31,17 @@ AllowedSuggestionField = Literal[
     "production_conventionality",
 ]
 
-STRING_FIELDS = frozenset({"basin", "state_province"})
+STRING_FIELDS = frozenset(
+    {
+        "name",
+        "name_local",
+        "country",
+        "basin",
+        "region",
+        "state_province",
+        "reservoir_formation",
+    }
+)
 YEAR_FIELDS = frozenset({"discovery_year", "fid_year", "production_start_year"})
 ENUM_VALUES_BY_FIELD: dict[str, tuple[str, ...]] = {
     "location_type": get_args(LocationType),
@@ -46,23 +61,6 @@ def is_string_suggestion_field(field: AllowedSuggestionField) -> bool:
     return field in STRING_FIELDS
 
 
-def is_missing_value(value: Any) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, str):
-        return value.strip() == ""
-    return False
-
-
-def ensure_field_is_missing(
-    detail_view: OGFieldDetailView,
-    field: AllowedSuggestionField,
-) -> None:
-    value = getattr(detail_view.data, field)
-    if not is_missing_value(value):
-        raise FieldAlreadyPopulatedError(f"Field `{field}` is already populated.")
-
-
 def build_field_suggestion_input(
     *,
     resource_id: int,
@@ -73,7 +71,7 @@ def build_field_suggestion_input(
     field_description = field_info.description or field.replace("_", " ")
 
     payload = {
-        "task": "Infer one missing oil and gas field value from the provided Stitch record context.",
+        "task": "Infer one oil and gas field value from the provided Stitch record context.",
         "resource_id": resource_id,
         "field": field,
         "field_description": field_description,
