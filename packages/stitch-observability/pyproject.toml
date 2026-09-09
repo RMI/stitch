@@ -23,7 +23,7 @@ dependencies = [
 # routing.Match), so it needs Starlette at import time. It's an optional extra
 # rather than a hard dependency so the tracing/logging core stays framework-free;
 # a consumer that uses RequestContextMiddleware installs stitch-observability[asgi].
-asgi = ["starlette>=0.40"]
+asgi = ["starlette>=1.6.0"]
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]

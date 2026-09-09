@@ -113,3 +113,77 @@ class TestResourcesIntegration:
         assert data["id"] > 0
         assert (view := data.get("view", None)) is not None
         assert view["name"] == "Minimal Name"
+
+
+class TestRepointedResourceRedirect:
+    """GET on a merged-away resource resolves to its terminal resource (STIT-418)."""
+
+    async def _create(self, client: AsyncClient, fact, name: str) -> int:
+        resp = await client.post(
+            "/oil-gas-fields/", json=fact(name=name).model_dump(mode="json")
+        )
+        assert resp.status_code == 200, resp.text
+        return resp.json()["id"]
+
+    async def _repoint(self, session_factory, old_id: int, new_id: int) -> None:
+        """Point old_id at new_id, mirroring what apply_resource_merge does to a row."""
+        async with session_factory() as session:
+            model = await session.get(ResourceModel, old_id)
+            model.repointed_id = new_id
+            await session.commit()
+
+    @pytest.mark.anyio
+    async def test_detail_resolves_to_root_with_flag(
+        self,
+        integration_client: AsyncClient,
+        integration_session_factory: async_sessionmaker[AsyncSession],
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        root_id = await self._create(
+            integration_client, og_create_res_fact, "Merged Root"
+        )
+        old_id = await self._create(integration_client, og_create_res_fact, "Old Shell")
+        await self._repoint(integration_session_factory, old_id, root_id)
+
+        resp = await integration_client.get(f"/oil-gas-fields/{old_id}/detail")
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["id"] == root_id
+        assert body["requested_resource_id"] == old_id
+        # Real data from the root, not the old resource's null shell.
+        assert body["data"]["name"] == "Merged Root"
+
+    @pytest.mark.anyio
+    async def test_plain_get_resolves_to_root_with_flag(
+        self,
+        integration_client: AsyncClient,
+        integration_session_factory: async_sessionmaker[AsyncSession],
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        root_id = await self._create(
+            integration_client, og_create_res_fact, "Merged Root"
+        )
+        old_id = await self._create(integration_client, og_create_res_fact, "Old Shell")
+        await self._repoint(integration_session_factory, old_id, root_id)
+
+        resp = await integration_client.get(f"/oil-gas-fields/{old_id}")
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["id"] == root_id
+        assert body["requested_resource_id"] == old_id
+        assert body["name"] == "Merged Root"
+
+    @pytest.mark.anyio
+    async def test_live_resource_has_null_flag(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        root_id = await self._create(integration_client, og_create_res_fact, "Live")
+
+        resp = await integration_client.get(f"/oil-gas-fields/{root_id}/detail")
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["requested_resource_id"] is None

@@ -508,7 +508,7 @@ API_URL=https://stitch-db-demo-02.<region>.azurecontainerapps.io/api/v1
 ENTITY_LINKAGE_URL=https://stitch-entity-linkage-demo-02.<region>.azurecontainerapps.io/api/v1
 AUTH0_DOMAIN=rmi-spd.us.auth0.com
 AUTH0_CLIENT_ID=<public-client-id>
-AUTH0_AUDIENCE=https://stitch-api.local
+AUTH_AUDIENCE=https://stitch-api.local
 ```
 
 Example runtime config:

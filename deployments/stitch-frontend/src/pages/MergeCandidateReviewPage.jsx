@@ -97,11 +97,23 @@ function QueuePanel({
   error,
   selectedId,
   onSelect,
+  showApproved,
+  onShowApprovedChange,
+  hasHiddenApproved,
 }) {
   return (
     <aside className="min-w-0 rounded-md border border-line bg-panel">
       <div className="border-b border-line px-4 py-3">
         <h2 className="text-base font-semibold text-ink">Queue</h2>
+        <label className="mt-2 flex items-center gap-2 text-sm text-ink-muted">
+          <input
+            type="checkbox"
+            checked={showApproved}
+            onChange={(event) => onShowApprovedChange(event.target.checked)}
+            className="accent-primary"
+          />
+          <span>Show approved merges</span>
+        </label>
       </div>
 
       <div className="p-2">
@@ -124,6 +136,11 @@ function QueuePanel({
               />
             ))}
           </div>
+        ) : hasHiddenApproved ? (
+          <p className="px-2 py-3 text-sm text-ink-muted">
+            Approved merges are hidden. Check &quot;Show approved merges&quot;
+            to see them.
+          </p>
         ) : (
           <p className="px-2 py-3 text-sm text-ink-muted">
             No merge candidates to review.
@@ -383,6 +400,7 @@ export default function MergeCandidateReviewPage() {
   useDocumentTitle("Merge review");
   const [selectedId, setSelectedId] = useState(null);
   const [reviewNotes, setReviewNotes] = useState("");
+  const [showApproved, setShowApproved] = useState(false);
 
   const reviewMutation = useReviewMergeCandidate(ENDPOINT);
   const actionLoading = reviewMutation.isPending;
@@ -400,12 +418,20 @@ export default function MergeCandidateReviewPage() {
     error: listErrorObj,
   } = useMergeCandidates(ENDPOINT, true);
 
+  // Approved merges are finished work, so the queue hides them unless the
+  // reviewer opts in. Filtering here rather than in the API keeps the header
+  // counts below reporting on the whole workload, not just the visible rows.
+  const visibleCandidates = candidates?.filter(
+    (c) => showApproved || c.status !== "APPROVED",
+  );
+
   // Default to the first pending candidate once the list loads. Done during
   // render (not in an effect) so the selection is set before the first paint
-  // and without triggering a cascading re-render.
-  if (!selectedId && candidates?.length) {
-    const firstPending = candidates.find((c) => c.status === "PENDING");
-    setSelectedId(firstPending?.id ?? candidates[0].id);
+  // and without triggering a cascading re-render. Chosen from the visible
+  // rows so the selection can never land on a filtered-out candidate.
+  if (!selectedId && visibleCandidates?.length) {
+    const firstPending = visibleCandidates.find((c) => c.status === "PENDING");
+    setSelectedId(firstPending?.id ?? visibleCandidates[0].id);
   }
 
   const candidateQuery = useMergeCandidate(
@@ -493,12 +519,17 @@ export default function MergeCandidateReviewPage() {
 
       <div className="grid gap-6 lg:grid-cols-[20rem_minmax(0,1fr)]">
         <QueuePanel
-          candidates={candidates}
+          candidates={visibleCandidates}
           isLoading={listLoading}
           isError={listError}
           error={listErrorObj}
           selectedId={selectedId}
           onSelect={handleSelect}
+          showApproved={showApproved}
+          onShowApprovedChange={setShowApproved}
+          hasHiddenApproved={
+            Boolean(candidates?.length) && !visibleCandidates?.length
+          }
         />
 
         <CandidateDecisionPanel

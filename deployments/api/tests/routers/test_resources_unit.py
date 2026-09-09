@@ -37,7 +37,7 @@ class TestGetResourceUnit:
         app.dependency_overrides[get_uow] = override_get_uow
 
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
-            mock_repo.get = AsyncMock(return_value=expected)
+            mock_repo.get_resolved = AsyncMock(return_value=expected)
 
             response = await async_client.get("/oil-gas-fields/42")
 
@@ -45,6 +45,8 @@ class TestGetResourceUnit:
         view_data = response.json()
         assert view_data["id"] == 42
         assert view_data["name"] == "Found Resource"
+        # Requested id matches the resolved id, so no redirect flag is set.
+        assert view_data["requested_resource_id"] is None
 
     @pytest.mark.anyio
     async def test_returns_404_when_not_found(self, async_client, mock_uow):
@@ -56,7 +58,7 @@ class TestGetResourceUnit:
         app.dependency_overrides[get_uow] = override_get_uow
 
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
-            mock_repo.get = AsyncMock(
+            mock_repo.get_resolved = AsyncMock(
                 side_effect=HTTPException(
                     status_code=HTTP_404_NOT_FOUND,
                     detail="No Resource with id `999` found.",

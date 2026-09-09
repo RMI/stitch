@@ -17,7 +17,7 @@ Branch behavior is:
 
 - push to `main` -> `deployment_lane=development`, `deployment_name=main`
 - any PR not targeting `production` -> `deployment_lane=development`, `deployment_name=pr-<zero-padded number>`
-- push to `production` -> `deployment_lane=dress-rehearsal`, `deployment_name=dress-rehearsal`
+- push to `production` -> `deployment_lane=production`, `deployment_name=production`
 - any PR targeting `production` -> `deployment_lane=staging`, branch-derived `deployment_name`
 - any PR from a `demo/*` branch -> `deployment_lane=staging`, branch-derived `deployment_name` (regardless of whether it targets `main` or `production`)
 
@@ -63,7 +63,7 @@ Because it validates every dataset's config at startup (fail-fast), the app
 Seed and ETL are mutually exclusive per lane:
 
 - `development`: `seed` builds and runs; ETL deploy is skipped.
-- `staging` / `dress-rehearsal`: ETL deploys; `seed` is skipped.
+- `staging` / `production`: ETL deploys; `seed` is skipped.
 
 Because the ETL image lives in another repo's GHCR, the Container App needs
 stored pull credentials. The ephemeral `GITHUB_TOKEN` cannot be used (it expires
@@ -101,14 +101,28 @@ pipeline reasserts it and a manual mount would just be overwritten.
 
 What _is_ manual is the storage itself. Do the steps below in the **Azure Portal**
 (no `az` needed; SMB registration and mounting are fully Portal-supported — only
-NFS forces CLI/YAML) per lane (`staging`, `dress-rehearsal`), in that lane's
+NFS forces CLI/YAML) per lane (`staging`, `production`), in that lane's
 resource group and Container Apps environment. Each lane gets its own storage
 account / share / environment-storage name:
+
+> **Reminder — when adding a new lane:** this storage registration is a required
+> manual step, not something CI wires up. Setting `ETL_STORAGE_NAME` only tells the
+> pipeline which env-storage name to mount; if the SMB share is not actually
+> registered on the lane's Container Apps environment (steps below), the `etl`
+> Container App fails to boot — it validates every dataset's config at startup and
+> reads its GEM spreadsheet from the mount. For the `production` lane the env
+> storage name is `etl-prod` on the `stitch-prod` Container Apps environment.
 
 | Lane              | Storage account | File share            | Env storage name (`ETL_STORAGE_NAME`) |
 | ----------------- | --------------- | --------------------- | ------------------------------------- |
 | `staging`         | `stitchstaging` | `etl-staging`         | `etl-staging`                         |
-| `dress-rehearsal` | `stitchstaging` | `etl-dress-rehearsal` | `etl-dress-rehearsal`                 |
+| `production`      | `rmistitchprod` | `etl-prod`            | `etl-prod`                            |
+
+Note: the `production` storage account is `rmistitchprod`, which does **not**
+follow the `stitch<lane>` pattern that `stitchstaging` uses — don't assume
+`stitchprod`. The share is reachable at
+`https://rmistitchprod.file.core.windows.net/etl-prod`. The file share and
+env-storage names (`etl-prod`) do follow the usual `etl-<lane>` convention.
 
 1. **Create a storage account + file share.** Create a Storage account (Standard
    LRS, StorageV2) or reuse one, then under **File shares** add a share (for
@@ -219,10 +233,38 @@ out under load. Empty means the input is skipped entirely and the app keeps the
 default scale-to-zero. The ETL app is separate: it pins `min = max = 1` and only
 deploys on non-`development` lanes, so it stays warm regardless of this policy.
 
-Cold starts are most visible at sign-in, when the app's first API call lands on a
-sleeping container. The planned mitigation is to have the login page fire a cheap
-request at the API so it wakes while the user authenticates, rather than widening
-this policy.
+Apps that do scale to zero also get a widened **cooldown** — 900s rather than
+Azure's default 300s — reasserted after every deploy. Cooldown is how long an app
+stays up after its last request, so this covers the ordinary gaps inside a
+working session without keeping anything alive overnight. There is no CLI flag
+for it, so the deploy sets it with the same `show -> jq -> update --yaml`
+round-trip used for volume mounts. Always-on apps skip the step; an app that
+never scales to zero has no use for a cooldown.
+
+Cooldown only helps when requests cluster closer together than the cooldown
+itself, so be sceptical of raising it further without measuring. Sampled over a
+13-day window, `main-api` was running for roughly one hour in twenty, and the
+gaps between bursts of use were 40, 110, 120 and 220 minutes — none of which
+900s bridges. Worth re-measuring once a lane is in real daily use:
+
+```bash
+az monitor metrics list --resource "$(az containerapp show -n main-api -g STITCH-DEV-RG --query id -o tsv)" --metric Replicas --interval PT1H --offset 13d --aggregation Maximum -o table
+```
+
+Cold starts are most visible at sign-in, when the app's first API call lands on
+a sleeping container. The frontend absorbs that, so the policy above does not
+have to widen to cover it:
+
+- it wakes the API during bootstrap, before Auth0 mounts, so the container starts
+  while the user is still being redirected through login;
+- queries retry transient failures, so a container that is not ready yet reads as
+  slow rather than broken;
+- the environment banner says the server is waking up once a request has been in
+  flight for more than a couple of seconds.
+
+entity-linkage and stitch-llm are deliberately left out. Waking them the same way
+was tried and set aside: the API is the one every session needs, and better
+options for the other two are still being explored.
 
 This only affects the Container Apps. The frontend is an Azure Static Web App
 (always served, no hibernation), and the PostgreSQL flexible server's
@@ -248,8 +290,7 @@ images) to one (`etl`, one image). To migrate a lane safely:
    az containerapp delete -g <AZURE_RESOURCE_GROUP> -n <name>-etl-woodmac --yes
    ```
 
-   Do this in `staging` (its `deployment-name`) and for `production` /
-   `dress-rehearsal`.
+   Do this in `staging` (its `deployment-name`) and for `production`.
 
 5. Any open PR-into-`production` environment created before this change may
    still have `-etl-gem` / `-etl-woodmac` apps; the collapsed
@@ -280,13 +321,13 @@ site's **production** environment or in a **preview** environment.
 | Hostname | Status | Lane | Branch | Static Web App | Default hostname |
 | --- | --- | --- | --- | --- | --- |
 | `stitch-dev.rmi.org` | assigning now | `development` | `main` | `stitch-dev` | `witty-mushroom-017a3dc1e.1.azurestaticapps.net` |
-| `stitch.rmi.org` | planned | — | `production` | *(a prod Static Web App, not yet created)* | — |
+| `stitch.rmi.org` | planned | `production` | `production` | `stitch-prod` | `salmon-bush-05721e11e.6.azurestaticapps.net` |
 
 `stitch.rmi.org` is deliberately **not** pointed at the existing `stitch-staging`
-Static Web App. That resource serves the `dress-rehearsal` lane, which is a
-release rehearsal rather than production; the production hostname is held back
-until a real production Static Web App is stood up, so the name never has to move
-between resources. (Moving a bound domain between two Static Web Apps in the same
+Static Web App. That resource serves the `staging` lane (PR previews into
+`production`), not production; the production hostname points at the dedicated
+production Static Web App instead, so the name never has to move between
+resources. (Moving a bound domain between two Static Web Apps in the same
 slice requires downtime — see "Migrating domains between instances" in the Azure
 docs.)
 
@@ -331,6 +372,35 @@ specific record takes precedence over it.
    it only once the certificate is valid. Update the links in the top-level
    `README.md` at the same time.
 
+#### Troubleshooting: CORS errors after a new hostname goes live
+
+Symptom — the frontend loads at the new custom domain, but API calls fail in the
+browser console with:
+
+> `No 'Access-Control-Allow-Origin' header is present on the requested resource`
+
+This means the browser's `Origin` (the custom domain) does not match the single
+origin the backend allows. Because each backend service accepts exactly one CORS
+origin (the API's `FRONTEND_ORIGIN_URL`, fed from the lane's
+`FRONTEND_PRODUCTION_URL`), it happens when the cutover above is only half-done —
+typically step 5 (`FRONTEND_PRODUCTION_URL` is still the old `azurestaticapps.net`
+hostname) and/or step 3 (the custom domain is not set as default, so the old
+hostname still serves the app directly instead of redirecting to it).
+
+Confirm which origin the backend currently allows with a preflight request:
+
+```bash
+curl -i -X OPTIONS '<api-origin>/api/v1/health' \
+  -H 'Origin: https://<custom-domain>' \
+  -H 'Access-Control-Request-Method: GET'
+```
+
+A working origin returns `200` with `access-control-allow-origin: <custom-domain>`;
+a blocked one returns no `access-control-allow-origin` header. Resolve by
+completing step 3 (**Set default**, so the old hostname 301-redirects and stops
+originating requests) and step 5 (`FRONTEND_PRODUCTION_URL = https://<custom-domain>`),
+then redeploy the lane so the backend containers pick up the new origin.
+
 ## Azure Permissions
 
 Permissions for Azure Resources are handled through a managed identity, which GH
@@ -352,12 +422,19 @@ are:
 - `repo:RMI/stitch:ref:refs/heads/production`
 - `repo:RMI/stitch:environment:development`
 - `repo:RMI/stitch:environment:staging`
-- `repo:RMI/stitch:environment:dress-rehearsal`
+- `repo:RMI/stitch:environment:production`
 
 The branch / PR subjects cover workflows that authenticate outside a GitHub
 Environment. The `environment:*` subjects are also required because the
 lane-scoped deploy jobs authenticate from GitHub Environments named
-`development`, `staging`, and `dress-rehearsal`.
+`development`, `staging`, and `production`.
+
+> **Reminder — when adding a new lane / GitHub Environment:** creating the
+> Environment and populating its variables/secrets is not enough. You must also
+> add a matching `repo:RMI/stitch:environment:<lane>` federated-credential subject
+> to the `GHActions-stitch-cicd` managed identity, or every deploy job in that
+> lane fails at `azure/login` with an OIDC error. (This was the final wiring step
+> when the `production` lane replaced `dress-rehearsal`.)
 
 All federated credential fields must match exactly:
 
@@ -368,11 +445,21 @@ All federated credential fields must match exactly:
 If Azure starts returning `AADSTS7002138`, recreating the affected federated
 credential is usually faster than editing it in place.
 
-Managed identity roles:
+Managed identity roles (grant per lane, on that lane's resource group and
+Container Apps environment):
 
 - `Reader` on `stitch-dev` (Container Apps Environment)
 - `Reader` on `STITCH-DEV-RG` (Resource Group)
 - `Container Apps Contributor` on `STITCH-DEV-RG` (Resource Group)
+- `Reader` on `stitch-prod` (Container Apps Environment)
+- `Reader` on `STITCH-PROD-RG` (Resource Group)
+- `Container Apps Contributor` on `STITCH-PROD-RG` (Resource Group)
+
+> **Reminder — when adding a new lane:** the federated-credential subject above
+> only lets the identity authenticate; it still needs these role assignments on
+> the new lane's resource group and Container Apps environment, or deploys fail
+> with authorization errors even though login succeeds. Grant the same
+> `Reader` + `Container Apps Contributor` set that the other lanes have.
 
 ## Setup Notes
 
@@ -382,7 +469,7 @@ named:
 
 - `development`
 - `staging`
-- `dress-rehearsal`
+- `production`
 
 ### Repo-level secrets
 
@@ -403,25 +490,31 @@ named:
   environment is reached at, custom domain included once one is bound
   (example: `https://stitch-dev.rmi.org`). See "Custom domains" below.
 - `FRONTEND_PREVIEW_URL_TEMPLATE` (example: `https://witty-mushroom-017a3dc1e-{name}.westus2.1.azurestaticapps.net`)
-- `AUTH_DISABLED` (example: `true` for `development`, `false` for `staging` / `dress-rehearsal`)
-- `AUTH_ISSUER` (example: `https://rmi-spd.us.auth0.com/`)
-- `AUTH_AUDIENCE` (example: `https://stitch-api.local`)
-- `AUTH_JWKS_URI` (example: `https://rmi-spd.us.auth0.com/.well-known/jwks.json`)
-- `AUTH0_DOMAIN` (example: `rmi-spd.us.auth0.com`)
+- `AUTH_DISABLED` (example: `true` for `development`, `false` for `staging` / `production`)
+- `AUTH_AUDIENCE` (example: `https://stitch-api.local`) — the Auth0 API audience. Single
+  source: feeds both the backend services' `AUTH_AUDIENCE` and the frontend's `auth0Audience`.
+- `AUTH0_DOMAIN` (example: `rmi-spd.us.auth0.com`) — the Auth0 tenant domain. Feeds the
+  frontend's `auth0Domain` and, by default, derives the backend `AUTH_ISSUER`
+  (`https://<domain>/`) and `AUTH_JWKS_URI` (`https://<domain>/.well-known/jwks.json`).
 - `AUTH0_CLIENT_ID` (example: `<public-client-id>`)
-- `AUTH0_AUDIENCE` (example: `https://stitch-api.local`)
+- `AUTH_ISSUER` (optional; example: `https://rmi-spd.us.auth0.com/`) — override for the value
+  derived from `AUTH0_DOMAIN`. Only set on lanes using an Auth0 custom domain whose issuer
+  differs from the raw tenant host.
+- `AUTH_JWKS_URI` (optional; example: `https://rmi-spd.us.auth0.com/.well-known/jwks.json`) —
+  override for the value derived from `AUTH0_DOMAIN`. Same custom-domain caveat as
+  `AUTH_ISSUER`.
 - `STITCH_LLM_AZURE_OPENAI_BASE_URL` (example: `https://stitch-foundry-dev.openai.azure.com/openai/v1`)
 - `STITCH_LLM_AZURE_OPENAI_MODEL` (example: `gpt-5.1-chat`)
 - `STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS` (example: `30`)
 - `GHCR_ETL_PULL_USERNAME` (example: `your-github-username`) — registry username
   for pulling the ETL image; not sensitive, so it is a variable. Only needed on
-  `staging` / `dress-rehearsal`.
+  `staging` / `production`.
 - `ETL_STORAGE_NAME` (example: `etl-staging`) — the Azure Files env-storage name
   registered on the Container Apps environment; mounted into the `etl` app at
-  `/mnt/data`. Only needed on `staging` / `dress-rehearsal` (see ETL durable
+  `/mnt/data`. Only needed on `staging` / `production` (see ETL durable
   storage above).
 - `ETL_IMAGE_TAG` (example: `main`) — optional; consolidated ETL image tag to
-  deploy, defaults to `main`. Only used on `staging` / `dress-rehearsal`.
+  deploy, defaults to `main`. Only used on `staging` / `production`.
 
 The two frontend URLs together define the single CORS origin the API,
 entity-linkage, and stitch-llm services will accept for a given deployment, so
@@ -447,10 +540,10 @@ they have to match where the frontend actually lands:
 - `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
 - `WOODMAC_API_KEY` — WoodMac API key for the `etl` Container App. Required for
   the app to boot (it validates every dataset at startup), so it must be set
-  even though GEM does not use it. Only needed on `staging` / `dress-rehearsal`.
+  even though GEM does not use it. Only needed on `staging` / `production`.
 - `GHCR_ETL_PULL_TOKEN` — classic PAT with `read:packages` used to pull the ETL
   image from the `stitch-etl-poc` GHCR. Only needed on `staging` /
-  `dress-rehearsal`.
+  `production`.
 
 Current validation behavior:
 
@@ -459,12 +552,9 @@ Current validation behavior:
   - `FRONTEND_PRODUCTION_URL`
   - `FRONTEND_PREVIEW_URL_TEMPLATE`
   - `AUTH_DISABLED`
-  - `AUTH_ISSUER`
   - `AUTH_AUDIENCE`
-  - `AUTH_JWKS_URI`
   - `AUTH0_DOMAIN`
   - `AUTH0_CLIENT_ID`
-  - `AUTH0_AUDIENCE`
   - `STITCH_APP_PASSWORD`
   - `STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN`
   - `STITCH_CLIENT_LLM_BEARER_TOKEN`

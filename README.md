@@ -15,9 +15,8 @@ Stitch is an oil & gas asset data platform built by [RMI](https://rmi.org). It c
 - **Serves** curated, source-attributed data through a UI and API, with permission-aware access by source
 
 **See it live:**
-
-- Dress rehearsal (prod-ish): https://brave-cliff-09493391e.7.azurestaticapps.net/
-- Dev (`main`): https://witty-mushroom-017a3dc1e.1.azurestaticapps.net/
+- Dev (Deployed from `main` with fake data): https://stitch-dev.rmi.org/
+- Production (Deployed from `production` with real data): https://salmon-bush-05721e11e.6.azurestaticapps.net/
 
 ## Quick start
 

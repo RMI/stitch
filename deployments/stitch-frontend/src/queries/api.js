@@ -16,7 +16,9 @@ export async function getResources(
   const url = `${config.apiBaseUrl}/${endpoint}/?${params}`;
   const response = await fetcher(url);
   if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
+    const error = new Error(`HTTP error! status: ${response.status}`);
+    error.status = response.status;
+    throw error;
   }
   return await response.json();
 }
@@ -31,7 +33,9 @@ export async function getResourceFilterOptions(
   const url = `${config.apiBaseUrl}/${endpoint}/filter-options?${params}`;
   const response = await fetcher(url);
   if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
+    const error = new Error(`HTTP error! status: ${response.status}`);
+    error.status = response.status;
+    throw error;
   }
   return await response.json();
 }
