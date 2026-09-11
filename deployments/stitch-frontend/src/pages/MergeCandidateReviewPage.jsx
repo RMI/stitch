@@ -13,6 +13,7 @@ import {
 } from "../hooks/useResources";
 import { pickCompareName } from "../utils/candidateCompare";
 import { isEmptyValue } from "../utils/mergeComparison";
+import { readCandidateStaleness } from "../utils/mergeCandidateStaleness";
 
 const ENDPOINT = "oil-gas-fields";
 
@@ -152,6 +153,8 @@ function QueuePanel({
 }
 
 function CandidateFacts({ candidate }) {
+  const { moves } = readCandidateStaleness(candidate);
+  const movedTo = new Map(moves.map((m) => [m.resource_id, m.repointed_to]));
   return (
     <dl className="grid gap-3 text-sm sm:grid-cols-3">
       <div>
@@ -170,6 +173,19 @@ function CandidateFacts({ candidate }) {
               >
                 {id}
               </Link>
+              {movedTo.has(id) ? (
+                <span className="text-ink-muted">
+                  {" "}
+                  (now{" "}
+                  <Link
+                    to={`/${ENDPOINT}/${movedTo.get(id)}`}
+                    className="text-primary underline"
+                  >
+                    {movedTo.get(id)}
+                  </Link>
+                  )
+                </span>
+              ) : null}
             </span>
           ))}
         </dd>
@@ -324,6 +340,11 @@ function CandidateDecisionPanel({
     );
   }
 
+  // STIT-418: a member merged away since this candidate was recorded. Approving
+  // would fail and Deny would record a judgment no one made, so the decision
+  // controls are hidden below and this banner points at the combined record.
+  const { isStale, moves } = readCandidateStaleness(candidate);
+
   return (
     <article className="min-w-0 overflow-hidden rounded-md border border-line bg-panel">
       {candidateError ? (
@@ -331,6 +352,34 @@ function CandidateDecisionPanel({
           These details could not be refreshed and may be out of date.{" "}
           {candidateErrorObj?.message ?? "Failed to load candidate."}
         </p>
+      ) : null}
+
+      {isStale ? (
+        <div className="border-b border-warning/30 bg-warning-soft px-5 py-4 text-sm text-warning">
+          {moves.map((move) => (
+            <p key={move.resource_id}>
+              Resource{" "}
+              <Link
+                to={`/${ENDPOINT}/${move.resource_id}`}
+                className="underline"
+              >
+                {move.resource_id}
+              </Link>{" "}
+              was merged into{" "}
+              <Link
+                to={`/${ENDPOINT}/${move.repointed_to}`}
+                className="underline"
+              >
+                {move.repointed_to}
+              </Link>
+              .
+            </p>
+          ))}
+          <p className="mt-2">
+            This candidate is out of date and can no longer be merged. Review
+            the combined record instead.
+          </p>
+        </div>
       ) : null}
 
       <div className="space-y-4 px-5 py-5">
@@ -377,7 +426,7 @@ function CandidateDecisionPanel({
         />
       )}
 
-      {candidate.status === "PENDING" ? (
+      {candidate.status === "PENDING" && !isStale ? (
         <DecisionControls
           reviewNotes={reviewNotes}
           onReviewNotesChange={onReviewNotesChange}

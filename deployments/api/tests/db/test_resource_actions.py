@@ -307,6 +307,65 @@ class TestGetResolvedResourceAction:
         assert exc_info.value.status_code == 404
 
 
+class TestRootIdByResourceId:
+    """ResourceModel.root_id_by_resource_id() batch-maps each input to its root."""
+
+    @pytest.mark.anyio
+    async def test_maps_each_origin_to_its_own_root(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        # Two inputs (A, B) share a chain to J; D is live. The origin column is
+        # what keeps A->J and B->J distinct from D->D in one query -- without it
+        # the CTE would just return the set of roots and lose the mapping.
+        session = seeded_integration_session
+        j = await _create_resource_with_sources(
+            session, test_user, {"source": "gem", "name": "J", "country": "USA"}
+        )
+        f = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "gem", "name": "F", "country": "USA"},
+            repointed_to=j,
+        )
+        c = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "gem", "name": "C", "country": "USA"},
+            repointed_to=f,
+        )
+        a = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "gem", "name": "A", "country": "USA"},
+            repointed_to=c,
+        )
+        b = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "gem", "name": "B", "country": "USA"},
+            repointed_to=c,
+        )
+        d = await _create_resource_with_sources(
+            session, test_user, {"source": "gem", "name": "D", "country": "USA"}
+        )
+
+        roots = await ResourceModel.root_id_by_resource_id(session, [a, b, d])
+
+        assert roots == {a: j, b: j, d: d}
+
+    @pytest.mark.anyio
+    async def test_empty_input_returns_empty(
+        self,
+        seeded_integration_session: AsyncSession,
+    ):
+        assert (
+            await ResourceModel.root_id_by_resource_id(seeded_integration_session, [])
+            == {}
+        )
+
+
 class TestResourceQueryAction:
     """Integration tests for resource_actions.query() and count()."""
 

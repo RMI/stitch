@@ -178,11 +178,28 @@ async def get_resolved(
 ) -> OGFieldResource:
     """Return resource ``id``, following repoints to the terminal (root) resource.
 
-    Read-only wrapper over ``resolve_root_id`` + ``get``; see ``resolve_root_id``
-    for the resolution semantics.
+    Loads the row once: a non-repointed id (the common case) is built from that
+    row directly, avoiding the second fetch a ``resolve_root_id`` + ``get`` round
+    trip would cost. A repointed id resolves via ``resolve_root_id`` (which also
+    maps a broken chain to 404) and loads the terminal resource.
     """
-    root_id = await resolve_root_id(session, id)
-    return await get(session, root_id, licensed_sources=licensed_sources)
+    stmt = (
+        select(ResourceModel)
+        .options(selectinload(ResourceModel.memberships))
+        .where(ResourceModel.id == id)
+    )
+    model = await session.scalar(stmt)
+    if model is None:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND, detail=f"No Resource with id `{id}` found."
+        )
+    if model.repointed_id is not None:
+        root_id = await resolve_root_id(session, id)
+        return await get(session, root_id, licensed_sources=licensed_sources)
+    await session.refresh(model, ["memberships"])
+    return await resource_model_to_entity(
+        session, model, licensed_sources=licensed_sources
+    )
 
 
 async def field_source_values(
@@ -350,6 +367,26 @@ async def create(
     return await resource_model_to_entity(session, model)
 
 
+async def repointed_merge_error(
+    session: AsyncSession, repointed: Sequence[ResourceModel]
+) -> str:
+    """Message naming each already-merged resource and its terminal target.
+
+    Shared by the two merge guards (here and in ``merge_candidate_actions``) so a
+    curator sees "resource 102 is now resource 301" instead of a ``repr()`` memory
+    address. The root lookup runs only on the error path. Fixed here rather than in
+    ``ResourceModel.__repr__`` because a repr cannot name the terminal target.
+    """
+    roots = await ResourceModel.root_id_by_resource_id(
+        session, [r.id for r in repointed]
+    )
+    moves = "; ".join(
+        f"resource {r.id} is now resource {roots.get(r.id, r.id)}"
+        for r in sorted(repointed, key=lambda r: r.id)
+    )
+    return f"Cannot merge a resource that has already been merged: {moves}."
+
+
 async def apply_resource_merge(
     session: AsyncSession,
     user: CurrentUser,
@@ -377,12 +414,8 @@ async def apply_resource_merge(
         msg = f"Resources not found for ids: [{','.join(map(str, missing_ids))}]"
         raise ResourceNotFoundError(msg)
 
-    if len(repointed := [r for r in results if r.repointed_id is not None]) > 0:
-        reprs = map(repr, repointed)
-        msg = f"Repointed: [{','.join(reprs)}]"
-        raise ResourceIntegrityError(
-            f"Cannot merge any resource that has already been merged. {msg}"
-        )
+    if repointed := [r for r in results if r.repointed_id is not None]:
+        raise ResourceIntegrityError(await repointed_merge_error(session, repointed))
 
     # all ids exist, none have already been repointed
     #

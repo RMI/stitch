@@ -134,15 +134,31 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
 
     @classmethod
     def _parent_tree_cte(cls, *resource_ids: int):
+        """Walk ``repointed_id`` upward, tagging every row with its origin input.
+
+        Each row is ``(origin_id, id)``: ``origin_id`` is the input the walk
+        started from, ``id`` is a row on the path from that input to its root.
+        Carrying ``origin_id`` lets a batch map each input to its own root --
+        without it, a multi-input walk returns the *set* of roots and loses which
+        input reached which root (see ``root_id_by_resource_id``). Because
+        ``repointed_id`` is a single scalar, the graph is a forest: each origin
+        traces exactly one path, so ``union_all`` stays correct.
+        """
+        # Anchor: each input maps to itself.
         parent_tree = (
-            select(cls.id)
+            select(cls.id.label("origin_id"), cls.id.label("id"))
             .where(cls.id.in_(resource_ids))
             .distinct()
             .cte(name="parent_tree", recursive=True)
         )
 
+        # Recursive term: carry origin_id forward, step one hop up repointed_id.
+        # ``select_from(cls)`` is required: the first selected column belongs to
+        # the CTE, so without it SQLAlchemy infers the wrong FROM (same reason as
+        # the ``select_from(m)`` in ``source_data_by_resource_id`` above).
         ancestors = (
-            select(cls.repointed_id)
+            select(parent_tree.c.origin_id, cls.repointed_id)
+            .select_from(cls)
             .join(parent_tree, cls.id == parent_tree.c.id)
             .where(cls.repointed_id.is_not(None))
         )
@@ -175,9 +191,38 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
 
     @classmethod
     def _root_select(cls, *resource_ids: int):
+        """Select the terminal (non-repointed) rows reachable from the inputs.
+
+        Single-id use only (``get_root``): it selects whole ``cls`` rows and joins
+        on ``parent_cte.c.id``, so a multi-input batch that shares a root would
+        yield duplicate root rows. For batch input use ``root_id_by_resource_id``,
+        which keys results back to each origin.
+        """
         parent_cte = cls._parent_tree_cte(*resource_ids)
         return (
             select(cls)
             .join(parent_cte, cls.id == parent_cte.c.id)
             .where(cls.repointed_id.is_(None))
         )
+
+    @classmethod
+    async def root_id_by_resource_id(
+        cls, session: AsyncSession, resource_ids: Collection[int]
+    ) -> dict[int, int]:
+        """Map each input id to its terminal (root) resource id, in one query.
+
+        A non-repointed input maps to itself. Mirrors the batch, dict-returning
+        convention of ``source_data_by_resource_id``. Used to resolve merged-away
+        resources without an N+1 over a candidate list.
+        """
+        if not resource_ids:
+            return {}
+        parent_cte = cls._parent_tree_cte(*resource_ids)
+        stmt = (
+            select(parent_cte.c.origin_id, cls.id)
+            .select_from(cls)
+            .join(parent_cte, cls.id == parent_cte.c.id)
+            .where(cls.repointed_id.is_(None))
+        )
+        rows = await session.execute(stmt)
+        return {origin_id: root_id for origin_id, root_id in rows.all()}

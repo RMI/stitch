@@ -171,6 +171,17 @@ class SetFieldPriorityRequest(BaseModel):
     ordered_source_pks: list[int]
 
 
+class RepointedResourceView(BaseModel):
+    """A candidate member that has since been merged away.
+
+    ``resource_id`` is the member as originally recorded on the candidate;
+    ``repointed_to`` is the terminal resource it now lives on.
+    """
+
+    resource_id: int
+    repointed_to: int
+
+
 class MergeCandidateView(BaseModel):
     id: int
     resource_ids: list[int]
@@ -183,6 +194,10 @@ class MergeCandidateView(BaseModel):
     last_updated_by_id: int
     reviewed_at: datetime | None = None
     reviewed_by_id: int | None = None
+    # Members that have been merged away since this candidate was recorded, each
+    # with the terminal resource it now lives on. Only populated for PENDING
+    # candidates; an empty list means the candidate is still valid.
+    repointed_resources: list[RepointedResourceView] = Field(default_factory=list)
 
 
 class ComparisonValueView(OGFieldSourceValueView):

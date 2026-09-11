@@ -265,3 +265,65 @@ class TestMergeCandidateDetailIntegration:
             (id_a, "gem", "Bar"),
             (id_b, "rmi", "Foo"),
         }
+
+
+class TestStaleCandidateResolution:
+    """STIT-418 AC 3: approving an overlapping merge makes a pending candidate stale.
+
+    candidate1 {A,B} and candidate2 {B,D} both pending; approving candidate1
+    repoints B, so candidate2 now overlaps an already-merged resource.
+    """
+
+    @pytest.mark.anyio
+    async def test_overlapping_approval_surfaces_the_move_and_blocks_reapprove(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        id_a = await _create_resource(integration_client, og_create_res_fact, "A")
+        id_b = await _create_resource(integration_client, og_create_res_fact, "B")
+        id_d = await _create_resource(integration_client, og_create_res_fact, "D")
+
+        cand1 = await _create_candidate(integration_client, [id_a, id_b])
+        cand2 = await _create_candidate(integration_client, [id_b, id_d])
+
+        approve = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{cand1}/approve",
+            json={"review_notes": "ok"},
+        )
+        assert approve.status_code == 200, approve.text
+        merged_id = approve.json()["merged_resource_id"]
+        assert merged_id is not None
+
+        expected_move = [{"resource_id": id_b, "repointed_to": merged_id}]
+
+        # candidate2 detail reports B -> merged_id (only the member that moved).
+        detail = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{cand2}"
+        )
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["repointed_resources"] == expected_move
+
+        queue = await integration_client.get("/oil-gas-fields/merge-candidates")
+        assert queue.status_code == 200, queue.text
+        rows = {c["id"]: c for c in queue.json()}
+        # The queue row carries the same signal...
+        assert rows[cand2]["repointed_resources"] == expected_move
+        # ...and the APPROVED candidate reports no staleness (PENDING-only rule).
+        assert rows[cand1]["repointed_resources"] == []
+
+        # Approving candidate2 now fails with an id-naming message, not a repr()
+        # memory address (the STIT-418 bug), and leaves it untouched.
+        reapprove = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{cand2}/approve",
+        )
+        assert reapprove.status_code == 400, reapprove.text
+        message = reapprove.json()["detail"]
+        assert str(id_b) in message
+        assert str(merged_id) in message
+        assert "object at 0x" not in message
+
+        after = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{cand2}"
+        )
+        assert after.json()["status"] == "PENDING"
