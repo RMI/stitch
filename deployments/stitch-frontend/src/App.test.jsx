@@ -91,7 +91,9 @@ describe("App", () => {
       mockPermissions({ isLoading: true });
       renderWithQueryClient(<App />);
 
-      expect(screen.getByRole("link", { name: "Resources" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("link", { name: "Resources" }),
+      ).toBeInTheDocument();
       expect(
         screen.queryByRole("link", { name: "Entity linkage" }),
       ).not.toBeInTheDocument();
@@ -107,7 +109,9 @@ describe("App", () => {
       mockPermissions({ data: [] });
       renderWithQueryClient(<App />);
 
-      expect(screen.getByRole("link", { name: "Resources" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("link", { name: "Resources" }),
+      ).toBeInTheDocument();
       expect(
         screen.queryByRole("link", { name: "Entity linkage" }),
       ).not.toBeInTheDocument();
