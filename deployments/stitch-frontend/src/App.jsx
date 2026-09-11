@@ -7,19 +7,14 @@ import MergeCandidateReviewPage from "./pages/MergeCandidateReviewPage";
 import EtlPage from "./pages/EtlPage";
 import { LogoutButton } from "./components/LogoutButton";
 import { usePermissions } from "./hooks/usePermissions";
+import { SOURCES } from "./constants/sourceMeta";
 
-// Mirrors SOURCE_READ_PERMISSIONS in packages/stitch-auth. ETL runs produce or
-// refresh source data, so the page is useful to anyone who can read or write at
-// least one source.
-const SOURCE_READ_PERMISSIONS = [
-  "source:read:rmi",
-  "source:read:gem",
-  "source:read:wm",
-  "source:read:llm",
-  "source:read:ccr",
-  "source:read:bc",
-  "source:read:alb",
-];
+// ETL runs produce or refresh source data, so the page is useful to anyone who
+// can read or write at least one source. Derived from SOURCES so adding a new
+// source there automatically extends the gate.
+const SOURCE_READ_PERMISSIONS = SOURCES.map(
+  (source) => `source:read:${source}`,
+);
 
 // `requires` is a has-any list: an item is visible if the caller holds any of
 // the listed permissions. Items without `requires` are ungated.
