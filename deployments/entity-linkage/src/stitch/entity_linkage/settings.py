@@ -19,6 +19,12 @@ class Settings(OTelSettings):
         default="http://api:8000/api/v1",
         alias="ENTITY_LINKAGE_API_BASE_URL",
     )
+    # Read/connect timeout (seconds) for calls to the downstream API. Widen this
+    # for long bulk runs against a busy single-worker API.
+    api_timeout_seconds: float = Field(
+        default=30.0,
+        alias="ENTITY_LINKAGE_API_TIMEOUT_SECONDS",
+    )
 
     # NB: no env_prefix here. The OTEL_* fields inherited from OTelSettings
     # resolve by their bare env names (OTEL_TRACES_EXPORTER, ...); a prefix would

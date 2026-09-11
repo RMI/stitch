@@ -82,15 +82,6 @@ function getBannerAppearance(label) {
     return {
       className: "bg-orange-500 text-white",
     };
-  } else if (normalized === "dress-rehearsal") {
-    return {
-      className: "text-white",
-      style: {
-        backgroundColor: "var(--color-bluespruce)",
-        backgroundImage:
-          "repeating-linear-gradient(-45deg, var(--color-solar) 0 16px, var(--color-bluespruce) 16px 32px)",
-      },
-    };
   } else if (normalized.startsWith("develop")) {
     return {
       className: "bg-red-500 text-white",
