@@ -7,7 +7,6 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from starlette.status import (
     HTTP_404_NOT_FOUND,
-    HTTP_409_CONFLICT,
     HTTP_502_BAD_GATEWAY,
     HTTP_503_SERVICE_UNAVAILABLE,
 )
@@ -20,14 +19,12 @@ from stitch.llm.client import StitchApiClient
 from stitch.llm.entities import FieldSuggestionResponse
 from stitch.llm.errors import (
     AzureResponsesError,
-    FieldAlreadyPopulatedError,
     LLMConfigurationError,
     ModelOutputError,
 )
 from stitch.llm.suggestions import (
     AllowedSuggestionField,
     build_field_suggestion_input,
-    ensure_field_is_missing,
     is_string_suggestion_field,
     parse_field_suggestion_response,
     sanitize_and_validate_suggested_value,
@@ -81,11 +78,6 @@ async def suggest_oil_gas_field_value(
             status_code=HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
-
-    try:
-        ensure_field_is_missing(detail_view, field)
-    except FieldAlreadyPopulatedError as exc:
-        raise HTTPException(status_code=HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     input_messages = build_field_suggestion_input(
         resource_id=id,
