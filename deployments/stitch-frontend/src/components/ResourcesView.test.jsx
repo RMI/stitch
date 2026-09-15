@@ -454,6 +454,31 @@ describe("ResourcesView", () => {
   });
 
   describe("filtering", () => {
+    it("renders the view described by the URL", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: mockResourceData,
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />, {
+        initialEntries: ["/?country=NOR&q=ghawar&sort_by=name&sort_order=desc"],
+      });
+
+      expect(
+        screen.getByRole("button", { name: "Remove Country: Norway" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Sort: Name descending")).toBeInTheDocument();
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({
+          filters: expect.objectContaining({ country: ["NOR"] }),
+          q: "ghawar",
+          sort_by: "name",
+          sort_order: "desc",
+        }),
+      );
+    });
+
     it("loads dropdown options from filter-options queries", () => {
       vi.mocked(useResources).mockReturnValue({
         ...defaultHookReturn,

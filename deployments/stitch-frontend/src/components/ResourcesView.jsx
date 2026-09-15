@@ -1,13 +1,11 @@
 import { useState } from "react";
-import { useSearchParams } from "react-router";
 import { useResources } from "../hooks/useResources";
+import { useListState } from "../hooks/useListState";
 import ResourcesTable from "./ResourcesTable";
 import FilterBar from "./FilterBar";
 import Pagination from "./Pagination";
 import Button from "./Button";
 import Input from "./Input";
-import { EMPTY_FILTERS } from "../config/filters";
-import { DEFAULT_PAGE_SIZE, DEFAULT_PAGE } from "../queries/resources";
 import { useConfig } from "../config/useConfig";
 
 const COLUMN_LABELS = {
@@ -30,16 +28,30 @@ function getSortLabel(sortConfig) {
 
 export default function ResourcesView({ className = "", endpoint }) {
   const config = useConfig();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const page = Number(searchParams.get("page") ?? DEFAULT_PAGE);
-  const pageSize = Number(searchParams.get("page_size") ?? DEFAULT_PAGE_SIZE);
-  const [searchText, setSearchText] = useState("");
-  const [submittedSearch, setSubmittedSearch] = useState("");
-  const [filters, setFilters] = useState(EMPTY_FILTERS);
-  const [sortConfig, setSortConfig] = useState({
-    column: null,
-    direction: "asc",
-  });
+  const {
+    page,
+    pageSize,
+    q,
+    filters,
+    sort,
+    setPage,
+    setPageSize,
+    setSearch,
+    setSort,
+    setFilters,
+  } = useListState();
+
+  // The search box holds its own text while you type; only submit and clear
+  // write to the URL, so typing does not rewrite history or refetch per
+  // keystroke. When the URL's q changes underneath us — back/forward, or the
+  // logotype reset — re-seed the box to match. This is React's documented
+  // "adjusting state when a prop changes" pattern, which avoids an effect.
+  const [searchText, setSearchText] = useState(q);
+  const [lastQ, setLastQ] = useState(q);
+  if (q !== lastQ) {
+    setLastQ(q);
+    setSearchText(q);
+  }
 
   const { data, isLoading, isFetching, isError, error, refetch } = useResources(
     endpoint,
@@ -48,9 +60,9 @@ export default function ResourcesView({ className = "", endpoint }) {
       page_size: pageSize,
       enabled: true,
       filters,
-      q: submittedSearch || undefined,
-      sort_by: sortConfig.column ?? undefined,
-      sort_order: sortConfig.column ? sortConfig.direction : undefined,
+      q: q || undefined,
+      sort_by: sort.column ?? undefined,
+      sort_order: sort.column ? sort.direction : undefined,
     },
   );
 
@@ -67,23 +79,15 @@ export default function ResourcesView({ className = "", endpoint }) {
     refetch();
   };
 
-  const handlePageChange = (newPage) => {
-    setSearchParams({ page: String(newPage), page_size: String(pageSize) });
-  };
+  const handlePageChange = (newPage) => setPage(newPage);
 
-  const handlePageSizeChange = (newSize) => {
-    setSearchParams({ page: String(DEFAULT_PAGE), page_size: String(newSize) });
-  };
+  const handlePageSizeChange = (newSize) => setPageSize(newSize);
 
   const handleSearchInputChange = (event) => {
     const newValue = event.target.value;
     setSearchText(newValue);
-    if (newValue === "" && submittedSearch !== "") {
-      setSubmittedSearch("");
-      setSearchParams({
-        page: String(DEFAULT_PAGE),
-        page_size: String(pageSize),
-      });
+    if (newValue === "" && q !== "") {
+      setSearch("");
     }
   };
 
@@ -91,37 +95,17 @@ export default function ResourcesView({ className = "", endpoint }) {
     event.preventDefault();
     const normalizedSearch = searchText.trim();
     setSearchText(normalizedSearch);
-    setSubmittedSearch(normalizedSearch);
-    setSearchParams({
-      page: String(DEFAULT_PAGE),
-      page_size: String(pageSize),
-    });
+    setSearch(normalizedSearch);
   };
 
   const handleSearchClear = () => {
     setSearchText("");
-    setSubmittedSearch("");
-    setSearchParams({
-      page: String(DEFAULT_PAGE),
-      page_size: String(pageSize),
-    });
+    setSearch("");
   };
 
-  const handleFiltersChange = (newFilters) => {
-    setFilters(newFilters);
-    setSearchParams({
-      page: String(DEFAULT_PAGE),
-      page_size: String(pageSize),
-    });
-  };
+  const handleFiltersChange = (newFilters) => setFilters(newFilters);
 
-  const handleSortChange = (newSortConfig) => {
-    setSortConfig(newSortConfig);
-    setSearchParams({
-      page: String(DEFAULT_PAGE),
-      page_size: String(pageSize),
-    });
-  };
+  const handleSortChange = (newSortConfig) => setSort(newSortConfig);
 
   return (
     <div className={`mx-auto w-full max-w-6xl ${className}`}>
@@ -199,17 +183,16 @@ export default function ResourcesView({ className = "", endpoint }) {
           </span>{" "}
           shown
         </span>
-        <span>Sort: {getSortLabel(sortConfig)}</span>
+        <span>Sort: {getSortLabel(sort)}</span>
         <span>
           <span className="font-mono tabular-nums text-ink">
             {activeFilterCount}
           </span>{" "}
           active filters
         </span>
-        {submittedSearch && (
+        {q && (
           <span>
-            Search:{" "}
-            <span className="font-mono text-ink">{submittedSearch}</span>
+            Search: <span className="font-mono text-ink">{q}</span>
           </span>
         )}
       </div>
@@ -231,7 +214,7 @@ export default function ResourcesView({ className = "", endpoint }) {
       )}
       <ResourcesTable
         resources={resources}
-        sortConfig={sortConfig}
+        sortConfig={sort}
         onSort={handleSortChange}
         isFetching={isFetching}
       />
@@ -260,11 +243,11 @@ export default function ResourcesView({ className = "", endpoint }) {
             {page} of {totalPages || 0}, {pageSize} per page
           </dd>
           <dt className="font-semibold text-ink">Sort</dt>
-          <dd>{getSortLabel(sortConfig)}</dd>
-          {submittedSearch && (
+          <dd>{getSortLabel(sort)}</dd>
+          {q && (
             <>
               <dt className="font-semibold text-ink">Search</dt>
-              <dd>{submittedSearch}</dd>
+              <dd>{q}</dd>
             </>
           )}
           {error && (
