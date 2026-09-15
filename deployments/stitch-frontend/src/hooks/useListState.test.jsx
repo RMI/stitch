@@ -4,7 +4,8 @@ import { MemoryRouter, useLocation, useNavigate } from "react-router";
 import { useListState } from "./useListState";
 
 function Probe() {
-  const { setFilters, setSort, setSearch, setPage } = useListState();
+  const { setFilters, setSort, setSearch, setPage, setPageSize } =
+    useListState();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -17,6 +18,7 @@ function Probe() {
       </button>
       <button onClick={() => setSearch("ghawar")}>search</button>
       <button onClick={() => setPage(3)}>page</button>
+      <button onClick={() => setPageSize(25)}>pageSize</button>
       <button onClick={() => navigate(-1)}>back</button>
     </>
   );
@@ -55,6 +57,16 @@ describe("useListState", () => {
     expect(url()).toBe("/?page=3");
     fireEvent.click(screen.getByText("back"));
     expect(url()).toBe("/");
+  });
+
+  it("pushes a history entry and resets to page 1 when page size changes", () => {
+    renderProbe("/?page=4");
+    fireEvent.click(screen.getByText("pageSize"));
+    // Should reset to page 1, so page=4 is gone
+    expect(url()).not.toContain("page=4");
+    // Back should return to the pre-action state (proves it pushed, not replaced)
+    fireEvent.click(screen.getByText("back"));
+    expect(url()).toBe("/?page=4");
   });
 
   it.each([["filter"], ["sort"], ["search"]])(
