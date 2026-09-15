@@ -1,4 +1,5 @@
-const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+// eslint-disable-next-line react-refresh/only-export-components
+export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 // Five-digit page numbers are wide enough that the usual window of nearby
 // pages overflows the control, so past this many pages the window narrows to

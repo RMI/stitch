@@ -58,6 +58,13 @@ const COLUMNS = [
   },
 ];
 
+// The canonical list of columns the API can sort by. Exported so the URL schema
+// (config/listParams.js) validates sort_by against one source of truth.
+// eslint-disable-next-line react-refresh/only-export-components
+export const SORTABLE_COLUMN_KEYS = COLUMNS.filter((col) => col.sortable).map(
+  (col) => col.key,
+);
+
 function SortIndicator({ column, sortConfig }) {
   if (sortConfig.column !== column) {
     return (
