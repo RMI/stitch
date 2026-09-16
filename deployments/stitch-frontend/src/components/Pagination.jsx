@@ -1,5 +1,4 @@
-// eslint-disable-next-line react-refresh/only-export-components -- one source of truth for the URL schema; costs Fast Refresh for this file (see config/listParams.js)
-export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+import { PAGE_SIZE_OPTIONS } from "../queries/resources";
 
 // Five-digit page numbers are wide enough that the usual window of nearby
 // pages overflows the control, so past this many pages the window narrows to

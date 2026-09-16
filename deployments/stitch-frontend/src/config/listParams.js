@@ -9,9 +9,11 @@
  * The schema deliberately mirrors what `queries/api.js` sends to the API, so
  * there is no translation layer to keep in sync.
  *
- * The functions here are pure, but the module is not React-free: its two
- * allowlist imports (FILTER_FIELDS, SORTABLE_COLUMN_KEYS) pull in component
- * modules, which transitively import `react-router` and `@tanstack/react-query`.
+ * The functions here are pure. The module imports its allowlists rather than
+ * restating them, so adding a sortable column or a page size cannot drift the
+ * URL schema. Those live in non-component modules (config/listColumns.js,
+ * queries/resources.js) so no file has to export both a component and shared
+ * constants — doing so breaks Fast Refresh.
  *
  * Rules:
  * - Defaults are omitted, so the default view is a bare `/`.
@@ -20,9 +22,12 @@
  * - Params we do not own are ignored on read and dropped on the next write.
  */
 import { FILTER_FIELDS } from "./filters";
-import { PAGE_SIZE_OPTIONS } from "../components/Pagination";
-import { SORTABLE_COLUMN_KEYS } from "../components/ResourcesTable";
-import { DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from "../queries/resources";
+import { SORTABLE_COLUMN_KEYS } from "./listColumns";
+import {
+  DEFAULT_PAGE,
+  DEFAULT_PAGE_SIZE,
+  PAGE_SIZE_OPTIONS,
+} from "../queries/resources";
 
 const FILTER_KEYS = FILTER_FIELDS.map((field) => field.key);
 const SORT_ORDERS = ["asc", "desc"];

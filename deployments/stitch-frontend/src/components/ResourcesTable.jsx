@@ -1,69 +1,7 @@
 import { Link } from "react-router";
 import SourceMixBar from "./SourceMixBar";
 import { getResourceField } from "../utils/resourceDisplay";
-import { getCountryName } from "../constants/countries";
-
-// sortType: "string" | "number", omit sortable (or set false) to disable sorting for a column.
-// format: optional (value) => displayValue applied to the cell's raw value.
-const COLUMNS = [
-  {
-    label: "Name",
-    key: "name",
-    className: "font-semibold text-ink",
-    sortable: true,
-    sortType: "string",
-  },
-  {
-    label: "Country",
-    key: "country",
-    className: "text-ink-muted",
-    sortable: true,
-    sortType: "string",
-    format: getCountryName,
-  },
-  {
-    label: "State/Province",
-    key: "state_province",
-    className: "text-ink-muted",
-    sortable: true,
-    sortType: "string",
-  },
-  {
-    label: "Region",
-    key: "region",
-    className: "text-ink-muted",
-    sortable: true,
-    sortType: "string",
-  },
-  {
-    label: "Basin",
-    key: "basin",
-    className: "text-ink-muted",
-    sortable: true,
-    sortType: "string",
-  },
-  {
-    label: "Field status",
-    key: "field_status",
-    className: "text-ink-muted",
-    sortable: true,
-    sortType: "string",
-  },
-  {
-    label: "Primary hydrocarbon group",
-    key: "primary_hydrocarbon_group",
-    className: "text-ink-muted",
-    sortable: true,
-    sortType: "string",
-  },
-];
-
-// The canonical list of columns the API can sort by. Exported so the URL schema
-// (config/listParams.js) validates sort_by against one source of truth.
-// eslint-disable-next-line react-refresh/only-export-components -- one source of truth for the URL schema; costs Fast Refresh for this file (see config/listParams.js)
-export const SORTABLE_COLUMN_KEYS = COLUMNS.filter((col) => col.sortable).map(
-  (col) => col.key,
-);
+import { COLUMNS } from "../config/listColumns";
 
 function SortIndicator({ column, sortConfig }) {
   if (sortConfig.column !== column) {
