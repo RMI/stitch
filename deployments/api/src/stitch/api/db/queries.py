@@ -38,7 +38,7 @@ from stitch.api.db.model import (
     ResourceModel,
 )
 from stitch.api.db.model.oil_gas_field_source_value import value_attr_for
-from stitch.api.entities import OGFieldQueryParams
+from stitch.api.entities import FILTER_OPTION_FIELDS, OGFieldQueryParams
 from stitch.ogsi.model.types import OGSISrcKey
 
 # Single source of truth for the source-list field metadata. This is a shared
@@ -247,6 +247,86 @@ def coalesced_winner_rows(
         winners.c.value_json,
         winners.c.source,
         winners.c.source_pk,
+    )
+
+
+def filter_option_rows(
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> Select[tuple[str, str]]:
+    """Distinct winning ``(colname, value)`` pairs for every filterable field.
+
+    One pass. The window partitions by ``(resource_id, colname)``, so a single
+    ROW_NUMBER picks the winner for all of ``FILTER_OPTION_FIELDS`` at once;
+    ``rn == 1`` is the winner. ``DISTINCT`` is over the pair, so a string that is
+    a valid value for two fields survives as two rows and lands under both.
+
+    Self-contained rather than built on ``construct_base_query_statement``: this
+    reads ``value_text`` and the ranking keys only, so it skips that CTE's joins
+    to ``og_field_resources`` and ``oil_gas_field_sources`` and its unused typed
+    value columns. Dropping the resource join relies on the invariant that a
+    merged resource's memberships are all INACTIVE (``_repoint_memberships``).
+    """
+    m = MembershipModel
+    v = OilGasFieldSourceValueModel
+    p = OGFieldSourcePriority
+    o = OGFieldResourceSourcePriority
+
+    ranked = (
+        select(
+            v.colname,
+            v.value_text,
+            func.row_number()
+            .over(
+                partition_by=(m.resource_id, v.colname),
+                # Tiered exactly as ``_ranked``: a value a curator has re-ranked
+                # (an override row exists, so o.priority is NOT NULL) beats every
+                # value that has not been -- that is what NULLS LAST buys. Within
+                # a tier the global default source priority decides.
+                order_by=(
+                    o.priority.asc().nulls_last(),
+                    p.priority.asc(),
+                    # Required, not a tiebreak of convenience: one resource can
+                    # hold several ACTIVE records from the SAME source, which tie
+                    # on p.priority (unique per source). Without these the winner
+                    # is whatever the database happens to pick, so the endpoint
+                    # can return a different value set on identical calls.
+                    m.source.asc(),
+                    m.source_pk.asc(),
+                ),
+            )
+            .label("rn"),
+        )
+        .select_from(m)
+        .join(v, v.source_pk == m.source_pk)
+        .join(p, p.source == m.source)
+        # At the value grain, and over the override table's full primary key, so
+        # at most one override row per value row: the outer join cannot fan out.
+        # ``o.source == m.source`` is the same dual-key guard the shared base CTE
+        # applies -- it fails safe to the default priority rather than applying an
+        # override whose (source, source_pk) pair is mismatched.
+        .outerjoin(
+            o,
+            and_(
+                o.resource_id == m.resource_id,
+                o.source_pk == m.source_pk,
+                o.source == m.source,
+                o.colname == v.colname,
+            ),
+        )
+        .where(
+            m.status == MembershipStatus.ACTIVE,
+            v.colname.in_(FILTER_OPTION_FIELDS),
+        )
+    )
+    if licensed_sources is not None:
+        ranked = ranked.where(m.source.in_(list(dict.fromkeys(licensed_sources))))
+    c = ranked.subquery().c
+
+    return (
+        select(c.colname, c.value_text)
+        .where(c.rn == 1, c.value_text.is_not(None))
+        .distinct()
+        .order_by(c.colname, c.value_text)
     )
 
 

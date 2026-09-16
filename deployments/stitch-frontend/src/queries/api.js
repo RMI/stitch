@@ -27,10 +27,8 @@ export async function getResourceFilterOptions(
   config,
   fetcher,
   endpoint = "resources",
-  field,
 ) {
-  const params = new URLSearchParams({ field });
-  const url = `${config.apiBaseUrl}/${endpoint}/filter-options?${params}`;
+  const url = `${config.apiBaseUrl}/${endpoint}/filter-options`;
   const response = await fetcher(url);
   if (!response.ok) {
     const error = new Error(`HTTP error! status: ${response.status}`);

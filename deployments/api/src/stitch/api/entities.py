@@ -98,19 +98,6 @@ SortableField = Literal[
     "resource_id",
 ]
 
-FilterOptionField = Literal[
-    "name",
-    "name_local",
-    "basin",
-    "state_province",
-    "region",
-    "country",
-    "field_status",
-    "location_type",
-    "production_conventionality",
-    "primary_hydrocarbon_group",
-]
-
 
 class OGFieldFilterParams(BaseModel):
     q: str | None = None
@@ -136,14 +123,26 @@ class OGFieldQueryParams(PaginationParams, OGFieldFilterParams, OGFieldSortParam
     source: list[OGSISrcKey] = Field(default_factory=lambda: list(OGSI_SOURCE_DEFAULT))
 
 
-class OGFieldFilterOptionsParams(BaseModel):
-    field: FilterOptionField
-    source: list[OGSISrcKey] = Field(default_factory=lambda: list(OGSI_SOURCE_DEFAULT))
-
-
 class OGFieldFilterOptionsResponse(BaseModel):
-    field: FilterOptionField
-    values: list[str]
+    """Every filterable field's distinct coalesced values, one list per field.
+
+    Fields are required, not defaulted: the action always supplies all of them,
+    empty list included, so a client never has to tell "no licensed values" apart
+    from "field missing from the payload".
+    """
+
+    basin: list[str]
+    country: list[str]
+    field_status: list[str]
+    primary_hydrocarbon_group: list[str]
+    region: list[str]
+    state_province: list[str]
+
+
+# The response model is the single source of truth for which fields are
+# filterable; the query derives its ``colname`` list from this, so the two can't
+# drift.
+FILTER_OPTION_FIELDS: tuple[str, ...] = tuple(OGFieldFilterOptionsResponse.model_fields)
 
 
 class MergeCandidateStatus(StrEnum):

@@ -9,6 +9,7 @@ import {
 } from "../queries/resources";
 import { createSourceForResource, reviewMergeCandidate } from "../queries/api";
 import mockResources from "../mockData/og_field_resources.json";
+import { FILTER_FIELDS } from "../config/filters";
 import {
   getResourceField,
   normalizeResourceListItem,
@@ -54,15 +55,11 @@ function useResourcesReal(
   });
 }
 
-function useResourceFilterOptionsReal(
-  endpoint = "resources",
-  field,
-  enabled = true,
-) {
+function useResourceFilterOptionsReal(endpoint = "resources", enabled = true) {
   const config = useConfig();
   return useAuthenticatedQuery({
-    ...resourceQueries.filterOptions(config, endpoint, field),
-    enabled: enabled && Boolean(field),
+    ...resourceQueries.filterOptions(config, endpoint),
+    enabled,
   });
 }
 
@@ -217,16 +214,23 @@ function getMockResourcePage({
   };
 }
 
-function getMockFilterOptions(field) {
-  const values = Array.from(
-    new Set(
-      MOCK_RESOURCE_ITEMS.map((resource) => getResourceField(resource, field))
-        .filter((value) => value != null && value !== "")
-        .map(String),
-    ),
-  ).sort((a, b) => a.localeCompare(b));
-
-  return { field, values };
+// Mirrors the API's all-fields payload: one key per dropdown the UI renders,
+// always present even when the mock data carries no values for it.
+function getMockFilterOptions() {
+  return Object.fromEntries(
+    FILTER_FIELDS.map(({ key: field }) => [
+      field,
+      Array.from(
+        new Set(
+          MOCK_RESOURCE_ITEMS.map((resource) =>
+            getResourceField(resource, field),
+          )
+            .filter((value) => value != null && value !== "")
+            .map(String),
+        ),
+      ).sort((a, b) => a.localeCompare(b)),
+    ]),
+  );
 }
 
 function useResourcesMock(
@@ -267,15 +271,11 @@ function useResourcesMock(
   });
 }
 
-function useResourceFilterOptionsMock(
-  endpoint = "resources",
-  field,
-  enabled = true,
-) {
+function useResourceFilterOptionsMock(endpoint = "resources", enabled = true) {
   return useQuery({
-    ...resourceQueries.filterOptions(UNUSED_MOCK_CONFIG, endpoint, field),
-    queryFn: () => Promise.resolve(getMockFilterOptions(field)),
-    enabled: enabled && Boolean(field),
+    ...resourceQueries.filterOptions(UNUSED_MOCK_CONFIG, endpoint),
+    queryFn: () => Promise.resolve(getMockFilterOptions()),
+    enabled,
   });
 }
 

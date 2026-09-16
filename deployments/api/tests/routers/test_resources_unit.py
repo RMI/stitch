@@ -8,6 +8,7 @@ from starlette.status import HTTP_404_NOT_FOUND
 from stitch.ogsi.model import OGFieldListItemView, OilGasFieldBase
 
 from stitch.api.db.config import get_uow
+from stitch.api.entities import OGFieldFilterOptionsResponse
 from stitch.api.main import app
 
 from tests.factories import ResourceCreateFactory, SourceFactory
@@ -229,17 +230,31 @@ class TestGetResourceFilterOptionsUnit:
         app.dependency_overrides[get_uow] = override_get_uow
 
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
-            mock_repo.filter_options = AsyncMock(return_value=["CAN", "USA"])
-
-            response = await async_client.get(
-                "/oil-gas-fields/filter-options?field=country"
+            mock_repo.filter_options = AsyncMock(
+                return_value=OGFieldFilterOptionsResponse(
+                    basin=["Permian"],
+                    country=["CAN", "USA"],
+                    field_status=[],
+                    primary_hydrocarbon_group=[],
+                    region=["North America"],
+                    state_province=["Alberta", "Texas"],
+                )
             )
 
+            response = await async_client.get("/oil-gas-fields/filter-options")
+
         assert response.status_code == 200
-        assert response.json() == {"field": "country", "values": ["CAN", "USA"]}
+        assert response.json() == {
+            "basin": ["Permian"],
+            "country": ["CAN", "USA"],
+            "field_status": [],
+            "primary_hydrocarbon_group": [],
+            "region": ["North America"],
+            "state_province": ["Alberta", "Texas"],
+        }
 
     @pytest.mark.anyio
-    async def test_passes_licensed_sources_and_source_filters(
+    async def test_passes_licensed_sources(
         self,
         async_client,
         mock_uow,
@@ -250,11 +265,18 @@ class TestGetResourceFilterOptionsUnit:
         app.dependency_overrides[get_uow] = override_get_uow
 
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
-            mock_repo.filter_options = AsyncMock(return_value=["CAN", "USA"])
-
-            response = await async_client.get(
-                "/oil-gas-fields/filter-options?field=country&source=gem&source=wm"
+            mock_repo.filter_options = AsyncMock(
+                return_value=OGFieldFilterOptionsResponse(
+                    basin=[],
+                    country=["CAN", "USA"],
+                    field_status=[],
+                    primary_hydrocarbon_group=[],
+                    region=[],
+                    state_province=[],
+                )
             )
+
+            response = await async_client.get("/oil-gas-fields/filter-options")
 
         assert response.status_code == 200
         mock_repo.filter_options.assert_awaited_once()
@@ -262,5 +284,3 @@ class TestGetResourceFilterOptionsUnit:
         assert call_kwargs["licensed_sources"] == frozenset(
             {"rmi", "gem", "wm", "ccr", "alb", "bc", "llm"}
         )
-        assert call_kwargs["params"].field == "country"
-        assert call_kwargs["params"].source == ["gem", "wm"]

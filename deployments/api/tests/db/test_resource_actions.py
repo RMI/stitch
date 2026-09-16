@@ -21,8 +21,9 @@ from stitch.api.db.model import (
     OilGasFieldSourceValueModel,
     ResourceModel,
 )
+from stitch.api.db.queries import filter_option_rows
 from stitch.api.entities import (
-    OGFieldFilterOptionsParams,
+    FILTER_OPTION_FIELDS,
     OGFieldQueryParams,
     User,
 )
@@ -967,12 +968,9 @@ class TestResourceFilterOptionsAction:
             {"source": "rmi", "country": None},
         )
 
-        values = await resource_actions.filter_options(
-            seeded_integration_session,
-            OGFieldFilterOptionsParams(field="country"),
-        )
+        options = await resource_actions.filter_options(seeded_integration_session)
 
-        assert values == ["CAN", "USA"]
+        assert options.country == ["CAN", "USA"]
 
     @pytest.mark.anyio
     async def test_honors_licensed_sources_after_coalescing(
@@ -992,41 +990,29 @@ class TestResourceFilterOptionsAction:
             {"source": "rmi", "country": "USA"},
         )
 
-        values = await resource_actions.filter_options(
+        options = await resource_actions.filter_options(
             seeded_integration_session,
-            OGFieldFilterOptionsParams(field="country"),
             licensed_sources=frozenset({"gem", "wm", "llm"}),
         )
 
-        assert values == ["CAN"]
+        assert options.country == ["CAN"]
 
     @pytest.mark.anyio
-    async def test_excludes_repointed_and_inactive_memberships(
+    async def test_excludes_inactive_memberships(
         self,
         seeded_integration_session: AsyncSession,
         test_user: User,
     ):
-        active_id = await _create_resource_with_sources(
+        await _create_resource_with_sources(
             seeded_integration_session,
             test_user,
             {"source": "rmi", "country": "USA"},
-        )
-        repointed_to_id = await _create_resource_with_sources(
-            seeded_integration_session,
-            test_user,
-            {"source": "rmi", "country": "BRA"},
         )
         inactive_id = await _create_resource_with_sources(
             seeded_integration_session,
             test_user,
             {"source": "rmi", "country": "CAN"},
         )
-
-        repointed_resource = await seeded_integration_session.get(
-            ResourceModel, repointed_to_id
-        )
-        assert repointed_resource is not None
-        repointed_resource.repointed_id = active_id
 
         inactive_membership = await seeded_integration_session.scalar(
             select(MembershipModel).where(MembershipModel.resource_id == inactive_id)
@@ -1035,36 +1021,78 @@ class TestResourceFilterOptionsAction:
         inactive_membership.status = MembershipStatus.INACTIVE
         await seeded_integration_session.flush()
 
-        values = await resource_actions.filter_options(
+        options = await resource_actions.filter_options(seeded_integration_session)
+
+        assert options.country == ["USA"]
+
+    @pytest.mark.anyio
+    async def test_returns_every_field_including_empty_ones(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        await _create_resource_with_sources(
             seeded_integration_session,
-            OGFieldFilterOptionsParams(field="country"),
+            test_user,
+            {"source": "rmi", "country": "USA"},
         )
 
-        assert values == ["USA"]
+        options = await resource_actions.filter_options(seeded_integration_session)
 
-    def test_postgres_distinct_query_orders_by_selected_value_alias(self):
-        """The rewritten filter_options construction compiles on Postgres.
+        assert set(options.model_dump()) == set(FILTER_OPTION_FIELDS)
+        assert options.country == ["USA"]
+        # A field no source carries is an empty list, never a missing key.
+        assert options.field_status == []
+        assert options.basin == []
 
-        Mirrors ``filter_options``: distinct over the coalesced value column for
-        one field, ordered by the selected alias.
+    @pytest.mark.anyio
+    async def test_returns_each_field_from_one_pass(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {
+                "source": "rmi",
+                "country": "USA",
+                "state_province": "Texas",
+                "basin": "Permian",
+                "region": "North America",
+            },
+        )
+        # "Texas" is a legitimate value for two fields. Both must survive, each
+        # under its own key -- which is what proves DISTINCT is over the
+        # (colname, value) pair rather than the bare value.
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {
+                "source": "gem",
+                "country": "CAN",
+                "state_province": "Alberta",
+                "basin": "Texas",
+            },
+        )
+
+        options = await resource_actions.filter_options(seeded_integration_session)
+
+        assert options.country == ["CAN", "USA"]
+        assert options.state_province == ["Alberta", "Texas"]
+        assert options.basin == ["Permian", "Texas"]
+        assert options.region == ["North America"]
+
+    def test_postgres_distinct_query_orders_by_selected_columns(self):
+        """``filter_option_rows`` compiles on Postgres.
+
+        Postgres rejects SELECT DISTINCT ... ORDER BY over an expression that is
+        not in the select list. Both ordered columns are selected here, so it
+        compiles -- but the test suite runs on SQLite, which is laxer, so compile
+        the real statement against the Postgres dialect to catch that.
         """
-        params = OGFieldFilterOptionsParams(field="basin")
-        base_cte = resource_actions.construct_base_query_statement(
+        stmt = filter_option_rows(
             licensed_sources=frozenset({"gem", "wm", "rmi", "llm"}),
-        )
-        filtered = (
-            resource_actions.select(base_cte)
-            .where(base_cte.c.colname == params.field)
-            .cte()
-        )
-        ranked = resource_actions.add_ranking(filtered).cte("ranked")
-        value_col = getattr(ranked.c, resource_actions.value_attr_for(params.field))
-        labeled = value_col.label("value")
-        stmt = (
-            resource_actions.select(labeled)
-            .where(value_col.is_not(None), value_col != "")
-            .distinct()
-            .order_by(labeled)
         )
 
         sql = str(
@@ -1074,8 +1102,10 @@ class TestResourceFilterOptionsAction:
             )
         )
 
-        assert "SELECT DISTINCT ranked.value_text AS value" in sql
-        assert "ORDER BY value" in sql
+        assert "SELECT DISTINCT" in sql
+        assert "ORDER BY" in sql
+        ordered = sql[sql.index("ORDER BY") :]
+        assert "colname" in ordered and "value_text" in ordered
 
     @pytest.mark.anyio
     async def test_only_unlicensed_selected_sources_still_return_resource(
