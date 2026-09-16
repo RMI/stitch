@@ -14,8 +14,8 @@ from stitch.api.db.errors import (
 )
 from stitch.api.auth import CurrentUser
 from stitch.api.entities import (
-    FilterOptionField,
-    OGFieldFilterOptionsParams,
+    FILTER_OPTION_FIELDS,
+    OGFieldFilterOptionsResponse,
     OGFieldQueryParams,
 )
 from stitch.api.db.og_field_source_actions import (
@@ -38,13 +38,11 @@ from .model import (
 from .model.oil_gas_field_source_value import (
     ATTRIBUTE_NAMES,
     materialize_value,
-    value_attr_for,
 )
 from .queries import (
-    add_ranking,
     base_resource_query,
-    construct_base_query_statement,
     field_source_candidates,
+    filter_option_rows,
 )
 from .utils import (
     coalesce_resources,
@@ -53,7 +51,6 @@ from .utils import (
 )
 
 
-_FILTER_OPTION_FIELDS: frozenset[str] = frozenset(get_args(FilterOptionField))
 _ALL_SOURCES: frozenset[OGSISrcKey] = frozenset(get_args(OGSISrcKey))
 
 
@@ -93,29 +90,19 @@ async def query(
 
 async def filter_options(
     session: AsyncSession,
-    params: OGFieldFilterOptionsParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
-) -> list[str]:
-    """Return distinct coalesced resource values for one filterable field.
+) -> OGFieldFilterOptionsResponse:
+    """Distinct coalesced values for every filterable field, in one query.
 
-    Reads the shared coalescing core narrowed to the single field, so values are
-    priority/override-coalesced and licensed before being deduped and sorted.
-    ``params.source`` is ignored (see ``query``).
+    Values are priority/override-coalesced and licensed before being deduped and
+    sorted, as they are on the list path. Every field is present, empty list
+    included: grouping appends into a pre-seeded dict, so it does not depend on
+    the SQL ORDER BY.
     """
-    if params.field not in _FILTER_OPTION_FIELDS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"field={params.field} is not supported for resource filter options.",
-        )
-
-    base_cte = construct_base_query_statement(licensed_sources)
-    filtered = select(base_cte).where(base_cte.c.colname == params.field).cte()
-    ranked = add_ranking(filtered).cte("ranked")
-    value_col = getattr(ranked.c, value_attr_for(params.field))
-    labeled = value_col.label("value")
-    stmt = select(labeled).where(value_col.is_not(None)).distinct().order_by(labeled)
-    values = await session.scalars(stmt)
-    return list(values.all())
+    options: dict[str, list[str]] = {field: [] for field in FILTER_OPTION_FIELDS}
+    for colname, value in await session.execute(filter_option_rows(licensed_sources)):
+        options[colname].append(value)
+    return OGFieldFilterOptionsResponse(**options)
 
 
 async def get(

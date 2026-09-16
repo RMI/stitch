@@ -2,31 +2,11 @@ import FilterDropdown from "./FilterDropdown";
 import { FILTER_FIELDS, EMPTY_FILTERS } from "../config/filters";
 import { useResourceFilterOptions } from "../hooks/useResources";
 
-function FilterFieldDropdown({
-  endpoint,
-  field,
-  label,
-  formatValue,
-  selected,
-  onChange,
-}) {
-  const { data } = useResourceFilterOptions(endpoint, field);
-  const options = (data?.values ?? []).map((value) => ({
-    value,
-    label: formatValue ? formatValue(value) : value,
-  }));
-
-  return (
-    <FilterDropdown
-      label={label}
-      options={options}
-      selected={selected}
-      onChange={onChange}
-    />
-  );
-}
-
 export default function FilterBar({ endpoint, filters, onFiltersChange }) {
+  // One request covers every dropdown: the endpoint returns all filterable
+  // fields keyed by field name, each with its distinct values.
+  const { data: filterOptions } = useResourceFilterOptions(endpoint);
+
   // Flatten active filters into chips: [{ field, label, value, displayValue }, ...]
   // `value` is the stored/API value; `displayValue` is what the user sees.
   const chips = FILTER_FIELDS.flatMap(({ key, label, formatValue }) =>
@@ -54,12 +34,13 @@ export default function FilterBar({ endpoint, filters, onFiltersChange }) {
       {/* Dropdowns row */}
       <div className="flex flex-wrap gap-2">
         {FILTER_FIELDS.map(({ key, label, formatValue }) => (
-          <FilterFieldDropdown
+          <FilterDropdown
             key={key}
-            endpoint={endpoint}
-            field={key}
             label={label}
-            formatValue={formatValue}
+            options={(filterOptions?.[key] ?? []).map((value) => ({
+              value,
+              label: formatValue ? formatValue(value) : value,
+            }))}
             selected={filters[key] ?? []}
             onChange={(values) => handleDropdownChange(key, values)}
           />

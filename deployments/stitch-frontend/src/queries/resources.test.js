@@ -20,10 +20,7 @@ describe("resourceQueries key prefixes", () => {
   const endpoint = "oil-gas-fields";
   const cases = [
     ["list", () => resourceQueries.list(config, endpoint, 1, 10, {})],
-    [
-      "filterOptions",
-      () => resourceQueries.filterOptions(config, endpoint, "basin"),
-    ],
+    ["filterOptions", () => resourceQueries.filterOptions(config, endpoint)],
     ["detail", () => resourceQueries.detail(config, endpoint, 42)],
     [
       "fieldSources",

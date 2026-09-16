@@ -71,23 +71,18 @@ beforeEach(() => {
     ...defaultHookReturn,
     refetch: vi.fn(),
   });
-  const FILTER_OPTION_VALUES = {
-    region: ["Middle East"],
-    basin: ["Arabian", "Permian"],
-    state_province: ["Kuwait"],
-    field_status: ["Producing"],
-    country: ["NOR", "SAU"],
-    primary_hydrocarbon_group: ["Oil", "Gas"],
-  };
-  vi.mocked(useResourceFilterOptions).mockImplementation(
-    (_endpoint, field) => ({
-      ...defaultHookReturn,
-      data: {
-        field,
-        values: FILTER_OPTION_VALUES[field] ?? [],
-      },
-    }),
-  );
+  // One call, one payload keyed by field -- the shape the endpoint now returns.
+  vi.mocked(useResourceFilterOptions).mockReturnValue({
+    ...defaultHookReturn,
+    data: {
+      region: ["Middle East"],
+      basin: ["Arabian", "Permian"],
+      state_province: ["Kuwait"],
+      field_status: ["Producing"],
+      country: ["NOR", "SAU"],
+      primary_hydrocarbon_group: ["Oil", "Gas"],
+    },
+  });
 });
 
 describe("ResourcesView", () => {
@@ -454,7 +449,7 @@ describe("ResourcesView", () => {
   });
 
   describe("filtering", () => {
-    it("loads dropdown options from filter-options queries", () => {
+    it("loads every dropdown's options from a single filter-options query", () => {
       vi.mocked(useResources).mockReturnValue({
         ...defaultHookReturn,
         data: mockResourceData,
@@ -462,24 +457,8 @@ describe("ResourcesView", () => {
 
       renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
 
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(ENDPOINT, "region");
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(
-        ENDPOINT,
-        "state_province",
-      );
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(ENDPOINT, "basin");
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(
-        ENDPOINT,
-        "field_status",
-      );
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(
-        ENDPOINT,
-        "country",
-      );
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(
-        ENDPOINT,
-        "primary_hydrocarbon_group",
-      );
+      expect(useResourceFilterOptions).toHaveBeenCalledTimes(1);
+      expect(useResourceFilterOptions).toHaveBeenCalledWith(ENDPOINT);
     });
 
     it("shows country options as conventional names but filters by the code", () => {
