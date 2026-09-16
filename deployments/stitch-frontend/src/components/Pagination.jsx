@@ -1,4 +1,4 @@
-// eslint-disable-next-line react-refresh/only-export-components
+// eslint-disable-next-line react-refresh/only-export-components -- one source of truth for the URL schema; costs Fast Refresh for this file (see config/listParams.js)
 export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 // Five-digit page numbers are wide enough that the usual window of nearby

@@ -304,12 +304,12 @@ it("shows a loading indicator", () => {
 
 `src/test/utils.jsx` exports:
 
-| Export                              | Description                                                                                    |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `renderWithQueryClient(ui)`         | Renders inside `QueryClientProvider` + `MemoryRouter`; returns `{ queryClient, ...rtlResult }` |
-| `auth0TestDefaults`                 | Default Auth0 mock state (authenticated); spread and override for auth tests                   |
-| `createMockResponse(data, options)` | Builds a mock `fetch` response object                                                          |
-| `createMockError(status)`           | Builds a mock error `fetch` response                                                           |
+| Export                                | Description                                                                                                                                                                 |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `renderWithQueryClient(ui, options?)` | Renders inside `QueryClientProvider` + `MemoryRouter`; returns `{ queryClient, ...rtlResult }`. `options.initialEntries` mounts the router at a given URL (default `["/"]`) |
+| `auth0TestDefaults`                   | Default Auth0 mock state (authenticated); spread and override for auth tests                                                                                                |
+| `createMockResponse(data, options)`   | Builds a mock `fetch` response object                                                                                                                                       |
+| `createMockError(status)`             | Builds a mock error `fetch` response                                                                                                                                        |
 
 Additional libraries:
 

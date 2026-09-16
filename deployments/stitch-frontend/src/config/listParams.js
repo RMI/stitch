@@ -9,6 +9,10 @@
  * The schema deliberately mirrors what `queries/api.js` sends to the API, so
  * there is no translation layer to keep in sync.
  *
+ * The functions here are pure, but the module is not React-free: its two
+ * allowlist imports (FILTER_FIELDS, SORTABLE_COLUMN_KEYS) pull in component
+ * modules, which transitively import `react-router` and `@tanstack/react-query`.
+ *
  * Rules:
  * - Defaults are omitted, so the default view is a bare `/`.
  * - Serialization order is fixed, so the same view always produces the same URL.
@@ -26,7 +30,9 @@ const DEFAULT_SORT_ORDER = "asc";
 
 function parsePage(raw) {
   const value = Number(raw);
-  return Number.isInteger(value) && value >= 1 ? value : DEFAULT_PAGE;
+  return /^\d+$/.test(raw ?? "") && Number.isSafeInteger(value) && value >= 1
+    ? value
+    : DEFAULT_PAGE;
 }
 
 function parsePageSize(raw) {
@@ -73,7 +79,7 @@ export function toListParams({
 }) {
   const params = new URLSearchParams();
 
-  if (page && page !== DEFAULT_PAGE) params.set("page", String(page));
+  if (page > DEFAULT_PAGE) params.set("page", String(page));
   if (pageSize && pageSize !== DEFAULT_PAGE_SIZE) {
     params.set("page_size", String(pageSize));
   }

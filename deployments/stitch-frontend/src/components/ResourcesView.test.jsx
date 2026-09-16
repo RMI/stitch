@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, within, fireEvent } from "@testing-library/react";
+import { useNavigate } from "react-router";
 import { renderWithQueryClient } from "../test/utils";
 import ResourcesView from "./ResourcesView";
 import { useResourceFilterOptions, useResources } from "../hooks/useResources";
@@ -89,6 +90,14 @@ beforeEach(() => {
     }),
   );
 });
+
+// Mirrors ResourceDetailPage's "← Back" (navigate(-1)). Rendered as a sibling of
+// <ResourcesView /> so it shares the router. window.history.back() does not
+// drive MemoryRouter, so this is the way to exercise browser Back in jsdom.
+function BackButton() {
+  const navigate = useNavigate();
+  return <button onClick={() => navigate(-1)}>test-back</button>;
+}
 
 describe("ResourcesView", () => {
   const ENDPOINT = "oil-gas-fields";
@@ -722,6 +731,27 @@ describe("ResourcesView", () => {
         ENDPOINT,
         expect.objectContaining({ q: undefined }),
       );
+    });
+
+    it("re-seeds the search box when the URL's q changes underneath it", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: mockResourceData,
+      });
+
+      renderWithQueryClient(
+        <>
+          <ResourcesView endpoint={ENDPOINT} />
+          <BackButton />
+        </>,
+        { initialEntries: ["/?q=alpha", "/?q=beta"] },
+      );
+
+      expect(screen.getByLabelText("Search resources")).toHaveValue("beta");
+
+      fireEvent.click(screen.getByText("test-back"));
+
+      expect(screen.getByLabelText("Search resources")).toHaveValue("alpha");
     });
 
     it("clears the input and active search when Clear search is clicked", () => {

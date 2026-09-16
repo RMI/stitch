@@ -60,7 +60,7 @@ const COLUMNS = [
 
 // The canonical list of columns the API can sort by. Exported so the URL schema
 // (config/listParams.js) validates sort_by against one source of truth.
-// eslint-disable-next-line react-refresh/only-export-components
+// eslint-disable-next-line react-refresh/only-export-components -- one source of truth for the URL schema; costs Fast Refresh for this file (see config/listParams.js)
 export const SORTABLE_COLUMN_KEYS = COLUMNS.filter((col) => col.sortable).map(
   (col) => col.key,
 );
