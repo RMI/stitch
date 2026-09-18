@@ -8,17 +8,12 @@
 
 ## 1. Objective
 
-Design a database architecture and application logic to serve the key Stitch endpoints with lower latency.
-
+Design a database architecture and application logic to serve the key Stitch endpoints with minimal latency.
 ## 2. Background
 
 ### Problem
 
-The `list`, `filter-options`, and `detail` endpoints all rebuild the same thing on
-every request: one coalesced, flat row per resource that represents the current top-level "state".
-`queries.py` does this by joining membership → resource → default priority → source → value rows,
-left-joining per-field overrides, ranking candidates with a four-key `ROW_NUMBER()`
-window, and then pivoting the winners into columns with `max(case(...))` per field.
+The `list`, `filter-options`, and `detail` endpoints all rebuild the same thing on every request: one coalesced, flat row per resource that represents the current top-level "state". `queries.py` does this by joining membership → resource → default priority → source → value rows, left-joining per-field overrides, ranking candidates with a four-key `ROW_NUMBER()` window, and then pivoting the winners into columns with `max(case(...))` per field.
 
 Combined with serializing to/from Pydantic models, this has led to poor response times that
 negatively impact user experience. Furthermore, given that our entire db is less than 100MB
@@ -26,14 +21,10 @@ in size, this raises questions about our overall db design and access patterns.
 
 ### Observations
 
-With the newly added attribute-level priority feature ([STIT-494](https://rmi1.atlassian.net/browse/STIT-494)), we now
-have a more deterministic and bounded way to establish the different variations we
-display for a flat resource. Our permissions model only has 2 restricted options: `wm` and `cc`.
-All the remaining sources are public, and ALL users have read permissions for them.
+With the newly added attribute-level priority feature ([STIT-494](https://rmi1.atlassian.net/browse/STIT-494)), we now have a more deterministic and bounded way to establish the different variations we display for a flat resource. Our permissions model only has 2 restricted options: `wm` and `cc`. All the remaining sources are public, and ALL users have read permissions for them.
 
 > [!NOTE]
-> It was more straightforward to treat these individually when implemented, but reviewing our permissions model
-> may help simplify in the future. However, it's not strictly necessary for this work.
+> It was more straightforward to treat these individually when implemented, but reviewing our permissions model may help simplify in the future. However, it's not strictly necessary for this work.
 
 If we think of the set of `llm`, `rmi`, `bc`, `alb`, and `gem` as a single `public` visibility.
 Then there are some fairly significant implications in how our coalescing logic actually
@@ -64,8 +55,7 @@ For any view or operation that interacts only with the flattened representation 
 
 - we only need to store/cache up to the first public source in the priority list
 - a resource attribute has at most 3 variations: `wm`, `cc`, and `public`
-- an entire coalesced resource has **at most 4 possible variations** depending on user permissions
-  and attribute priorities:
+- an entire coalesced resource has **at most 4 possible variations** depending on user permissions and attribute priorities:
   - `public`: all attributes have a public source as the highest priority
   - `public + wm`: 1 or more attributes has `wm` as highest priority and all next-highest priorities are public
     - said another way, all top 2 priorities are either `wm` or `public` and at least 1 is `wm`
@@ -74,8 +64,7 @@ For any view or operation that interacts only with the flattened representation 
   - `public + wm + cc`: at least 1 attribute where `wm` is highest **AND** 1 attribute where `cc` is highest
     - Note: `wm + cc` must see different data from both `wm` and `cc` individually
 
-Thus, whatever structure we use here is bounded by at most 4 x the number of top-level (unmerged) resources: 1 variant for each
-possible licensed representation.
+Thus, whatever structure we use here is bounded by at most 4 x the number of top-level (unmerged) resources: 1 variant for each possible licensed representation.
 
 > [!NOTE]
 > One caveat here is that the number of possible variants grows exponentially with the number of distinct licenses:
@@ -84,19 +73,17 @@ possible licensed representation.
 > - 3 licensed sources = 8 variants
 > - 4 licensed sources = 16 variants
 >
-> so even if we add 2 proprietary sources, this structure grows to a max of 16 x the number of top-level (unmerged) resources.
-> I don't see this as a real issue even in the long term. How many licensed sources are even realistic? 6? 10? Even at 10
-> proprietary sources, the view/table would be 2^10 = 1024 x resources. The upper bound of **all** named fields is probably
-> somewhere in the ~65k range, so ~65M rows is still manageable...if we'd ever even get close to that.
+> so even if we add 2 proprietary sources, this structure grows to a max of 16 x the number of top-level (unmerged) resources. I don't see this as a real issue even in the long term. How many licensed sources are even realistic? 6? 10? Even at 10 proprietary sources, the view/table would be 2^10 = 1024 x resources. The upper bound of **all** named fields is probably somewhere in the ~65k range, so ~65M rows is still manageable...if we'd ever even get close to that.
 
 ## 2. Goals and non-goals
 
 **Goals**
 
-- Serve `list` and `filter-options` with <100ms latency
-- Give the database one unambiguous stored answer to "what is the value for each attribute of a resource for a user with X permissions"
-- Express the invariants declaratively in schema, so the sync/refresh mechanism has lower/zero risk regarding correctness
-- Preserve the public REST surface and today's behavior
+1. Serve `list` and `filter-options` with <100ms latency
+2. Give the database one unambiguous stored answer to "what is the value for each attribute of a resource for a user with X permissions"
+3. As a follow-up to 2, provide one unambiguous stored representation for each resource for each effective user permission set.
+4. Express the invariants declaratively in schema, so the sync/refresh mechanism has lower/zero risk regarding correctness
+5. Preserve the public REST surface and today's behavior
 
 **Non-goals**
 
@@ -104,45 +91,128 @@ possible licensed representation.
 - The details of the sync mechanism. See §6.
 - Redesigning the permission model.
 
-## 3. Proposal
+## 3. Schema Changes
 
-Part of the goal is to trade application complexity for schema complexity. Making schemas more complex
-but in a way that enables tighter constraints and simpler queries (i.e. through mostly joins) frees
-out application code from being the enforcer of invariants.
+Part of the goal is to trade application complexity for schema complexity. Making schemas more complex but in a way that enables tighter constraints and simpler queries (i.e. through mostly joins) frees our application code from being the enforcer of invariants.
 
-### Attributes table
+### Resource State View/Table
+The purpose is to provide a durable store that houses the flattened/coalesced resources. We're effectively precomputing the coalescing logic and saving it to a single table. The actual schema is less important than its function and the constraints we place on it.
 
-Add `og_field_attributes` table:
+It must:
+- only store unmerged resources (i.e. where `repointed_id == NULL`), merging triggers deletion from the table
+- provide highly performant, permission-scoped querying of resource data
+- not expose proprietary information to unlicensed users
+- provide resource representations that are consistent with existing coalescing logic
+- be able to be rebuilt from scratch at any time, we should be able to derive the data for the table easily & quickly
 
-- id: primary key
-- name: attribute name
-- (optional) description
-- (optional) type: text, int, float, json, etc...
+The top contender for a schema is:
+```sql
+CREATE TABLE og_field_resource_view (
+    resource_id bigint not null,
+    permission_mask smallint not null,
+    record jsonb not null,
+
+    -- cannot have the same resource with the same permission
+    primary key (resource_id, permission_mask),
+    
+    constraint og_field_resource_view
+       foreign key (resource_id)
+       references og_field_resources(id)
+)
+```
+The one slight drawback is that it's slightly tricky to maintain that we only retain `resource_id` values that correspond to `og_field_resources.id` where `og_field_resources.repointed_id is NULL`. 
+
+**permission mask**
+The `permission_mask` is a bitmask where `public` = 0, `cc` = 1, `wm` = 2, and `wm + cc` = 3. 
+
+| wm  | cc  |perm |
+| --- | --- | --- |
+|  0  |  0  |  0  |
+|  0  |  1  |  1  |
+|  1  |  0  |  2  |
+|  1  |  1  |  3  |
+
+This allows for 2 filtering options:
+- strict `permission_mask = <user permission>` (incurs minor cost of possibly duplicating data across rows)
+- bit comparison to filter where `(<user permission> | permission_mask) = <user permission>`
+    - if we sort by `permission_mask` (desc), this would allow us to only store the minimum number of resource variants
+        - for example, if a resource had ALL public sources as the highest priorities, we'd only need 1 row in the table with `permission_mask = 0` because ALL users would see the same version
+        - or if a resource had only `wm` and `public` variants, a `wm + cc` permission would get the `wm` version: 3 (`cc + wm`) | 2 (`wm`) = 3
+        - but a `cc` permission would skip the `wm` row and see the `public` variant:
+          1 (`cc`) | 2 (`wm`) = 3    => exclude
+          1 (`cc`) | 0 (`pub`) = 1   => include
+
+
+> [!NOTE] Permission Alternative
+> We can also use permission columns for the minor cost of duplicating data across columns. Benefits from being a simpler more understandable approach.
+
+**record column as jsonb**
+We'd effectively house the entire flat Pydantic model in json. The main reasoning is that we can likely expand to near-instant full-text search without much difficulty. It's also partially as an experiment to assess the difficulty of working with Postgres JSON syntax and investigate whether there are performance trade-offs. Should it prove easy to use while still being performant, it opens the door to using it in other places across our application where we might want greater flexibility in our data handling.
+
+**sync overview**
+Very roughly speaking, when a user or process updates relevant data (merge resources, reprioritize, new sources from ETL), we compute the updated view state(s), and write them to the table, deleting where necessary.
+
+### Attribute metadata: `og_field_attributes`
+```sql
+CREATE TABLE og_field_attributes (
+    id serial primary key,
+    name text not null unique,
+    
+    -- optional columns
+    description text,
+    type text,
+    created_at timestamptz not null default now(),
+    unit text,
+)
+```
 
 Priority rows and EAV rows reference `og_field_attribute.id`
 
-### Single priority table
-
+### Single priority store: `og_field_resource_attribute_priority`
 Replace the two-table priority split with a single table at the
 `(resource, attribute, source record)` grain, and use defaults when
 writing new data rather than as a SQL fallback rule.
+```sql
+create table og_field_resource_attribute_priority (
+    resource_id bigint not null,
+    attribute_id bigint not null,
+    source_id bigint not null,
+    priority integer not null,
+    is_curated boolean not null default false,
+    created_at timestamptz not null default now(),
 
-- Add `og_field_resource_attribute_priority` table.
-  - resource_id: fk to resources
-  - attribute_id: fk to `og_field_attributes`
-  - source_id: fk to `oil_gas_field_sources`
-  - priority: int
-  - is_curated: bool (false if default, true if set by user)
+    primary key (resource_id, attribute_id, source_id),
+
+    constraint resource_attribute_priority_position_uq
+        unique (resource_id, attribute_id, priority),
+
+    constraint resource_attribute_priority_nonnegative_ck
+        check (priority >= 0),
+
+    -- the source must be attached to the resource.
+    constraint resource_attribute_priority_memberships_fk
+        foreign key (resource_id, source_id)
+        references memberships(resource_id, source_id)
+        on delete cascade,
+
+    -- the source must have a populated value for the selected attribute.
+    constraint resource_attribute_priority_source_value_fk
+        foreign key (source_id, attribute_id)
+        references oil_gas_field_source_values(source_id, attribute_id)
+);
+
+```
+
 - Drop `og_field_source_priority` and `og_field_resource_source_priority`.
 - On resource or source creation, write explicit priority rows for every attribute
   the source has a value for, seeded from the existing `SOURCE_PRIORITY` tuple in
   `stitch.ogsi.model`.
 - Add constraints:
-  - unique priority across resource and attribute: no 2 sources for a resource + attribute can have the same priority
+  - unique priority across resource and attribute: no 2 rows for a resource & attribute can have the same priority
     `UNIQUE (resource_id, attribute_id, priority)`
   - priority > 0
-  - fk to memberships on resource_id, source_id: ensure source is attached to resource
-  - fk to ``
+  - fk constraint to memberships on resource_id, source_id: ensure source is attached to resource
+  - fk constraint to `og_field_source_values` on  `source_id, attribute_id`
 
 ### Benefits
 
@@ -197,38 +267,7 @@ Two consequences to handle in the migration:
   currently derived from "an override row exists." With every row explicit, it
   needs an explicit `is_curated` flag to survive.
 
-## 4. Proposal, part 2 — a flattened per-profile state table
-
-`og_field_resource_state`, one row per `(resource_id, profile)`:
-
-- one typed column per `OilGasFieldBase` attribute, following `ATTRIBUTE_KINDS`
-- `provenance jsonb` — `{attribute_name: source_key}` for the winning source
-- primary key `(resource_id, profile)`
-
-**Why four rows per resource is enough.** Every registered user is granted read on
-the five public sources (`gem`, `rmi`, `llm`, `alb`, `bc`) by our Auth0 tenant
-policy. The only variables are `wm` and `ccr`, so a caller's visibility is two
-bits and the profile domain is exactly:
-
-| Profile         | `wm` | `ccr` |
-| --------------- | ---- | ----- |
-| `public`        | no   | no    |
-| `public_wm`     | yes  | no    |
-| `public_ccr`    | no   | yes   |
-| `public_wm_ccr` | yes  | yes   |
-
-Within one attribute, any candidate ranked below the highest-priority _public_
-candidate can never win for anyone, so only candidates ranked above it matter, and
-those are `wm` or `ccr` rows. Most attributes therefore produce the same value in
-all four rows; only an attribute where a licensed source outranks the best public
-source differs. A resource whose `name_local` is ordered `wm, ccr, gem` and whose
-other attributes are ordered `gem, wm, ccr` differs across profiles in
-`name_local` alone.
-
-Rows exist even when every attribute is null for that profile, which is what
-preserves the null-shell behavior of `_resource_universe()`.
-
-## 5. Invariants
+## 4. Invariants
 
 The point of §3 and §4 is to push these into the schema. Being explicit about which
 ones the database can enforce and which remain obligations on the sync is what
@@ -261,7 +300,7 @@ consistency check job, decided with §6)
 Obligation C is expressible as a jsonb CHECK in Postgres but not in SQLite, so
 whether to enforce it in the schema depends on the STIT-603 outcome.
 
-## 6. Refresh
+## 5. Refresh
 
 Deferred by design. Any implementation must uphold §5 and must be triggered by:
 a source value write, a priority change, a membership status change, a resource
@@ -272,7 +311,7 @@ rebuild command, database triggers, or a scheduled rebuild. The choice turns
 partly on an open question: the ETL apps live in a separate repository and may
 write source data without passing through the API's write paths.
 
-## 7. Tradeoffs and risks
+## 6. Tradeoffs and risks
 
 - **The four-profile bound rests on the Auth0 policy, not the schema.**
   `permissions.licensed_sources()` derives the set from individual
