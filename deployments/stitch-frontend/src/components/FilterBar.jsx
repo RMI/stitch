@@ -11,10 +11,14 @@ function FilterFieldDropdown({
   onChange,
 }) {
   const { data } = useResourceFilterOptions(endpoint, field);
-  const options = (data?.values ?? []).map((value) => ({
-    value,
-    label: formatValue ? formatValue(value) : value,
-  }));
+  // The API sorts by the stored value, which can differ from the order of the
+  // labels we display (country codes vs. country names), so sort by label.
+  const options = (data?.values ?? [])
+    .map((value) => ({
+      value,
+      label: formatValue ? formatValue(value) : value,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, "en"));
 
   return (
     <FilterDropdown
