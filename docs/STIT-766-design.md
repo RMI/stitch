@@ -9,6 +9,7 @@
 ## 1. Objective
 
 Design a database architecture and application logic to serve the key Stitch endpoints with minimal latency.
+
 ## 2. Background
 
 ### Problem
@@ -106,21 +107,14 @@ It must:
 - be able to be rebuilt from scratch at any time, we should be able to derive the data for the table easily & quickly
 
 The top contender for a schema is:
-```sql
-CREATE TABLE og_field_resource_view (
-    resource_id bigint not null,
-    permission_mask smallint not null,
-    record jsonb not null,
-
-    -- cannot have the same resource with the same permission
-    primary key (resource_id, permission_mask),
-    
-    constraint og_field_resource_view
-       foreign key (resource_id)
-       references og_field_resources(id)
-)
+```mermaid
+erDiagram 
+    og_field_resource_view {
+        bignt resource_id
+        smallint permission_mask
+        jsonb record
+    }
 ```
-The one slight drawback is that it's slightly tricky to maintain that we only retain `resource_id` values that correspond to `og_field_resources.id` where `og_field_resources.repointed_id is NULL`. 
 
 **permission mask**
 The `permission_mask` is a bitmask where `public` = 0, `cc` = 1, `wm` = 2, and `wm + cc` = 3. 
@@ -151,19 +145,25 @@ We'd effectively house the entire flat Pydantic model in json. The main reasonin
 
 **sync overview**
 Very roughly speaking, when a user or process updates relevant data (merge resources, reprioritize, new sources from ETL), we compute the updated view state(s), and write them to the table, deleting where necessary.
+```mermaid
+flowchart LR
+    A[db updates] -->|Trigger| B[compute coalesced state]
+    B --> C[Write coalesced state to table]
+    D(merge) --> A
+    E(reprioritize) --> A
+    F(llm enrich) --> A
+    G(ETL) --> A
+```
 
 ### Attribute metadata: `og_field_attributes`
-```sql
-CREATE TABLE og_field_attributes (
-    id serial primary key,
-    name text not null unique,
-    
-    -- optional columns
-    description text,
-    type text,
-    created_at timestamptz not null default now(),
-    unit text,
-)
+
+```mermaid
+erDiagram 
+    og_field_attributes {
+        serial id
+        text name
+    }
+
 ```
 
 Priority rows and EAV rows reference `og_field_attribute.id`
@@ -172,35 +172,16 @@ Priority rows and EAV rows reference `og_field_attribute.id`
 Replace the two-table priority split with a single table at the
 `(resource, attribute, source record)` grain, and use defaults when
 writing new data rather than as a SQL fallback rule.
-```sql
-create table og_field_resource_attribute_priority (
-    resource_id bigint not null,
-    attribute_id bigint not null,
-    source_id bigint not null,
-    priority integer not null,
-    is_curated boolean not null default false,
-    created_at timestamptz not null default now(),
 
-    primary key (resource_id, attribute_id, source_id),
-
-    constraint resource_attribute_priority_position_uq
-        unique (resource_id, attribute_id, priority),
-
-    constraint resource_attribute_priority_nonnegative_ck
-        check (priority >= 0),
-
-    -- the source must be attached to the resource.
-    constraint resource_attribute_priority_memberships_fk
-        foreign key (resource_id, source_id)
-        references memberships(resource_id, source_id)
-        on delete cascade,
-
-    -- the source must have a populated value for the selected attribute.
-    constraint resource_attribute_priority_source_value_fk
-        foreign key (source_id, attribute_id)
-        references oil_gas_field_source_values(source_id, attribute_id)
-);
-
+```mermaid
+erDiagram
+    og_field_resource_attribute_priority {
+        bigint resource_id
+        bigint attribute_id
+        bigint source_id
+        int priority
+        boolean is_curated
+    }
 ```
 
 - Drop `og_field_source_priority` and `og_field_resource_source_priority`.
@@ -213,13 +194,86 @@ create table og_field_resource_attribute_priority (
   - priority > 0
   - fk constraint to memberships on resource_id, source_id: ensure source is attached to resource
   - fk constraint to `og_field_source_values` on  `source_id, attribute_id`
+- `oil_gas_field_source_values` currently has an `id` primary key, so we could replace `(attribute_id, source_id)` with `source_value_id`
+- we set `is_curated` to `True` when a user makes an update
 
-### Benefits
+### Optional Additional Tables
+These are primarily for some convenience in constructing simpler SQL statements and permissions handling.
 
-#### Simpler, faster SQL
+```mermaid
+erDiagram
+    og_source_keys {
+        bigint id
+        text key_name
+    }
+```
 
-Provenance for a single resource is a series of joins.
+References to `source` or `src_key` become foreign keys with `source_key_id`.
 
+```mermaid
+erDiagram
+    user_source_key_permissions {
+        uuid user_id
+        bigint source_key_id
+        source_key_permission perm
+    }
+```
+
+Where the `source_key_permission` is a new ENUM type with `read`, `edit`. 
+
+What this would allow is comparatively smaller and more straightforward SQL statements.
+
+**single resource for a user**
+```sql
+WITH resolved AS (
+    SELECT DISTINCT ON (
+        p.resource_id,
+        p.attribute_id
+    )
+        p.resource_id,
+        p.attribute_id,
+        p.source_id,
+        s.source_key_id,
+        p.priority,
+        v.value_text,
+        v.value_num,
+        v.value_json
+    FROM og_field_resource_attribute_priority AS p
+    JOIN oil_gas_field_source_values AS v
+      ON v.source_id = p.source_id
+     AND v.attribute_id = p.attribute_id
+    JOIN oil_gas_field_sources AS s
+      ON s.source_id = p.source_id
+    JOIN user_source_key_permission AS permission
+      ON permission.source_key_id = s.source_key_id
+     AND permission.user_id = $1     -- pass in specific user id
+     AND permission.action = 'read'
+    WHERE p.resource_id = $2         -- drop this predicate to fetch many resources
+    ORDER BY
+        p.resource_id,
+        p.attribute_id,
+        p.priority
+        -- p.source_id  <-- unnecessary with the priority uniqueness constraint
+)
+SELECT
+    r.resource_id,
+    jsonb_object_agg(
+        a.name,
+        COALESCE(
+            to_jsonb(r.value_text),
+            to_jsonb(r.value_num),
+            r.value_json
+        )
+    ) AS attributes
+FROM resolved AS r
+JOIN og_field_attributes AS a
+  ON a.attribute_id = r.attribute_id
+GROUP BY r.resource_id;
+
+```
+Note: The above can be paged and totaled as well with minimal alteration.
+
+**single resource detailed provenance**
 ```sql
 SELECT
     p.resource_id,
@@ -236,9 +290,9 @@ JOIN oil_gas_field_source_values AS v
  AND v.attribute_id = p.attribute_id
 JOIN og_field_attributes AS a
   ON a.attribute_id = p.attribute_id
-JOIN oil_gas_field_sources AS s
+JOIN og_field_sources AS s
   ON s.source_id = p.source_id
-JOIN source_key AS sk
+JOIN og_source_keys AS sk
   ON sk.source_key_id = s.source_key_id
 JOIN user_source_key_permission AS permission
   ON permission.source_key_id = s.source_key_id
@@ -248,99 +302,7 @@ WHERE p.resource_id = $2
 ORDER BY p.priority, p.source_id;
 ```
 
-| Today                                     | After                                                |
-| ----------------------------------------- | ---------------------------------------------------- |
-| Tiered `ROW_NUMBER()` over four sort keys | `ORDER BY priority` on one column                    |
-| Curated and default rows form two tiers   | Every candidate has an explicit row; no tiers        |
-| NULL values skipped by the query          | A priority row exists only where a value exists (FK) |
-| Complex CTE chain                         | Joins                                                |
-
-Two consequences to handle in the migration:
-
-- `MembershipModel.source` and the override table's `source` column currently FK to
-  `og_field_source_priority.source`. Dropping that table needs a new target for
-  that closed set (a `og_field_source_keys` table, or a CHECK).
-- `og_field_memberships` has a surrogate `id` primary key and no unique constraint
-  on `(resource_id, source_pk)`. Adding one is a prerequisite for the priority
-  table to enforce "the source is attached to this resource" by foreign key.
-- `is_override` is part of the public per-field source-values response and is
-  currently derived from "an override row exists." With every row explicit, it
-  needs an explicit `is_curated` flag to survive.
-
-## 4. Invariants
-
-The point of §3 and §4 is to push these into the schema. Being explicit about which
-ones the database can enforce and which remain obligations on the sync is what
-makes the sync mechanism a free choice.
-
-**Enforced declaratively**
-
-| #   | Invariant                                                                    | Mechanism                                             |
-| --- | ---------------------------------------------------------------------------- | ----------------------------------------------------- |
-| 1   | A priority row references a source attached to that resource                 | composite FK to membership `(resource_id, source_pk)` |
-| 2   | A priority row references a populated `(source, attribute)` value            | composite FK to the value table                       |
-| 3   | Two sources cannot share a priority position for one `(resource, attribute)` | UNIQUE `(resource_id, attribute_id, priority)`        |
-| 4   | A source appears at most once per `(resource, attribute)`                    | primary key                                           |
-| 5   | `priority >= 0`                                                              | CHECK                                                 |
-| 6   | Attribute references come from the closed attribute set                      | FK to `og_field_attributes`                           |
-| 7   | One state row per `(resource, profile)`                                      | primary key                                           |
-| 8   | `profile` is one of the four values                                          | CHECK or enum                                         |
-| 9   | A state row references an existing resource                                  | FK                                                    |
-
-**Sync obligations** (not expressible as row constraints; a trigger or a
-consistency check job, decided with §6)
-
-| #   | Obligation                                                                   |
-| --- | ---------------------------------------------------------------------------- |
-| A   | Only resources with `repointed_id IS NULL` appear in the state table         |
-| B   | All four profile rows exist for every resource in the state table            |
-| C   | A provenance entry exists exactly when the matching value column is non-null |
-| D   | A provenance source key is visible in that row's profile                     |
-
-Obligation C is expressible as a jsonb CHECK in Postgres but not in SQLite, so
-whether to enforce it in the schema depends on the STIT-603 outcome.
-
-## 5. Refresh
-
-Deferred by design. Any implementation must uphold §5 and must be triggered by:
-a source value write, a priority change, a membership status change, a resource
-repoint (merge), and a bulk ETL load.
-
-The candidate mechanisms are application-transaction maintenance plus a full
-rebuild command, database triggers, or a scheduled rebuild. The choice turns
-partly on an open question: the ETL apps live in a separate repository and may
-write source data without passing through the API's write paths.
-
-## 6. Tradeoffs and risks
-
-- **The four-profile bound rests on the Auth0 policy, not the schema.**
-  `permissions.licensed_sources()` derives the set from individual
-  `source:read:<key>` claims, so a partial public grant is representable. If one
-  were ever issued, that user would read values from a source they are not
-  licensed for. Mitigation: map a caller's claims to a profile at request time by
-  checking only `wm` and `ccr`, and fail loudly on an unmappable set.
-- **`detail` is only half solved.** Its `source_data` payload needs every
-  candidate row, not just winners, so the candidate query stays on that path.
-- **Write amplification.** One source value write can rewrite up to four state
-  rows.
-- **Two-table schema changes.** Adding a field to `OilGasFieldBase` becomes a
-  migration against both `og_field_attributes` and the state table's columns,
-  where today it is a change to `ATTRIBUTE_KINDS` and a CHECK.
-- **Priority row volume.** Rows scale as resources × sources × populated
-  attributes rather than the current handful. Needs an estimate before approval.
-- **`og_field_attributes` is a second source of truth** for the attribute set,
-  alongside `OilGasFieldBase`. It needs a startup drift guard like the existing
-  `OGFieldName` check.
-
-## 8. Open questions
+## 8. Open Issues
 
 1. Priority row count at current and projected resource volume.
-2. Should `filter-options` read `SELECT DISTINCT` from the state table, or does it
-   warrant its own small per-profile distinct-values table?
-3. Do the ETL apps write source data directly to the database, bypassing the API?
-4. Migration and backfill sequencing: can the state table be built and validated
-   against the live query path before any endpoint reads from it?
-5. Does anything depend on priority numbers being globally unique per source, as
-   `og_field_source_priority.priority` is today?
-
-## Related Documents and Links
+2. How to handle priorities upon merge?
