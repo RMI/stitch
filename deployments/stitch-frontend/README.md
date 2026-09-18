@@ -11,6 +11,7 @@ React frontend application styled with Tailwind CSS and built with Vite.
 - [API](#api)
 - [Testing](#testing)
 - [Queries](#queries)
+- [List view URLs](#list-view-urls)
 - [Resource Detail View](#resource-detail-view)
 
 ## Tech Stack
@@ -187,6 +188,33 @@ const USE_MOCK_DATA = import.meta.env.VITE_USE_MOCK_DATA === "true";
 
 The real and mock implementations are separate functions selected once at module evaluation time — no conditional hook calls at render time.
 
+## List view URLs
+
+The resources list encodes its whole view in the query string, so a copied URL reproduces exactly what you are looking at, and back/forward work as expected.
+
+| Param                                                                                       | Values                                                                                              | Omitted when     |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------- |
+| `page`                                                                                      | integer ≥ 1                                                                                         | page 1           |
+| `page_size`                                                                                 | 10, 25, 50, 100                                                                                     | 10               |
+| `q`                                                                                         | free text                                                                                           | empty            |
+| `sort_by`                                                                                   | `name`, `country`, `state_province`, `region`, `basin`, `field_status`, `primary_hydrocarbon_group` | not sorted       |
+| `sort_order`                                                                                | `asc`, `desc`                                                                                       | not sorted       |
+| `country`, `region`, `state_province`, `basin`, `field_status`, `primary_hydrocarbon_group` | repeat the param once per selected value                                                            | nothing selected |
+
+Example — Norway and Saudi Arabia, searching "ghawar", sorted by name, page 2:
+
+```
+/?page=2&q=ghawar&sort_by=name&sort_order=desc&country=NOR&country=SAU
+```
+
+Notes:
+
+- Filter values are the stored API values (`NOR`), not display names (`Norway`), so a shared link means the same thing for every viewer.
+- Defaults are left out, so the default view is a bare `/`. That is why clicking the Stitch logotype returns you to an unfiltered list.
+- Unrecognized or malformed params are ignored rather than erroring, and are dropped from the URL on the next interaction.
+
+The schema lives in `src/config/listParams.js`.
+
 ## API
 
 To temporarily run the API in development mode, outside Docker:
@@ -276,12 +304,12 @@ it("shows a loading indicator", () => {
 
 `src/test/utils.jsx` exports:
 
-| Export                              | Description                                                                                    |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `renderWithQueryClient(ui)`         | Renders inside `QueryClientProvider` + `MemoryRouter`; returns `{ queryClient, ...rtlResult }` |
-| `auth0TestDefaults`                 | Default Auth0 mock state (authenticated); spread and override for auth tests                   |
-| `createMockResponse(data, options)` | Builds a mock `fetch` response object                                                          |
-| `createMockError(status)`           | Builds a mock error `fetch` response                                                           |
+| Export                                | Description                                                                                                                                                                 |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `renderWithQueryClient(ui, options?)` | Renders inside `QueryClientProvider` + `MemoryRouter`; returns `{ queryClient, ...rtlResult }`. `options.initialEntries` mounts the router at a given URL (default `["/"]`) |
+| `auth0TestDefaults`                   | Default Auth0 mock state (authenticated); spread and override for auth tests                                                                                                |
+| `createMockResponse(data, options)`   | Builds a mock `fetch` response object                                                                                                                                       |
+| `createMockError(status)`             | Builds a mock error `fetch` response                                                                                                                                        |
 
 Additional libraries:
 
