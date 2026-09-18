@@ -76,7 +76,7 @@ Thus, whatever structure we use here is bounded by at most 4 x the number of top
 >
 > so even if we add 2 proprietary sources, this structure grows to a max of 16 x the number of top-level (unmerged) resources. I don't see this as a real issue even in the long term. How many licensed sources are even realistic? 6? 10? Even at 10 proprietary sources, the view/table would be 2^10 = 1024 x resources. The upper bound of **all** named fields is probably somewhere in the ~65k range, so ~65M rows is still manageable...if we'd ever even get close to that.
 
-## 2. Goals and non-goals
+## 3. Goals and non-goals
 
 **Goals**
 
@@ -92,14 +92,16 @@ Thus, whatever structure we use here is bounded by at most 4 x the number of top
 - The details of the sync mechanism. See §6.
 - Redesigning the permission model.
 
-## 3. Schema Changes
+## 4. Schema Changes
 
 Part of the goal is to trade application complexity for schema complexity. Making schemas more complex but in a way that enables tighter constraints and simpler queries (i.e. through mostly joins) frees our application code from being the enforcer of invariants.
 
 ### Resource State View/Table
+
 The purpose is to provide a durable store that houses the flattened/coalesced resources. We're effectively precomputing the coalescing logic and saving it to a single table. The actual schema is less important than its function and the constraints we place on it.
 
 It must:
+
 - only store unmerged resources (i.e. where `repointed_id == NULL`), merging triggers deletion from the table
 - provide highly performant, permission-scoped querying of resource data
 - not expose proprietary information to unlicensed users
@@ -107,8 +109,9 @@ It must:
 - be able to be rebuilt from scratch at any time, we should be able to derive the data for the table easily & quickly
 
 The top contender for a schema is:
+
 ```mermaid
-erDiagram 
+erDiagram
     og_field_resource_view {
         bignt resource_id
         smallint permission_mask
@@ -117,25 +120,25 @@ erDiagram
 ```
 
 **permission mask**
-The `permission_mask` is a bitmask where `public` = 0, `cc` = 1, `wm` = 2, and `wm + cc` = 3. 
+The `permission_mask` is a bitmask where `public` = 0, `cc` = 1, `wm` = 2, and `wm + cc` = 3.
 
-| wm  | cc  |perm |
-| --- | --- | --- |
-|  0  |  0  |  0  |
-|  0  |  1  |  1  |
-|  1  |  0  |  2  |
-|  1  |  1  |  3  |
+| wm  | cc  | perm |
+| --- | --- | ---- |
+| 0   | 0   | 0    |
+| 0   | 1   | 1    |
+| 1   | 0   | 2    |
+| 1   | 1   | 3    |
 
 This allows for 2 filtering options:
+
 - strict `permission_mask = <user permission>` (incurs minor cost of possibly duplicating data across rows)
 - bit comparison to filter where `(<user permission> | permission_mask) = <user permission>`
-    - if we sort by `permission_mask` (desc), this would allow us to only store the minimum number of resource variants
-        - for example, if a resource had ALL public sources as the highest priorities, we'd only need 1 row in the table with `permission_mask = 0` because ALL users would see the same version
-        - or if a resource had only `wm` and `public` variants, a `wm + cc` permission would get the `wm` version: 3 (`cc + wm`) | 2 (`wm`) = 3
-        - but a `cc` permission would skip the `wm` row and see the `public` variant:
-          1 (`cc`) | 2 (`wm`) = 3    => exclude
-          1 (`cc`) | 0 (`pub`) = 1   => include
-
+  - if we sort by `permission_mask` (desc), this would allow us to only store the minimum number of resource variants
+    - for example, if a resource had ALL public sources as the highest priorities, we'd only need 1 row in the table with `permission_mask = 0` because ALL users would see the same version
+    - or if a resource had only `wm` and `public` variants, a `wm + cc` permission would get the `wm` version: 3 (`cc + wm`) | 2 (`wm`) = 3
+    - but a `cc` permission would skip the `wm` row and see the `public` variant:
+      1 (`cc`) | 2 (`wm`) = 3 => exclude
+      1 (`cc`) | 0 (`pub`) = 1 => include
 
 > [!NOTE] Permission Alternative
 > We can also use permission columns for the minor cost of duplicating data across columns. Benefits from being a simpler more understandable approach.
@@ -145,6 +148,7 @@ We'd effectively house the entire flat Pydantic model in json. The main reasonin
 
 **sync overview**
 Very roughly speaking, when a user or process updates relevant data (merge resources, reprioritize, new sources from ETL), we compute the updated view state(s), and write them to the table, deleting where necessary.
+
 ```mermaid
 flowchart LR
     A[db updates] -->|Trigger| B[compute coalesced state]
@@ -158,7 +162,7 @@ flowchart LR
 ### Attribute metadata: `og_field_attributes`
 
 ```mermaid
-erDiagram 
+erDiagram
     og_field_attributes {
         serial id
         text name
@@ -169,6 +173,7 @@ erDiagram
 Priority rows and EAV rows reference `og_field_attribute.id`
 
 ### Single priority store: `og_field_resource_attribute_priority`
+
 Replace the two-table priority split with a single table at the
 `(resource, attribute, source record)` grain, and use defaults when
 writing new data rather than as a SQL fallback rule.
@@ -193,11 +198,12 @@ erDiagram
     `UNIQUE (resource_id, attribute_id, priority)`
   - priority > 0
   - fk constraint to memberships on resource_id, source_id: ensure source is attached to resource
-  - fk constraint to `og_field_source_values` on  `source_id, attribute_id`
+  - fk constraint to `og_field_source_values` on `source_id, attribute_id`
 - `oil_gas_field_source_values` currently has an `id` primary key, so we could replace `(attribute_id, source_id)` with `source_value_id`
 - we set `is_curated` to `True` when a user makes an update
 
 ### Optional Additional Tables
+
 These are primarily for some convenience in constructing simpler SQL statements and permissions handling.
 
 ```mermaid
@@ -219,11 +225,12 @@ erDiagram
     }
 ```
 
-Where the `source_key_permission` is a new ENUM type with `read`, `edit`. 
+Where the `source_key_permission` is a new ENUM type with `read`, `edit`.
 
 What this would allow is comparatively smaller and more straightforward SQL statements.
 
 **single resource for a user**
+
 ```sql
 WITH resolved AS (
     SELECT DISTINCT ON (
@@ -271,9 +278,11 @@ JOIN og_field_attributes AS a
 GROUP BY r.resource_id;
 
 ```
+
 Note: The above can be paged and totaled as well with minimal alteration.
 
 **single resource detailed provenance**
+
 ```sql
 SELECT
     p.resource_id,
@@ -302,7 +311,7 @@ WHERE p.resource_id = $2
 ORDER BY p.priority, p.source_id;
 ```
 
-## 8. Open Issues
+## 5. Open Issues
 
 1. Priority row count at current and projected resource volume.
 2. How to handle priorities upon merge?
