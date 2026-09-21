@@ -2,6 +2,34 @@ import FilterDropdown from "./FilterDropdown";
 import { FILTER_FIELDS, EMPTY_FILTERS } from "../config/filters";
 import { useResourceFilterOptions } from "../hooks/useResources";
 
+function FilterFieldDropdown({
+  endpoint,
+  field,
+  label,
+  formatValue,
+  selected,
+  onChange,
+}) {
+  const { data } = useResourceFilterOptions(endpoint, field);
+  // The API sorts by the stored value, which can differ from the order of the
+  // labels we display (country codes vs. country names), so sort by label.
+  const options = (data?.values ?? [])
+    .map((value) => ({
+      value,
+      label: formatValue ? formatValue(value) : value,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, "en"));
+
+  return (
+    <FilterDropdown
+      label={label}
+      options={options}
+      selected={selected}
+      onChange={onChange}
+    />
+  );
+}
+
 export default function FilterBar({ endpoint, filters, onFiltersChange }) {
   // One request covers every dropdown: the endpoint returns all filterable
   // fields keyed by field name, each with its distinct values.

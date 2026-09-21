@@ -489,6 +489,36 @@ describe("ResourcesView", () => {
       );
     });
 
+    it("lists country options alphabetically by displayed name", () => {
+      // The API returns values sorted by the stored alpha-3 code, which is not
+      // the same order as the country names the user actually sees.
+      vi.mocked(useResourceFilterOptions).mockImplementation(
+        (_endpoint, field) => ({
+          ...defaultHookReturn,
+          data: {
+            field,
+            values: field === "country" ? ["CHN", "DEU", "DNK"] : [],
+          },
+        }),
+      );
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: mockResourceData,
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      const filterBar = screen.getByTestId("filter-bar");
+      fireEvent.click(
+        within(filterBar).getByRole("button", { name: /^country/i }),
+      );
+
+      const labels = within(filterBar)
+        .getAllByRole("checkbox")
+        .map((checkbox) => checkbox.closest("label").textContent.trim());
+      expect(labels).toEqual(["China", "Denmark", "Germany"]);
+    });
+
     it("passes active filters to useResources", () => {
       vi.mocked(useResources).mockReturnValue({
         ...defaultHookReturn,
