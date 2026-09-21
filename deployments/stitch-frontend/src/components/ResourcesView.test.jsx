@@ -492,15 +492,17 @@ describe("ResourcesView", () => {
     it("lists country options alphabetically by displayed name", () => {
       // The API returns values sorted by the stored alpha-3 code, which is not
       // the same order as the country names the user actually sees.
-      vi.mocked(useResourceFilterOptions).mockImplementation(
-        (_endpoint, field) => ({
-          ...defaultHookReturn,
-          data: {
-            field,
-            values: field === "country" ? ["CHN", "DEU", "DNK"] : [],
-          },
-        }),
-      );
+      vi.mocked(useResourceFilterOptions).mockReturnValue({
+        ...defaultHookReturn,
+        data: {
+          region: [],
+          basin: [],
+          state_province: [],
+          field_status: [],
+          country: ["CHN", "DEU", "DNK"],
+          primary_hydrocarbon_group: [],
+        },
+      });
       vi.mocked(useResources).mockReturnValue({
         ...defaultHookReturn,
         data: mockResourceData,
