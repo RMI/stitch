@@ -88,6 +88,32 @@ def _participating_columns(params: OGFieldQueryParams) -> list[str]:
     return list(dict.fromkeys(participating))
 
 
+def _override_join(resource_id: Any) -> ColumnElement[bool]:
+    """The override join condition, shared by every base that ranks values.
+
+    At the value grain (source_pk, colname), and over the override table's
+    full primary key, so at most one override row per value row -- the outer
+    join cannot fan out. ``o.source == m.source`` is a dual-key guard: source_pk
+    and source aren't FK-tied, so matching source_pk alone could apply a stray
+    override with a mismatched (source, source_pk) pair to the wrong
+    membership. Requiring both fails safe to the default instead.
+
+    ``resource_id`` is the caller's own resource-identifying column (the
+    resource table's ``id`` for the full base, the membership's
+    ``resource_id`` for the lighter filter-option base) since not every base
+    joins the resource table.
+    """
+    m = MembershipModel
+    v = OilGasFieldSourceValueModel
+    o = OGFieldResourceSourcePriority
+    return and_(
+        o.resource_id == resource_id,
+        o.source_pk == m.source_pk,
+        o.source == m.source,
+        o.colname == v.colname,
+    )
+
+
 def construct_base_query_statement(
     licensed_sources: Collection[OGSISrcKey] | None = None,
     resource_ids: Collection[int] | None = None,
@@ -120,21 +146,7 @@ def construct_base_query_statement(
         .join(p, p.source == m.source)
         .join(s, and_(s.id == m.source_pk, s.source == m.source))
         .join(v, v.source_pk == m.source_pk)
-        # Override join at the value grain (source_pk, colname), matching v exactly,
-        # so at most one override row per value row -- no fan-out. o.source ==
-        # m.source is the same dual-key guard as the header join above: source_pk
-        # and source aren't FK-tied, so matching source_pk alone could apply a
-        # stray override with a mismatched (source, source_pk) pair to the wrong
-        # membership. Requiring both fails safe to the default instead.
-        .outerjoin(
-            o,
-            and_(
-                o.resource_id == r.id,
-                o.source_pk == m.source_pk,
-                o.source == m.source,
-                o.colname == v.colname,
-            ),
-        )
+        .outerjoin(o, _override_join(r.id))
         .where(
             r.repointed_id.is_(None),
             m.status == MembershipStatus.ACTIVE,
@@ -250,81 +262,71 @@ def coalesced_winner_rows(
     )
 
 
-def filter_option_rows(
-    licensed_sources: Collection[OGSISrcKey] | None = None,
-) -> Select[tuple[str, str]]:
-    """Distinct winning ``(colname, value)`` pairs for every filterable field.
+def _filter_option_base(licensed_sources: Collection[OGSISrcKey] | None = None) -> CTE:
+    """Light ranking base for ``filter_option_rows``: value rows only, no
+    resource/source-header joins.
 
-    One pass. The window partitions by ``(resource_id, colname)``, so a single
-    ROW_NUMBER picks the winner for all of ``FILTER_OPTION_FIELDS`` at once;
-    ``rn == 1`` is the winner. ``DISTINCT`` is over the pair, so a string that is
-    a valid value for two fields survives as two rows and lands under both.
-
-    Self-contained rather than built on ``construct_base_query_statement``: this
-    reads ``value_text`` and the ranking keys only, so it skips that CTE's joins
-    to ``og_field_resources`` and ``oil_gas_field_sources`` and its unused typed
-    value columns. Dropping the resource join relies on the invariant that a
-    merged resource's memberships are all INACTIVE (``_repoint_memberships``).
+    Deliberately narrower than ``construct_base_query_statement``: it reads
+    ``value_text`` and the ranking keys only, over the six filterable
+    columns, so it skips the resource join and the typed ``value_num``/
+    ``value_json`` columns that join brings along unused. Dropping the
+    resource join relies on the invariant that a merged resource's
+    memberships are all INACTIVE (``_repoint_memberships``).
     """
     m = MembershipModel
     v = OilGasFieldSourceValueModel
     p = OGFieldSourcePriority
     o = OGFieldResourceSourcePriority
 
-    ranked = (
+    stmt = (
         select(
-            v.colname,
+            m.resource_id.label("resource_id"),
+            m.source.label("source"),
+            m.source_pk.label("source_pk"),
+            o.priority.label("override_priority"),
+            p.priority.label("default_priority"),
+            v.colname.label("colname"),
             v.value_text,
-            func.row_number()
-            .over(
-                partition_by=(m.resource_id, v.colname),
-                # Tiered exactly as ``_ranked``: a value a curator has re-ranked
-                # (an override row exists, so o.priority is NOT NULL) beats every
-                # value that has not been -- that is what NULLS LAST buys. Within
-                # a tier the global default source priority decides.
-                order_by=(
-                    o.priority.asc().nulls_last(),
-                    p.priority.asc(),
-                    # Required, not a tiebreak of convenience: one resource can
-                    # hold several ACTIVE records from the SAME source, which tie
-                    # on p.priority (unique per source). Without these the winner
-                    # is whatever the database happens to pick, so the endpoint
-                    # can return a different value set on identical calls.
-                    m.source.asc(),
-                    m.source_pk.asc(),
-                ),
-            )
-            .label("rn"),
         )
         .select_from(m)
         .join(v, v.source_pk == m.source_pk)
         .join(p, p.source == m.source)
-        # At the value grain, and over the override table's full primary key, so
-        # at most one override row per value row: the outer join cannot fan out.
-        # ``o.source == m.source`` is the same dual-key guard the shared base CTE
-        # applies -- it fails safe to the default priority rather than applying an
-        # override whose (source, source_pk) pair is mismatched.
-        .outerjoin(
-            o,
-            and_(
-                o.resource_id == m.resource_id,
-                o.source_pk == m.source_pk,
-                o.source == m.source,
-                o.colname == v.colname,
-            ),
-        )
+        .outerjoin(o, _override_join(m.resource_id))
         .where(
             m.status == MembershipStatus.ACTIVE,
             v.colname.in_(FILTER_OPTION_FIELDS),
         )
     )
     if licensed_sources is not None:
-        ranked = ranked.where(m.source.in_(list(dict.fromkeys(licensed_sources))))
-    c = ranked.subquery().c
+        stmt = stmt.where(m.source.in_(list(dict.fromkeys(licensed_sources))))
+    return stmt.cte("filter_option_base")
 
+
+def filter_option_rows(
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> Select[tuple[str, str]]:
+    """Distinct winning ``(colname, value)`` pairs for every filterable field.
+
+    One pass over the light base: the window partitions by
+    ``(resource_id, colname)``, so a single ROW_NUMBER picks the winner for
+    all of ``FILTER_OPTION_FIELDS`` at once. ``DISTINCT`` is over the pair, so
+    a string that is a valid value for two fields survives as two rows and
+    lands under both.
+
+    Ranking is ``add_ranking`` over ``_filter_option_base`` -- the same
+    ``_ranked`` tiering the list/detail paths use, so this can't drift from
+    them on "who beats whom". It still doesn't unify the *row universe*: the
+    light base skips the resource join, so it doesn't check
+    ``repointed_id IS NULL`` the way ``construct_base_query_statement`` does
+    (see the base's docstring for why that's safe).
+    """
+    ranked = add_ranking(_filter_option_base(licensed_sources)).cte(
+        "filter_option_ranked"
+    )
+    c = ranked.c
     return (
         select(c.colname, c.value_text)
-        .where(c.rn == 1, c.value_text.is_not(None))
+        .where(c.value_text.is_not(None))  # rn == 1 already applied by add_ranking
         .distinct()
         .order_by(c.colname, c.value_text)
     )

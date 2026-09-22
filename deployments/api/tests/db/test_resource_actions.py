@@ -952,10 +952,15 @@ class TestResourceFilterOptionsAction:
             {"source": "rmi", "country": None},
             {"source": "gem", "country": "CAN"},
         )
+        # rmi and llm both carry a real, non-null country here. rmi outranks
+        # llm (SOURCE_PRIORITY), so this also pins the coalesced-winner-only
+        # cut: llm's GBR is a genuine, eligible value that must not appear
+        # below just because it lost to rmi's USA.
         await _create_resource_with_sources(
             seeded_integration_session,
             test_user,
             {"source": "rmi", "country": "USA"},
+            {"source": "llm", "country": "GBR"},
         )
         await _create_resource_with_sources(
             seeded_integration_session,
@@ -996,6 +1001,46 @@ class TestResourceFilterOptionsAction:
         )
 
         assert options.country == ["CAN"]
+
+    @pytest.mark.anyio
+    async def test_licensing_promotes_next_priority_value(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """Dropping the winning source's license promotes the runner-up value,
+        rather than blanking the field.
+
+        One resource carries two competing, non-null values for the same
+        field: wm says USA, gem says CAN. wm outranks gem (SOURCE_PRIORITY),
+        so wm's USA is the option when both are licensed. The gap this
+        closes: the existing licensing test
+        (``test_honors_licensed_sources_after_coalescing``) drops a source
+        whose own value was already null, so it can't tell "the rank cut runs
+        after the licensing filter" from "the rank cut runs before it and
+        just happens to leave the same answer". Losing wm's license here
+        must promote gem's CAN, not remove the option entirely -- proving the
+        licensing filter is applied *before* ``rn == 1`` picks the winner,
+        not after.
+        """
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "wm", "country": "USA"},
+            {"source": "gem", "country": "CAN"},
+        )
+
+        with_wm = await resource_actions.filter_options(
+            seeded_integration_session,
+            licensed_sources=frozenset({"gem", "wm"}),
+        )
+        assert with_wm.country == ["USA"]
+
+        without_wm = await resource_actions.filter_options(
+            seeded_integration_session,
+            licensed_sources=frozenset({"gem"}),
+        )
+        assert without_wm.country == ["CAN"]
 
     @pytest.mark.anyio
     async def test_excludes_inactive_memberships(
