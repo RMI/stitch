@@ -215,7 +215,7 @@ async def get_merge_candidate(
     candidate_id: int,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> MergeCandidateDetailView:
-    with named_query("merge_candidates.detail"):
+    with named_query("merge_candidates.detail.load"):
         candidate = await _load_candidate_model(session, candidate_id)
 
     resource_ids = [
@@ -231,7 +231,7 @@ async def get_merge_candidate(
     # never delete). So a null-shell view always means "emptied by a merge",
     # never "missing"; no existence check is needed here. Revisit if a resource
     # hard-delete path is ever added.
-    with named_query("merge_candidates.detail"):
+    with named_query("merge_candidates.detail.coalesce"):
         by_id = await coalesce_resources_with_sources(
             session, resource_ids, licensed_sources
         )
@@ -239,7 +239,7 @@ async def get_merge_candidate(
     # `status` compares the resources' coalesced values; `values` lists every
     # contributing source tagged with the resource it's attached to, ranked by
     # the default source order (winner-first).
-    with named_query("merge_candidates.detail"):
+    with named_query("merge_candidates.detail.default_priority"):
         default_priority = await _default_source_priority(session)
     fallback_priority = max(default_priority.values(), default=0) + 1
     sources_with_priority = [
@@ -259,11 +259,11 @@ async def create_merge_candidate(
     request: MergeCandidateCreateRequest,
 ) -> MergeCandidateView:
     resource_ids = _normalize_resource_ids(request.resource_ids)
-    with named_query("merge_candidates.create"):
+    with named_query("merge_candidates.create.load_resources"):
         await _load_mergeable_resources(session, resource_ids)
 
     fingerprint = _fingerprint(resource_ids)
-    with named_query("merge_candidates.create"):
+    with named_query("merge_candidates.create.check_existing"):
         existing = await session.scalar(
             select(MergeCandidateModel)
             .options(selectinload(MergeCandidateModel.items))
@@ -282,7 +282,7 @@ async def create_merge_candidate(
             f"An approved merge candidate already exists for resources {resource_ids}."
         )
 
-    with named_query("merge_candidates.create"):
+    with named_query("merge_candidates.create.persist"):
         candidate = MergeCandidateModel.create(created_by=user, fingerprint=fingerprint)
         session.add(candidate)
         await session.flush()
@@ -308,7 +308,7 @@ async def approve_merge_candidate(
     candidate_id: int,
     request: MergeCandidateReviewRequest | None = None,
 ) -> MergeCandidateView:
-    with named_query("merge_candidates.approve"):
+    with named_query("merge_candidates.approve.load"):
         candidate = await _load_candidate_model(session, candidate_id)
     if candidate.status != MergeCandidateStatus.PENDING:
         raise InvalidActionError(
@@ -318,7 +318,7 @@ async def approve_merge_candidate(
     resource_ids = [
         item.resource_id for item in sorted(candidate.items, key=lambda i: i.position)
     ]
-    with named_query("merge_candidates.approve"):
+    with named_query("merge_candidates.approve.load_resources"):
         await _load_mergeable_resources(session, resource_ids)
     merged_resource = await apply_resource_merge(
         session=session,
@@ -332,7 +332,7 @@ async def approve_merge_candidate(
     candidate.reviewed_by_id = user.id
     candidate.last_updated_by_id = user.id
     candidate.merged_resource_id = merged_resource.id
-    with named_query("merge_candidates.approve"):
+    with named_query("merge_candidates.approve.persist"):
         await session.flush()
         candidate = await _load_candidate_model(session, candidate_id)
     return _candidate_to_view(candidate)
@@ -344,7 +344,7 @@ async def deny_merge_candidate(
     candidate_id: int,
     request: MergeCandidateReviewRequest | None = None,
 ) -> MergeCandidateView:
-    with named_query("merge_candidates.deny"):
+    with named_query("merge_candidates.deny.load"):
         candidate = await _load_candidate_model(session, candidate_id)
     if candidate.status != MergeCandidateStatus.PENDING:
         raise InvalidActionError(
@@ -356,7 +356,7 @@ async def deny_merge_candidate(
     candidate.reviewed_at = datetime.now(timezone.utc)
     candidate.reviewed_by_id = user.id
     candidate.last_updated_by_id = user.id
-    with named_query("merge_candidates.deny"):
+    with named_query("merge_candidates.deny.persist"):
         await session.flush()
         candidate = await _load_candidate_model(session, candidate_id)
     return _candidate_to_view(candidate)

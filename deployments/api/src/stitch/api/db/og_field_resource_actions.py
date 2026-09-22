@@ -273,7 +273,7 @@ async def set_field_source_priority(
             status_code=422,
             detail=f"field={field} is not a known resource field.",
         )
-    with named_query("resources.set_field_source_priority"):
+    with named_query("resources.set_field_source_priority.load"):
         resource = await session.get(ResourceModel, id)
     if resource is None:
         raise HTTPException(
@@ -299,7 +299,7 @@ async def set_field_source_priority(
     # Eligibility + current effective order come from the same ranked read the GET
     # endpoint uses: licensed sources with a non-empty value for the field,
     # winner-first.
-    with named_query("resources.set_field_source_priority"):
+    with named_query("resources.set_field_source_priority.candidates"):
         rows = (
             await session.execute(field_source_candidates(id, field, licensed_sources))
         ).all()
@@ -319,7 +319,7 @@ async def set_field_source_priority(
         return await field_source_values(session, id, field, licensed_sources)
 
     source_by_pk = {row.source_pk: row.source for row in rows}
-    with named_query("resources.set_field_source_priority"):
+    with named_query("resources.set_field_source_priority.persist"):
         await session.execute(
             delete(OGFieldResourceSourcePriority).where(
                 OGFieldResourceSourcePriority.resource_id == id,
@@ -393,7 +393,7 @@ async def apply_resource_merge(
 
     stmt = select(ResourceModel).where(ResourceModel.id.in_(unique_ids))
 
-    with named_query("resources.merge"):
+    with named_query("resources.merge.load"):
         results = (await session.scalars(stmt)).all()
     missing_ids = set(unique_ids).difference(set([r.id for r in results]))
     if len(missing_ids) > 0:
@@ -415,7 +415,7 @@ async def apply_resource_merge(
     # originals are intentionally NOT carried over -- merging resets ordering to
     # default. (No-op reset today since the target is fresh; a later PR handles
     # an explicit reset if merge semantics ever preserve an existing resource.)
-    with named_query("resources.merge"):
+    with named_query("resources.merge.apply"):
         new_resource = ResourceModel.create(created_by=user)
         session.add(new_resource)
         await session.flush()
