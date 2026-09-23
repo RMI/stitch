@@ -211,7 +211,8 @@ Notes:
 
 - Filter values are the stored API values (`NOR`), not display names (`Norway`), so a shared link means the same thing for every viewer.
 - Defaults are left out, so the default view is a bare `/`. That is why clicking the Stitch logotype returns you to an unfiltered list.
-- Unrecognized or malformed params are ignored rather than erroring, and are dropped from the URL on the next interaction.
+- Unrecognized params are ignored and dropped from the URL on the next interaction, and a malformed `page`, `page_size` or sort falls back to its default.
+- Filter _values_ are not checked against the API's allowed values: an unknown country or basin simply matches nothing, but an unknown `field_status` or `primary_hydrocarbon_group` is rejected by the API, so a hand-edited URL can show an error instead of an empty list.
 
 The schema lives in `src/config/listParams.js`.
 

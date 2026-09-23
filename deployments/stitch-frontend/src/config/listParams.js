@@ -18,7 +18,14 @@
  * Rules:
  * - Defaults are omitted, so the default view is a bare `/`.
  * - Serialization order is fixed, so the same view always produces the same URL.
- * - Junk is tolerated, never fatal: a hand-edited URL renders a sane list.
+ * - Junk in the params this module owns is tolerated, never fatal: page,
+ *   page_size, sort_by and sort_order all fall back to their defaults.
+ * - Filter values are passed through unvalidated, because the set of valid
+ *   values is server-side data this module cannot see. An unknown value for a
+ *   free-text filter (country, region, state_province, basin) simply matches
+ *   nothing; for the enum-backed ones (field_status,
+ *   primary_hydrocarbon_group) the API rejects it with a 422, so a
+ *   hand-edited URL can surface an error rather than an empty list.
  * - Params we do not own are ignored on read and dropped on the next write.
  */
 import { FILTER_FIELDS } from "./filters";

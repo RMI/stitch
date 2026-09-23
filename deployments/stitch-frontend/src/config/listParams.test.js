@@ -45,6 +45,17 @@ describe("parseListParams", () => {
     expect(parse("country=&country=NOR").filters.country).toEqual(["NOR"]);
   });
 
+  it("passes unknown filter values through rather than dropping them", () => {
+    // Deliberate: which values are valid is server-side data this module cannot
+    // see, so guessing here would mean duplicating the API's enums. An unknown
+    // free-text value matches nothing; an unknown enum value is the API's 422 to
+    // raise. See the module docstring.
+    expect(parse("country=ZZ9").filters.country).toEqual(["ZZ9"]);
+    expect(parse("field_status=NotAStatus").filters.field_status).toEqual([
+      "NotAStatus",
+    ]);
+  });
+
   it("ignores params it does not own", () => {
     expect(parse("utm_source=email&page=2").page).toBe(2);
   });
