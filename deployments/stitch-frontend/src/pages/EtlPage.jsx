@@ -63,6 +63,12 @@ const BC_FIELDS = [
 // match it.
 const ALB_FIELDS = [];
 
+// No run parameters yet: the Norway (Sodir) dataset is still at the spike
+// stage in stitch-etl, so the real request-body shape is unknown. Leave empty
+// (no inputs, empty body) until the dataset lands and the fields can be
+// defined to match it.
+const NOR_FIELDS = [];
+
 const WOODMAC_FIELDS = [
   {
     key: "payload_limit",
@@ -340,6 +346,13 @@ export default function EtlPage() {
           description="Load Alberta Energy Regulator field data from the configured spreadsheet and post it to Stitch."
           baseUrl={`${config.etlBaseUrl}/alb`}
           fields={ALB_FIELDS}
+          getToken={getToken}
+        />
+        <EtlPanel
+          title="Norway"
+          description="Fetch Norwegian Offshore Directorate (Sodir) field data and post it to Stitch."
+          baseUrl={`${config.etlBaseUrl}/nor`}
+          fields={NOR_FIELDS}
           getToken={getToken}
         />
       </div>
