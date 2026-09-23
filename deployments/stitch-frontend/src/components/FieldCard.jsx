@@ -47,7 +47,7 @@ export function FieldCard({
             aria-hidden="true"
             focusable="false"
             viewBox="0 0 16 16"
-            className={`h-4 w-4 shrink-0 fill-current text-ink transition-transform duration-150 motion-reduce:transition-none ${
+            className={`h-3 w-3 shrink-0 fill-current text-ink transition-transform duration-150 motion-reduce:transition-none ${
               isOpen ? "rotate-90" : ""
             }`}
             data-testid="disclosure-marker"

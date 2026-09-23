@@ -133,9 +133,9 @@ describe("FieldCard expandable behavior", () => {
     render(
       <FieldCard label="Basin" value="Foo Basin" expandable isOpen={false} />,
     );
-    // The reported problem was a ~12px glyph whose ink read smaller still;
-    // this is a 16px box with the mark filling most of it.
-    expect(screen.getByTestId("disclosure-marker")).toHaveClass("h-4", "w-4");
+    // The reported problem was a ~12px glyph whose ink read far smaller; this
+    // is a 12px box with the mark filling most of it.
+    expect(screen.getByTestId("disclosure-marker")).toHaveClass("h-3", "w-3");
   });
 
   it("centres the triangle in its viewBox so it pivots about its middle", () => {
