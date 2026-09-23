@@ -72,23 +72,17 @@ beforeEach(() => {
     ...defaultHookReturn,
     refetch: vi.fn(),
   });
-  const FILTER_OPTION_VALUES = {
-    region: ["Middle East"],
-    basin: ["Arabian", "Permian"],
-    state_province: ["Kuwait"],
-    field_status: ["Producing"],
-    country: ["NOR", "SAU"],
-    primary_hydrocarbon_group: ["Oil", "Gas"],
-  };
-  vi.mocked(useResourceFilterOptions).mockImplementation(
-    (_endpoint, field) => ({
-      ...defaultHookReturn,
-      data: {
-        field,
-        values: FILTER_OPTION_VALUES[field] ?? [],
-      },
-    }),
-  );
+  vi.mocked(useResourceFilterOptions).mockReturnValue({
+    ...defaultHookReturn,
+    data: {
+      region: ["Middle East"],
+      basin: ["Arabian", "Permian"],
+      state_province: ["Kuwait"],
+      field_status: ["Producing"],
+      country: ["NOR", "SAU"],
+      primary_hydrocarbon_group: ["Oil", "Gas"],
+    },
+  });
 });
 
 // Mirrors ResourceDetailPage's "← Back" (navigate(-1)). Rendered as a sibling of
@@ -488,7 +482,7 @@ describe("ResourcesView", () => {
       );
     });
 
-    it("loads dropdown options from filter-options queries", () => {
+    it("loads every dropdown's options from a single filter-options query", () => {
       vi.mocked(useResources).mockReturnValue({
         ...defaultHookReturn,
         data: mockResourceData,
@@ -496,24 +490,8 @@ describe("ResourcesView", () => {
 
       renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
 
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(ENDPOINT, "region");
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(
-        ENDPOINT,
-        "state_province",
-      );
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(ENDPOINT, "basin");
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(
-        ENDPOINT,
-        "field_status",
-      );
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(
-        ENDPOINT,
-        "country",
-      );
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(
-        ENDPOINT,
-        "primary_hydrocarbon_group",
-      );
+      expect(useResourceFilterOptions).toHaveBeenCalledTimes(1);
+      expect(useResourceFilterOptions).toHaveBeenCalledWith(ENDPOINT);
     });
 
     it("shows country options as conventional names but filters by the code", () => {
@@ -542,6 +520,38 @@ describe("ResourcesView", () => {
           filters: expect.objectContaining({ country: ["NOR"] }),
         }),
       );
+    });
+
+    it("lists country options alphabetically by displayed name", () => {
+      // The API returns values sorted by the stored alpha-3 code, which is not
+      // the same order as the country names the user actually sees.
+      vi.mocked(useResourceFilterOptions).mockReturnValue({
+        ...defaultHookReturn,
+        data: {
+          region: [],
+          basin: [],
+          state_province: [],
+          field_status: [],
+          country: ["CHN", "DEU", "DNK"],
+          primary_hydrocarbon_group: [],
+        },
+      });
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: mockResourceData,
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      const filterBar = screen.getByTestId("filter-bar");
+      fireEvent.click(
+        within(filterBar).getByRole("button", { name: /^country/i }),
+      );
+
+      const labels = within(filterBar)
+        .getAllByRole("checkbox")
+        .map((checkbox) => checkbox.closest("label").textContent.trim());
+      expect(labels).toEqual(["China", "Denmark", "Germany"]);
     });
 
     it("passes active filters to useResources", () => {

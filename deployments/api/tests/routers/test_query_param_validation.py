@@ -62,16 +62,6 @@ class TestResourceRouterParamValidation:
         assert resp.status_code == 422
 
     @pytest.mark.anyio
-    async def test_invalid_filter_options_field_returns_422(
-        self, async_client: AsyncClient
-    ):
-        """filter-options field must be one of the supported coalesced scalar fields."""
-        resp = await async_client.get(
-            "/oil-gas-fields/filter-options", params={"field": "owners"}
-        )
-        assert resp.status_code == 422
-
-    @pytest.mark.anyio
     async def test_unknown_field_in_sources_path_returns_422(
         self, async_client: AsyncClient
     ):
