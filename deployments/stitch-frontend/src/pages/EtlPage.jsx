@@ -57,16 +57,8 @@ const BC_FIELDS = [
   },
 ];
 
-// No run parameters yet: the Alberta dataset hasn't been added to
-// stitch-etl-poc, so the real request-body shape is unknown. Leave empty (no
-// inputs, empty body) until the dataset lands and the fields can be defined to
-// match it.
+// No run parameters needed as of 2026-09-23 for ALB or NOR.
 const ALB_FIELDS = [];
-
-// No run parameters yet: the Norway (Sodir) dataset is still at the spike
-// stage in stitch-etl, so the real request-body shape is unknown. Leave empty
-// (no inputs, empty body) until the dataset lands and the fields can be
-// defined to match it.
 const NOR_FIELDS = [];
 
 const WOODMAC_FIELDS = [
