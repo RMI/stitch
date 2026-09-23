@@ -115,24 +115,52 @@ describe("FieldCard expandable behavior", () => {
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps one disclosure marker and rotates it, rather than swapping glyphs", () => {
-    // Two glyphs of different optical widths shifted the layout on toggle and
+  it("rotates one marker rather than swapping glyphs", () => {
+    // Two glyphs of different optical widths nudged the layout on toggle and
     // read as a flicker; one rotating marker shows what changed (STIT-748).
     const { rerender } = render(
       <FieldCard label="Basin" value="Foo Basin" expandable isOpen={false} />,
     );
-    expect(screen.getByText("\u25B8")).not.toHaveClass("rotate-90");
+    expect(screen.getByTestId("disclosure-marker")).not.toHaveClass(
+      "rotate-90",
+    );
 
     rerender(<FieldCard label="Basin" value="Foo Basin" expandable isOpen />);
-    expect(screen.getByText("\u25B8")).toHaveClass("rotate-90");
+    expect(screen.getByTestId("disclosure-marker")).toHaveClass("rotate-90");
   });
 
-  it("renders the disclosure marker large enough to read", () => {
+  it("renders the marker at a legible size", () => {
     render(
       <FieldCard label="Basin" value="Foo Basin" expandable isOpen={false} />,
     );
-    // text-xs (12px) was the reported problem; text-lg is ~18px.
-    expect(screen.getByText("\u25B8")).toHaveClass("text-lg");
+    // The reported problem was a ~12px glyph whose ink read smaller still;
+    // this is a 16px box with the mark filling most of it.
+    expect(screen.getByTestId("disclosure-marker")).toHaveClass("h-4", "w-4");
+  });
+
+  it("centres the triangle in its viewBox so it pivots about its middle", () => {
+    // A marker whose ink is off-centre swings through an arc when rotated,
+    // which is what the text glyph did. Keep the path symmetric about the
+    // viewBox centre.
+    render(
+      <FieldCard label="Basin" value="Foo Basin" expandable isOpen={false} />,
+    );
+    const marker = screen.getByTestId("disclosure-marker");
+    const [, , viewBoxWidth, viewBoxHeight] = marker
+      .getAttribute("viewBox")
+      .split(/\s+/)
+      .map(Number);
+
+    const coords = marker
+      .querySelector("path")
+      .getAttribute("d")
+      .match(/-?\d+(?:\.\d+)?/g)
+      .map(Number);
+    const xs = coords.filter((_, i) => i % 2 === 0);
+    const ys = coords.filter((_, i) => i % 2 === 1);
+
+    expect((Math.min(...xs) + Math.max(...xs)) / 2).toBe(viewBoxWidth / 2);
+    expect((Math.min(...ys) + Math.max(...ys)) / 2).toBe(viewBoxHeight / 2);
   });
 
   it("renders children only when expandable and open", () => {

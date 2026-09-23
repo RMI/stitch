@@ -38,18 +38,22 @@ export function FieldCard({
           {display ?? <span className="text-ink-muted">—</span>}
         </div>
         {expandable && (
-          // One marker that rotates, not two glyphs swapping: the two had
-          // different optical widths, so toggling nudged the layout and read as
-          // a flicker. Rotation shows what changed. Fixed box keeps the value
-          // text from reflowing as it turns.
-          <span
+          // Drawn rather than typed: the ▸ glyph's ink sits off-centre inside
+          // its character box, so rotating the text pivoted the mark about a
+          // point that wasn't its middle — and where the ink lands varies by
+          // font. An explicit triangle, centred in its own viewBox, turns about
+          // its true centre on every platform.
+          <svg
             aria-hidden="true"
-            className={`flex h-5 w-5 shrink-0 items-center justify-center text-lg leading-none text-ink transition-transform duration-150 motion-reduce:transition-none ${
+            focusable="false"
+            viewBox="0 0 16 16"
+            className={`h-4 w-4 shrink-0 fill-current text-ink transition-transform duration-150 motion-reduce:transition-none ${
               isOpen ? "rotate-90" : ""
             }`}
+            data-testid="disclosure-marker"
           >
-            ▸
-          </span>
+            <path d="M5 3.5 L11 8 L5 12.5 Z" />
+          </svg>
         )}
       </div>
       {sourceLabel && (
