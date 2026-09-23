@@ -89,20 +89,7 @@ def _participating_columns(params: OGFieldQueryParams) -> list[str]:
 
 
 def _override_join(resource_id: Any) -> ColumnElement[bool]:
-    """The override join condition, shared by every base that ranks values.
-
-    At the value grain (source_pk, colname), and over the override table's
-    full primary key, so at most one override row per value row -- the outer
-    join cannot fan out. ``o.source == m.source`` is a dual-key guard: source_pk
-    and source aren't FK-tied, so matching source_pk alone could apply a stray
-    override with a mismatched (source, source_pk) pair to the wrong
-    membership. Requiring both fails safe to the default instead.
-
-    ``resource_id`` is the caller's own resource-identifying column (the
-    resource table's ``id`` for the full base, the membership's
-    ``resource_id`` for the lighter filter-option base) since not every base
-    joins the resource table.
-    """
+    """Join condition matching an override row to its value row."""
     m = MembershipModel
     v = OilGasFieldSourceValueModel
     o = OGFieldResourceSourcePriority
@@ -262,23 +249,16 @@ def coalesced_winner_rows(
     )
 
 
-def _filter_option_base(licensed_sources: Collection[OGSISrcKey] | None = None) -> CTE:
-    """Light ranking base for ``filter_option_rows``: value rows only, no
-    resource/source-header joins.
-
-    Deliberately narrower than ``construct_base_query_statement``: it reads
-    ``value_text`` and the ranking keys only, over the six filterable
-    columns, so it skips the resource join and the typed ``value_num``/
-    ``value_json`` columns that join brings along unused. Dropping the
-    resource join relies on the invariant that a merged resource's
-    memberships are all INACTIVE (``_repoint_memberships``).
-    """
+def filter_option_rows(
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> Select[tuple[str, str]]:
+    """Distinct winning ``(colname, value)`` pairs for every filterable field."""
     m = MembershipModel
     v = OilGasFieldSourceValueModel
     p = OGFieldSourcePriority
     o = OGFieldResourceSourcePriority
 
-    stmt = (
+    base = (
         select(
             m.resource_id.label("resource_id"),
             m.source.label("source"),
@@ -298,31 +278,9 @@ def _filter_option_base(licensed_sources: Collection[OGSISrcKey] | None = None) 
         )
     )
     if licensed_sources is not None:
-        stmt = stmt.where(m.source.in_(list(dict.fromkeys(licensed_sources))))
-    return stmt.cte("filter_option_base")
+        base = base.where(m.source.in_(list(dict.fromkeys(licensed_sources))))
 
-
-def filter_option_rows(
-    licensed_sources: Collection[OGSISrcKey] | None = None,
-) -> Select[tuple[str, str]]:
-    """Distinct winning ``(colname, value)`` pairs for every filterable field.
-
-    One pass over the light base: the window partitions by
-    ``(resource_id, colname)``, so a single ROW_NUMBER picks the winner for
-    all of ``FILTER_OPTION_FIELDS`` at once. ``DISTINCT`` is over the pair, so
-    a string that is a valid value for two fields survives as two rows and
-    lands under both.
-
-    Ranking is ``add_ranking`` over ``_filter_option_base`` -- the same
-    ``_ranked`` tiering the list/detail paths use, so this can't drift from
-    them on "who beats whom". It still doesn't unify the *row universe*: the
-    light base skips the resource join, so it doesn't check
-    ``repointed_id IS NULL`` the way ``construct_base_query_statement`` does
-    (see the base's docstring for why that's safe).
-    """
-    ranked = add_ranking(_filter_option_base(licensed_sources)).cte(
-        "filter_option_ranked"
-    )
+    ranked = add_ranking(base.cte("filter_option_base")).cte("filter_option_ranked")
     c = ranked.c
     return (
         select(c.colname, c.value_text)
