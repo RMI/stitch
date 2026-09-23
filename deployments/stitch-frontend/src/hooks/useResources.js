@@ -214,8 +214,6 @@ function getMockResourcePage({
   };
 }
 
-// Mirrors the API's all-fields payload: one key per dropdown the UI renders,
-// always present even when the mock data carries no values for it.
 function getMockFilterOptions() {
   return Object.fromEntries(
     FILTER_FIELDS.map(({ key: field }) => [

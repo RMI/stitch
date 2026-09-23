@@ -71,7 +71,6 @@ beforeEach(() => {
     ...defaultHookReturn,
     refetch: vi.fn(),
   });
-  // One call, one payload keyed by field -- the shape the endpoint now returns.
   vi.mocked(useResourceFilterOptions).mockReturnValue({
     ...defaultHookReturn,
     data: {

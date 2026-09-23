@@ -124,12 +124,7 @@ class OGFieldQueryParams(PaginationParams, OGFieldFilterParams, OGFieldSortParam
 
 
 class OGFieldFilterOptionsResponse(BaseModel):
-    """Every filterable field's distinct coalesced values, one list per field.
-
-    Fields are required, not defaulted: the action always supplies all of them,
-    empty list included, so a client never has to tell "no licensed values" apart
-    from "field missing from the payload".
-    """
+    """Every filterable field's distinct coalesced values, one list per field."""
 
     basin: list[str]
     country: list[str]
@@ -139,9 +134,6 @@ class OGFieldFilterOptionsResponse(BaseModel):
     state_province: list[str]
 
 
-# The response model is the single source of truth for which fields are
-# filterable; the query derives its ``colname`` list from this, so the two can't
-# drift.
 FILTER_OPTION_FIELDS: tuple[str, ...] = tuple(OGFieldFilterOptionsResponse.model_fields)
 
 

@@ -1010,18 +1010,6 @@ class TestResourceFilterOptionsAction:
     ):
         """Dropping the winning source's license promotes the runner-up value,
         rather than blanking the field.
-
-        One resource carries two competing, non-null values for the same
-        field: wm says USA, gem says CAN. wm outranks gem (SOURCE_PRIORITY),
-        so wm's USA is the option when both are licensed. The gap this
-        closes: the existing licensing test
-        (``test_honors_licensed_sources_after_coalescing``) drops a source
-        whose own value was already null, so it can't tell "the rank cut runs
-        after the licensing filter" from "the rank cut runs before it and
-        just happens to leave the same answer". Losing wm's license here
-        must promote gem's CAN, not remove the option entirely -- proving the
-        licensing filter is applied *before* ``rn == 1`` picks the winner,
-        not after.
         """
         await _create_resource_with_sources(
             seeded_integration_session,
@@ -1107,9 +1095,6 @@ class TestResourceFilterOptionsAction:
                 "region": "North America",
             },
         )
-        # "Texas" is a legitimate value for two fields. Both must survive, each
-        # under its own key -- which is what proves DISTINCT is over the
-        # (colname, value) pair rather than the bare value.
         await _create_resource_with_sources(
             seeded_integration_session,
             test_user,
@@ -1129,13 +1114,7 @@ class TestResourceFilterOptionsAction:
         assert options["region"] == ["North America"]
 
     def test_postgres_distinct_query_orders_by_selected_columns(self):
-        """``filter_option_rows`` compiles on Postgres.
-
-        Postgres rejects SELECT DISTINCT ... ORDER BY over an expression that is
-        not in the select list. Both ordered columns are selected here, so it
-        compiles -- but the test suite runs on SQLite, which is laxer, so compile
-        the real statement against the Postgres dialect to catch that.
-        """
+        """``filter_option_rows`` compiles on Postgres."""
         stmt = filter_option_rows(
             licensed_sources=frozenset({"gem", "wm", "rmi", "llm"}),
         )

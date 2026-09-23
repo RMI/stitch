@@ -91,13 +91,7 @@ async def filter_options(
     session: AsyncSession,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> dict[str, list[str]]:
-    """Distinct coalesced values for every filterable field, in one query.
-
-    Values are priority/override-coalesced and licensed before being deduped and
-    sorted, as they are on the list path. Every field is present, empty list
-    included: grouping appends into a pre-seeded dict, so it does not depend on
-    the SQL ORDER BY.
-    """
+    """Distinct coalesced values for every filterable field, in one query."""
     options: dict[str, list[str]] = {field: [] for field in FILTER_OPTION_FIELDS}
     for colname, value in await session.execute(filter_option_rows(licensed_sources)):
         options[colname].append(value)
