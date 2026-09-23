@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager
 
+import httpx
 import pytest
 
 from stitch.entity_linkage import matching
@@ -319,3 +320,90 @@ async def test_link_all_skips_groups_already_in_the_queue() -> None:
     assert response.merge_candidates_skipped == 1
     assert client.create_calls == []
     assert client.list_candidates_calls == 1
+
+
+class _FailingDetailClient(FakeMatchingClient):
+    """Client whose detail fetch raises for one resource id."""
+
+    def __init__(self, *, fail_id: int, fail_error: Exception, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._fail_id = fail_id
+        self._fail_error = fail_error
+
+    async def get_oil_gas_field_detail(self, resource_id: int) -> FieldDetailCandidate:
+        if resource_id == self._fail_id:
+            raise self._fail_error
+        return await super().get_oil_gas_field_detail(resource_id)
+
+
+@pytest.mark.anyio
+async def test_link_all_isolates_and_counts_a_failing_resource() -> None:
+    # Resource 3's detail fetch fails persistently (retries already exhausted in
+    # the shared client). The run must skip it, count it, and still process the
+    # {1,2} block.
+    client = _FailingDetailClient(
+        fail_id=3,
+        fail_error=httpx.ReadTimeout("read timed out"),
+        items=[
+            FieldCandidate(id=1, name="Alpha", country="US"),
+            FieldCandidate(id=2, name="alpha", country="US"),
+            FieldCandidate(id=3, name="Gamma", country="US"),
+        ],
+        details_by_id={
+            1: FieldDetailCandidate(id=1, name="Alpha", country="US"),
+            2: FieldDetailCandidate(id=2, name="alpha", country="US"),
+        },
+    )
+
+    response = await matching.link_all(
+        client, apply_merges=True, page_size=200, initiated_by="Tester"
+    )
+
+    assert response.resources_scanned == 3
+    assert response.resources_failed == 1
+    assert response.match_groups == [[1, 2]]
+    assert response.merge_candidates_created == 1
+    assert client.create_calls == [[1, 2]]
+
+
+@pytest.mark.anyio
+async def test_link_all_failed_submit_is_counted_not_reported_as_matched() -> None:
+    # When _submit_group raises (a non-400 downstream error), the block is
+    # counted as failed and must NOT appear in match_groups.
+    client = FakeMatchingClient(
+        items=[
+            FieldCandidate(id=1, name="Alpha", country="US"),
+            FieldCandidate(id=2, name="alpha", country="US"),
+        ],
+        details_by_id={
+            1: FieldDetailCandidate(id=1, name="Alpha", country="US"),
+            2: FieldDetailCandidate(id=2, name="alpha", country="US"),
+        },
+        create_error=StitchAPIError("boom", status_code=500),
+    )
+
+    response = await matching.link_all(
+        client, apply_merges=True, page_size=200, initiated_by="Tester"
+    )
+
+    assert response.resources_failed == 1
+    assert response.match_groups == []
+    assert response.merge_candidates_created == 0
+    # Marked processed on first failure, so the block is attempted once, not
+    # once per member.
+    assert client.create_calls == [[1, 2]]
+
+
+@pytest.mark.anyio
+async def test_link_all_does_not_swallow_programming_errors() -> None:
+    # A KeyError is a bug, not a transient failure: it must abort the run rather
+    # than be counted as a skipped resource.
+    client = FakeMatchingClient(
+        items=[FieldCandidate(id=1, name="Alpha", country="US")],
+        details_by_id={},  # detail lookup raises KeyError
+    )
+
+    with pytest.raises(KeyError):
+        await matching.link_all(
+            client, apply_merges=True, page_size=200, initiated_by="Tester"
+        )

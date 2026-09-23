@@ -1,8 +1,19 @@
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
-// Always returns exactly 7 slots: [first, leftEllipsis, p1, current, p2, rightEllipsis, last]
+// Five-digit page numbers are wide enough that the usual window of nearby
+// pages overflows the control, so past this many pages the window narrows to
+// just the current page and navigation leans on the arrows (STIT-739).
+const WIDE_WINDOW_MAX_PAGES = 9999;
+const WIDE_WINDOW = 3;
+const NARROW_WINDOW = 1;
+
+// Always returns exactly `windowSize + 4` slots:
+// [first, leftEllipsis, ...window, rightEllipsis, last]
+// Near either edge the window absorbs the adjacent first/last and ellipsis
+// positions, showing a contiguous run of pages instead. `windowSize` must be
+// odd so the window can centre on the current page.
 // Each slot is { page, visible, ellipsis }
-function getSlots(currentPage, totalPages) {
+function getSlots(currentPage, totalPages, windowSize) {
   const slot = (page, visible = true) => ({ page, visible, ellipsis: false });
   const ellipsis = (visible = true) => ({
     page: null,
@@ -10,46 +21,58 @@ function getSlots(currentPage, totalPages) {
     ellipsis: true,
   });
 
-  // Near the start: 1 2 3 4 5 … last
-  if (currentPage <= 4) {
+  // Length of the contiguous run of pages shown at either edge.
+  const edgeRun = windowSize + 2;
+  const run = (startPage) =>
+    Array.from({ length: edgeRun }, (_, i) => {
+      const page = startPage + i;
+      return slot(page, page >= 1 && page <= totalPages);
+    });
+
+  // Near the start, e.g. 1 2 3 4 5 … last for the wide window.
+  if (currentPage < edgeRun) {
     return [
-      slot(1),
-      slot(2, totalPages >= 2),
-      slot(3, totalPages >= 3),
-      slot(4, totalPages >= 4),
-      slot(5, totalPages >= 5),
-      ellipsis(totalPages > 6),
-      slot(totalPages, totalPages > 5),
+      ...run(1),
+      ellipsis(totalPages > edgeRun + 1),
+      slot(totalPages, totalPages > edgeRun),
     ];
   }
 
-  // Near the end: 1 … last-4 last-3 last-2 last-1 last
-  if (currentPage >= totalPages - 3) {
+  // Near the end, e.g. 1 … last-4 last-3 last-2 last-1 last for the wide window.
+  if (currentPage > totalPages - edgeRun + 1) {
     return [
-      slot(1, totalPages > 5),
-      ellipsis(totalPages > 6),
-      slot(totalPages - 4, totalPages >= 5),
-      slot(totalPages - 3),
-      slot(totalPages - 2),
-      slot(totalPages - 1),
-      slot(totalPages),
+      slot(1, totalPages > edgeRun),
+      ellipsis(totalPages > edgeRun + 1),
+      ...run(totalPages - edgeRun + 1),
     ];
   }
 
-  // Middle: 1 … prev current next … last
+  // Middle, e.g. 1 … prev current next … last for the wide window.
+  const half = (windowSize - 1) / 2;
   return [
     slot(1),
     ellipsis(),
-    slot(currentPage - 1),
-    slot(currentPage),
-    slot(currentPage + 1),
+    ...Array.from({ length: windowSize }, (_, i) =>
+      slot(currentPage - half + i),
+    ),
     ellipsis(),
     slot(totalPages),
   ];
 }
 
-const pageButtonBase =
-  "flex h-9 w-9 items-center justify-center rounded-md border text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2";
+// `shrink-0` matters: the explicit `min-w-9` below replaces flexbox's
+// `min-width: auto`, which is what normally stops a flex item shrinking past
+// its content. Without it a narrow viewport squeezes buttons back to 36px and
+// clips the label again (STIT-739).
+const buttonBase =
+  "flex h-9 shrink-0 items-center justify-center rounded-md border text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2";
+
+// The arrows hold a single glyph, so they stay square.
+const navButtonBase = `${buttonBase} w-9`;
+
+// Page buttons keep the square footprint for short numbers but grow with the
+// label rather than clipping it.
+const pageButtonBase = `${buttonBase} min-w-9 px-2 tabular-nums`;
 
 export default function Pagination({
   page,
@@ -59,22 +82,27 @@ export default function Pagination({
   onPageChange,
   onPageSizeChange,
 }) {
-  const slots = getSlots(page, totalPages);
+  const slots = getSlots(
+    page,
+    totalPages,
+    totalPages > WIDE_WINDOW_MAX_PAGES ? NARROW_WINDOW : WIDE_WINDOW,
+  );
   const firstItem = (page - 1) * pageSize + 1;
   const lastItem = Math.min(page * pageSize, totalCount);
 
   return (
     <div className="mt-4 flex flex-wrap items-center justify-between gap-y-3 text-sm text-ink-muted">
       <span className="font-medium">
-        Showing {firstItem}–{lastItem} of {totalCount}
+        Showing {firstItem.toLocaleString()}–{lastItem.toLocaleString()} of{" "}
+        {totalCount.toLocaleString()}
       </span>
 
       {totalPages > 1 && (
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           <button
             onClick={() => onPageChange(page - 1)}
             disabled={page === 1}
-            className={`${pageButtonBase} border-line bg-panel text-ink hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40`}
+            className={`${navButtonBase} border-line bg-panel text-ink hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40`}
             aria-label="Previous page"
           >
             ‹
@@ -85,7 +113,7 @@ export default function Pagination({
               <span
                 key={`ellipsis-${i}`}
                 style={{ visibility: slot.visible ? "visible" : "hidden" }}
-                className="flex h-9 w-9 items-center justify-center text-ink-muted select-none"
+                className="flex h-9 w-9 shrink-0 items-center justify-center text-ink-muted select-none"
                 aria-hidden="true"
               >
                 …
@@ -103,7 +131,7 @@ export default function Pagination({
                     : "border-line bg-panel text-ink hover:bg-surface"
                 }`}
               >
-                {slot.page}
+                {slot.page.toLocaleString()}
               </button>
             ),
           )}
@@ -111,7 +139,7 @@ export default function Pagination({
           <button
             onClick={() => onPageChange(page + 1)}
             disabled={page === totalPages}
-            className={`${pageButtonBase} border-line bg-panel text-ink hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40`}
+            className={`${navButtonBase} border-line bg-panel text-ink hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40`}
             aria-label="Next page"
           >
             ›

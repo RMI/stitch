@@ -76,6 +76,21 @@ function SortIndicator({ column, sortConfig }) {
   );
 }
 
+// Pointer-only extension of a row's name link, so clicking, middle-clicking or
+// right-clicking anywhere in the row reaches the resource. Hidden from
+// assistive tech and the tab order: the name cell holds the row's one real,
+// named link.
+function RowLinkOverlay({ href }) {
+  return (
+    <Link
+      to={href}
+      aria-hidden="true"
+      tabIndex={-1}
+      className="absolute inset-0"
+    />
+  );
+}
+
 export default function ResourcesTable({
   resources,
   sortConfig,
@@ -135,41 +150,56 @@ export default function ResourcesTable({
           </tr>
         </thead>
         <tbody>
-          {sorted.map((resource) => (
-            // `relative` on <tr> anchors the Link's ::after pseudo-element,
-            // which stretches across the full row for pointer/keyboard/right-click support.
-            <tr
-              key={resource.id}
-              className="relative border-b border-line/70 transition-colors hover:bg-surface"
-            >
-              {COLUMNS.map((col) => {
-                const rawValue = getResourceField(resource, col.key);
-                const value =
-                  col.format && rawValue != null
-                    ? col.format(rawValue)
-                    : rawValue;
+          {sorted.map((resource) => {
+            const resourceHref = `/oil-gas-fields/${resource.id}`;
 
-                return (
-                  <td key={col.key} className={`px-3 py-2.5 ${col.className}`}>
-                    {col.key === "name" ? (
-                      <Link
-                        to={`/oil-gas-fields/${resource.id}`}
-                        className="rounded-sm text-ink underline-offset-4 after:absolute after:inset-0 after:content-[''] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-                      >
-                        {value ?? <span className="text-ink-muted">—</span>}
-                      </Link>
-                    ) : (
-                      (value ?? <span className="text-ink-muted">—</span>)
-                    )}
-                  </td>
-                );
-              })}
+            return (
+              // Each cell carries its own overlay so the whole row stays
+              // clickable. The overlays are deliberately anchored to the <td>s
+              // rather than the <tr>: CSS 2.1 leaves `position: relative`
+              // undefined on table rows and WebKit ignores it, which made every
+              // row's overlay resolve against the scroll container and cover the
+              // entire table (STIT-737).
+              <tr
+                key={resource.id}
+                className="group border-b border-line/70 transition-colors hover:bg-surface"
+              >
+                {COLUMNS.map((col) => {
+                  const rawValue = getResourceField(resource, col.key);
+                  const value =
+                    col.format && rawValue != null
+                      ? col.format(rawValue)
+                      : rawValue;
 
-              <td className="px-3 py-2.5">
-                <SourceMixBar provenance={resource.provenance} />
-              </td>
-            </tr>
-          ))}
+                  return (
+                    <td
+                      key={col.key}
+                      className={`relative px-3 py-2.5 ${col.className}`}
+                    >
+                      {col.key === "name" ? (
+                        <Link
+                          to={resourceHref}
+                          className="rounded-sm text-ink underline-offset-4 after:absolute after:inset-0 after:content-[''] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 group-hover:underline"
+                        >
+                          {value ?? <span className="text-ink-muted">—</span>}
+                        </Link>
+                      ) : (
+                        <>
+                          {value ?? <span className="text-ink-muted">—</span>}
+                          <RowLinkOverlay href={resourceHref} />
+                        </>
+                      )}
+                    </td>
+                  );
+                })}
+
+                <td className="relative px-3 py-2.5">
+                  <SourceMixBar provenance={resource.provenance} />
+                  <RowLinkOverlay href={resourceHref} />
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
       {isFetching && (
