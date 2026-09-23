@@ -2,35 +2,9 @@ import FilterDropdown from "./FilterDropdown";
 import { FILTER_FIELDS, EMPTY_FILTERS } from "../config/filters";
 import { useResourceFilterOptions } from "../hooks/useResources";
 
-function FilterFieldDropdown({
-  endpoint,
-  field,
-  label,
-  formatValue,
-  selected,
-  onChange,
-}) {
-  const { data } = useResourceFilterOptions(endpoint, field);
-  // The API sorts by the stored value, which can differ from the order of the
-  // labels we display (country codes vs. country names), so sort by label.
-  const options = (data?.values ?? [])
-    .map((value) => ({
-      value,
-      label: formatValue ? formatValue(value) : value,
-    }))
-    .sort((a, b) => a.label.localeCompare(b.label, "en"));
-
-  return (
-    <FilterDropdown
-      label={label}
-      options={options}
-      selected={selected}
-      onChange={onChange}
-    />
-  );
-}
-
 export default function FilterBar({ endpoint, filters, onFiltersChange }) {
+  const { data: filterOptions } = useResourceFilterOptions(endpoint);
+
   // Flatten active filters into chips: [{ field, label, value, displayValue }, ...]
   // `value` is the stored/API value; `displayValue` is what the user sees.
   const chips = FILTER_FIELDS.flatMap(({ key, label, formatValue }) =>
@@ -57,17 +31,24 @@ export default function FilterBar({ endpoint, filters, onFiltersChange }) {
     <div className="space-y-2" data-testid="filter-bar">
       {/* Dropdowns row */}
       <div className="flex flex-wrap gap-2">
-        {FILTER_FIELDS.map(({ key, label, formatValue }) => (
-          <FilterFieldDropdown
-            key={key}
-            endpoint={endpoint}
-            field={key}
-            label={label}
-            formatValue={formatValue}
-            selected={filters[key] ?? []}
-            onChange={(values) => handleDropdownChange(key, values)}
-          />
-        ))}
+        {FILTER_FIELDS.map(({ key, label, formatValue }) => {
+          const options = (filterOptions?.[key] ?? [])
+            .map((value) => ({
+              value,
+              label: formatValue ? formatValue(value) : value,
+            }))
+            .sort((a, b) => a.label.localeCompare(b.label, "en"));
+
+          return (
+            <FilterDropdown
+              key={key}
+              label={label}
+              options={options}
+              selected={filters[key] ?? []}
+              onChange={(values) => handleDropdownChange(key, values)}
+            />
+          );
+        })}
       </div>
 
       {/* Chips + clear button — only rendered when at least one filter is active */}
