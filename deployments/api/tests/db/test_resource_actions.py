@@ -1070,7 +1070,6 @@ class TestResourceFilterOptionsAction:
 
         assert set(options.keys()) == set(FILTER_OPTION_FIELDS)
         assert options["country"] == ["USA"]
-        # A field no source carries is an empty list, never a missing key.
         assert options["field_status"] == []
         assert options["basin"] == []
 
