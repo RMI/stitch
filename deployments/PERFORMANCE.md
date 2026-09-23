@@ -7,6 +7,9 @@ the cloud, and readable straight from the terminal locally — so you can find
 slow/frequent queries from real data instead of guessing.
 
 This doc covers the basic loop: **enable capture → drive traffic → analyze**.
+For *where* deployed logs are routed (which Log Analytics workspace each lane
+feeds, and how to change it), see "Log routing" in
+[`CI_DEPLOYMENTS.md`](./CI_DEPLOYMENTS.md).
 
 > The instrumentation lives in the app code
 > ([`deployments/api/src/stitch/api/observability/`](api/src/stitch/api/observability/)),
