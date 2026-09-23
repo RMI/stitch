@@ -15,7 +15,6 @@ from stitch.api.db.errors import (
 from stitch.api.auth import CurrentUser
 from stitch.api.entities import (
     FILTER_OPTION_FIELDS,
-    OGFieldFilterOptionsResponse,
     OGFieldQueryParams,
 )
 from stitch.api.db.og_field_source_actions import (
@@ -91,7 +90,7 @@ async def query(
 async def filter_options(
     session: AsyncSession,
     licensed_sources: Collection[OGSISrcKey] | None = None,
-) -> OGFieldFilterOptionsResponse:
+) -> dict[str, list[str]]:
     """Distinct coalesced values for every filterable field, in one query.
 
     Values are priority/override-coalesced and licensed before being deduped and
@@ -102,7 +101,7 @@ async def filter_options(
     options: dict[str, list[str]] = {field: [] for field in FILTER_OPTION_FIELDS}
     for colname, value in await session.execute(filter_option_rows(licensed_sources)):
         options[colname].append(value)
-    return OGFieldFilterOptionsResponse(**options)
+    return options
 
 
 async def get(

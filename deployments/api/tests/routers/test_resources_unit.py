@@ -8,7 +8,6 @@ from starlette.status import HTTP_404_NOT_FOUND
 from stitch.ogsi.model import OGFieldListItemView, OilGasFieldBase
 
 from stitch.api.db.config import get_uow
-from stitch.api.entities import OGFieldFilterOptionsResponse
 from stitch.api.main import app
 
 from tests.factories import ResourceCreateFactory, SourceFactory
@@ -231,7 +230,7 @@ class TestGetResourceFilterOptionsUnit:
 
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.filter_options = AsyncMock(
-                return_value=OGFieldFilterOptionsResponse(
+                return_value=dict(
                     basin=["Permian"],
                     country=["CAN", "USA"],
                     field_status=[],
@@ -266,7 +265,7 @@ class TestGetResourceFilterOptionsUnit:
 
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.filter_options = AsyncMock(
-                return_value=OGFieldFilterOptionsResponse(
+                return_value=dict(
                     basin=[],
                     country=["CAN", "USA"],
                     field_status=[],

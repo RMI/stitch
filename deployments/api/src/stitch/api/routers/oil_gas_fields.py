@@ -92,10 +92,11 @@ async def get_resource_filter_options(
     _user: CurrentUser,
     claims: Claims,
 ) -> OGFieldFilterOptionsResponse:
-    return await resource_actions.filter_options(
+    opts = await resource_actions.filter_options(
         session=uow.session,
         licensed_sources=licensed_sources(claims),
     )
+    return OGFieldFilterOptionsResponse(**opts)
 
 
 @router.get(

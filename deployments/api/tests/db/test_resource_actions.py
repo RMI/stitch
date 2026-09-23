@@ -975,7 +975,7 @@ class TestResourceFilterOptionsAction:
 
         options = await resource_actions.filter_options(seeded_integration_session)
 
-        assert options.country == ["CAN", "USA"]
+        assert options["country"] == ["CAN", "USA"]
 
     @pytest.mark.anyio
     async def test_honors_licensed_sources_after_coalescing(
@@ -1000,7 +1000,7 @@ class TestResourceFilterOptionsAction:
             licensed_sources=frozenset({"gem", "wm", "llm"}),
         )
 
-        assert options.country == ["CAN"]
+        assert options["country"] == ["CAN"]
 
     @pytest.mark.anyio
     async def test_licensing_promotes_next_priority_value(
@@ -1034,13 +1034,13 @@ class TestResourceFilterOptionsAction:
             seeded_integration_session,
             licensed_sources=frozenset({"gem", "wm"}),
         )
-        assert with_wm.country == ["USA"]
+        assert with_wm["country"] == ["USA"]
 
         without_wm = await resource_actions.filter_options(
             seeded_integration_session,
             licensed_sources=frozenset({"gem"}),
         )
-        assert without_wm.country == ["CAN"]
+        assert without_wm["country"] == ["CAN"]
 
     @pytest.mark.anyio
     async def test_excludes_inactive_memberships(
@@ -1068,7 +1068,7 @@ class TestResourceFilterOptionsAction:
 
         options = await resource_actions.filter_options(seeded_integration_session)
 
-        assert options.country == ["USA"]
+        assert options["country"] == ["USA"]
 
     @pytest.mark.anyio
     async def test_returns_every_field_including_empty_ones(
@@ -1084,11 +1084,11 @@ class TestResourceFilterOptionsAction:
 
         options = await resource_actions.filter_options(seeded_integration_session)
 
-        assert set(options.model_dump()) == set(FILTER_OPTION_FIELDS)
-        assert options.country == ["USA"]
+        assert set(options.keys()) == set(FILTER_OPTION_FIELDS)
+        assert options["country"] == ["USA"]
         # A field no source carries is an empty list, never a missing key.
-        assert options.field_status == []
-        assert options.basin == []
+        assert options["field_status"] == []
+        assert options["basin"] == []
 
     @pytest.mark.anyio
     async def test_returns_each_field_from_one_pass(
@@ -1123,10 +1123,10 @@ class TestResourceFilterOptionsAction:
 
         options = await resource_actions.filter_options(seeded_integration_session)
 
-        assert options.country == ["CAN", "USA"]
-        assert options.state_province == ["Alberta", "Texas"]
-        assert options.basin == ["Permian", "Texas"]
-        assert options.region == ["North America"]
+        assert options["country"] == ["CAN", "USA"]
+        assert options["state_province"] == ["Alberta", "Texas"]
+        assert options["basin"] == ["Permian", "Texas"]
+        assert options["region"] == ["North America"]
 
     def test_postgres_distinct_query_orders_by_selected_columns(self):
         """``filter_option_rows`` compiles on Postgres.
