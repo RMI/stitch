@@ -115,6 +115,26 @@ describe("FieldCard expandable behavior", () => {
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps one disclosure marker and rotates it, rather than swapping glyphs", () => {
+    // Two glyphs of different optical widths shifted the layout on toggle and
+    // read as a flicker; one rotating marker shows what changed (STIT-748).
+    const { rerender } = render(
+      <FieldCard label="Basin" value="Foo Basin" expandable isOpen={false} />,
+    );
+    expect(screen.getByText("\u25B8")).not.toHaveClass("rotate-90");
+
+    rerender(<FieldCard label="Basin" value="Foo Basin" expandable isOpen />);
+    expect(screen.getByText("\u25B8")).toHaveClass("rotate-90");
+  });
+
+  it("renders the disclosure marker large enough to read", () => {
+    render(
+      <FieldCard label="Basin" value="Foo Basin" expandable isOpen={false} />,
+    );
+    // text-xs (12px) was the reported problem; text-lg is ~18px.
+    expect(screen.getByText("\u25B8")).toHaveClass("text-lg");
+  });
+
   it("renders children only when expandable and open", () => {
     const { rerender } = render(
       <FieldCard label="Basin" value="Foo Basin" expandable isOpen={false}>

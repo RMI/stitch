@@ -38,8 +38,17 @@ export function FieldCard({
           {display ?? <span className="text-ink-muted">—</span>}
         </div>
         {expandable && (
-          <span aria-hidden="true" className="shrink-0 text-xs text-ink-muted">
-            {isOpen ? "▾" : "▸"}
+          // One marker that rotates, not two glyphs swapping: the two had
+          // different optical widths, so toggling nudged the layout and read as
+          // a flicker. Rotation shows what changed. Fixed box keeps the value
+          // text from reflowing as it turns.
+          <span
+            aria-hidden="true"
+            className={`flex h-5 w-5 shrink-0 items-center justify-center text-lg leading-none text-ink transition-transform duration-150 motion-reduce:transition-none ${
+              isOpen ? "rotate-90" : ""
+            }`}
+          >
+            ▸
           </span>
         )}
       </div>
