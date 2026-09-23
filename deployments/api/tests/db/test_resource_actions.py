@@ -952,10 +952,6 @@ class TestResourceFilterOptionsAction:
             {"source": "rmi", "country": None},
             {"source": "gem", "country": "CAN"},
         )
-        # rmi and llm both carry a real, non-null country here. rmi outranks
-        # llm (SOURCE_PRIORITY), so this also pins the coalesced-winner-only
-        # cut: llm's GBR is a genuine, eligible value that must not appear
-        # below just because it lost to rmi's USA.
         await _create_resource_with_sources(
             seeded_integration_session,
             test_user,
