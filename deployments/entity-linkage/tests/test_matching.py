@@ -473,6 +473,50 @@ async def test_link_all_skips_known_existing_pair_within_multi_block() -> None:
     assert client.create_calls == [[1, 3], [2, 3]]
 
 
+class _FailingCreateClient(FakeMatchingClient):
+    """Client whose create raises for one specific pair of resource ids."""
+
+    def __init__(
+        self, *, fail_pair: list[int], fail_error: Exception, **kwargs
+    ) -> None:
+        super().__init__(**kwargs)
+        self._fail_pair = fail_pair
+        self._fail_error = fail_error
+
+    async def create_merge_candidate(self, *, resource_ids: list[int]) -> dict:
+        self.create_calls.append(list(resource_ids))
+        if list(resource_ids) == self._fail_pair:
+            raise self._fail_error
+        return {"ok": True, "resource_ids": list(resource_ids)}
+
+
+@pytest.mark.anyio
+async def test_link_all_keeps_earlier_pairs_when_a_later_pair_fails() -> None:
+    # In a 3-member block, pair (1,2) is created before pair (1,3) raises a
+    # non-400 error. The already-created pair must stay counted and in
+    # match_groups (its candidate really exists); the resource is counted failed
+    # and the run stops submitting the rest of the block.
+    client = _FailingCreateClient(
+        fail_pair=[1, 3],
+        fail_error=StitchAPIError("boom", status_code=500),
+        items=[FieldCandidate(id=i, name="Alpha", country="US") for i in (1, 2, 3)],
+        details_by_id={
+            i: FieldDetailCandidate(id=i, name="Alpha", country="US") for i in (1, 2, 3)
+        },
+    )
+
+    response = await matching.link_all(
+        client, apply_merges=True, page_size=200, initiated_by="Tester"
+    )
+
+    assert response.resources_failed == 1
+    assert response.match_groups == [[1, 2]]
+    assert response.merge_candidates_created == 1
+    assert response.merge_candidates_skipped == 0
+    # (1,2) created, (1,3) raised and aborted the block; (2,3) never attempted.
+    assert client.create_calls == [[1, 2], [1, 3]]
+
+
 @pytest.mark.anyio
 async def test_link_all_does_not_swallow_programming_errors() -> None:
     # A KeyError is a bug, not a transient failure: it must abort the run rather

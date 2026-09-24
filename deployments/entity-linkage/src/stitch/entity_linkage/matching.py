@@ -198,9 +198,11 @@ async def link_all(
 ) -> BulkLinkResponse:
     """Run the bounded matcher over every resource, streaming ids page by page.
 
-    Groups are de-duplicated by fingerprint across the run, so each block is
-    submitted at most once even though every member rediscovers it. Members of an
-    already-formed block are skipped without re-searching.
+    Each same-name+country block is expanded into its pairwise candidates (a 3+
+    block is never submitted as a single multi-member candidate). Pairs are
+    de-duplicated by fingerprint across the run, so each pair is submitted at most
+    once even though every block member rediscovers it. Members of an
+    already-processed block are skipped without re-searching.
     """
     # Only needed when we will actually POST; skip the (currently unpaginated)
     # candidate-list fetch entirely on a dry run.
@@ -235,8 +237,11 @@ async def link_all(
             processed_ids.update(matched)
 
             # Never submit a 3+ member candidate: offer the block as its pairwise
-            # candidates, each deduped and counted independently.
-            handled: list[tuple[list[int], bool, bool]] = []
+            # candidates, each deduped, submitted, and recorded independently.
+            # Recording each pair as it succeeds (rather than deferring the whole
+            # block) means a later pair's failure counts only that pair as failed
+            # and leaves already-created pairs counted and in match_groups -- their
+            # candidates really exist in the queue.
             for pair in pairwise_candidates(matched):
                 fingerprint = merge_fingerprint(pair)
                 if fingerprint in submitted_fingerprints:
@@ -248,21 +253,15 @@ async def link_all(
                     known_existing=known_existing,
                 )
                 submitted_fingerprints.add(fingerprint)
-                handled.append((list(pair), was_created, was_skipped))
+                pair_candidates.append(list(pair))
+                if was_created:
+                    created += 1
+                elif was_skipped:
+                    skipped += 1
         except (StitchAPIError, httpx.HTTPError, OSError) as exc:
             failed += 1
             logger.warning("Skipping resource %s after error: %s", candidate.id, exc)
             continue
-
-        # Record pairs only once they have been handled without error, so
-        # match_groups reflects successfully processed pairs rather than ones
-        # whose submission raised.
-        for pair, was_created, was_skipped in handled:
-            pair_candidates.append(pair)
-            if was_created:
-                created += 1
-            elif was_skipped:
-                skipped += 1
 
     return BulkLinkResponse(
         initiated_by=initiated_by,
