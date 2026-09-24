@@ -419,10 +419,23 @@ jobs:
       # Only the production release stays warm; everything else scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.always-on }}
 
+  preflight-etl-token:
+    name: "Preflight ETL token"
+    if: ${{ needs.resolve-context.outputs.deployment-lane != 'development' }}
+    needs: [resolve-context]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-context.outputs.deployment-lane }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check downstream token permissions
+        run: python .github/scripts/preflight_downstream_token.py
+        env:
+          CURRENT_TOKEN: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
+
   deploy-etl:
     name: "Deploy ETL"
     if: ${{ needs.resolve-context.outputs.deployment-lane != 'development' }}
-    needs: [resolve-context, lane-config-validate, deploy-api]
+    needs: [resolve-context, lane-config-validate, deploy-api, preflight-etl-token]
     uses: ./.github/workflows/deploy-container.yml
     secrets:
       azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
