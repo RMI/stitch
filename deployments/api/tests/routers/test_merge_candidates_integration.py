@@ -342,6 +342,43 @@ class TestMergeCandidateDetailIntegration:
         assert dropped.status_code == 404, dropped.text
 
     @pytest.mark.anyio
+    async def test_three_way_candidate_dedupes_merged_members(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        # A 3-way A+B+C where A+B is approved: A and B both collapse to D, so the
+        # candidate must dedupe to D+C without tripping the
+        # (merge_candidate_id, resource_id) unique constraint, and stay approvable.
+        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
+        id_c = await _create_resource(
+            integration_client, og_create_res_fact, "Safaniya"
+        )
+        candidate_abc = await _create_candidate(integration_client, [id_a, id_b, id_c])
+        candidate_ab = await _create_candidate(integration_client, [id_a, id_b])
+
+        approve = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{candidate_ab}/approve",
+        )
+        assert approve.status_code == 200, approve.text
+        merged_d = approve.json()["merged_resource_id"]
+
+        resp = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_abc}"
+        )
+        assert resp.status_code == 200, resp.text
+        # A and B collapsed to a single D member; C is preserved.
+        assert resp.json()["status"] == "PENDING"
+        assert resp.json()["resource_ids"] == [merged_d, id_c]
+
+        approve_abc = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{candidate_abc}/approve",
+        )
+        assert approve_abc.status_code == 200, approve_abc.text
+        assert approve_abc.json()["merged_resource_id"] is not None
+
+    @pytest.mark.anyio
     async def test_composite_resource_matches_when_winners_agree(
         self,
         integration_client: AsyncClient,

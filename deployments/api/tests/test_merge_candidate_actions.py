@@ -348,9 +348,10 @@ async def test_reroute_dedupes_when_candidate_holds_multiple_merged_ids(user):
         exclude_candidate_id=7,
     )
 
-    # The second merged-away member (position 1) is the dropped duplicate.
-    assert len(session.deleted) == 1
-    assert session.deleted[0].position == 1
+    # The second merged-away member (position 1) is the dropped duplicate; it is
+    # removed from the collection (delete-orphan), not deleted through the session.
+    assert [(i.resource_id, i.position) for i in other.items] == [(31, 0), (20, 2)]
+    assert session.deleted == []
     assert other.fingerprint == "20:31"
     assert session.flush_calls == 1
 

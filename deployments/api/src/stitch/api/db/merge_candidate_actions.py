@@ -352,7 +352,9 @@ async def _reroute_pending_candidates(
         for item in sorted(candidate.items, key=lambda i: i.position):
             target = new_id if item.resource_id in merged_away else item.resource_id
             if target in seen_ids:
-                await session.delete(item)
+                # Removing from the delete-orphan collection deletes the row on
+                # flush and keeps candidate.items consistent in memory.
+                candidate.items.remove(item)
                 continue
             item.resource_id = target
             seen_ids.add(target)
