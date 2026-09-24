@@ -342,6 +342,42 @@ class TestMergeCandidateDetailIntegration:
         assert dropped.status_code == 404, dropped.text
 
     @pytest.mark.anyio
+    async def test_three_way_candidate_that_also_collides_is_dropped(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        # Edge: a candidate that both dedupes an item (3-way A+B+C -> D+C) AND
+        # collides with an earlier-rerouted candidate (A+C -> D+C). The 3-way is
+        # processed second, so it both removes an orphan item and is deleted in the
+        # same flush -- this must not error.
+        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
+        id_c = await _create_resource(
+            integration_client, og_create_res_fact, "Safaniya"
+        )
+        candidate_ac = await _create_candidate(integration_client, [id_a, id_c])
+        candidate_abc = await _create_candidate(integration_client, [id_a, id_b, id_c])
+        candidate_ab = await _create_candidate(integration_client, [id_a, id_b])
+
+        approve = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{candidate_ab}/approve",
+        )
+        assert approve.status_code == 200, approve.text
+        merged_d = approve.json()["merged_resource_id"]
+
+        survivor = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_ac}"
+        )
+        assert survivor.status_code == 200, survivor.text
+        assert survivor.json()["resource_ids"] == [merged_d, id_c]
+
+        dropped = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_abc}"
+        )
+        assert dropped.status_code == 404, dropped.text
+
+    @pytest.mark.anyio
     async def test_three_way_candidate_dedupes_merged_members(
         self,
         integration_client: AsyncClient,
