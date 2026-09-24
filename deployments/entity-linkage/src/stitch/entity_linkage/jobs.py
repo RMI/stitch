@@ -54,7 +54,8 @@ class JobManager:
     """Single-job, in-memory run manager.
 
     State is lost on restart and concurrent runs are rejected. The run body is
-    supplied per start as a zero-arg coroutine, so this manager is generic.
+    supplied per start as a coroutine that receives the live ``JobRecord``, so it
+    can publish progress onto the record while it runs; this manager stays generic.
     """
 
     def __init__(self) -> None:

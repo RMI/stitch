@@ -54,6 +54,17 @@ const RUNNING_NEAR_COMPLETE_RECORD = {
   },
 };
 
+const RUNNING_AT_TOTAL_RECORD = {
+  ...RUNNING_WITH_PROGRESS_RECORD,
+  progress: {
+    ...RUNNING_WITH_PROGRESS_RECORD.progress,
+    // Final 100-boundary of a run whose size is a multiple of 100: scanned == total
+    // while still running. Stays determinate, clamped to 99% (not a false 100%).
+    resources_scanned: 3000,
+    total_resources: 3000,
+  },
+};
+
 const RUNNING_OVER_TOTAL_RECORD = {
   ...RUNNING_WITH_PROGRESS_RECORD,
   progress: {
@@ -258,6 +269,39 @@ describe("EntityLinkagePage", () => {
     });
 
     // 9951/10000 floors to 99, not 100, while still running.
+    const bar = screen.getByRole("progressbar", {
+      name: "Linkage run progress",
+    });
+    expect(bar).toHaveAttribute("aria-valuenow", "99");
+    expect(screen.getByText("99%")).toBeInTheDocument();
+    expect(screen.queryByText("100%")).not.toBeInTheDocument();
+  });
+
+  it("stays determinate at 99% when scanned equals total (still running)", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, options) => {
+      if (String(url) === START_URL && options?.method === "POST") {
+        return jsonResponse(202, {
+          job_id: "job-1",
+          state: "running",
+          started_at: "2026-06-11T10:00:00Z",
+          initiated_by: "Test User",
+        });
+      }
+      return jsonResponse(200, RUNNING_AT_TOTAL_RECORD);
+    });
+
+    renderWithQueryClient(<EntityLinkagePage />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Start run" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Refresh status" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Processing 3,000 of 3,000/)).toBeInTheDocument();
+    });
+
+    // scanned == total while running: determinate, clamped to 99%, never 100%.
     const bar = screen.getByRole("progressbar", {
       name: "Linkage run progress",
     });

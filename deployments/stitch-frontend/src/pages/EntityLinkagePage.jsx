@@ -95,13 +95,16 @@ function LinkProgressView({ progress }) {
     typeof progress?.total_resources === "number"
       ? progress.total_resources
       : null;
-  // The total is a start-of-run snapshot, so on a long run a growing dataset can
-  // push scanned to or past it while the pass is still going. Treat that (and an
-  // unknown total) as indeterminate rather than showing a stuck "100%".
-  const hasReliableTotal = total !== null && total > 0 && scanned < total;
-  // Floor, not round: rounding would show 100% while the run is still on its
-  // last ~0.5% of resources. Floor keeps it at 99% until the run is truly done.
-  const percent = hasReliableTotal ? Math.floor((scanned / total) * 100) : null;
+  // The total is a start-of-run snapshot. Only scanned > total means it went
+  // stale (dataset grew); equality is normal near the end of a run, so keep it
+  // determinate and treat only genuine overshoot (and an unknown total) as
+  // indeterminate rather than showing a stuck/false "100%".
+  const hasReliableTotal = total !== null && total > 0 && scanned <= total;
+  // Floor, not round; and clamp to 99, since this bar only shows while running so
+  // it should never read a "done"-looking 100%.
+  const percent = hasReliableTotal
+    ? Math.min(99, Math.floor((scanned / total) * 100))
+    : null;
   const updatedAt = formatTimestamp(progress?.updated_at);
 
   return (

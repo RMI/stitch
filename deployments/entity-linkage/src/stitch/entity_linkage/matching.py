@@ -226,6 +226,12 @@ async def link_all(
             )
         )
 
+    # Publish a 0/total snapshot up front so a poller sees a denominator (and any
+    # progress at all) before the 100th resource -- and, for a run shorter than
+    # one throttle window, at all, since the state flips to succeeded right after
+    # the final snapshot with no yield in between.
+    emit_progress()
+
     async for candidate in client.iter_oil_gas_fields(page_size=page_size):
         resources_scanned += 1
         if resources_scanned % PROGRESS_UPDATE_EVERY == 0:

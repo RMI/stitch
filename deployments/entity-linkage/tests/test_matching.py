@@ -416,8 +416,9 @@ async def test_link_all_does_not_swallow_programming_errors() -> None:
 
 @pytest.mark.anyio
 async def test_link_all_reports_progress_via_callback() -> None:
-    # With fewer resources than PROGRESS_UPDATE_EVERY, only the final snapshot is
-    # emitted; it must carry the exact totals and the fetched denominator.
+    # With fewer resources than PROGRESS_UPDATE_EVERY, an initial 0 snapshot and a
+    # final snapshot are emitted; the final must carry the exact totals and the
+    # fetched denominator.
     client = FakeMatchingClient(
         items=[
             FieldCandidate(id=1, name="Alpha", country="US"),
@@ -441,6 +442,9 @@ async def test_link_all_reports_progress_via_callback() -> None:
     )
 
     assert snapshots, "expected at least a final progress snapshot"
+    # An up-front 0/total snapshot gives pollers a denominator immediately.
+    assert snapshots[0].resources_scanned == 0
+    assert snapshots[0].total_resources == 3
     final = snapshots[-1]
     assert final.resources_scanned == 3
     assert final.total_resources == 3
@@ -477,12 +481,13 @@ async def test_link_all_emits_progress_mid_run() -> None:
         on_progress=snapshots.append,
     )
 
-    # Two throttled emits (at 100 and 200) plus the final snapshot at 205.
-    assert len(snapshots) >= 3
+    # Initial 0 snapshot, two throttled emits (100, 200), and the final one (205).
+    assert len(snapshots) >= 4
     scanned_values = [s.resources_scanned for s in snapshots]
     assert scanned_values == sorted(scanned_values)
     assert len(set(scanned_values)) == len(scanned_values)
-    assert scanned_values[0] == matching.PROGRESS_UPDATE_EVERY
+    assert scanned_values[0] == 0
+    assert matching.PROGRESS_UPDATE_EVERY in scanned_values
     assert snapshots[-1].resources_scanned == count
     # Denominator is fetched once and carried on every snapshot.
     assert client.total_calls == 1
