@@ -21,7 +21,9 @@ function getMatchGroups(result) {
 function formatTimestamp(value) {
   if (!value) return null;
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toLocaleTimeString();
+  // Date + time, not time alone: a linkage pass can span more than a day, so a
+  // bare time would be ambiguous across midnight (STIT-740).
+  return Number.isNaN(date.getTime()) ? null : date.toLocaleString();
 }
 
 function getResultDetails(result) {
