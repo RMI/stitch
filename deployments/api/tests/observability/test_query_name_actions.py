@@ -2,11 +2,18 @@
 ``query_name`` labels.
 
 The unit tests in ``test_query_timing.py`` exercise ``named_query`` around raw
-statements; these drive the real endpoints through the router → action → engine
-path so a typo in a label (e.g. ``resources.count``) or a misplaced scope is
+statements; these drive the real endpoints and action functions through the
+router / action / engine path so a typo in a label or a misplaced scope is
 caught. Query timing is registered on the integration engine with
 ``log_all_queries=True`` and the sink is captured, so every statement a request
 runs is inspected.
+
+Assertions compare the *exact* set of labels an operation emits (not just a
+subset), so a secondary statement that carries an unexpected label -- or a scope
+that leaks onto the wrong query -- fails the test. Unlabeled statements
+(connection setup, transaction control, ORM-internal reads that legitimately run
+outside any ``named_query`` scope) are excluded: the label is optional by design,
+and asserting their absence would just pin SQLite/driver noise.
 """
 
 import pytest
@@ -41,11 +48,20 @@ def captured_query_events(integration_engine, monkeypatch) -> list[dict]:
     return events
 
 
-def _query_names(events: list[dict]) -> set[str]:
+def _labels(events: list[dict]) -> set[str]:
+    """The set of query_name labels present among captured events."""
     return {event["query_name"] for event in events if "query_name" in event}
 
 
-class TestActionQueryLabels:
+def _assert_labels(events: list[dict], expected: set[str]) -> None:
+    """Assert the labeled events are *exactly* ``expected`` (no missing/extra labels)."""
+    actual = _labels(events)
+    assert actual == expected, f"unexpected labels: {actual ^ expected}"
+
+
+class TestEndpointQueryLabels:
+    """Drive the real HTTP read endpoints and assert the exact labels each emits."""
+
     @pytest.mark.anyio
     async def test_list_endpoint_labels(
         self,
@@ -64,12 +80,10 @@ class TestActionQueryLabels:
         response = await integration_client.get("/oil-gas-fields/")
         assert response.status_code == 200, response.text
 
-        names = _query_names(captured_query_events)
-        assert {
-            "resources.count",
-            "resources.list_ids",
-            "resources.list_hydrate",
-        } <= names
+        _assert_labels(
+            captured_query_events,
+            {"resources.count", "resources.list_ids", "resources.list_hydrate"},
+        )
 
     @pytest.mark.anyio
     async def test_filter_options_endpoint_labels(
@@ -77,11 +91,11 @@ class TestActionQueryLabels:
         integration_client: AsyncClient,
         captured_query_events: list[dict],
     ):
-        # filter-options returns every filterable field in one query.
+        # filter-options returns every filterable field in one combined query.
         response = await integration_client.get("/oil-gas-fields/filter-options")
         assert response.status_code == 200, response.text
 
-        assert "resources.filter_options" in _query_names(captured_query_events)
+        _assert_labels(captured_query_events, {"resources.filter_options"})
 
     @pytest.mark.anyio
     async def test_detail_endpoint_labels(
@@ -101,10 +115,10 @@ class TestActionQueryLabels:
         response = await integration_client.get(f"/oil-gas-fields/{created_id}")
         assert response.status_code == 200, response.text
 
-        # get_resolved -> resolve_root_id (resources.resolve_root) then get
-        # (resources.detail); assert both, so the secondary statement is covered.
-        names = _query_names(captured_query_events)
-        assert {"resources.resolve_root", "resources.detail"} <= names
+        # get_resolved -> resolve_root_id then get; both statements labeled.
+        _assert_labels(
+            captured_query_events, {"resources.resolve_root", "resources.detail"}
+        )
 
 
 async def _attach_source(
@@ -128,16 +142,16 @@ async def _attach_source(
 
 
 class TestActionCallSiteLabels:
-    """Drive the DB action functions directly and assert the exact labels they emit.
+    """Call the DB action functions directly and assert the exact labels each emits.
 
-    The endpoint tests above cover the read paths; these cover the remaining
-    call sites (write paths, sources, merge candidates, and every third-level
-    sub-label) so a typo'd or misplaced ``named_query`` string fails a test
-    instead of shipping a mislabeled event.
+    Each operation is captured on its own (clear -> call -> assert exact set) so
+    the fan-out of every action -- including nested labeled helpers -- is pinned,
+    covering the write paths, sources.*, merge_candidates.*, and every
+    third-level sub-label that the endpoint tests above do not reach.
     """
 
     @pytest.mark.anyio
-    async def test_resource_action_labels(
+    async def test_resource_read_labels(
         self,
         seeded_integration_session: AsyncSession,
         test_user: User,
@@ -152,24 +166,32 @@ class TestActionCallSiteLabels:
 
         captured_query_events.clear()
         await resource_actions.query(session, OGFieldQueryParams())
+        _assert_labels(
+            captured_query_events,
+            {"resources.count", "resources.list_ids", "resources.list_hydrate"},
+        )
+
+        captured_query_events.clear()
         await resource_actions.filter_options(session)
+        _assert_labels(captured_query_events, {"resources.filter_options"})
+
+        captured_query_events.clear()
         await resource_actions.get_resolved(session, created.id)
+        _assert_labels(
+            captured_query_events, {"resources.resolve_root", "resources.detail"}
+        )
+
+        captured_query_events.clear()
         await resource_actions.field_source_values(
             session, created.id, next(iter(ATTRIBUTE_NAMES))
         )
-
-        assert {
-            "resources.count",
-            "resources.list_ids",
-            "resources.list_hydrate",
-            "resources.filter_options",
-            "resources.resolve_root",
-            "resources.detail",
-            "resources.field_source_values",
-        } <= _query_names(captured_query_events)
+        _assert_labels(
+            captured_query_events,
+            {"resources.resolve_root", "resources.field_source_values"},
+        )
 
     @pytest.mark.anyio
-    async def test_create_and_merge_labels(
+    async def test_create_label(
         self,
         seeded_integration_session: AsyncSession,
         test_user: User,
@@ -179,27 +201,39 @@ class TestActionCallSiteLabels:
         session = seeded_integration_session
 
         captured_query_events.clear()
+        await resource_actions.create(
+            session, test_user, og_create_res_fact(name="Created")
+        )
+        # create() with source_data fans out to the source helpers.
+        _assert_labels(
+            captured_query_events,
+            {"resources.create", "sources.get_or_create", "sources.attach"},
+        )
+
+    @pytest.mark.anyio
+    async def test_merge_labels(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+        og_create_res_fact,
+        captured_query_events: list[dict],
+    ):
+        session = seeded_integration_session
         first = await resource_actions.create(
             session, test_user, og_create_res_fact(name="Merge A")
         )
         second = await resource_actions.create(
             session, test_user, og_create_res_fact(name="Merge B")
         )
-        # create (with source_data) fans out to the source helpers too.
-        assert {
-            "resources.create",
-            "sources.get_or_create",
-            "sources.attach",
-        } <= _query_names(captured_query_events)
+        await session.commit()
 
         captured_query_events.clear()
         await resource_actions.apply_resource_merge(
             session, test_user, [first.id, second.id]
         )
-        assert {
-            "resources.merge.load",
-            "resources.merge.apply",
-        } <= _query_names(captured_query_events)
+        _assert_labels(
+            captured_query_events, {"resources.merge.load", "resources.merge.apply"}
+        )
 
     @pytest.mark.anyio
     async def test_set_field_source_priority_labels(
@@ -233,11 +267,18 @@ class TestActionCallSiteLabels:
             )
             await fresh.commit()
 
-        assert {
-            "resources.set_field_source_priority.load",
-            "resources.set_field_source_priority.candidates",
-            "resources.set_field_source_priority.persist",
-        } <= _query_names(captured_query_events)
+        # The action re-prioritizes, then returns field_source_values(), which
+        # itself resolves the root and re-reads the candidates.
+        _assert_labels(
+            captured_query_events,
+            {
+                "resources.set_field_source_priority.load",
+                "resources.set_field_source_priority.candidates",
+                "resources.set_field_source_priority.persist",
+                "resources.resolve_root",
+                "resources.field_source_values",
+            },
+        )
 
     @pytest.mark.anyio
     async def test_source_action_labels(
@@ -258,30 +299,40 @@ class TestActionCallSiteLabels:
         created = await source_actions.create_source(
             session, test_user, source_maker(managed=False, source="gem")
         )
+        _assert_labels(captured_query_events, {"sources.create"})
+
+        captured_query_events.clear()
         await source_actions.create_and_attach_sources(
             session, test_user, [source_maker(managed=False, source="rmi")], parent.id
         )
+        _assert_labels(captured_query_events, {"sources.create_and_attach"})
+
+        captured_query_events.clear()
         await source_actions.get_or_create_sources(
             session, test_user, [source_maker(managed=False, source="wm")]
         )
+        _assert_labels(captured_query_events, {"sources.get_or_create"})
+
+        captured_query_events.clear()
         await source_actions.attach_sources_to_resource(
             session, parent.id, [source_maker(managed=False, source="bc")], test_user
         )
-        await source_actions.get_source(session, created.id)
-        await source_actions.get_sources(session, [created.id])
-        await source_actions.query(session, OGFieldQueryParams())
+        _assert_labels(captured_query_events, {"sources.attach"})
 
-        assert {
-            "sources.create",
-            "sources.create_and_attach",
-            "sources.get_or_create",
-            "sources.attach",
-            "sources.detail",
-            "sources.get_by_ids",
-            "sources.count",
-            "sources.list_ids",
-            "sources.list_hydrate",
-        } <= _query_names(captured_query_events)
+        captured_query_events.clear()
+        await source_actions.get_source(session, created.id)
+        _assert_labels(captured_query_events, {"sources.detail"})
+
+        captured_query_events.clear()
+        await source_actions.get_sources(session, [created.id])
+        _assert_labels(captured_query_events, {"sources.get_by_ids"})
+
+        captured_query_events.clear()
+        await source_actions.query(session, OGFieldQueryParams())
+        _assert_labels(
+            captured_query_events,
+            {"sources.count", "sources.list_ids", "sources.list_hydrate"},
+        )
 
     @pytest.mark.anyio
     async def test_merge_candidate_action_labels(
@@ -308,15 +359,50 @@ class TestActionCallSiteLabels:
                 resource_ids=[resources[0].id, resources[1].id]
             ),
         )
+        _assert_labels(
+            captured_query_events,
+            {
+                "merge_candidates.create.load_resources",
+                "merge_candidates.create.check_existing",
+                "merge_candidates.create.persist",
+            },
+        )
+
+        captured_query_events.clear()
         await mca.list_merge_candidates(session)
+        _assert_labels(captured_query_events, {"merge_candidates.list"})
+
+        captured_query_events.clear()
         await mca.get_merge_candidate(session, approved.id)
+        _assert_labels(
+            captured_query_events,
+            {
+                "merge_candidates.detail.load",
+                "merge_candidates.detail.coalesce",
+                "merge_candidates.detail.default_priority",
+            },
+        )
+
+        captured_query_events.clear()
         await mca.approve_merge_candidate(
             session,
             test_user,
             approved.id,
             MergeCandidateReviewRequest(review_notes="ok"),
         )
+        # approve delegates the actual merge to apply_resource_merge.
+        _assert_labels(
+            captured_query_events,
+            {
+                "merge_candidates.approve.load",
+                "merge_candidates.approve.load_resources",
+                "merge_candidates.approve.persist",
+                "resources.merge.load",
+                "resources.merge.apply",
+            },
+        )
 
+        captured_query_events.clear()
         denied = await mca.create_merge_candidate(
             session,
             test_user,
@@ -330,21 +416,13 @@ class TestActionCallSiteLabels:
             denied.id,
             MergeCandidateReviewRequest(review_notes="no"),
         )
-
-        assert {
-            "merge_candidates.create.load_resources",
-            "merge_candidates.create.check_existing",
-            "merge_candidates.create.persist",
-            "merge_candidates.list",
-            "merge_candidates.detail.load",
-            "merge_candidates.detail.coalesce",
-            "merge_candidates.detail.default_priority",
-            "merge_candidates.approve.load",
-            "merge_candidates.approve.load_resources",
-            "merge_candidates.approve.persist",
-            "merge_candidates.deny.load",
-            "merge_candidates.deny.persist",
-            # approve delegates to apply_resource_merge
-            "resources.merge.load",
-            "resources.merge.apply",
-        } <= _query_names(captured_query_events)
+        _assert_labels(
+            captured_query_events,
+            {
+                "merge_candidates.create.load_resources",
+                "merge_candidates.create.check_existing",
+                "merge_candidates.create.persist",
+                "merge_candidates.deny.load",
+                "merge_candidates.deny.persist",
+            },
+        )
