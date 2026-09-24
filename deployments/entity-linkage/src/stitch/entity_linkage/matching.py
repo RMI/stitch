@@ -20,6 +20,7 @@ page at a time, so it never materializes the whole table either.
 
 from __future__ import annotations
 
+import itertools
 import logging
 from collections.abc import Sequence
 
@@ -49,6 +50,19 @@ def merge_fingerprint(resource_ids: Sequence[int]) -> str:
     recognise groups that already exist in the candidate queue without a POST.
     """
     return ":".join(str(i) for i in sorted(set(resource_ids)))
+
+
+def pairwise_candidates(resource_ids: Sequence[int]) -> list[tuple[int, int]]:
+    """Break a match block into its pairwise (2-member) candidates.
+
+    Every member of a block shares the same normalized name and country, so each
+    unordered pair is itself a valid duplicate candidate. A 2-member block yields
+    its single pair; an N-member block yields every ``C(N, 2)`` pair. The matcher
+    never emits a candidate with three or more members: a 3+ block is offered as a
+    set of pairwise candidates the reviewer can approve or reject independently.
+    """
+    unique = sorted(set(resource_ids))
+    return list(itertools.combinations(unique, 2))
 
 
 async def find_match_group_for_resource(
@@ -131,7 +145,12 @@ async def link_resource(
     apply_merges: bool,
     known_existing: set[str] | None = None,
 ) -> ResourceLinkResult:
-    """Match a single resource and optionally submit its merge candidate."""
+    """Match a single resource and optionally submit its merge candidate(s).
+
+    A 3+ member block is submitted as its pairwise candidates rather than a single
+    multi-member one, so ``merge_candidate_created``/``skipped_existing`` report
+    whether *any* pair was created/skipped. ``matched_ids`` stays the full block.
+    """
     matched = await find_match_group_for_resource(client, resource_id)
     if not matched:
         return ResourceLinkResult(
@@ -140,17 +159,22 @@ async def link_resource(
             merge_candidate_created=False,
             skipped_existing=False,
         )
-    created, skipped = await _submit_group(
-        client,
-        matched,
-        apply_merges=apply_merges,
-        known_existing=known_existing,
-    )
+    created_any = False
+    skipped_any = False
+    for pair in pairwise_candidates(matched):
+        created, skipped = await _submit_group(
+            client,
+            list(pair),
+            apply_merges=apply_merges,
+            known_existing=known_existing,
+        )
+        created_any = created_any or created
+        skipped_any = skipped_any or skipped
     return ResourceLinkResult(
         resource_id=resource_id,
         matched_ids=matched,
-        merge_candidate_created=created,
-        skipped_existing=skipped,
+        merge_candidate_created=created_any,
+        skipped_existing=skipped_any,
     )
 
 
@@ -182,7 +206,8 @@ async def link_all(
     # candidate-list fetch entirely on a dry run.
     known_existing = await _existing_fingerprints(client) if apply_merges else None
 
-    groups_by_fingerprint: dict[str, list[int]] = {}
+    submitted_fingerprints: set[str] = set()
+    pair_candidates: list[list[int]] = []
     processed_ids: set[int] = set()
     resources_scanned = 0
     created = 0
@@ -205,38 +230,45 @@ async def link_all(
                 continue
 
             # Mark members processed before submitting so they are not
-            # re-searched later even if the submit fails -- a failing block is
-            # counted once, not once per member.
+            # re-searched later even if a submit fails -- a failing block is
+            # handled once, not once per member.
             processed_ids.update(matched)
-            fingerprint = merge_fingerprint(matched)
-            if fingerprint in groups_by_fingerprint:
-                continue
 
-            was_created, was_skipped = await _submit_group(
-                client,
-                matched,
-                apply_merges=apply_merges,
-                known_existing=known_existing,
-            )
+            # Never submit a 3+ member candidate: offer the block as its pairwise
+            # candidates, each deduped and counted independently.
+            handled: list[tuple[list[int], bool, bool]] = []
+            for pair in pairwise_candidates(matched):
+                fingerprint = merge_fingerprint(pair)
+                if fingerprint in submitted_fingerprints:
+                    continue
+                was_created, was_skipped = await _submit_group(
+                    client,
+                    list(pair),
+                    apply_merges=apply_merges,
+                    known_existing=known_existing,
+                )
+                submitted_fingerprints.add(fingerprint)
+                handled.append((list(pair), was_created, was_skipped))
         except (StitchAPIError, httpx.HTTPError, OSError) as exc:
             failed += 1
             logger.warning("Skipping resource %s after error: %s", candidate.id, exc)
             continue
 
-        # Record the group only once it has been handled without error, so
-        # match_groups reflects successfully processed blocks rather than ones
+        # Record pairs only once they have been handled without error, so
+        # match_groups reflects successfully processed pairs rather than ones
         # whose submission raised.
-        groups_by_fingerprint[fingerprint] = matched
-        if was_created:
-            created += 1
-        elif was_skipped:
-            skipped += 1
+        for pair, was_created, was_skipped in handled:
+            pair_candidates.append(pair)
+            if was_created:
+                created += 1
+            elif was_skipped:
+                skipped += 1
 
     return BulkLinkResponse(
         initiated_by=initiated_by,
         apply_merges=apply_merges,
         resources_scanned=resources_scanned,
-        match_groups=list(groups_by_fingerprint.values()),
+        match_groups=pair_candidates,
         merge_candidates_created=created,
         merge_candidates_skipped=skipped,
         resources_failed=failed,
