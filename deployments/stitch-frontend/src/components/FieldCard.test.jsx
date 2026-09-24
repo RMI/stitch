@@ -115,6 +115,54 @@ describe("FieldCard expandable behavior", () => {
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
+  it("rotates one marker rather than swapping glyphs", () => {
+    // Two glyphs of different optical widths nudged the layout on toggle and
+    // read as a flicker; one rotating marker shows what changed (STIT-748).
+    const { rerender } = render(
+      <FieldCard label="Basin" value="Foo Basin" expandable isOpen={false} />,
+    );
+    expect(screen.getByTestId("disclosure-marker")).not.toHaveClass(
+      "rotate-90",
+    );
+
+    rerender(<FieldCard label="Basin" value="Foo Basin" expandable isOpen />);
+    expect(screen.getByTestId("disclosure-marker")).toHaveClass("rotate-90");
+  });
+
+  it("renders the marker at a legible size", () => {
+    render(
+      <FieldCard label="Basin" value="Foo Basin" expandable isOpen={false} />,
+    );
+    // The reported problem was a ~12px glyph whose ink read far smaller; this
+    // is a 12px box with the mark filling most of it.
+    expect(screen.getByTestId("disclosure-marker")).toHaveClass("h-3", "w-3");
+  });
+
+  it("centres the triangle in its viewBox so it pivots about its middle", () => {
+    // A marker whose ink is off-centre swings through an arc when rotated,
+    // which is what the text glyph did. Keep the path symmetric about the
+    // viewBox centre.
+    render(
+      <FieldCard label="Basin" value="Foo Basin" expandable isOpen={false} />,
+    );
+    const marker = screen.getByTestId("disclosure-marker");
+    const [, , viewBoxWidth, viewBoxHeight] = marker
+      .getAttribute("viewBox")
+      .split(/\s+/)
+      .map(Number);
+
+    const coords = marker
+      .querySelector("path")
+      .getAttribute("d")
+      .match(/-?\d+(?:\.\d+)?/g)
+      .map(Number);
+    const xs = coords.filter((_, i) => i % 2 === 0);
+    const ys = coords.filter((_, i) => i % 2 === 1);
+
+    expect((Math.min(...xs) + Math.max(...xs)) / 2).toBe(viewBoxWidth / 2);
+    expect((Math.min(...ys) + Math.max(...ys)) / 2).toBe(viewBoxHeight / 2);
+  });
+
   it("renders children only when expandable and open", () => {
     const { rerender } = render(
       <FieldCard label="Basin" value="Foo Basin" expandable isOpen={false}>

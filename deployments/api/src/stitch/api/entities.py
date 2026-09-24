@@ -100,18 +100,26 @@ SortableField = Literal[
 
 
 class OGFieldFilterParams(BaseModel):
+    """Exact-match filters for the resource list.
+
+    The fields the UI offers as multi-select dropdowns take a list: repeat the
+    param once per value (``?country=NOR&country=SAU``) to match any of them.
+    A single value still works and arrives as a one-item list, so existing
+    callers and bookmarked URLs are unaffected.
+    """
+
     q: str | None = None
     id: int | None = None
     name: str | None = None
     name_local: str | None = None
-    basin: str | None = None
-    state_province: str | None = None
-    region: str | None = None
-    country: str | None = None
-    field_status: FieldStatus | None = None
+    basin: list[str] | None = None
+    state_province: list[str] | None = None
+    region: list[str] | None = None
+    country: list[str] | None = None
+    field_status: list[FieldStatus] | None = None
     location_type: LocationType | None = None
     production_conventionality: ProductionConventionality | None = None
-    primary_hydrocarbon_group: PrimaryHydrocarbonGroup | None = None
+    primary_hydrocarbon_group: list[PrimaryHydrocarbonGroup] | None = None
 
 
 class OGFieldSortParams(BaseModel):

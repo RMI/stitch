@@ -66,6 +66,20 @@ EXACT_MATCH_FIELDS: Final[tuple[str, ...]] = (
 _HEADER_SORT_FIELDS: Final[frozenset[str]] = frozenset({"id", "source", "resource_id"})
 
 
+def _filter_values(params: OGFieldQueryParams, field_name: str) -> list[Any]:
+    """The values an exact-match filter is set to, as a list.
+
+    Multi-select fields arrive as lists; the rest are scalars, returned as a
+    list of one so callers need only one shape. An unset filter and an empty
+    list both come back empty, which means "not filtering on this field" — an
+    empty list must never reach SQL as `IN ()`, which matches nothing.
+    """
+    value = getattr(params, field_name, None)
+    if value is None:
+        return []
+    return list(value) if isinstance(value, list) else [value]
+
+
 def _participating_columns(params: OGFieldQueryParams) -> list[str]:
     """Value attributes the query actually touches -- the columns to pivot.
 
@@ -79,7 +93,7 @@ def _participating_columns(params: OGFieldQueryParams) -> list[str]:
         participating.append(params.sort_by)
 
     for field in EXACT_MATCH_FIELDS:
-        if getattr(params, field, None) is not None:
+        if _filter_values(params, field):
             participating.append(field)
 
     if params.q:
@@ -494,10 +508,12 @@ def _build_field_conditions(
         )
 
     for field_name in EXACT_MATCH_FIELDS:
-        value = getattr(params, field_name, None)
-        if value is None:
+        values = _filter_values(params, field_name)
+        if not values:
             continue
-        conditions.append(_require_column(cte, field_name) == value)
+        # IN over one value is the same predicate `== value` produced before, so
+        # single-valued filters are unchanged.
+        conditions.append(_require_column(cte, field_name).in_(values))
 
     return conditions
 
