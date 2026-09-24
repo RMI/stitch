@@ -18,6 +18,12 @@ function getMatchGroups(result) {
   return Array.isArray(result?.match_groups) ? result.match_groups : [];
 }
 
+function formatTimestamp(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toLocaleTimeString();
+}
+
 function getResultDetails(result) {
   if (!result || typeof result !== "object" || Array.isArray(result)) {
     return result;
@@ -78,6 +84,78 @@ function MatchGroupsSummary({ groups }) {
   );
 }
 
+// Expected-duration copy: the pass streams the whole dataset and routinely runs
+// long, so we set that expectation wherever a run is in progress (STIT-740).
+const RUN_DURATION_HINT =
+  "A full pass can take an hour or more on the production dataset.";
+
+function LinkProgressView({ progress }) {
+  const scanned =
+    typeof progress?.resources_scanned === "number"
+      ? progress.resources_scanned
+      : 0;
+  const total =
+    typeof progress?.total_resources === "number"
+      ? progress.total_resources
+      : null;
+  const percent =
+    total && total > 0
+      ? Math.min(100, Math.round((scanned / total) * 100))
+      : null;
+  const updatedAt = formatTimestamp(progress?.updated_at);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-sm font-medium text-ink">
+          {total !== null
+            ? `Processing ${scanned.toLocaleString()} of ${total.toLocaleString()}`
+            : `Processing ${scanned.toLocaleString()}…`}
+        </p>
+        {percent !== null && (
+          <span className="text-sm font-semibold text-ink-muted">
+            {percent}%
+          </span>
+        )}
+      </div>
+
+      <div
+        className="h-2 w-full overflow-hidden rounded-full bg-surface"
+        role="progressbar"
+        aria-label="Linkage run progress"
+        aria-valuenow={percent ?? undefined}
+        aria-valuemin={percent !== null ? 0 : undefined}
+        aria-valuemax={percent !== null ? 100 : undefined}
+      >
+        {percent !== null ? (
+          <div
+            className="h-full rounded-full bg-primary transition-[width] duration-500"
+            style={{ width: `${percent}%` }}
+          />
+        ) : (
+          // Total unknown: show an indeterminate bar rather than a false 0%.
+          <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
+        )}
+      </div>
+
+      <p className="text-xs text-ink-muted">
+        {formatCount(progress?.merge_candidates_created ?? 0, "candidate")}{" "}
+        created
+        {" · "}
+        {progress?.merge_candidates_skipped ?? 0} skipped
+        {" · "}
+        {progress?.resources_failed ?? 0} failed
+      </p>
+
+      {updatedAt && (
+        <p className="text-xs text-ink-muted">Last updated {updatedAt}</p>
+      )}
+
+      <p className="text-xs text-ink-muted">{RUN_DURATION_HINT}</p>
+    </div>
+  );
+}
+
 function RunResult({ record }) {
   if (!record) {
     return (
@@ -117,9 +195,14 @@ function RunResult({ record }) {
           </section>
         </>
       ) : record.state === "running" ? (
-        <p className="text-sm text-ink-muted">
-          Run in progress — status refreshes automatically.
-        </p>
+        record.progress ? (
+          <LinkProgressView progress={record.progress} />
+        ) : (
+          <p className="text-sm text-ink-muted">
+            Run in progress — status refreshes automatically.{" "}
+            {RUN_DURATION_HINT}
+          </p>
+        )
       ) : record.state === "failed" ? (
         <div className="rounded-md border border-danger/25 bg-danger-soft p-3 text-sm text-danger">
           {record.error || "Run failed."}

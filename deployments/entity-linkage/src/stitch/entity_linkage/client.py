@@ -75,6 +75,18 @@ class StitchApiClient:
         ):
             yield self._to_candidate(item)
 
+    async def get_oil_gas_fields_total(self) -> int | None:
+        """Total resource count, for use as a linkage-progress denominator.
+
+        Fetches a single-item page purely to read ``total_count``; the streaming
+        iterator used by the pass itself discards that field. Returns ``None`` if
+        the payload omits an integer count, so progress can still report a
+        numerator without a denominator.
+        """
+        payload = await self._client.list_oil_gas_fields_page(page=1, page_size=1)
+        total = payload.get("total_count")
+        return total if isinstance(total, int) else None
+
     async def list_merge_candidates(self) -> list[dict[str, Any]]:
         return await self._client.list_merge_candidates()
 

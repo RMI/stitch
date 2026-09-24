@@ -99,6 +99,24 @@ class BulkLinkResponse(BaseModel):
     resources_failed: int = 0
 
 
+class LinkProgress(BaseModel):
+    """In-flight progress of a running linkage pass.
+
+    Written onto the live job record as the pass streams resources, so a poller
+    can see how far along a multi-hour run is rather than only "running". Field
+    names mirror :class:`BulkLinkResponse` so the running view and the final
+    result read consistently. ``total_resources`` is ``None`` when the
+    denominator could not be fetched; percent is derived by the caller.
+    """
+
+    resources_scanned: int
+    total_resources: int | None
+    merge_candidates_created: int
+    merge_candidates_skipped: int
+    resources_failed: int
+    updated_at: datetime
+
+
 class PaginationParams(BaseModel):
     page: int = Field(1, ge=1)
     page_size: int = Field(50, ge=1, le=200)

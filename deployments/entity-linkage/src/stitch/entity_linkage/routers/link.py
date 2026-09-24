@@ -83,13 +83,14 @@ async def start_link_all(
     """
     initiated_by = user_label(auth_context.user)
 
-    async def run() -> BulkLinkResponse:
+    async def run(record: JobRecord) -> BulkLinkResponse:
         async with StitchApiClient() as client:
             return await matching.link_all(
                 client,
                 apply_merges=request.apply_merges,
                 page_size=request.page_size,
                 initiated_by=initiated_by,
+                on_progress=lambda progress: setattr(record, "progress", progress),
             )
 
     try:

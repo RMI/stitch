@@ -45,6 +45,9 @@ class FakeMatchingClient(AbstractAsyncContextManager["FakeMatchingClient"]):
         self.detail_calls.append(resource_id)
         return self.details_by_id[resource_id]
 
+    async def get_oil_gas_fields_total(self) -> int | None:
+        return len(self.items)
+
     async def iter_oil_gas_fields(
         self,
         *,
@@ -407,3 +410,39 @@ async def test_link_all_does_not_swallow_programming_errors() -> None:
         await matching.link_all(
             client, apply_merges=True, page_size=200, initiated_by="Tester"
         )
+
+
+@pytest.mark.anyio
+async def test_link_all_reports_progress_via_callback() -> None:
+    # With fewer resources than PROGRESS_UPDATE_EVERY, only the final snapshot is
+    # emitted; it must carry the exact totals and the fetched denominator.
+    client = FakeMatchingClient(
+        items=[
+            FieldCandidate(id=1, name="Alpha", country="US"),
+            FieldCandidate(id=2, name="alpha", country="US"),
+            FieldCandidate(id=3, name="Beta", country="CA"),
+        ],
+        details_by_id={
+            1: FieldDetailCandidate(id=1, name="Alpha", country="US"),
+            2: FieldDetailCandidate(id=2, name="alpha", country="US"),
+            3: FieldDetailCandidate(id=3, name="Beta", country="CA"),
+        },
+    )
+
+    snapshots: list = []
+    await matching.link_all(
+        client,
+        apply_merges=True,
+        page_size=200,
+        initiated_by="Tester",
+        on_progress=snapshots.append,
+    )
+
+    assert snapshots, "expected at least a final progress snapshot"
+    final = snapshots[-1]
+    assert final.resources_scanned == 3
+    assert final.total_resources == 3
+    assert final.merge_candidates_created == 1
+    assert final.merge_candidates_skipped == 0
+    assert final.resources_failed == 0
+    assert final.updated_at is not None
