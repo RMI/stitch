@@ -473,6 +473,45 @@ async def test_link_all_skips_known_existing_pair_within_multi_block() -> None:
     assert client.create_calls == [[1, 3], [2, 3]]
 
 
+@pytest.mark.anyio
+async def test_link_all_fans_larger_block_out_to_every_pair() -> None:
+    # A block larger than three still becomes strictly pairwise: a 4-member block
+    # yields all C(4, 2) = 6 pairs, never a 3+ member candidate.
+    client = _alpha_us_block([1, 2, 3, 4])
+
+    response = await matching.link_all(
+        client, apply_merges=True, page_size=200, initiated_by="Tester"
+    )
+
+    expected_pairs = [[1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]]
+    assert response.match_groups == expected_pairs
+    assert response.merge_candidates_created == 6
+    assert client.create_calls == expected_pairs
+    # Every emitted candidate is a pair -- the matcher never suggests 3+ members.
+    assert all(len(pair) == 2 for pair in response.match_groups)
+
+
+@pytest.mark.anyio
+async def test_link_all_pairs_do_not_dedupe_against_a_legacy_multi_candidate() -> None:
+    # A pre-existing multi (3+ member) candidate has a whole-block fingerprint
+    # ("1:2:3") that never matches a pair fingerprint, so the pairwise candidates
+    # for the same cluster are still emitted alongside it. This documents the
+    # accepted migration behavior (see PR reviewer notes).
+    client = _alpha_us_block([1, 2, 3])
+    client.existing_candidates = [
+        {"id": 99, "resource_ids": [1, 2, 3], "status": "PENDING"}
+    ]
+
+    response = await matching.link_all(
+        client, apply_merges=True, page_size=200, initiated_by="Tester"
+    )
+
+    assert response.match_groups == [[1, 2], [1, 3], [2, 3]]
+    assert response.merge_candidates_created == 3
+    assert response.merge_candidates_skipped == 0
+    assert client.create_calls == [[1, 2], [1, 3], [2, 3]]
+
+
 class _FailingCreateClient(FakeMatchingClient):
     """Client whose create raises for one specific pair of resource ids."""
 
