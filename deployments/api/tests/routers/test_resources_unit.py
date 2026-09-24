@@ -218,6 +218,47 @@ class TestGetAllResourcesUnit:
         assert params.limit == 10
 
 
+class TestListResourcesMultiValueFiltersUnit:
+    """A repeated filter param must reach the query as every value, not the last."""
+
+    @pytest.mark.anyio
+    async def test_repeated_filter_param_keeps_every_value(
+        self, async_client, mock_uow
+    ):
+        async def override_get_uow():
+            yield mock_uow
+
+        app.dependency_overrides[get_uow] = override_get_uow
+
+        with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
+            mock_repo.query = AsyncMock(return_value=([], 0))
+
+            response = await async_client.get(
+                "/oil-gas-fields/?country=NOR&country=SAU"
+            )
+
+        assert response.status_code == 200
+        params = mock_repo.query.call_args.kwargs["params"]
+        assert params.country == ["NOR", "SAU"]
+
+    @pytest.mark.anyio
+    async def test_single_filter_param_still_works(self, async_client, mock_uow):
+        """Old single-valued URLs and bookmarks keep working."""
+
+        async def override_get_uow():
+            yield mock_uow
+
+        app.dependency_overrides[get_uow] = override_get_uow
+
+        with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
+            mock_repo.query = AsyncMock(return_value=([], 0))
+
+            response = await async_client.get("/oil-gas-fields/?country=NOR")
+
+        assert response.status_code == 200
+        assert mock_repo.query.call_args.kwargs["params"].country == ["NOR"]
+
+
 class TestGetResourceFilterOptionsUnit:
     """Unit tests for GET /oil-gas-fields/filter-options endpoint."""
 
@@ -229,17 +270,31 @@ class TestGetResourceFilterOptionsUnit:
         app.dependency_overrides[get_uow] = override_get_uow
 
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
-            mock_repo.filter_options = AsyncMock(return_value=["CAN", "USA"])
-
-            response = await async_client.get(
-                "/oil-gas-fields/filter-options?field=country"
+            mock_repo.filter_options = AsyncMock(
+                return_value=dict(
+                    basin=["Permian"],
+                    country=["CAN", "USA"],
+                    field_status=[],
+                    primary_hydrocarbon_group=[],
+                    region=["North America"],
+                    state_province=["Alberta", "Texas"],
+                )
             )
 
+            response = await async_client.get("/oil-gas-fields/filter-options")
+
         assert response.status_code == 200
-        assert response.json() == {"field": "country", "values": ["CAN", "USA"]}
+        assert response.json() == {
+            "basin": ["Permian"],
+            "country": ["CAN", "USA"],
+            "field_status": [],
+            "primary_hydrocarbon_group": [],
+            "region": ["North America"],
+            "state_province": ["Alberta", "Texas"],
+        }
 
     @pytest.mark.anyio
-    async def test_passes_licensed_sources_and_source_filters(
+    async def test_passes_licensed_sources(
         self,
         async_client,
         mock_uow,
@@ -250,11 +305,18 @@ class TestGetResourceFilterOptionsUnit:
         app.dependency_overrides[get_uow] = override_get_uow
 
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
-            mock_repo.filter_options = AsyncMock(return_value=["CAN", "USA"])
-
-            response = await async_client.get(
-                "/oil-gas-fields/filter-options?field=country&source=gem&source=wm"
+            mock_repo.filter_options = AsyncMock(
+                return_value=dict(
+                    basin=[],
+                    country=["CAN", "USA"],
+                    field_status=[],
+                    primary_hydrocarbon_group=[],
+                    region=[],
+                    state_province=[],
+                )
             )
+
+            response = await async_client.get("/oil-gas-fields/filter-options")
 
         assert response.status_code == 200
         mock_repo.filter_options.assert_awaited_once()
@@ -262,5 +324,3 @@ class TestGetResourceFilterOptionsUnit:
         assert call_kwargs["licensed_sources"] == frozenset(
             {"rmi", "gem", "wm", "ccr", "alb", "bc", "llm"}
         )
-        assert call_kwargs["params"].field == "country"
-        assert call_kwargs["params"].source == ["gem", "wm"]

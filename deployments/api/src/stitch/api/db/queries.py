@@ -38,7 +38,7 @@ from stitch.api.db.model import (
     ResourceModel,
 )
 from stitch.api.db.model.oil_gas_field_source_value import value_attr_for
-from stitch.api.entities import OGFieldQueryParams
+from stitch.api.entities import FILTER_OPTION_FIELDS, OGFieldQueryParams
 from stitch.ogsi.model.types import OGSISrcKey
 
 # Single source of truth for the source-list field metadata. This is a shared
@@ -66,6 +66,20 @@ EXACT_MATCH_FIELDS: Final[tuple[str, ...]] = (
 _HEADER_SORT_FIELDS: Final[frozenset[str]] = frozenset({"id", "source", "resource_id"})
 
 
+def _filter_values(params: OGFieldQueryParams, field_name: str) -> list[Any]:
+    """The values an exact-match filter is set to, as a list.
+
+    Multi-select fields arrive as lists; the rest are scalars, returned as a
+    list of one so callers need only one shape. An unset filter and an empty
+    list both come back empty, which means "not filtering on this field" — an
+    empty list must never reach SQL as `IN ()`, which matches nothing.
+    """
+    value = getattr(params, field_name, None)
+    if value is None:
+        return []
+    return list(value) if isinstance(value, list) else [value]
+
+
 def _participating_columns(params: OGFieldQueryParams) -> list[str]:
     """Value attributes the query actually touches -- the columns to pivot.
 
@@ -79,13 +93,26 @@ def _participating_columns(params: OGFieldQueryParams) -> list[str]:
         participating.append(params.sort_by)
 
     for field in EXACT_MATCH_FIELDS:
-        if getattr(params, field, None) is not None:
+        if _filter_values(params, field):
             participating.append(field)
 
     if params.q:
         participating += Q_FIELDS
 
     return list(dict.fromkeys(participating))
+
+
+def _override_join(resource_id: Any) -> ColumnElement[bool]:
+    """Join condition matching an override row to its value row."""
+    m = MembershipModel
+    v = OilGasFieldSourceValueModel
+    o = OGFieldResourceSourcePriority
+    return and_(
+        o.resource_id == resource_id,
+        o.source_pk == m.source_pk,
+        o.source == m.source,
+        o.colname == v.colname,
+    )
 
 
 def construct_base_query_statement(
@@ -120,21 +147,7 @@ def construct_base_query_statement(
         .join(p, p.source == m.source)
         .join(s, and_(s.id == m.source_pk, s.source == m.source))
         .join(v, v.source_pk == m.source_pk)
-        # Override join at the value grain (source_pk, colname), matching v exactly,
-        # so at most one override row per value row -- no fan-out. o.source ==
-        # m.source is the same dual-key guard as the header join above: source_pk
-        # and source aren't FK-tied, so matching source_pk alone could apply a
-        # stray override with a mismatched (source, source_pk) pair to the wrong
-        # membership. Requiring both fails safe to the default instead.
-        .outerjoin(
-            o,
-            and_(
-                o.resource_id == r.id,
-                o.source_pk == m.source_pk,
-                o.source == m.source,
-                o.colname == v.colname,
-            ),
-        )
+        .outerjoin(o, _override_join(r.id))
         .where(
             r.repointed_id.is_(None),
             m.status == MembershipStatus.ACTIVE,
@@ -247,6 +260,47 @@ def coalesced_winner_rows(
         winners.c.value_json,
         winners.c.source,
         winners.c.source_pk,
+    )
+
+
+def filter_option_rows(
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> Select[tuple[str, str]]:
+    """Distinct winning ``(colname, value)`` pairs for every filterable field."""
+    m = MembershipModel
+    v = OilGasFieldSourceValueModel
+    p = OGFieldSourcePriority
+    o = OGFieldResourceSourcePriority
+
+    base = (
+        select(
+            m.resource_id.label("resource_id"),
+            m.source.label("source"),
+            m.source_pk.label("source_pk"),
+            o.priority.label("override_priority"),
+            p.priority.label("default_priority"),
+            v.colname.label("colname"),
+            v.value_text,
+        )
+        .select_from(m)
+        .join(v, v.source_pk == m.source_pk)
+        .join(p, p.source == m.source)
+        .outerjoin(o, _override_join(m.resource_id))
+        .where(
+            m.status == MembershipStatus.ACTIVE,
+            v.colname.in_(FILTER_OPTION_FIELDS),
+        )
+    )
+    if licensed_sources is not None:
+        base = base.where(m.source.in_(list(dict.fromkeys(licensed_sources))))
+
+    ranked = add_ranking(base.cte("filter_option_base")).cte("filter_option_ranked")
+    c = ranked.c
+    return (
+        select(c.colname, c.value_text)
+        .where(c.value_text.is_not(None))  # rn == 1 already applied by add_ranking
+        .distinct()
+        .order_by(c.colname, c.value_text)
     )
 
 
@@ -454,10 +508,12 @@ def _build_field_conditions(
         )
 
     for field_name in EXACT_MATCH_FIELDS:
-        value = getattr(params, field_name, None)
-        if value is None:
+        values = _filter_values(params, field_name)
+        if not values:
             continue
-        conditions.append(_require_column(cte, field_name) == value)
+        # IN over one value is the same predicate `== value` produced before, so
+        # single-valued filters are unchanged.
+        conditions.append(_require_column(cte, field_name).in_(values))
 
     return conditions
 

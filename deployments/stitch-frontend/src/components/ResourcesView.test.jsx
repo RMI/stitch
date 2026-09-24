@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, within, fireEvent } from "@testing-library/react";
+import { useNavigate } from "react-router";
 import { renderWithQueryClient } from "../test/utils";
 import ResourcesView from "./ResourcesView";
 import { useResourceFilterOptions, useResources } from "../hooks/useResources";
@@ -71,24 +72,26 @@ beforeEach(() => {
     ...defaultHookReturn,
     refetch: vi.fn(),
   });
-  const FILTER_OPTION_VALUES = {
-    region: ["Middle East"],
-    basin: ["Arabian", "Permian"],
-    state_province: ["Kuwait"],
-    field_status: ["Producing"],
-    country: ["NOR", "SAU"],
-    primary_hydrocarbon_group: ["Oil", "Gas"],
-  };
-  vi.mocked(useResourceFilterOptions).mockImplementation(
-    (_endpoint, field) => ({
-      ...defaultHookReturn,
-      data: {
-        field,
-        values: FILTER_OPTION_VALUES[field] ?? [],
-      },
-    }),
-  );
+  vi.mocked(useResourceFilterOptions).mockReturnValue({
+    ...defaultHookReturn,
+    data: {
+      region: ["Middle East"],
+      basin: ["Arabian", "Permian"],
+      state_province: ["Kuwait"],
+      field_status: ["Producing"],
+      country: ["NOR", "SAU"],
+      primary_hydrocarbon_group: ["Oil", "Gas"],
+    },
+  });
 });
+
+// Mirrors ResourceDetailPage's "← Back" (navigate(-1)). Rendered as a sibling of
+// <ResourcesView /> so it shares the router. window.history.back() does not
+// drive MemoryRouter, so this is the way to exercise browser Back in jsdom.
+function BackButton() {
+  const navigate = useNavigate();
+  return <button onClick={() => navigate(-1)}>test-back</button>;
+}
 
 describe("ResourcesView", () => {
   const ENDPOINT = "oil-gas-fields";
@@ -454,7 +457,32 @@ describe("ResourcesView", () => {
   });
 
   describe("filtering", () => {
-    it("loads dropdown options from filter-options queries", () => {
+    it("renders the view described by the URL", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: mockResourceData,
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />, {
+        initialEntries: ["/?country=NOR&q=ghawar&sort_by=name&sort_order=desc"],
+      });
+
+      expect(
+        screen.getByRole("button", { name: "Remove Country: Norway" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Sort: Name descending")).toBeInTheDocument();
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({
+          filters: expect.objectContaining({ country: ["NOR"] }),
+          q: "ghawar",
+          sort_by: "name",
+          sort_order: "desc",
+        }),
+      );
+    });
+
+    it("loads every dropdown's options from a single filter-options query", () => {
       vi.mocked(useResources).mockReturnValue({
         ...defaultHookReturn,
         data: mockResourceData,
@@ -462,24 +490,8 @@ describe("ResourcesView", () => {
 
       renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
 
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(ENDPOINT, "region");
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(
-        ENDPOINT,
-        "state_province",
-      );
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(ENDPOINT, "basin");
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(
-        ENDPOINT,
-        "field_status",
-      );
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(
-        ENDPOINT,
-        "country",
-      );
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(
-        ENDPOINT,
-        "primary_hydrocarbon_group",
-      );
+      expect(useResourceFilterOptions).toHaveBeenCalledTimes(1);
+      expect(useResourceFilterOptions).toHaveBeenCalledWith(ENDPOINT);
     });
 
     it("shows country options as conventional names but filters by the code", () => {
@@ -513,15 +525,17 @@ describe("ResourcesView", () => {
     it("lists country options alphabetically by displayed name", () => {
       // The API returns values sorted by the stored alpha-3 code, which is not
       // the same order as the country names the user actually sees.
-      vi.mocked(useResourceFilterOptions).mockImplementation(
-        (_endpoint, field) => ({
-          ...defaultHookReturn,
-          data: {
-            field,
-            values: field === "country" ? ["CHN", "DEU", "DNK"] : [],
-          },
-        }),
-      );
+      vi.mocked(useResourceFilterOptions).mockReturnValue({
+        ...defaultHookReturn,
+        data: {
+          region: [],
+          basin: [],
+          state_province: [],
+          field_status: [],
+          country: ["CHN", "DEU", "DNK"],
+          primary_hydrocarbon_group: [],
+        },
+      });
       vi.mocked(useResources).mockReturnValue({
         ...defaultHookReturn,
         data: mockResourceData,
@@ -727,6 +741,27 @@ describe("ResourcesView", () => {
         ENDPOINT,
         expect.objectContaining({ q: undefined }),
       );
+    });
+
+    it("re-seeds the search box when the URL's q changes underneath it", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: mockResourceData,
+      });
+
+      renderWithQueryClient(
+        <>
+          <ResourcesView endpoint={ENDPOINT} />
+          <BackButton />
+        </>,
+        { initialEntries: ["/?q=alpha", "/?q=beta"] },
+      );
+
+      expect(screen.getByLabelText("Search resources")).toHaveValue("beta");
+
+      fireEvent.click(screen.getByText("test-back"));
+
+      expect(screen.getByLabelText("Search resources")).toHaveValue("alpha");
     });
 
     it("clears the input and active search when Clear search is clicked", () => {

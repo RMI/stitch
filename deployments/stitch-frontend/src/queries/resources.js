@@ -12,6 +12,8 @@ import {
 export const DEFAULT_STALE_TIME = 60_000;
 export const DEFAULT_PAGE = 1;
 export const DEFAULT_PAGE_SIZE = 10;
+// Page sizes the paginator offers and the URL schema accepts.
+export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 // Private key builders, hierarchical for easy invalidation. Not exported:
 // every queryKey a caller could need comes back attached to the matching
@@ -26,10 +28,9 @@ const keys = {
   all: (endpoint = "resources") => [endpoint],
   lists: (endpoint = "resources") => [...keys.all(endpoint), "list"],
   list: (endpoint = "resources", filters) => [...keys.lists(endpoint), filters],
-  filterOptions: (endpoint = "resources", field) => [
+  filterOptions: (endpoint = "resources") => [
     ...keys.all(endpoint),
     "filter-options",
-    field,
   ],
   details: (endpoint = "resources") => [...keys.all(endpoint), "detail"],
   detail: (endpoint = "resources", id) => [...keys.details(endpoint), id],
@@ -91,11 +92,10 @@ export const resourceQueries = {
       placeholderData: keepPreviousData,
     }),
 
-  filterOptions: (config, endpoint = "resources", field) =>
+  filterOptions: (config, endpoint = "resources") =>
     queryOptions({
-      queryKey: keys.filterOptions(endpoint, field),
-      queryFn: (fetcher) =>
-        getResourceFilterOptions(config, fetcher, endpoint, field),
+      queryKey: keys.filterOptions(endpoint),
+      queryFn: (fetcher) => getResourceFilterOptions(config, fetcher, endpoint),
       staleTime: DEFAULT_STALE_TIME,
     }),
 
