@@ -44,6 +44,15 @@ const RUNNING_WITH_PROGRESS_RECORD = {
   },
 };
 
+const RUNNING_WITHOUT_TOTAL_RECORD = {
+  ...RUNNING_WITH_PROGRESS_RECORD,
+  progress: {
+    ...RUNNING_WITH_PROGRESS_RECORD.progress,
+    resources_scanned: 120,
+    total_resources: null,
+  },
+};
+
 function jsonResponse(status, body) {
   return {
     ok: status >= 200 && status < 300,
@@ -93,6 +102,35 @@ describe("EntityLinkagePage", () => {
         }),
       }),
     );
+  });
+
+  it("defaults 'Initiate merges' on and posts apply_merges true", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(202, {
+        job_id: "job-1",
+        state: "running",
+        started_at: "2026-06-11T10:00:00Z",
+        initiated_by: "Test User",
+      }),
+    );
+
+    renderWithQueryClient(<EntityLinkagePage />);
+
+    expect(
+      screen.getByRole("checkbox", { name: "Initiate merges" }),
+    ).toBeChecked();
+
+    await userEvent.click(screen.getByRole("button", { name: "Start run" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        START_URL,
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ apply_merges: true }),
+        }),
+      );
+    });
   });
 
   it("renders match groups from the polled job result", async () => {
@@ -173,6 +211,38 @@ describe("EntityLinkagePage", () => {
     expect(screen.getByText("12%")).toBeInTheDocument();
     expect(screen.getByText(/4 candidates created/)).toBeInTheDocument();
     expect(screen.getByText(/Last updated/)).toBeInTheDocument();
+  });
+
+  it("renders an indeterminate bar when the total is unknown", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, options) => {
+      if (String(url) === START_URL && options?.method === "POST") {
+        return jsonResponse(202, {
+          job_id: "job-1",
+          state: "running",
+          started_at: "2026-06-11T10:00:00Z",
+          initiated_by: "Test User",
+        });
+      }
+      return jsonResponse(200, RUNNING_WITHOUT_TOTAL_RECORD);
+    });
+
+    renderWithQueryClient(<EntityLinkagePage />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Start run" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Refresh status" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Processing 120/)).toBeInTheDocument();
+    });
+
+    // Unknown total -> no percent and no aria-valuenow (indeterminate bar).
+    const bar = screen.getByRole("progressbar", {
+      name: "Linkage run progress",
+    });
+    expect(bar).not.toHaveAttribute("aria-valuenow");
+    expect(screen.queryByText(/%/)).not.toBeInTheDocument();
   });
 
   it("surfaces a friendly message when a run is already in progress (409)", async () => {
