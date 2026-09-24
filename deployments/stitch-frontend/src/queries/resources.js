@@ -12,6 +12,8 @@ import {
 export const DEFAULT_STALE_TIME = 60_000;
 export const DEFAULT_PAGE = 1;
 export const DEFAULT_PAGE_SIZE = 10;
+// Page sizes the paginator offers and the URL schema accepts.
+export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 // Private key builders, hierarchical for easy invalidation. Not exported:
 // every queryKey a caller could need comes back attached to the matching

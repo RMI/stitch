@@ -1,62 +1,7 @@
 import { Link } from "react-router";
 import SourceMixBar from "./SourceMixBar";
 import { getResourceField } from "../utils/resourceDisplay";
-import { getCountryName } from "../constants/countries";
-
-// sortType: "string" | "number", omit sortable (or set false) to disable sorting for a column.
-// format: optional (value) => displayValue applied to the cell's raw value.
-const COLUMNS = [
-  {
-    label: "Name",
-    key: "name",
-    className: "font-semibold text-ink",
-    sortable: true,
-    sortType: "string",
-  },
-  {
-    label: "Country",
-    key: "country",
-    className: "text-ink-muted",
-    sortable: true,
-    sortType: "string",
-    format: getCountryName,
-  },
-  {
-    label: "State/Province",
-    key: "state_province",
-    className: "text-ink-muted",
-    sortable: true,
-    sortType: "string",
-  },
-  {
-    label: "Region",
-    key: "region",
-    className: "text-ink-muted",
-    sortable: true,
-    sortType: "string",
-  },
-  {
-    label: "Basin",
-    key: "basin",
-    className: "text-ink-muted",
-    sortable: true,
-    sortType: "string",
-  },
-  {
-    label: "Field status",
-    key: "field_status",
-    className: "text-ink-muted",
-    sortable: true,
-    sortType: "string",
-  },
-  {
-    label: "Primary hydrocarbon group",
-    key: "primary_hydrocarbon_group",
-    className: "text-ink-muted",
-    sortable: true,
-    sortType: "string",
-  },
-];
+import { COLUMNS } from "../config/listColumns";
 
 function SortIndicator({ column, sortConfig }) {
   if (sortConfig.column !== column) {

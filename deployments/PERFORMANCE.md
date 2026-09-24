@@ -7,6 +7,9 @@ the cloud, and readable straight from the terminal locally — so you can find
 slow/frequent queries from real data instead of guessing.
 
 This doc covers the basic loop: **enable capture → drive traffic → analyze**.
+For *where* deployed logs are routed (which Log Analytics workspace each lane
+feeds, and how to change it), see "Log routing" in
+[`CI_DEPLOYMENTS.md`](./CI_DEPLOYMENTS.md).
 
 > The instrumentation lives in the app code
 > ([`deployments/api/src/stitch/api/observability/`](api/src/stitch/api/observability/)),
@@ -23,7 +26,7 @@ Two structured log streams, distinguished by the `logger` field:
 | Logger | Emitted | Key fields |
 |---|---|---|
 | `stitch.observability.request` | once per HTTP request (always) | `route`, `method`, `status_code`, `duration_ms`, `db_query_count`, `db_time_ms`, `request_id` |
-| `stitch.api.observability.query` | once per query above the slow threshold | `statement` (parameterized SQL, **no bound values**), `duration_ms`, `rowcount`, `route`, `request_id` |
+| `stitch.api.observability.query` | once per query above the slow threshold | `statement` (parameterized SQL, **no bound values**), `duration_ms`, `rowcount`, `route`, `request_id`, `query_name` (when the query runs in a labeled scope) |
 
 > The request summary is emitted by the shared `stitch.observability`
 > middleware, so it logs under `stitch.observability.request` (the API's
@@ -33,6 +36,14 @@ Two structured log streams, distinguished by the `logger` field:
 
 `db_query_count` on a request is the N+1 detector; the `query` stream tells you
 *which* statement is expensive.
+
+`query_name` is a stable label (e.g. `resources.list_ids`, `resources.count`,
+`resources.filter_options`) attached to the queries a request handler runs, so you
+can pick out a specific query without matching on SQL text — useful when two
+statements share a near-identical prefix (both list queries open with
+`WITH resource_universe AS …`). It is present only for queries executed inside a
+labeled scope; unlabeled queries (e.g. ORM-internal statements outside a handler)
+omit the field entirely.
 
 ---
 
