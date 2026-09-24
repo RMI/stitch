@@ -11,6 +11,7 @@ from stitch.api.db.errors import (
 )
 from stitch.api.db.utils import partition_by_id_none
 from stitch.api.entities import OGFieldQueryParams, User
+from stitch.api.observability.context import named_query
 from stitch.ogsi.model import OGFieldSource, OGFieldResource
 from stitch.ogsi.model.types import OGSISrcKey
 
@@ -36,7 +37,8 @@ async def create_source(
     model = OilGasFieldSourceModel.create_from_entity(source, created_by=user)
 
     session.add(model)
-    await session.flush()
+    with named_query("sources.create"):
+        await session.flush()
     return model.as_entity()
 
 
@@ -95,10 +97,10 @@ async def create_and_attach_sources(
         )
     # Fail fast: validate the target before creating any source, so an invalid
     # resource_id never leaves a source insert to roll back.
-    resource = await _get_attachable_resource(session, resource_id)
-
-    models = await _create_source_models(session, user, sources)
-    await _attach_source_models(session, resource, models, user)
+    with named_query("sources.create_and_attach"):
+        resource = await _get_attachable_resource(session, resource_id)
+        models = await _create_source_models(session, user, sources)
+        await _attach_source_models(session, resource, models, user)
     return [model.as_entity() for model in models]
 
 
@@ -128,10 +130,9 @@ async def get_or_create_sources(
     data: Sequence[OGFieldSource],
 ) -> Sequence[OGFieldSource]:
 
-    return [
-        src.as_entity()
-        for src in await _get_or_create_source_models(session, user, data)
-    ]
+    with named_query("sources.get_or_create"):
+        models = await _get_or_create_source_models(session, user, data)
+    return [src.as_entity() for src in models]
 
 
 async def _get_or_create_source_models(
@@ -202,15 +203,17 @@ async def attach_sources_to_resource(
     user: User,
 ) -> OGFieldResource:
     """Link an OG field source to a resource via membership."""
-    resource = await _get_attachable_resource(session, resource_id)
-    if len(source_rows) < 1:
-        raise ResourceIntegrityError(
-            f"Must pass at least 1 source row to attach to resource (id: `{resource_id}`)."
-        )
+    with named_query("sources.attach"):
+        resource = await _get_attachable_resource(session, resource_id)
+        if len(source_rows) < 1:
+            raise ResourceIntegrityError(
+                f"Must pass at least 1 source row to attach to resource "
+                f"(id: `{resource_id}`)."
+            )
 
-    src_models = await _get_or_create_source_models(session, user, source_rows)
-    await _attach_source_models(session, resource, src_models, user)
-    return await resource_model_to_entity(session, resource)
+        src_models = await _get_or_create_source_models(session, user, source_rows)
+        await _attach_source_models(session, resource, src_models, user)
+        return await resource_model_to_entity(session, resource)
 
 
 async def get_source(
@@ -218,7 +221,8 @@ async def get_source(
     id: int,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> OGFieldSource:
-    model = await session.get(OilGasFieldSourceModel, id)
+    with named_query("sources.detail"):
+        model = await session.get(OilGasFieldSourceModel, id)
     if model is None:
         raise SourceNotFoundError(f"No OG Field Source found for id `{id}`")
     if licensed_sources is not None and model.source not in licensed_sources:
@@ -239,7 +243,8 @@ async def get_sources(
     session: AsyncSession, ids: Sequence[int]
 ) -> Sequence[OGFieldSource]:
     stmt = select(OilGasFieldSourceModel).where(OilGasFieldSourceModel.id.in_(ids))
-    models = (await session.scalars(stmt)).all()
+    with named_query("sources.get_by_ids"):
+        models = (await session.scalars(stmt)).all()
     return [model.as_entity() for model in models]
 
 
@@ -251,17 +256,20 @@ async def query(
     """Filtered/sorted/paginated source records (id-ordered) plus total count."""
     stmt = base_source_query(params, licensed_sources)
     count_stmt = select(func.count()).select_from(stmt.subquery())
-    total = (await session.scalar(count_stmt)) or 0
+    with named_query("sources.count"):
+        total = (await session.scalar(count_stmt)) or 0
     stmt = stmt.limit(params.limit).offset(params.offset)
-    ids = list((await session.scalars(stmt)).all())
+    with named_query("sources.list_ids"):
+        ids = list((await session.scalars(stmt)).all())
 
     if not ids:
         return (), total
 
-    headers = (
-        await session.scalars(
-            select(OilGasFieldSourceModel).where(OilGasFieldSourceModel.id.in_(ids))
-        )
-    ).all()
+    with named_query("sources.list_hydrate"):
+        headers = (
+            await session.scalars(
+                select(OilGasFieldSourceModel).where(OilGasFieldSourceModel.id.in_(ids))
+            )
+        ).all()
     by_id = {h.id: h for h in headers}
     return tuple(by_id[i].as_entity() for i in ids if i in by_id), total
