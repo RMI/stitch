@@ -453,6 +453,43 @@ async def test_link_all_reports_progress_via_callback() -> None:
 
 
 @pytest.mark.anyio
+async def test_link_all_emits_progress_mid_run() -> None:
+    # Scan more than PROGRESS_UPDATE_EVERY resources so the throttled heartbeat
+    # fires during the run, not just the final snapshot. Unique names keep every
+    # resource a singleton (no match groups), isolating the progress cadence.
+    count = matching.PROGRESS_UPDATE_EVERY * 2 + 5
+    items = [
+        FieldCandidate(id=i, name=f"Field {i}", country="US")
+        for i in range(1, count + 1)
+    ]
+    details_by_id = {
+        i: FieldDetailCandidate(id=i, name=f"Field {i}", country="US")
+        for i in range(1, count + 1)
+    }
+    client = FakeMatchingClient(items=items, details_by_id=details_by_id)
+
+    snapshots: list = []
+    await matching.link_all(
+        client,
+        apply_merges=False,
+        page_size=200,
+        initiated_by="Tester",
+        on_progress=snapshots.append,
+    )
+
+    # Two throttled emits (at 100 and 200) plus the final snapshot at 205.
+    assert len(snapshots) >= 3
+    scanned_values = [s.resources_scanned for s in snapshots]
+    assert scanned_values == sorted(scanned_values)
+    assert len(set(scanned_values)) == len(scanned_values)
+    assert scanned_values[0] == matching.PROGRESS_UPDATE_EVERY
+    assert snapshots[-1].resources_scanned == count
+    # Denominator is fetched once and carried on every snapshot.
+    assert client.total_calls == 1
+    assert all(s.total_resources == count for s in snapshots)
+
+
+@pytest.mark.anyio
 async def test_link_all_skips_total_fetch_without_progress_consumer() -> None:
     # No on_progress: the denominator is never used, so the extra request that
     # fetches it must be skipped.
