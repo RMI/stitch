@@ -84,11 +84,6 @@ function MatchGroupsSummary({ groups }) {
   );
 }
 
-// Expected-duration copy: the pass streams the whole dataset and routinely runs
-// long, so we set that expectation wherever a run is in progress (STIT-740).
-const RUN_DURATION_HINT =
-  "A full pass can take an hour or more on the production dataset.";
-
 function LinkProgressView({ progress }) {
   const scanned =
     typeof progress?.resources_scanned === "number"
@@ -150,8 +145,6 @@ function LinkProgressView({ progress }) {
       {updatedAt && (
         <p className="text-xs text-ink-muted">Last updated {updatedAt}</p>
       )}
-
-      <p className="text-xs text-ink-muted">{RUN_DURATION_HINT}</p>
     </div>
   );
 }
@@ -199,8 +192,7 @@ function RunResult({ record }) {
           <LinkProgressView progress={record.progress} />
         ) : (
           <p className="text-sm text-ink-muted">
-            Run in progress — status refreshes automatically.{" "}
-            {RUN_DURATION_HINT}
+            Run in progress — status refreshes automatically.
           </p>
         )
       ) : record.state === "failed" ? (
