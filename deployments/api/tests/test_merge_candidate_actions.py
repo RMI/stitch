@@ -357,6 +357,32 @@ async def test_reroute_dedupes_when_candidate_holds_multiple_merged_ids(user):
 
 
 @pytest.mark.anyio
+async def test_reroute_drops_candidate_that_collapses_below_two_members(user):
+    # Approving A(18)+B(19)+C(20) -> D(31) fully subsumes a pending A(18)+B(19):
+    # it would collapse to just [31], which can never be approved, so it is
+    # deleted rather than left as a dead end.
+    subset = FakeCandidate(
+        id=5,
+        status=MergeCandidateStatus.PENDING,
+        items=[FakeItem(18, 0), FakeItem(19, 1)],
+        fingerprint="18:19",
+    )
+    session = FakeSession(scalars_result=[subset])
+
+    await mca._reroute_pending_candidates(
+        session=session,
+        user=user,
+        merged_away_ids=[18, 19, 20],
+        new_id=31,
+        exclude_candidate_id=7,
+    )
+
+    assert session.deleted == [subset]
+    assert subset.fingerprint == "18:19"  # untouched; row is being deleted
+    assert session.flush_calls == 1
+
+
+@pytest.mark.anyio
 async def test_reroute_drops_duplicate_candidate_on_fingerprint_collision(user):
     # A(18)+C(20) and B(19)+C(20) both collapse to D(31)+C(20). The lower-id
     # candidate survives; the second is now the identical proposal and is deleted.

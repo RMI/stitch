@@ -341,12 +341,10 @@ async def _reroute_pending_candidates(
     # the identical proposal. Order by id so the survivor is deterministic.
     seen_fingerprints: set[str] = set()
     for candidate in sorted(candidates, key=lambda c: c.id):
-        # Rewrite each merged-away member to new_id. If a single candidate held
-        # more than one merged-away id (e.g. a 3-way A+B+C), both collapse to
-        # new_id; drop the duplicate item to respect the (candidate, resource_id)
-        # unique constraint. A candidate can never collapse below two members:
-        # the only all-merged-away set is {A, B} exactly, which is the approved
-        # candidate's own (unique) fingerprint and is excluded here.
+        # Rewrite each merged-away member to new_id. If a candidate held more than
+        # one merged-away id (e.g. approving A+B collapses a member of A+B+C),
+        # they all collapse to new_id; drop the duplicate items to respect the
+        # (candidate, resource_id) unique constraint.
         seen_ids: set[int] = set()
         new_ids: list[int] = []
         for item in sorted(candidate.items, key=lambda i: i.position):
@@ -359,6 +357,15 @@ async def _reroute_pending_candidates(
             item.resource_id = target
             seen_ids.add(target)
             new_ids.append(target)
+
+        # A candidate whose members were all merged away (a subset of the approved
+        # candidate, e.g. A+B when A+B+C is approved) collapses to just [new_id].
+        # A single-member candidate can never be approved (`_normalize_resource_ids`
+        # requires >=2), so it would be a permanent dead end -- and it is fully
+        # subsumed by the approval anyway. Delete it.
+        if len(new_ids) < 2:
+            await session.delete(candidate)
+            continue
 
         fingerprint = _fingerprint(new_ids)
         if fingerprint in seen_fingerprints:

@@ -378,6 +378,33 @@ class TestMergeCandidateDetailIntegration:
         assert dropped.status_code == 404, dropped.text
 
     @pytest.mark.anyio
+    async def test_subset_candidate_is_dropped_when_superset_is_approved(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        # Approving the 3-way A+B+C -> D fully subsumes a pending A+B: it would
+        # collapse to a single member [D], which can never be approved. It must be
+        # deleted, not left as a PENDING dead end.
+        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
+        id_c = await _create_resource(
+            integration_client, og_create_res_fact, "Safaniya"
+        )
+        candidate_ab = await _create_candidate(integration_client, [id_a, id_b])
+        candidate_abc = await _create_candidate(integration_client, [id_a, id_b, id_c])
+
+        approve = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{candidate_abc}/approve",
+        )
+        assert approve.status_code == 200, approve.text
+
+        dropped = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_ab}"
+        )
+        assert dropped.status_code == 404, dropped.text
+
+    @pytest.mark.anyio
     async def test_three_way_candidate_dedupes_merged_members(
         self,
         integration_client: AsyncClient,
