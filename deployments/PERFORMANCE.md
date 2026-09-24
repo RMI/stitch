@@ -38,7 +38,7 @@ Two structured log streams, distinguished by the `logger` field:
 *which* statement is expensive.
 
 `query_name` is a stable label (e.g. `resources.list_ids`, `resources.count`,
-`filter_options.country`) attached to the queries a request handler runs, so you
+`filter_options.all`) attached to the queries a request handler runs, so you
 can pick out a specific query without matching on SQL text — useful when two
 statements share a near-identical prefix (both list queries open with
 `WITH resource_universe AS …`). It is present only for queries executed inside a

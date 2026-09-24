@@ -64,12 +64,11 @@ class TestActionQueryLabels:
         integration_client: AsyncClient,
         captured_query_events: list[dict],
     ):
-        response = await integration_client.get(
-            "/oil-gas-fields/filter-options", params={"field": "country"}
-        )
+        # filter-options returns every filterable field in one query.
+        response = await integration_client.get("/oil-gas-fields/filter-options")
         assert response.status_code == 200, response.text
 
-        assert "filter_options.country" in _query_names(captured_query_events)
+        assert "filter_options.all" in _query_names(captured_query_events)
 
     @pytest.mark.anyio
     async def test_detail_endpoint_labels(

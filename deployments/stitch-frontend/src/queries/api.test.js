@@ -129,7 +129,14 @@ describe("API Functions", () => {
 
   describe("getResourceFilterOptions", () => {
     it("fetches and returns filter options successfully", async () => {
-      const mockOptions = { field: "basin", values: ["Arabian", "Permian"] };
+      const mockOptions = {
+        basin: ["Arabian", "Permian"],
+        country: ["NOR", "SAU"],
+        field_status: ["Producing"],
+        primary_hydrocarbon_group: [],
+        region: ["Middle East"],
+        state_province: ["Kuwait"],
+      };
 
       mockFetcher.mockResolvedValueOnce({
         ok: true,
@@ -141,11 +148,10 @@ describe("API Functions", () => {
         config,
         mockFetcher,
         "oil-gas-fields",
-        "basin",
       );
 
       expect(mockFetcher).toHaveBeenCalledWith(
-        "http://localhost:8000/api/v1/oil-gas-fields/filter-options?field=basin",
+        "http://localhost:8000/api/v1/oil-gas-fields/filter-options",
       );
       expect(result).toEqual(mockOptions);
     });
@@ -157,12 +163,7 @@ describe("API Functions", () => {
       });
 
       await expect(
-        getResourceFilterOptions(
-          config,
-          mockFetcher,
-          "oil-gas-fields",
-          "basin",
-        ),
+        getResourceFilterOptions(config, mockFetcher, "oil-gas-fields"),
       ).rejects.toThrow("HTTP error! status: 500");
     });
   });
