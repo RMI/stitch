@@ -194,14 +194,16 @@ async def link_all(
     # candidate-list fetch entirely on a dry run.
     known_existing = await _existing_fingerprints(client) if apply_merges else None
 
-    # Denominator for progress; None if the count is unavailable. A failure here
-    # must not abort the pass, so fall back to an unknown total.
-    total_resources: int | None
-    try:
-        total_resources = await client.get_oil_gas_fields_total()
-    except (StitchAPIError, httpx.HTTPError, OSError) as exc:
-        logger.warning("Could not fetch resource total for progress: %s", exc)
-        total_resources = None
+    # Denominator for progress; only worth an extra request when a progress
+    # consumer is listening. None if unavailable -- a failure here must not abort
+    # the pass, so fall back to an unknown total.
+    total_resources: int | None = None
+    if on_progress is not None:
+        try:
+            total_resources = await client.get_oil_gas_fields_total()
+        except (StitchAPIError, httpx.HTTPError, OSError) as exc:
+            logger.warning("Could not fetch resource total for progress: %s", exc)
+            total_resources = None
 
     groups_by_fingerprint: dict[str, list[int]] = {}
     processed_ids: set[int] = set()

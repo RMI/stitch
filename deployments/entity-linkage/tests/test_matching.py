@@ -34,6 +34,7 @@ class FakeMatchingClient(AbstractAsyncContextManager["FakeMatchingClient"]):
         self.iter_q: list[str | None] = []
         self.create_calls: list[list[int]] = []
         self.list_candidates_calls = 0
+        self.total_calls = 0
 
     async def __aenter__(self) -> "FakeMatchingClient":
         return self
@@ -46,6 +47,7 @@ class FakeMatchingClient(AbstractAsyncContextManager["FakeMatchingClient"]):
         return self.details_by_id[resource_id]
 
     async def get_oil_gas_fields_total(self) -> int | None:
+        self.total_calls += 1
         return len(self.items)
 
     async def iter_oil_gas_fields(
@@ -446,3 +448,27 @@ async def test_link_all_reports_progress_via_callback() -> None:
     assert final.merge_candidates_skipped == 0
     assert final.resources_failed == 0
     assert final.updated_at is not None
+    # The denominator is fetched when a progress consumer is listening.
+    assert client.total_calls == 1
+
+
+@pytest.mark.anyio
+async def test_link_all_skips_total_fetch_without_progress_consumer() -> None:
+    # No on_progress: the denominator is never used, so the extra request that
+    # fetches it must be skipped.
+    client = FakeMatchingClient(
+        items=[
+            FieldCandidate(id=1, name="Alpha", country="US"),
+            FieldCandidate(id=2, name="alpha", country="US"),
+        ],
+        details_by_id={
+            1: FieldDetailCandidate(id=1, name="Alpha", country="US"),
+            2: FieldDetailCandidate(id=2, name="alpha", country="US"),
+        },
+    )
+
+    await matching.link_all(
+        client, apply_merges=True, page_size=200, initiated_by="Tester"
+    )
+
+    assert client.total_calls == 0

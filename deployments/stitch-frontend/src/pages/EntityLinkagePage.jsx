@@ -95,9 +95,11 @@ function LinkProgressView({ progress }) {
     typeof progress?.total_resources === "number"
       ? progress.total_resources
       : null;
+  // Floor, not round: rounding would show 100% while the run is still on its
+  // last ~0.5% of resources. Floor keeps it at 99% until the run is truly done.
   const percent =
     total && total > 0
-      ? Math.min(100, Math.round((scanned / total) * 100))
+      ? Math.min(100, Math.floor((scanned / total) * 100))
       : null;
   const updatedAt = formatTimestamp(progress?.updated_at);
 
