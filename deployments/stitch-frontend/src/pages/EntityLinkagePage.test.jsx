@@ -54,6 +54,16 @@ const RUNNING_NEAR_COMPLETE_RECORD = {
   },
 };
 
+const RUNNING_OVER_TOTAL_RECORD = {
+  ...RUNNING_WITH_PROGRESS_RECORD,
+  progress: {
+    ...RUNNING_WITH_PROGRESS_RECORD.progress,
+    // Start-of-run total became stale as the dataset grew: scanned passed it.
+    resources_scanned: 3050,
+    total_resources: 3000,
+  },
+};
+
 const RUNNING_WITHOUT_TOTAL_RECORD = {
   ...RUNNING_WITH_PROGRESS_RECORD,
   progress: {
@@ -254,6 +264,39 @@ describe("EntityLinkagePage", () => {
     expect(bar).toHaveAttribute("aria-valuenow", "99");
     expect(screen.getByText("99%")).toBeInTheDocument();
     expect(screen.queryByText("100%")).not.toBeInTheDocument();
+  });
+
+  it("stays indeterminate when scanned passes a stale total (no stuck 100%)", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, options) => {
+      if (String(url) === START_URL && options?.method === "POST") {
+        return jsonResponse(202, {
+          job_id: "job-1",
+          state: "running",
+          started_at: "2026-06-11T10:00:00Z",
+          initiated_by: "Test User",
+        });
+      }
+      return jsonResponse(200, RUNNING_OVER_TOTAL_RECORD);
+    });
+
+    renderWithQueryClient(<EntityLinkagePage />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Start run" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Refresh status" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Processing 3,050/)).toBeInTheDocument();
+    });
+
+    // scanned > total: no percent, no aria-valuenow, and no misleading "of".
+    const bar = screen.getByRole("progressbar", {
+      name: "Linkage run progress",
+    });
+    expect(bar).not.toHaveAttribute("aria-valuenow");
+    expect(screen.queryByText(/%/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/of 3,000/)).not.toBeInTheDocument();
   });
 
   it("renders an indeterminate bar when the total is unknown", async () => {
