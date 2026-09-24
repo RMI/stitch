@@ -217,7 +217,7 @@ export default function EntityLinkagePage() {
   const { getAccessTokenSilently } = useAuth0();
   const baseUrl = config.entityLinkageBaseUrl;
 
-  const [applyMerges, setApplyMerges] = useState(false);
+  const [applyMerges, setApplyMerges] = useState(true);
   const [starting, setStarting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [record, setRecord] = useState(null);
@@ -351,17 +351,7 @@ export default function EntityLinkagePage() {
       </div>
 
       <div className="mb-6 rounded-md border border-line bg-panel p-4">
-        <label className="flex items-center gap-3 text-sm font-medium text-ink">
-          <input
-            type="checkbox"
-            checked={applyMerges}
-            onChange={(e) => setApplyMerges(e.target.checked)}
-            className="accent-primary"
-          />
-          <span>Initiate merges</span>
-        </label>
-
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             onClick={handleStart}
             disabled={starting || isRunning}
@@ -377,6 +367,16 @@ export default function EntityLinkagePage() {
             {refreshing ? "Refreshing…" : "Refresh status"}
           </Button>
         </div>
+
+        <label className="mt-4 flex items-center gap-3 text-sm font-medium text-ink">
+          <input
+            type="checkbox"
+            checked={applyMerges}
+            onChange={(e) => setApplyMerges(e.target.checked)}
+            className="accent-primary"
+          />
+          <span>Initiate merges</span>
+        </label>
       </div>
 
       {error ? (
