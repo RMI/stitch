@@ -799,12 +799,59 @@ class TestResourceUniverseAndNarrowing:
             {"source": "gem", "name": "B", "country": "USA", "basin": "Neuquen"},
         )
 
-        params = _QueryParams(basin="Permian", page=1, page_size=10)
+        params = _QueryParams(basin=["Permian"], page=1, page_size=10)
         items, total = await resource_actions.query(seeded_integration_session, params)
 
         assert total == 1
         assert [item.id for item in items] == [permian_id]
         assert items[0].data.basin == "Permian"
+
+    @pytest.mark.anyio
+    async def test_filter_by_multiple_countries_returns_all_of_them(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """Several values for one filter are OR'd, not silently narrowed to one."""
+        nor_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "N", "country": "NOR", "basin": "North Sea"},
+        )
+        sau_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "S", "country": "SAU", "basin": "Arabian"},
+        )
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "U", "country": "USA", "basin": "Permian"},
+        )
+
+        params = _QueryParams(country=["NOR", "SAU"], page=1, page_size=10)
+        items, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 2
+        assert {item.id for item in items} == {nor_id, sau_id}
+
+    @pytest.mark.anyio
+    async def test_empty_filter_list_does_not_narrow(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """An empty list means "no filter", never "match nothing" (IN () matches none)."""
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "N", "country": "NOR"},
+        )
+
+        params = _QueryParams(country=[], page=1, page_size=10)
+        _, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 1
 
     @pytest.mark.anyio
     async def test_sort_by_discovery_year_numeric_nulls_last(
@@ -1179,7 +1226,7 @@ class TestResourceFilterOptionsAction:
             },
         )
 
-        params = _QueryParams(state_province="Texas", page=1, page_size=10)
+        params = _QueryParams(state_province=["Texas"], page=1, page_size=10)
         items, total = await resource_actions.query(seeded_integration_session, params)
 
         assert total == 0

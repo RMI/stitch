@@ -35,7 +35,7 @@ export function renderWithQueryClient(ui, options = {}) {
   return {
     ...render(
       <ConfigProvider config={getConfig()}>
-        <MemoryRouter>
+        <MemoryRouter initialEntries={options.initialEntries ?? ["/"]}>
           <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
         </MemoryRouter>
       </ConfigProvider>,
