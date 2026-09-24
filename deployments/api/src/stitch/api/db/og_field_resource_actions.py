@@ -97,7 +97,7 @@ async def filter_options(
 ) -> dict[str, list[str]]:
     """Distinct coalesced values for every filterable field, in one query."""
     options: dict[str, list[str]] = {field: [] for field in FILTER_OPTION_FIELDS}
-    with named_query("filter_options.all"):
+    with named_query("resources.filter_options"):
         for colname, value in await session.execute(
             filter_option_rows(licensed_sources)
         ):
