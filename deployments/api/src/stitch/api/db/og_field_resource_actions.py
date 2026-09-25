@@ -383,10 +383,11 @@ async def apply_resource_merge(
         raise ResourceNotFoundError(msg)
 
     if len(repointed := [r for r in results if r.repointed_id is not None]) > 0:
-        reprs = map(repr, repointed)
-        msg = f"Repointed: [{','.join(reprs)}]"
+        moved = ", ".join(
+            f"resource {r.id} is now resource {r.repointed_id}" for r in repointed
+        )
         raise ResourceIntegrityError(
-            f"Cannot merge any resource that has already been merged. {msg}"
+            f"Cannot merge any resource that has already been merged: {moved}."
         )
 
     # all ids exist, none have already been repointed

@@ -224,6 +224,224 @@ class TestMergeCandidateDetailIntegration:
         assert overrides == []
 
     @pytest.mark.anyio
+    async def test_overlapping_approval_reroutes_pending_candidate(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        # Two overlapping candidates share resource A. Approving A+B -> D must
+        # repoint the pending A+C to D+C: it stays PENDING and its comparison now
+        # shows D's live values (STIT-418 AC 3).
+        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
+        id_c = await _create_resource(
+            integration_client, og_create_res_fact, "Safaniya"
+        )
+        candidate_ab = await _create_candidate(integration_client, [id_a, id_b])
+        candidate_ac = await _create_candidate(integration_client, [id_a, id_c])
+
+        approve = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{candidate_ab}/approve",
+            json={"review_notes": "ok"},
+        )
+        assert approve.status_code == 200, approve.text
+        merged_d = approve.json()["merged_resource_id"]
+        assert merged_d is not None
+
+        resp = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_ac}"
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+
+        # A(18) is gone; the candidate now compares D against C, still PENDING.
+        assert body["status"] == "PENDING"
+        assert body["resource_ids"] == [merged_d, id_c]
+
+        name_cmp = next(c for c in body["compare"] if c["field"] == "name")
+        value_resource_ids = {v["resource_id"] for v in name_cmp["values"]}
+        # No value is attributed to the merged-away original...
+        assert id_a not in value_resource_ids
+        # ...D's live values are shown (not a null shell)...
+        assert merged_d in value_resource_ids
+        # ...alongside C's own value.
+        assert (id_c, "Safaniya") in {
+            (v["resource_id"], v["value"]) for v in name_cmp["values"]
+        }
+
+        # The re-routed candidate is now approvable (no already-merged 400).
+        approve_ac = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{candidate_ac}/approve",
+        )
+        assert approve_ac.status_code == 200, approve_ac.text
+        assert approve_ac.json()["merged_resource_id"] is not None
+
+    @pytest.mark.anyio
+    async def test_already_merged_error_names_ids_not_repr(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        # Once A is merged away, referencing it again is rejected with an id-based
+        # message -- no ORM repr() leak (`object at 0x...`).
+        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
+        id_c = await _create_resource(
+            integration_client, og_create_res_fact, "Safaniya"
+        )
+        candidate_ab = await _create_candidate(integration_client, [id_a, id_b])
+
+        approve = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{candidate_ab}/approve",
+        )
+        assert approve.status_code == 200, approve.text
+        merged_d = approve.json()["merged_resource_id"]
+
+        resp = await integration_client.post(
+            "/oil-gas-fields/merge-candidates",
+            json={"resource_ids": [id_a, id_c]},
+        )
+        assert resp.status_code == 400, resp.text
+        detail = resp.json()["detail"]
+        assert f"resource {id_a} is now resource {merged_d}" in detail
+        assert "object at 0x" not in detail
+
+    @pytest.mark.anyio
+    async def test_two_overlapping_candidates_collapse_to_one(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        # A+C and B+C both re-route to D+C when A+B is approved. They become the
+        # same proposal, so exactly one survives (the earlier-created candidate).
+        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
+        id_c = await _create_resource(
+            integration_client, og_create_res_fact, "Safaniya"
+        )
+        candidate_ac = await _create_candidate(integration_client, [id_a, id_c])
+        candidate_bc = await _create_candidate(integration_client, [id_b, id_c])
+        candidate_ab = await _create_candidate(integration_client, [id_a, id_b])
+
+        approve = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{candidate_ab}/approve",
+        )
+        assert approve.status_code == 200, approve.text
+        merged_d = approve.json()["merged_resource_id"]
+
+        survivor = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_ac}"
+        )
+        assert survivor.status_code == 200, survivor.text
+        assert survivor.json()["status"] == "PENDING"
+        assert survivor.json()["resource_ids"] == [merged_d, id_c]
+
+        dropped = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_bc}"
+        )
+        assert dropped.status_code == 404, dropped.text
+
+    @pytest.mark.anyio
+    async def test_three_way_candidate_that_also_collides_is_dropped(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        # Edge: a candidate that both dedupes an item (3-way A+B+C -> D+C) AND
+        # collides with an earlier-rerouted candidate (A+C -> D+C). The 3-way is
+        # processed second, so it both removes an orphan item and is deleted in the
+        # same flush -- this must not error.
+        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
+        id_c = await _create_resource(
+            integration_client, og_create_res_fact, "Safaniya"
+        )
+        candidate_ac = await _create_candidate(integration_client, [id_a, id_c])
+        candidate_abc = await _create_candidate(integration_client, [id_a, id_b, id_c])
+        candidate_ab = await _create_candidate(integration_client, [id_a, id_b])
+
+        approve = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{candidate_ab}/approve",
+        )
+        assert approve.status_code == 200, approve.text
+        merged_d = approve.json()["merged_resource_id"]
+
+        survivor = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_ac}"
+        )
+        assert survivor.status_code == 200, survivor.text
+        assert survivor.json()["resource_ids"] == [merged_d, id_c]
+
+        dropped = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_abc}"
+        )
+        assert dropped.status_code == 404, dropped.text
+
+    @pytest.mark.anyio
+    async def test_subset_candidate_is_dropped_when_superset_is_approved(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        # Approving the 3-way A+B+C -> D fully subsumes a pending A+B: it would
+        # collapse to a single member [D], which can never be approved. It must be
+        # deleted, not left as a PENDING dead end.
+        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
+        id_c = await _create_resource(
+            integration_client, og_create_res_fact, "Safaniya"
+        )
+        candidate_ab = await _create_candidate(integration_client, [id_a, id_b])
+        candidate_abc = await _create_candidate(integration_client, [id_a, id_b, id_c])
+
+        approve = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{candidate_abc}/approve",
+        )
+        assert approve.status_code == 200, approve.text
+
+        dropped = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_ab}"
+        )
+        assert dropped.status_code == 404, dropped.text
+
+    @pytest.mark.anyio
+    async def test_three_way_candidate_dedupes_merged_members(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        # A 3-way A+B+C where A+B is approved: A and B both collapse to D, so the
+        # candidate must dedupe to D+C without tripping the
+        # (merge_candidate_id, resource_id) unique constraint, and stay approvable.
+        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
+        id_c = await _create_resource(
+            integration_client, og_create_res_fact, "Safaniya"
+        )
+        candidate_abc = await _create_candidate(integration_client, [id_a, id_b, id_c])
+        candidate_ab = await _create_candidate(integration_client, [id_a, id_b])
+
+        approve = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{candidate_ab}/approve",
+        )
+        assert approve.status_code == 200, approve.text
+        merged_d = approve.json()["merged_resource_id"]
+
+        resp = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_abc}"
+        )
+        assert resp.status_code == 200, resp.text
+        # A and B collapsed to a single D member; C is preserved.
+        assert resp.json()["status"] == "PENDING"
+        assert resp.json()["resource_ids"] == [merged_d, id_c]
+
+        approve_abc = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{candidate_abc}/approve",
+        )
+        assert approve_abc.status_code == 200, approve_abc.text
+        assert approve_abc.json()["merged_resource_id"] is not None
+
+    @pytest.mark.anyio
     async def test_composite_resource_matches_when_winners_agree(
         self,
         integration_client: AsyncClient,

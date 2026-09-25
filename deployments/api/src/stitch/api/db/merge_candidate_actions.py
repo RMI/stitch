@@ -63,10 +63,11 @@ async def _load_mergeable_resources(
 
     repointed = [r for r in results if r.repointed_id is not None]
     if repointed:
-        reprs = map(repr, repointed)
-        msg = f"Repointed: [{','.join(reprs)}]"
+        moved = ", ".join(
+            f"resource {r.id} is now resource {r.repointed_id}" for r in repointed
+        )
         raise ResourceIntegrityError(
-            f"Cannot merge any resource that has already been merged. {msg}"
+            f"Cannot merge any resource that has already been merged: {moved}."
         )
 
     return results
@@ -302,6 +303,89 @@ async def create_merge_candidate(
     return _candidate_to_view(candidate)
 
 
+async def _reroute_pending_candidates(
+    session: AsyncSession,
+    user: CurrentUser,
+    merged_away_ids: Sequence[int],
+    new_id: int,
+    exclude_candidate_id: int,
+) -> None:
+    """Repoint other PENDING candidates off resources that a merge just consumed.
+
+    Approving a candidate merges ``merged_away_ids`` into the brand-new resource
+    ``new_id`` and repoints the originals. Any *other* PENDING candidate that
+    still references one of those originals would otherwise be stranded: its
+    comparison would coalesce an emptied null-shell, and its own approval would
+    fail the already-merged guard, leaving Deny as the only (dishonest) exit.
+
+    Instead, rewrite each such candidate in place to reference ``new_id``. It
+    stays PENDING and reviewable, and because ``get_merge_candidate`` builds the
+    comparison live from the stored item rows, the review pane immediately shows
+    ``new_id``'s current values. Rides the caller's transaction.
+    """
+    merged_away = set(merged_away_ids)
+    stmt = (
+        select(MergeCandidateModel)
+        .join(
+            MergeCandidateItemModel,
+            MergeCandidateItemModel.merge_candidate_id == MergeCandidateModel.id,
+        )
+        .where(
+            MergeCandidateItemModel.resource_id.in_(merged_away),
+            MergeCandidateModel.status == MergeCandidateStatus.PENDING,
+            MergeCandidateModel.id != exclude_candidate_id,
+        )
+        .options(selectinload(MergeCandidateModel.items))
+        .distinct()
+    )
+    candidates = (await session.scalars(stmt)).all()
+    if not candidates:
+        return
+
+    # A rerouted candidate always contains new_id, which is brand-new, so its
+    # fingerprint cannot collide with any pre-existing candidate -- only with
+    # another candidate rerouted in this same pass (e.g. A+C and B+C both become
+    # D+C). Track survivors' fingerprints and drop later duplicates: they are now
+    # the identical proposal. Order by id so the survivor is deterministic.
+    seen_fingerprints: set[str] = set()
+    for candidate in sorted(candidates, key=lambda c: c.id):
+        # Rewrite each merged-away member to new_id. If a candidate held more than
+        # one merged-away id (e.g. approving A+B collapses a member of A+B+C),
+        # they all collapse to new_id; drop the duplicate items to respect the
+        # (candidate, resource_id) unique constraint.
+        seen_ids: set[int] = set()
+        new_ids: list[int] = []
+        for item in sorted(candidate.items, key=lambda i: i.position):
+            target = new_id if item.resource_id in merged_away else item.resource_id
+            if target in seen_ids:
+                # Removing from the delete-orphan collection deletes the row on
+                # flush and keeps candidate.items consistent in memory.
+                candidate.items.remove(item)
+                continue
+            item.resource_id = target
+            seen_ids.add(target)
+            new_ids.append(target)
+
+        # A candidate whose members were all merged away (a subset of the approved
+        # candidate, e.g. A+B when A+B+C is approved) collapses to just [new_id].
+        # A single-member candidate can never be approved (`_normalize_resource_ids`
+        # requires >=2), so it would be a permanent dead end -- and it is fully
+        # subsumed by the approval anyway. Delete it.
+        if len(new_ids) < 2:
+            await session.delete(candidate)
+            continue
+
+        fingerprint = _fingerprint(new_ids)
+        if fingerprint in seen_fingerprints:
+            await session.delete(candidate)
+            continue
+        seen_fingerprints.add(fingerprint)
+        candidate.fingerprint = fingerprint
+        candidate.last_updated_by_id = user.id
+
+    await session.flush()
+
+
 async def approve_merge_candidate(
     session: AsyncSession,
     user: CurrentUser,
@@ -324,6 +408,14 @@ async def approve_merge_candidate(
         session=session,
         user=user,
         resource_ids=resource_ids,
+    )
+
+    await _reroute_pending_candidates(
+        session=session,
+        user=user,
+        merged_away_ids=resource_ids,
+        new_id=merged_resource.id,
+        exclude_candidate_id=candidate.id,
     )
 
     candidate.status = MergeCandidateStatus.APPROVED

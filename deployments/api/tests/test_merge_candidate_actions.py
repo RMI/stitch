@@ -54,6 +54,7 @@ class FakeSession:
     scalars_result: list[object] = field(default_factory=list)
     added: list[object] = field(default_factory=list)
     added_all: list[object] = field(default_factory=list)
+    deleted: list[object] = field(default_factory=list)
     flush_calls: int = 0
     refresh_calls: list[tuple[object, object | None]] = field(default_factory=list)
 
@@ -68,6 +69,9 @@ class FakeSession:
 
     def add_all(self, objs):
         self.added_all.extend(list(objs))
+
+    async def delete(self, obj):
+        self.deleted.append(obj)
 
     async def flush(self):
         self.flush_calls += 1
@@ -296,6 +300,134 @@ async def test_approve_merge_candidate_applies_merge_and_updates_candidate(
     assert session.flush_calls == 1
     assert view.status == MergeCandidateStatus.APPROVED
     assert view.merged_resource_id == 31
+
+
+@pytest.mark.anyio
+async def test_reroute_rewrites_pending_candidate_items_and_fingerprint(user):
+    # Approving A(18)+B(19) -> D(31) must repoint pending A(18)+C(20) to D+C.
+    other = FakeCandidate(
+        id=5,
+        status=MergeCandidateStatus.PENDING,
+        items=[FakeItem(18, 0), FakeItem(20, 1)],
+        fingerprint="18:20",
+    )
+    session = FakeSession(scalars_result=[other])
+
+    await mca._reroute_pending_candidates(
+        session=session,
+        user=user,
+        merged_away_ids=[18, 19],
+        new_id=31,
+        exclude_candidate_id=7,
+    )
+
+    assert [(i.resource_id, i.position) for i in other.items] == [(31, 0), (20, 1)]
+    assert other.fingerprint == "20:31"
+    assert other.last_updated_by_id == user.id
+    assert session.deleted == []
+    assert session.flush_calls == 1
+
+
+@pytest.mark.anyio
+async def test_reroute_dedupes_when_candidate_holds_multiple_merged_ids(user):
+    # A 3-way A(18)+B(19)+C(20): approving A+B -> D(31) collapses both A and B to
+    # D, so the duplicate item is dropped and the candidate becomes D+C.
+    other = FakeCandidate(
+        id=5,
+        status=MergeCandidateStatus.PENDING,
+        items=[FakeItem(18, 0), FakeItem(19, 1), FakeItem(20, 2)],
+        fingerprint="18:19:20",
+    )
+    session = FakeSession(scalars_result=[other])
+
+    await mca._reroute_pending_candidates(
+        session=session,
+        user=user,
+        merged_away_ids=[18, 19],
+        new_id=31,
+        exclude_candidate_id=7,
+    )
+
+    # The second merged-away member (position 1) is the dropped duplicate; it is
+    # removed from the collection (delete-orphan), not deleted through the session.
+    assert [(i.resource_id, i.position) for i in other.items] == [(31, 0), (20, 2)]
+    assert session.deleted == []
+    assert other.fingerprint == "20:31"
+    assert session.flush_calls == 1
+
+
+@pytest.mark.anyio
+async def test_reroute_drops_candidate_that_collapses_below_two_members(user):
+    # Approving A(18)+B(19)+C(20) -> D(31) fully subsumes a pending A(18)+B(19):
+    # it would collapse to just [31], which can never be approved, so it is
+    # deleted rather than left as a dead end.
+    subset = FakeCandidate(
+        id=5,
+        status=MergeCandidateStatus.PENDING,
+        items=[FakeItem(18, 0), FakeItem(19, 1)],
+        fingerprint="18:19",
+    )
+    session = FakeSession(scalars_result=[subset])
+
+    await mca._reroute_pending_candidates(
+        session=session,
+        user=user,
+        merged_away_ids=[18, 19, 20],
+        new_id=31,
+        exclude_candidate_id=7,
+    )
+
+    assert session.deleted == [subset]
+    assert subset.fingerprint == "18:19"  # untouched; row is being deleted
+    assert session.flush_calls == 1
+
+
+@pytest.mark.anyio
+async def test_reroute_drops_duplicate_candidate_on_fingerprint_collision(user):
+    # A(18)+C(20) and B(19)+C(20) both collapse to D(31)+C(20). The lower-id
+    # candidate survives; the second is now the identical proposal and is deleted.
+    ac = FakeCandidate(
+        id=5,
+        status=MergeCandidateStatus.PENDING,
+        items=[FakeItem(18, 0), FakeItem(20, 1)],
+        fingerprint="18:20",
+    )
+    bc = FakeCandidate(
+        id=6,
+        status=MergeCandidateStatus.PENDING,
+        items=[FakeItem(19, 0), FakeItem(20, 1)],
+        fingerprint="19:20",
+    )
+    session = FakeSession(scalars_result=[ac, bc])
+
+    await mca._reroute_pending_candidates(
+        session=session,
+        user=user,
+        merged_away_ids=[18, 19],
+        new_id=31,
+        exclude_candidate_id=7,
+    )
+
+    assert session.deleted == [bc]
+    assert ac.fingerprint == "20:31"
+    assert [i.resource_id for i in ac.items] == [31, 20]
+    assert session.flush_calls == 1
+
+
+@pytest.mark.anyio
+async def test_reroute_is_noop_without_overlapping_candidates(user):
+    session = FakeSession(scalars_result=[])
+
+    await mca._reroute_pending_candidates(
+        session=session,
+        user=user,
+        merged_away_ids=[18, 19],
+        new_id=31,
+        exclude_candidate_id=7,
+    )
+
+    assert session.deleted == []
+    assert session.flush_calls == 0
 
 
 @pytest.mark.anyio
