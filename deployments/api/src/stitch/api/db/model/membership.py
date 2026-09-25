@@ -28,11 +28,10 @@ class MembershipModel(TimestampMixin, UserAuditMixin, Base):
     resource_id: Mapped[int] = mapped_column(
         ForeignKey("og_field_resources.id"), nullable=False
     )
-    source: Mapped[OGSISrcKey] = mapped_column(
-        String(10),
-        ForeignKey("og_field_source_priority.source"),
-        nullable=False,
-    )
+    # Source key of the membership. Validity is guaranteed by the OGSISrcKey enum
+    # and the write path; there is no longer an og_field_source_priority table to
+    # FK against (source ordering moved to og_field_resource_attribute_priority).
+    source: Mapped[OGSISrcKey] = mapped_column(String(10), nullable=False)
     source_pk: Mapped[int] = mapped_column(
         ForeignKey("oil_gas_field_sources.id"), nullable=False
     )

@@ -2,7 +2,7 @@ from collections.abc import Collection, Sequence
 from typing import get_args
 
 from fastapi import HTTPException
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.status import HTTP_404_NOT_FOUND
@@ -27,23 +27,29 @@ from stitch.ogsi.model import (
     OGFieldResource,
     OGFieldSourceValueView,
 )
+from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
 
 from .model import (
     MembershipModel,
     MembershipStatus,
-    OGFieldResourceSourcePriority,
+    OGFieldResourceState,
     ResourceModel,
 )
+from .priorities import seed_or_refresh_defaults, set_curated
 from .model.oil_gas_field_source_value import (
     ATTRIBUTE_NAMES,
     materialize_value,
 )
 from .queries import (
+    _build_field_conditions,
+    _build_sort_clauses,
     base_resource_query,
     field_source_candidates,
     filter_option_rows,
 )
+from .read_model.permissions import read_model_mask
+from .read_model.state import refresh_resource_state, remove_resource_state
 from .utils import (
     coalesce_resources,
     resource_model_to_entity,
@@ -61,10 +67,10 @@ async def query(
 ) -> tuple[list[OGFieldListItemView], int]:
     """Query coalesced resource list items, restricted to licensed sources.
 
-    A narrowed id-query (+ count) over the participating fields selects and
-    orders the page, then one SQL coalesce (``coalesce_resources``) hydrates
-    those ids -- values and provenance come straight from the query, with no
-    second coalesce pass.
+    Callers with a canonical visibility profile (all public sources plus any
+    combination of wm/ccr) are served from the precomputed
+    ``og_field_resource_state`` read model; every other profile (unscoped, or a
+    partial public grant) falls back to live coalescing, which is always correct.
     """
     if params.sort_by == "source":
         raise HTTPException(
@@ -72,6 +78,68 @@ async def query(
             detail="sort_by=source is not supported for resource list queries.",
         )
 
+    mask = read_model_mask(licensed_sources)
+    if mask is not None:
+        return await _query_read_model(session, params, mask)
+    return await _query_live(session, params, licensed_sources)
+
+
+async def _query_read_model(
+    session: AsyncSession,
+    params: OGFieldQueryParams,
+    mask: int,
+) -> tuple[list[OGFieldListItemView], int]:
+    """List page served from the precomputed read model for one permission mask.
+
+    Filtering/sorting/paging reuse the live path's shared clause builders over the
+    read model's typed columns, so query semantics stay identical; the winning
+    values and provenance are read straight from the stored row.
+    """
+    state = OGFieldResourceState
+    scoped = select(state).where(state.permission_mask == mask).cte("resource_state")
+
+    ids_stmt = select(scoped.c.resource_id)
+    for cond in _build_field_conditions(scoped, params):
+        ids_stmt = ids_stmt.where(cond)
+    if params.id is not None:
+        ids_stmt = ids_stmt.where(scoped.c.resource_id == params.id)
+    ids_stmt = ids_stmt.order_by(*_build_sort_clauses(scoped, params, "resource_id"))
+
+    count_stmt = select(func.count()).select_from(ids_stmt.subquery())
+    with named_query("resources.count"):
+        total = (await session.scalar(count_stmt)) or 0
+    ids_stmt = ids_stmt.limit(params.limit).offset(params.offset)
+    with named_query("resources.list_ids"):
+        ids = list((await session.scalars(ids_stmt)).all())
+
+    if not ids:
+        return [], total
+
+    with named_query("resources.list_hydrate"):
+        rows = (
+            await session.scalars(
+                select(state).where(
+                    state.resource_id.in_(ids), state.permission_mask == mask
+                )
+            )
+        ).all()
+    by_id = {row.resource_id: row for row in rows}
+    items = [_state_row_to_list_item_view(by_id[rid]) for rid in ids]
+    return items, total
+
+
+async def _query_live(
+    session: AsyncSession,
+    params: OGFieldQueryParams,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> tuple[list[OGFieldListItemView], int]:
+    """Live coalescing list path (used when the read model cannot serve a caller).
+
+    A narrowed id-query (+ count) over the participating fields selects and orders
+    the page, then one SQL coalesce (``coalesce_resources``) hydrates those ids --
+    values and provenance come straight from the query, with no second coalesce
+    pass.
+    """
     ids_stmt = base_resource_query(params, licensed_sources)
     count_stmt = select(func.count()).select_from(ids_stmt.subquery())
     with named_query("resources.count"):
@@ -91,11 +159,45 @@ async def query(
     return items, total
 
 
+def _state_row_to_list_item_view(row: OGFieldResourceState) -> OGFieldListItemView:
+    """Project one stored read-model row into the list item wire model."""
+    data = OilGasFieldBase(**{field: getattr(row, field) for field in ATTRIBUTE_NAMES})
+    return OGFieldListItemView(id=row.resource_id, data=data, provenance=row.provenance)
+
+
 async def filter_options(
     session: AsyncSession,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> dict[str, list[str]]:
-    """Distinct coalesced values for every filterable field, in one query."""
+    """Distinct coalesced values for every filterable field.
+
+    Served from the read model (a plain indexed ``DISTINCT`` per field) for
+    canonical visibility profiles; falls back to live coalescing otherwise.
+    """
+    mask = read_model_mask(licensed_sources)
+    if mask is None:
+        return await _filter_options_live(session, licensed_sources)
+
+    state = OGFieldResourceState
+    options: dict[str, list[str]] = {field: [] for field in FILTER_OPTION_FIELDS}
+    with named_query("resources.filter_options"):
+        for field in FILTER_OPTION_FIELDS:
+            col = getattr(state, field)
+            stmt = (
+                select(col)
+                .where(state.permission_mask == mask, col.is_not(None))
+                .distinct()
+                .order_by(col)
+            )
+            options[field] = list((await session.scalars(stmt)).all())
+    return options
+
+
+async def _filter_options_live(
+    session: AsyncSession,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> dict[str, list[str]]:
+    """Live-coalescing distinct filter values (read-model fallback)."""
     options: dict[str, list[str]] = {field: [] for field in FILTER_OPTION_FIELDS}
     with named_query("resources.filter_options"):
         for colname, value in await session.execute(
@@ -300,26 +402,12 @@ async def set_field_source_priority(
     if list(ordered_source_pks) == current_order:
         return await field_source_values(session, id, field, licensed_sources)
 
-    source_by_pk = {row.source_pk: row.source for row in rows}
     with named_query("resources.set_field_source_priority.persist"):
-        await session.execute(
-            delete(OGFieldResourceSourcePriority).where(
-                OGFieldResourceSourcePriority.resource_id == id,
-                OGFieldResourceSourcePriority.colname == field,
-            )
-        )
-        for priority, source_pk in enumerate(ordered_source_pks):
-            session.add(
-                OGFieldResourceSourcePriority.create(
-                    created_by=user,
-                    resource_id=id,
-                    source=source_by_pk[source_pk],
-                    source_pk=source_pk,
-                    colname=field,
-                    priority=priority,
-                )
-            )
-        await session.flush()
+        # The listed sources become the curated tier (winner-first); the rest are
+        # re-derived as defaults. Rewrites the field's priority rows.
+        await set_curated(session, user, id, field, ordered_source_pks)
+        # Re-prioritizing changes the coalesced winners; refresh the read model.
+        await refresh_resource_state(session, id)
     return await field_source_values(session, id, field, licensed_sources)
 
 
@@ -391,12 +479,12 @@ async def apply_resource_merge(
 
     # all ids exist, none have already been repointed
     #
-    # The merge target is a brand-new resource with no rows in
-    # og_field_resource_source_priority, so it resolves fields in the default
-    # global source order. Any per-field/per-resource priority overrides on the
-    # originals are intentionally NOT carried over -- merging resets ordering to
-    # default. (No-op reset today since the target is fresh; a later PR handles
-    # an explicit reset if merge semantics ever preserve an existing resource.)
+    # The merge target is a brand-new resource; it is seeded with default priority
+    # rows only (no curated rows), so it resolves fields in the default global
+    # source order. Any per-field curation on the originals is intentionally NOT
+    # carried over -- merging resets ordering to default. (No-op reset today since
+    # the target is fresh; a later PR handles an explicit reset if merge semantics
+    # ever preserve an existing resource.)
     with named_query("resources.merge.apply"):
         new_resource = ResourceModel.create(created_by=user)
         session.add(new_resource)
@@ -408,6 +496,17 @@ async def apply_resource_merge(
             res.repointed_id = new_resource.id
 
         _ = await _repoint_memberships(session, user, new_resource.id, unique_ids)
+
+        # Seed default priority rows for the new canonical resource. Per-resource
+        # curation is intentionally not carried over (merge resets to the default
+        # global order), so the fresh target gets defaults only.
+        await seed_or_refresh_defaults(session, user, new_resource.id)
+
+        # Keep the read model in sync: the merged-away originals are now repointed
+        # (drop their rows) and the new canonical resource needs fresh rows.
+        for original_id in unique_ids:
+            await remove_resource_state(session, original_id)
+        await refresh_resource_state(session, new_resource.id)
 
         # Return the canonical resource entity
         await session.refresh(new_resource, ["memberships"])
