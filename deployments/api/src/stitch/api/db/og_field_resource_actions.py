@@ -35,6 +35,7 @@ from .model import (
     OGFieldResourceSourcePriority,
     ResourceModel,
 )
+from .resource_state import refresh_resource_state
 from .model.oil_gas_field_source_value import (
     ATTRIBUTE_NAMES,
     materialize_value,
@@ -320,6 +321,8 @@ async def set_field_source_priority(
                 )
             )
         await session.flush()
+    # Re-ranking changes this resource's coalesced winners; refresh its state rows.
+    await refresh_resource_state(session, [id])
     return await field_source_values(session, id, field, licensed_sources)
 
 
@@ -408,6 +411,11 @@ async def apply_resource_merge(
             res.repointed_id = new_resource.id
 
         _ = await _repoint_memberships(session, user, new_resource.id, unique_ids)
+
+        # Refresh the state table for both the new canonical resource (populate)
+        # and the now-repointed originals (their refresh inserts no rows -- an
+        # effective delete, since the ranking query excludes repointed resources).
+        await refresh_resource_state(session, [*unique_ids, new_resource.id])
 
         # Return the canonical resource entity
         await session.refresh(new_resource, ["memberships"])

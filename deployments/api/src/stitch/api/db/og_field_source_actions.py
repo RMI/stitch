@@ -23,6 +23,7 @@ from .model import (
 from .queries import (
     base_source_query,
 )
+from .resource_state import refresh_resource_state
 from .utils import resource_model_to_entity
 
 
@@ -194,6 +195,9 @@ async def _attach_source_models(
     ]
     session.add_all(memberships)
     await session.flush()
+    # New memberships change what coalesces for this resource; keep the
+    # precomputed state table in step within the same transaction.
+    await refresh_resource_state(session, [resource.id])
 
 
 async def attach_sources_to_resource(

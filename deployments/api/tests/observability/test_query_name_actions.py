@@ -204,10 +204,16 @@ class TestActionCallSiteLabels:
         await resource_actions.create(
             session, test_user, og_create_res_fact(name="Created")
         )
-        # create() with source_data fans out to the source helpers.
+        # create() with source_data fans out to the source helpers, and attaching
+        # sources refreshes the precomputed resource-state table.
         _assert_labels(
             captured_query_events,
-            {"resources.create", "sources.get_or_create", "sources.attach"},
+            {
+                "resources.create",
+                "sources.get_or_create",
+                "sources.attach",
+                "resources.state.refresh",
+            },
         )
 
     @pytest.mark.anyio
@@ -231,8 +237,15 @@ class TestActionCallSiteLabels:
         await resource_actions.apply_resource_merge(
             session, test_user, [first.id, second.id]
         )
+        # Merge repoints originals + creates the canonical resource, then refreshes
+        # the state table for all of them.
         _assert_labels(
-            captured_query_events, {"resources.merge.load", "resources.merge.apply"}
+            captured_query_events,
+            {
+                "resources.merge.load",
+                "resources.merge.apply",
+                "resources.state.refresh",
+            },
         )
 
     @pytest.mark.anyio
@@ -275,6 +288,7 @@ class TestActionCallSiteLabels:
                 "resources.set_field_source_priority.load",
                 "resources.set_field_source_priority.candidates",
                 "resources.set_field_source_priority.persist",
+                "resources.state.refresh",
                 "resources.resolve_root",
                 "resources.field_source_values",
             },
@@ -305,7 +319,10 @@ class TestActionCallSiteLabels:
         await source_actions.create_and_attach_sources(
             session, test_user, [source_maker(managed=False, source="rmi")], parent.id
         )
-        _assert_labels(captured_query_events, {"sources.create_and_attach"})
+        _assert_labels(
+            captured_query_events,
+            {"sources.create_and_attach", "resources.state.refresh"},
+        )
 
         captured_query_events.clear()
         await source_actions.get_or_create_sources(
@@ -317,7 +334,9 @@ class TestActionCallSiteLabels:
         await source_actions.attach_sources_to_resource(
             session, parent.id, [source_maker(managed=False, source="bc")], test_user
         )
-        _assert_labels(captured_query_events, {"sources.attach"})
+        _assert_labels(
+            captured_query_events, {"sources.attach", "resources.state.refresh"}
+        )
 
         captured_query_events.clear()
         await source_actions.get_source(session, created.id)
@@ -390,7 +409,8 @@ class TestActionCallSiteLabels:
             approved.id,
             MergeCandidateReviewRequest(review_notes="ok"),
         )
-        # approve delegates the actual merge to apply_resource_merge.
+        # approve delegates the actual merge to apply_resource_merge, which
+        # refreshes the state table for the merged resources.
         _assert_labels(
             captured_query_events,
             {
@@ -399,6 +419,7 @@ class TestActionCallSiteLabels:
                 "merge_candidates.approve.persist",
                 "resources.merge.load",
                 "resources.merge.apply",
+                "resources.state.refresh",
             },
         )
 

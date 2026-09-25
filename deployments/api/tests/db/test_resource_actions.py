@@ -22,6 +22,7 @@ from stitch.api.db.model import (
     ResourceModel,
 )
 from stitch.api.db.queries import filter_option_rows
+from stitch.api.db.resource_state import refresh_resource_state
 from stitch.api.entities import (
     FILTER_OPTION_FIELDS,
     OGFieldQueryParams,
@@ -64,6 +65,9 @@ async def _create_resource_with_sources(
         )
 
     await session.flush()
+    # Mirror the production write paths, which keep og_field_resource_state in
+    # step; these helpers insert models directly, so refresh explicitly.
+    await refresh_resource_state(session, [resource.id])
     return resource.id
 
 
@@ -84,6 +88,7 @@ async def _add_source(session, user, rid: int, **attrs) -> int:
         )
     )
     await session.flush()
+    await refresh_resource_state(session, [rid])
     return source.id
 
 
@@ -116,6 +121,8 @@ async def _override(
         )
     )
     await session.flush()
+    # Overrides change coalesced winners; keep the state table consistent.
+    await refresh_resource_state(session, [rid])
     return pk
 
 
@@ -1096,6 +1103,9 @@ class TestResourceFilterOptionsAction:
         assert inactive_membership is not None
         inactive_membership.status = MembershipStatus.INACTIVE
         await seeded_integration_session.flush()
+        # Deactivating a membership changes coalesced output; production does this
+        # only via merge (which refreshes). Mirror that here.
+        await refresh_resource_state(seeded_integration_session, [inactive_id])
 
         options = await resource_actions.filter_options(seeded_integration_session)
 
@@ -1857,16 +1867,16 @@ class TestResourceDetailCoalescing:
         assert result.provenance["operators"][1] == "rmi"
 
     @pytest.mark.anyio
-    async def test_detail_reconstructs_source_data_from_single_query(
+    async def test_detail_reconstructs_winner_view_and_source_data(
         self,
         seeded_integration_session: AsyncSession,
         test_user: User,
     ):
-        """Detail builds the winner view *and* raw source_data from one query.
+        """Detail builds the winner view (from the state table) *and* raw source_data.
 
-        Both projections come from the same ranked-candidate rows: the winner
-        view/provenance (rn == 1) and source_data (all rows, grouped by source,
-        best-priority first). Each source keeps its own per-field values.
+        The winner view/provenance come from the precomputed state winners; the raw
+        source_data comes from the un-ranked per-source query (all rows, grouped by
+        source, best-priority first). Each source keeps its own per-field values.
         """
         session = seeded_integration_session
         rid = await _create_resource_with_sources(
@@ -1900,8 +1910,8 @@ class TestResourceDetailCoalescing:
     ):
         """get() costs a fixed number of round-trips regardless of source count.
 
-        The view + source_data come from a single ranked query (no separate
-        source-listing query, no per-source N+1), so a 4-source resource costs
+        The view (state winners) + source_data (one un-ranked per-source query)
+        are each a single query, no per-source N+1, so a 4-source resource costs
         the same as a 1-source one.
         """
         one = await _create_resource_with_sources(
@@ -2013,6 +2023,9 @@ class TestCoalescingEngineParity:
                 )
             )
         await session.flush()
+        # Overrides change coalesced winners; refresh state (production does this
+        # in set_field_source_priority).
+        await refresh_resource_state(session, [rid])
 
         # rmi unlicensed -> falls through; among licensed sources wm (override)
         # wins, and the lowest source_pk among the duplicate wm records wins.

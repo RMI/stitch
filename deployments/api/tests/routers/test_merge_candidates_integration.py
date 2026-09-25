@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.factories import ResourceCreateFactory
 from stitch.api.db.model import MembershipModel, OGFieldResourceSourcePriority
+from stitch.api.db.resource_state import refresh_resource_state
 from stitch.ogsi.model import OGFieldResource, OGFieldSource
 
 
@@ -173,6 +174,10 @@ class TestMergeCandidateDetailIntegration:
                     last_updated_by_id=1,
                 )
             )
+            await session.flush()
+            # set_field_source_priority refreshes state in production; this test
+            # writes the override row directly, so refresh explicitly.
+            await refresh_resource_state(session, [id_a])
             await session.commit()
 
         # A's coalesced value reflects the override: its name resolves to GEM's.

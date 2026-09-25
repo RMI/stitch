@@ -397,9 +397,22 @@ same route template.
    `selectinload`), avoid rebuilding an expensive CTE per request, or cache.
 4. Re-run the same load and diff the `total_ms` ranking to confirm the win.
 
-The suspected hot path today is the licensed-resource CTE built per request in
-[`og_field_resource_actions.py`](api/src/stitch/api/db/og_field_resource_actions.py)
-behind `GET /api/v1/oil-gas-fields/`. Let the data confirm it before optimizing.
+The former hot path — a licensed-resource coalescing CTE (a 5-table join + a
+`ROW_NUMBER()` window) rebuilt per request behind `GET /api/v1/oil-gas-fields/` —
+is now precomputed. `list`, `filter-options`, and `detail` read the coalesced
+winners from the `og_field_resource_state` table instead
+([`queries.py`](api/src/stitch/api/db/queries.py) `coalesced_state_winner_rows`),
+so these paths no longer build the ranking CTE. See the "Read model" section of
+[`ARCHITECTURE.md`](../ARCHITECTURE.md) for how that table is kept in sync.
+
+What to watch now, and confirm with the data before optimizing:
+
+- **Write-path refresh cost** (`resources.state.refresh`): every attach/merge/
+  reprioritize recomputes the affected resources' state rows in-transaction.
+- **The remaining live ranking**: the source-list and per-field-sources
+  (`field_source_candidates`) curator endpoints still rank on the fly.
+- Any `resources.list_*` / `resources.filter_options` query that regresses would
+  point at the state-table read or its indexes rather than the old CTE.
 
 ---
 
