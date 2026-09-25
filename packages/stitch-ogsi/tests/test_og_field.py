@@ -16,6 +16,7 @@ from stitch.ogsi.model import (
     BCSource,
     CCRSource,
     GemSource,
+    NORSource,
     OGFieldDetailView,
     OGFieldResource,
     OGFieldSource,
@@ -73,6 +74,14 @@ class TestOGFieldSourceDiscriminator:
         )
         assert isinstance(obj, ALBSource)
         assert obj.source == "alb"
+        assert obj.name == "Test Field"
+
+    def test_nor_source_from_json(self):
+        obj = _source_adapter.validate_json(
+            '{"source": "nor", "name": "Test Field", "country": "NOR", "source_record": {"observed_at": "2026-01-01T00:00:00Z", "producer": "test", "payload": {"kind": "fixture"}}}'
+        )
+        assert isinstance(obj, NORSource)
+        assert obj.source == "nor"
         assert obj.name == "Test Field"
 
     def test_invalid_source_key_rejected(self):

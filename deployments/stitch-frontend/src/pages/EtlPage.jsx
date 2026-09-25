@@ -57,11 +57,9 @@ const BC_FIELDS = [
   },
 ];
 
-// No run parameters yet: the Alberta dataset hasn't been added to
-// stitch-etl-poc, so the real request-body shape is unknown. Leave empty (no
-// inputs, empty body) until the dataset lands and the fields can be defined to
-// match it.
+// No run parameters needed as of 2026-09-23 for ALB or NOR.
 const ALB_FIELDS = [];
+const NOR_FIELDS = [];
 
 const WOODMAC_FIELDS = [
   {
@@ -340,6 +338,13 @@ export default function EtlPage() {
           description="Load Alberta Energy Regulator field data from the configured spreadsheet and post it to Stitch."
           baseUrl={`${config.etlBaseUrl}/alb`}
           fields={ALB_FIELDS}
+          getToken={getToken}
+        />
+        <EtlPanel
+          title="Norway"
+          description="Fetch Norwegian Offshore Directorate (Sodir) field data and post it to Stitch."
+          baseUrl={`${config.etlBaseUrl}/nor`}
+          fields={NOR_FIELDS}
           getToken={getToken}
         />
       </div>
