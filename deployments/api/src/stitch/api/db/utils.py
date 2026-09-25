@@ -18,7 +18,7 @@ from stitch.api.db.errors import ResourceIntegrityError
 
 from .model import ResourceModel
 from .model.oil_gas_field_source_value import ATTRIBUTE_NAMES, materialize_value
-from .queries import coalesced_candidate_rows, coalesced_winner_rows
+from .queries import coalesced_state_winner_rows, resource_source_rows
 
 # Per-field coalesced provenance: field -> (winning value, source key, source id),
 # or None when no source carries a value for the field.
@@ -123,15 +123,13 @@ async def coalesce_resources_with_sources(
     resource_ids: Collection[int],
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> dict[int, OGFieldResource]:
-    """Detail-grade hydration for many resources in a SINGLE query.
+    """Detail-grade hydration for many resources: coalesced view + ``source_data``.
 
-    Like ``coalesce_resources`` but also populates ``source_data``. One
-    ``coalesced_candidate_rows`` query returns every ranked value row (joined to
-    its source header) for all requested ids; per resource we derive the
-    coalesced view + provenance (the ``rn == 1`` rows) and the raw ``source_data``
-    (all rows grouped by source). The SQL ranking stays the only coalescer -- the
-    ``rn == 1`` cut is a filter on a rank SQL already computed, not a second
-    coalesce.
+    Two constant-round-trip queries, neither of which rebuilds the ranking CTE:
+    the coalesced view + provenance come from the precomputed state table
+    (``coalesced_state_winner_rows``, same winners as the list path), and the raw
+    ``source_data`` comes from ``resource_source_rows`` (grouped by source, which
+    needs no ranking). Round-trips are fixed regardless of source count.
 
     Used wherever the raw per-source rows are needed: the single-resource detail
     path (``resource_model_to_entity``) and the merge-candidate ``compare`` view.
@@ -139,26 +137,35 @@ async def coalesce_resources_with_sources(
     pays to hydrate the raw rows.
     """
     ids = list(dict.fromkeys(resource_ids))
-    rows_by_id: dict[int, list[Any]] = {rid: [] for rid in ids}
+    winners_by_id: dict[int, list[WinnerRow]] = {rid: [] for rid in ids}
+    source_rows_by_id: dict[int, list[Any]] = {rid: [] for rid in ids}
     if ids:
-        result = await session.execute(coalesced_candidate_rows(ids, licensed_sources))
-        for row in result.all():
-            rows_by_id[row.resource_id].append(row)
+        winners = await session.execute(
+            coalesced_state_winner_rows(licensed_sources, resource_ids=ids)
+        )
+        for w in winners:
+            winners_by_id[w.resource_id].append(
+                (
+                    w.colname,
+                    w.value_text,
+                    w.value_num,
+                    w.value_json,
+                    w.source,
+                    w.source_pk,
+                )
+            )
+        sources = await session.execute(resource_source_rows(ids, licensed_sources))
+        for row in sources.all():
+            source_rows_by_id[row.resource_id].append(row)
 
     out: dict[int, OGFieldResource] = {}
     for rid in ids:
-        rows = rows_by_id[rid]
-        winner_rows: list[WinnerRow] = [
-            (r.colname, r.value_text, r.value_num, r.value_json, r.source, r.source_pk)
-            for r in rows
-            if r.rn == 1
-        ]
-        view, provenance = _view_and_provenance(winner_rows)
+        view, provenance = _view_and_provenance(winners_by_id[rid])
         out[rid] = OGFieldResource(
             id=rid,
             view=view,
             provenance=provenance,
-            source_data=_source_data_from_rows(rows),
+            source_data=_source_data_from_rows(source_rows_by_id[rid]),
             constituents=frozenset(),
         )
     return out
@@ -171,7 +178,7 @@ async def resource_model_to_entity(
 ) -> OGFieldResource:
     """Build the full detail entity for one resource.
 
-    Hydrates view + provenance + ``source_data`` in a single query via
+    Hydrates view + provenance + ``source_data`` via
     ``coalesce_resources_with_sources``, then layers on the model-derived
     ``constituents`` and ``repointed_to``.
     """
@@ -200,23 +207,26 @@ async def coalesce_resources(
     resource_ids: Collection[int],
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> dict[int, OGFieldResource]:
-    """Coalesce many resources into one entity each -- coalescing done in SQL.
+    """Coalesce many resources into one entity each -- winners from the state table.
 
     The list-path coalescer: the winning value + provenance for every
-    ``(resource, field)`` is chosen by the SQL ranking (``coalesced_winner_rows``);
-    Python only materializes the typed value and reads the winning source as
-    provenance -- no priority logic here. Returns an entry for every requested id;
-    ids with no active/licensed source data (including repointed resources, which
-    the query filters out) yield a null-shell view + all-``None`` provenance.
+    ``(resource, field)`` is read from the precomputed state table
+    (``coalesced_state_winner_rows``); Python only materializes the typed value and
+    reads the winning source as provenance -- no priority logic here. Returns an
+    entry for every requested id; ids with no active/licensed source data
+    (including repointed resources, absent from the state table) yield a null-shell
+    view + all-``None`` provenance.
 
     ``source_data`` is left empty: the list only needs the coalesced view, so it
     never pays to hydrate the raw rows. The detail path builds view *and*
-    ``source_data`` from one query instead (see ``resource_model_to_entity``).
+    ``source_data`` (see ``resource_model_to_entity``).
     """
     ids = list(dict.fromkeys(resource_ids))
     winners_by_id: dict[int, list[WinnerRow]] = {rid: [] for rid in ids}
     if ids:
-        rows = await session.execute(coalesced_winner_rows(ids, licensed_sources))
+        rows = await session.execute(
+            coalesced_state_winner_rows(licensed_sources, resource_ids=ids)
+        )
         for rid, colname, value_text, value_num, value_json, source, source_pk in rows:
             winners_by_id[rid].append(
                 (colname, value_text, value_num, value_json, source, source_pk)

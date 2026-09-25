@@ -11,6 +11,7 @@ from stitch.auth.permissions import RESOURCE_READ, SOURCE_READ_GEM
 
 from stitch.api.auth import get_current_user, get_token_claims
 from stitch.api.db.config import UnitOfWork, get_uow
+from stitch.api.db.resource_state import refresh_resource_state
 from stitch.api.db.model import (
     MembershipModel,
     MembershipStatus,
@@ -133,6 +134,10 @@ async def _seed_resource_with_sources(
                     status=MembershipStatus.ACTIVE,
                 )
             )
+        await session.flush()
+        # Production write paths keep og_field_resource_state in step; this helper
+        # inserts models directly, so refresh explicitly before the endpoints read.
+        await refresh_resource_state(session, [resource.id])
         await session.commit()
         return resource.id
 

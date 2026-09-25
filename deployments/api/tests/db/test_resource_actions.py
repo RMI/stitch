@@ -1867,16 +1867,16 @@ class TestResourceDetailCoalescing:
         assert result.provenance["operators"][1] == "rmi"
 
     @pytest.mark.anyio
-    async def test_detail_reconstructs_source_data_from_single_query(
+    async def test_detail_reconstructs_winner_view_and_source_data(
         self,
         seeded_integration_session: AsyncSession,
         test_user: User,
     ):
-        """Detail builds the winner view *and* raw source_data from one query.
+        """Detail builds the winner view (from the state table) *and* raw source_data.
 
-        Both projections come from the same ranked-candidate rows: the winner
-        view/provenance (rn == 1) and source_data (all rows, grouped by source,
-        best-priority first). Each source keeps its own per-field values.
+        The winner view/provenance come from the precomputed state winners; the raw
+        source_data comes from the un-ranked per-source query (all rows, grouped by
+        source, best-priority first). Each source keeps its own per-field values.
         """
         session = seeded_integration_session
         rid = await _create_resource_with_sources(
@@ -1910,8 +1910,8 @@ class TestResourceDetailCoalescing:
     ):
         """get() costs a fixed number of round-trips regardless of source count.
 
-        The view + source_data come from a single ranked query (no separate
-        source-listing query, no per-source N+1), so a 4-source resource costs
+        The view (state winners) + source_data (one un-ranked per-source query)
+        are each a single query, no per-source N+1, so a 4-source resource costs
         the same as a 1-source one.
         """
         one = await _create_resource_with_sources(
