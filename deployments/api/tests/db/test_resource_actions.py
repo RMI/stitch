@@ -17,10 +17,11 @@ from stitch.api.db.errors import (
 from stitch.api.db.model import (
     MembershipModel,
     MembershipStatus,
-    OGFieldResourceSourcePriority,
+    OGFieldResourceAttributePriority,
     OilGasFieldSourceValueModel,
     ResourceModel,
 )
+from stitch.api.db.priorities import seed_or_refresh_defaults, set_curated
 from stitch.api.db.queries import filter_option_rows
 from stitch.api.entities import (
     FILTER_OPTION_FIELDS,
@@ -64,6 +65,9 @@ async def _create_resource_with_sources(
         )
 
     await session.flush()
+    # Direct seeding bypasses the action layer, so seed the per-attribute default
+    # priority rows the coalescing path now requires (the write actions do this).
+    await seed_or_refresh_defaults(session, user, resource.id)
     return resource.id
 
 
@@ -84,6 +88,7 @@ async def _add_source(session, user, rid: int, **attrs) -> int:
         )
     )
     await session.flush()
+    await seed_or_refresh_defaults(session, user, rid)
     return source.id
 
 
@@ -103,19 +108,15 @@ async def _source_pks(session, rid: int, source_key: str) -> list[int]:
 async def _override(
     session, user, rid: int, source_key: str, field: str, priority: int
 ):
-    """Insert one per-field override row for the (single) record of a source."""
+    """Curate the (single) record of a source as the winner for a field.
+
+    The two-table override split is gone; curation now lives in the single
+    per-attribute priority table. This makes ``source_key``'s record the curated
+    top source for ``field`` (others become defaults) via ``set_curated``.
+    """
+    assert priority == 0, "test helper only curates a single top source"
     (pk,) = await _source_pks(session, rid, source_key)
-    session.add(
-        OGFieldResourceSourcePriority.create(
-            created_by=user,
-            resource_id=rid,
-            source=source_key,
-            source_pk=pk,
-            colname=field,
-            priority=priority,
-        )
-    )
-    await session.flush()
+    await set_curated(session, user, rid, field, [pk])
     return pk
 
 
@@ -1587,15 +1588,19 @@ class TestSetFieldSourcePriority:
         (gem_pk,) = await _source_pks(session, rid, "gem")
         (wm_pk,) = await _source_pks(session, rid, "wm")
 
-        # wm, gem is already the default order -> no-op, no rows written.
+        # wm, gem is already the default order -> no-op: nothing is promoted to the
+        # curated tier (rows stay default, so a later-added source still ranks by
+        # global default priority).
         await resource_actions.set_field_source_priority(
             session, test_user, rid, "name", [wm_pk, gem_pk]
         )
 
-        count = await session.scalar(
-            select(func.count()).select_from(OGFieldResourceSourcePriority)
+        curated_count = await session.scalar(
+            select(func.count())
+            .select_from(OGFieldResourceAttributePriority)
+            .where(OGFieldResourceAttributePriority.is_curated.is_(True))
         )
-        assert count == 0
+        assert curated_count == 0
 
     @pytest.mark.anyio
     async def test_duplicate_pks_rejected(
@@ -1999,20 +2004,11 @@ class TestCoalescingEngineParity:
             {"source": "wm", "name": "WM Second", "country": "CAN"},
             {"source": "gem", "name": "GEM Name", "country": "BRA"},
         )
-        # Override: wm becomes top priority for the NAME field, both wm records
-        # curated in source_pk order (WM First < WM Second), so WM First wins.
-        for priority, pk in enumerate(await _source_pks(session, rid, "wm")):
-            session.add(
-                OGFieldResourceSourcePriority.create(
-                    created_by=test_user,
-                    resource_id=rid,
-                    source="wm",
-                    source_pk=pk,
-                    colname="name",
-                    priority=priority,
-                )
-            )
-        await session.flush()
+        # Curate wm to the top for the NAME field, both wm records in source_pk
+        # order (WM First < WM Second), so WM First wins.
+        await set_curated(
+            session, test_user, rid, "name", await _source_pks(session, rid, "wm")
+        )
 
         # rmi unlicensed -> falls through; among licensed sources wm (override)
         # wins, and the lowest source_pk among the duplicate wm records wins.
@@ -2092,3 +2088,33 @@ class TestCoalesceResources:
         res = out[rid]
         assert res.view.name is None
         assert res.provenance["name"] is None
+
+
+class TestPriorityCollapseBehaviour:
+    """Single per-attribute priority store reproduces the old two-tier ranking."""
+
+    @pytest.mark.anyio
+    async def test_source_attached_after_curation_ranks_last(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "gem", "name": "GEM Name"},
+            {"source": "wm", "name": "WM Name"},
+        )
+        # Curate gem to the top for name (gem curated, wm default).
+        await _override(session, test_user, rid, "gem", "name", priority=0)
+
+        # Attach a new rmi source (top global default) for name AFTER curation.
+        await _add_source(session, test_user, rid, source="rmi", name="RMI Name")
+
+        rows = await resource_actions.field_source_values(session, rid, "name")
+        # Curated gem still wins; the newly attached rmi joins the default tier and
+        # ranks by global default order (rmi < wm), never above the curated gem.
+        assert [(r.source, r.is_override) for r in rows] == [
+            ("gem", True),
+            ("rmi", False),
+            ("wm", False),
+        ]

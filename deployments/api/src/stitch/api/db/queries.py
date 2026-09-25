@@ -31,13 +31,13 @@ from sqlalchemy import (
 from stitch.api.db.model import (
     MembershipModel,
     MembershipStatus,
-    OGFieldResourceSourcePriority,
-    OGFieldSourcePriority,
+    OGFieldResourceAttributePriority,
     OilGasFieldSourceModel,
     OilGasFieldSourceValueModel,
     ResourceModel,
 )
 from stitch.api.db.model.oil_gas_field_source_value import value_attr_for
+from stitch.api.db.source_priority import source_priority_case
 from stitch.api.entities import FILTER_OPTION_FIELDS, OGFieldQueryParams
 from stitch.ogsi.model.types import OGSISrcKey
 
@@ -102,19 +102,6 @@ def _participating_columns(params: OGFieldQueryParams) -> list[str]:
     return list(dict.fromkeys(participating))
 
 
-def _override_join(resource_id: Any) -> ColumnElement[bool]:
-    """Join condition matching an override row to its value row."""
-    m = MembershipModel
-    v = OilGasFieldSourceValueModel
-    o = OGFieldResourceSourcePriority
-    return and_(
-        o.resource_id == resource_id,
-        o.source_pk == m.source_pk,
-        o.source == m.source,
-        o.colname == v.colname,
-    )
-
-
 def construct_base_query_statement(
     licensed_sources: Collection[OGSISrcKey] | None = None,
     resource_ids: Collection[int] | None = None,
@@ -123,20 +110,17 @@ def construct_base_query_statement(
     v = OilGasFieldSourceValueModel
     m = MembershipModel
     r = ResourceModel
-    p = OGFieldSourcePriority
-    o = OGFieldResourceSourcePriority
+    ap = OGFieldResourceAttributePriority
 
     active_src = (
         select(
             r.id.label("resource_id"),
             m.source.label("source"),
             m.source_pk.label("source_pk"),
-            # Two columns, not a collapsed COALESCE: tiering (curated records above
-            # default ones) needs override_priority NULLS LAST as a distinct sort
-            # key. Absent an override row for the value, override_priority is NULL
-            # and only default_priority ranks the row (identical to no overrides).
-            o.priority.label("override_priority"),
-            p.priority.label("default_priority"),
+            # Single ranking key: curated rows take the low positions and outrank
+            # defaults, so coalescing is a plain ORDER BY priority (no tiering).
+            ap.priority.label("priority"),
+            ap.is_curated.label("is_curated"),
             v.colname.label("colname"),
             v.value_text,
             v.value_num,
@@ -144,10 +128,21 @@ def construct_base_query_statement(
         )
         .select_from(m)
         .join(r, r.id == m.resource_id)
-        .join(p, p.source == m.source)
         .join(s, and_(s.id == m.source_pk, s.source == m.source))
         .join(v, v.source_pk == m.source_pk)
-        .outerjoin(o, _override_join(r.id))
+        # LEFT join: every value has exactly one priority row once seeded, so this
+        # neither drops nor duplicates candidate rows in practice. Kept as an outer
+        # join so the source-listing path (which ignores priority) never loses a
+        # value row, and a missing priority row degrades to "ranks last" rather than
+        # silently vanishing.
+        .outerjoin(
+            ap,
+            and_(
+                ap.resource_id == r.id,
+                ap.source_pk == m.source_pk,
+                ap.colname == v.colname,
+            ),
+        )
         .where(
             r.repointed_id.is_(None),
             m.status == MembershipStatus.ACTIVE,
@@ -194,7 +189,7 @@ def base_source_query(
 
 
 def _ranked(base_cte: CTE) -> CTE:
-    """Attach the tiered coalesce rank ``rn`` to every candidate row (no cut).
+    """Attach the coalesce rank ``rn`` to every candidate row (no cut).
 
     Single source of truth for "who beats whom", shared by the winner cut
     (``add_ranking`` -> ``rn == 1``), the per-field listing
@@ -202,12 +197,13 @@ def _ranked(base_cte: CTE) -> CTE:
     (``coalesced_candidate_rows``) so they can't drift. ``rn == 1`` is the winner
     within each ``(resource_id, colname)`` partition.
 
-    The order is tiered: curated records (an override row exists for the value, so
-    ``override_priority`` is NOT NULL) rank above default ones (``NULLS LAST`` is
-    the tier split), then global default priority, then source/source_pk
-    tiebreaks. No empty-string handling is needed here: empty text can't be
-    persisted (write-path skip + DB CHECK ``ck_source_value_text_nonempty``, see
-    ``model.oil_gas_field_source_value``).
+    Order is the single ``priority`` column from
+    ``og_field_resource_attribute_priority`` (unique within a ``(resource, colname)``,
+    lower wins): curated rows hold the low positions and so outrank defaults, which
+    are ordered by global ``SOURCE_PRIORITY`` rank then ``source_pk`` -- exactly the
+    old override-then-default tiering, now linearized into one column. No
+    empty-string handling is needed: empty text can't be persisted (write-path skip
+    + DB CHECK ``ck_source_value_text_nonempty``).
     """
     cols = base_cte.c
     return (
@@ -216,15 +212,10 @@ def _ranked(base_cte: CTE) -> CTE:
             func.row_number()
             .over(
                 partition_by=(cols.resource_id, cols.colname),
-                # Tiered: curated records (override_priority NOT NULL) rank above
-                # default ones (NULLS LAST is the tier split), then global default
-                # priority, then source/source_pk tiebreaks.
-                order_by=(
-                    cols.override_priority.asc().nulls_last(),
-                    cols.default_priority.asc(),
-                    cols.source.asc(),
-                    cols.source_pk.asc(),
-                ),
+                # priority is unique within a (resource, colname) once seeded, so
+                # the source_pk tiebreak only matters for the defensive NULLS-LAST
+                # case (a value without a seeded priority row).
+                order_by=(cols.priority.asc().nulls_last(), cols.source_pk.asc()),
             )
             .label("rn")
         )
@@ -269,23 +260,28 @@ def filter_option_rows(
     """Distinct winning ``(colname, value)`` pairs for every filterable field."""
     m = MembershipModel
     v = OilGasFieldSourceValueModel
-    p = OGFieldSourcePriority
-    o = OGFieldResourceSourcePriority
+    ap = OGFieldResourceAttributePriority
 
     base = (
         select(
             m.resource_id.label("resource_id"),
             m.source.label("source"),
             m.source_pk.label("source_pk"),
-            o.priority.label("override_priority"),
-            p.priority.label("default_priority"),
+            ap.priority.label("priority"),
+            ap.is_curated.label("is_curated"),
             v.colname.label("colname"),
             v.value_text,
         )
         .select_from(m)
         .join(v, v.source_pk == m.source_pk)
-        .join(p, p.source == m.source)
-        .outerjoin(o, _override_join(m.resource_id))
+        .outerjoin(
+            ap,
+            and_(
+                ap.resource_id == m.resource_id,
+                ap.source_pk == m.source_pk,
+                ap.colname == v.colname,
+            ),
+        )
         .where(
             m.status == MembershipStatus.ACTIVE,
             v.colname.in_(FILTER_OPTION_FIELDS),
@@ -329,7 +325,7 @@ def field_source_candidates(
             c.value_text,
             c.value_num,
             c.value_json,
-            c.override_priority.is_not(None).label("is_override"),
+            c.is_curated.label("is_override"),
         )
         .where(c.colname == field)
         .order_by(c.rn)
@@ -349,7 +345,7 @@ def coalesced_candidate_rows(
     grouped by ``source_pk``) from a SINGLE query, replacing the former
     winner-query + ``source_data_by_resource_id`` pair (see
     ``utils.resource_model_to_entity``). Rows are ordered
-    ``(default_priority, source, source_pk, colname)`` so grouping by source
+    ``(global source rank, source, source_pk, colname)`` so grouping by source
     yields sources best-priority-first, matching the old source ordering.
 
     ``source_record`` repeats per value row -- bounded (one resource's handful of
@@ -377,10 +373,10 @@ def coalesced_candidate_rows(
         .join(s, s.id == ranked.c.source_pk)
         # source_data grouping (utils._source_data_from_rows) relies on each
         # source's rows being contiguous, so order by the source's global default
-        # priority -- per-field override_priority varies within a source and would
-        # fragment the grouping. rn (not this order) picks the per-field winner.
+        # rank -- per-field priority varies within a source and would fragment the
+        # grouping. rn (not this order) picks the per-field winner.
         .order_by(
-            ranked.c.default_priority,
+            source_priority_case(ranked.c.source),
             ranked.c.source,
             ranked.c.source_pk,
             ranked.c.colname,

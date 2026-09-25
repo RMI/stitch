@@ -32,6 +32,7 @@ from stitch.api.db.read_model.permissions import (
     ALL_SOURCES,
     PUBLIC_SOURCES,
 )
+from stitch.api.db.priorities import seed_or_refresh_defaults
 from stitch.api.db.read_model.state import rebuild_all_resource_state
 from stitch.api.entities import OGFieldQueryParams, User
 from tests.utils import make_source_model
@@ -71,6 +72,7 @@ async def _add(
         )
     )
     await session.flush()
+    await seed_or_refresh_defaults(session, user, rid)
     return model.id
 
 

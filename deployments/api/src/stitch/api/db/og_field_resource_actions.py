@@ -2,7 +2,7 @@ from collections.abc import Collection, Sequence
 from typing import get_args
 
 from fastapi import HTTPException
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.status import HTTP_404_NOT_FOUND
@@ -33,10 +33,10 @@ from stitch.ogsi.model.types import OGSISrcKey
 from .model import (
     MembershipModel,
     MembershipStatus,
-    OGFieldResourceSourcePriority,
     OGFieldResourceState,
     ResourceModel,
 )
+from .priorities import seed_or_refresh_defaults, set_curated
 from .model.oil_gas_field_source_value import (
     ATTRIBUTE_NAMES,
     materialize_value,
@@ -402,26 +402,10 @@ async def set_field_source_priority(
     if list(ordered_source_pks) == current_order:
         return await field_source_values(session, id, field, licensed_sources)
 
-    source_by_pk = {row.source_pk: row.source for row in rows}
     with named_query("resources.set_field_source_priority.persist"):
-        await session.execute(
-            delete(OGFieldResourceSourcePriority).where(
-                OGFieldResourceSourcePriority.resource_id == id,
-                OGFieldResourceSourcePriority.colname == field,
-            )
-        )
-        for priority, source_pk in enumerate(ordered_source_pks):
-            session.add(
-                OGFieldResourceSourcePriority.create(
-                    created_by=user,
-                    resource_id=id,
-                    source=source_by_pk[source_pk],
-                    source_pk=source_pk,
-                    colname=field,
-                    priority=priority,
-                )
-            )
-        await session.flush()
+        # The listed sources become the curated tier (winner-first); the rest are
+        # re-derived as defaults. Rewrites the field's priority rows.
+        await set_curated(session, user, id, field, ordered_source_pks)
         # Re-prioritizing changes the coalesced winners; refresh the read model.
         await refresh_resource_state(session, id)
     return await field_source_values(session, id, field, licensed_sources)
@@ -495,12 +479,12 @@ async def apply_resource_merge(
 
     # all ids exist, none have already been repointed
     #
-    # The merge target is a brand-new resource with no rows in
-    # og_field_resource_source_priority, so it resolves fields in the default
-    # global source order. Any per-field/per-resource priority overrides on the
-    # originals are intentionally NOT carried over -- merging resets ordering to
-    # default. (No-op reset today since the target is fresh; a later PR handles
-    # an explicit reset if merge semantics ever preserve an existing resource.)
+    # The merge target is a brand-new resource; it is seeded with default priority
+    # rows only (no curated rows), so it resolves fields in the default global
+    # source order. Any per-field curation on the originals is intentionally NOT
+    # carried over -- merging resets ordering to default. (No-op reset today since
+    # the target is fresh; a later PR handles an explicit reset if merge semantics
+    # ever preserve an existing resource.)
     with named_query("resources.merge.apply"):
         new_resource = ResourceModel.create(created_by=user)
         session.add(new_resource)
@@ -512,6 +496,11 @@ async def apply_resource_merge(
             res.repointed_id = new_resource.id
 
         _ = await _repoint_memberships(session, user, new_resource.id, unique_ids)
+
+        # Seed default priority rows for the new canonical resource. Per-resource
+        # curation is intentionally not carried over (merge resets to the default
+        # global order), so the fresh target gets defaults only.
+        await seed_or_refresh_defaults(session, user, new_resource.id)
 
         # Keep the read model in sync: the merged-away originals are now repointed
         # (drop their rows) and the new canonical resource needs fresh rows.

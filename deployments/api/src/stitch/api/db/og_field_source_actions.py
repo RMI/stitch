@@ -23,6 +23,7 @@ from .model import (
 from .queries import (
     base_source_query,
 )
+from .priorities import seed_or_refresh_defaults
 from .read_model.state import refresh_resource_state
 from .utils import resource_model_to_entity
 
@@ -195,9 +196,12 @@ async def _attach_source_models(
     ]
     session.add_all(memberships)
     await session.flush()
-    # Attaching sources changes the resource's coalesced current state; keep the
-    # read model in sync within this transaction. This is the single choke point
-    # for membership creation on the attach path (create/attach/create-and-attach).
+    # Single choke point for membership creation on the attach path
+    # (create/attach/create-and-attach): seed default priority rows for the newly
+    # attached sources (preserving any existing curation), then refresh the read
+    # model. Priority rows must exist before the read model coalesces, and both
+    # stay inside this transaction.
+    await seed_or_refresh_defaults(session, user, resource.id)
     await refresh_resource_state(session, resource.id)
 
 

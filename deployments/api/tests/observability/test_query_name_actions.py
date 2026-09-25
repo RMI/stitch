@@ -25,6 +25,7 @@ from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db import og_field_source_actions as source_actions
 from stitch.api.db.model import MembershipModel, MembershipStatus, ResourceModel
 from stitch.api.db.model.oil_gas_field_source_value import ATTRIBUTE_NAMES
+from stitch.api.db.priorities import seed_or_refresh_defaults
 from stitch.api.entities import (
     MergeCandidateCreateRequest,
     MergeCandidateReviewRequest,
@@ -138,6 +139,9 @@ async def _attach_source(
         )
     )
     await session.flush()
+    # Direct seeding bypasses the action layer; seed the default priority rows the
+    # coalescing path requires (done before any captured_query_events.clear()).
+    await seed_or_refresh_defaults(session, user, resource_id)
     return model.id
 
 
@@ -379,7 +383,6 @@ class TestActionCallSiteLabels:
             {
                 "merge_candidates.detail.load",
                 "merge_candidates.detail.coalesce",
-                "merge_candidates.detail.default_priority",
             },
         )
 

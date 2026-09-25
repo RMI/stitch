@@ -8,7 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.factories import ResourceCreateFactory
-from stitch.api.db.model import MembershipModel, OGFieldResourceSourcePriority
+from stitch.api.db.model import MembershipModel, OGFieldResourceAttributePriority
+from stitch.api.db.priorities import set_curated
+from stitch.api.entities import User
 from stitch.ogsi.model import OGFieldResource, OGFieldSource
 
 
@@ -162,17 +164,7 @@ class TestMergeCandidateDetailIntegration:
                     MembershipModel.source == "gem",
                 )
             )
-            session.add(
-                OGFieldResourceSourcePriority(
-                    resource_id=id_a,
-                    source="gem",
-                    source_pk=gem_pk,
-                    colname="name",
-                    priority=0,
-                    created_by_id=1,
-                    last_updated_by_id=1,
-                )
-            )
+            await set_curated(session, User(id=1, sub="test"), id_a, "name", [gem_pk])
             await session.commit()
 
         # A's coalesced value reflects the override: its name resolves to GEM's.
@@ -200,7 +192,7 @@ class TestMergeCandidateDetailIntegration:
         }
         assert {("rmi", "RMI-name"), ("gem", "GEM-name")} <= a_values
 
-        # Approving materializes the reset: the merged resource has no override
+        # Approving materializes the reset: the merged resource has no curated
         # rows and resolves `name` in default order (RMI), dropping the override.
         approve = await integration_client.post(
             f"/oil-gas-fields/merge-candidates/{candidate_id}/approve",
@@ -214,14 +206,15 @@ class TestMergeCandidateDetailIntegration:
         assert merged.json()["data"]["name"] == "RMI-name"
 
         async with integration_session_factory() as session:
-            overrides = (
+            curated = (
                 await session.execute(
-                    select(OGFieldResourceSourcePriority).where(
-                        OGFieldResourceSourcePriority.resource_id == merged_id
+                    select(OGFieldResourceAttributePriority).where(
+                        OGFieldResourceAttributePriority.resource_id == merged_id,
+                        OGFieldResourceAttributePriority.is_curated.is_(True),
                     )
                 )
             ).all()
-        assert overrides == []
+        assert curated == []
 
     @pytest.mark.anyio
     async def test_composite_resource_matches_when_winners_agree(

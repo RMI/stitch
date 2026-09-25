@@ -18,6 +18,7 @@ from stitch.api.db.model import (
     ResourceModel,
     UserModel,
 )
+from stitch.api.db.priorities import seed_or_refresh_defaults
 from stitch.api.entities import User
 from stitch.api.main import app
 from tests.utils import make_source_model, make_source_record
@@ -133,6 +134,10 @@ async def _seed_resource_with_sources(
                     status=MembershipStatus.ACTIVE,
                 )
             )
+        await session.flush()
+        # Direct seeding bypasses the action layer; seed the per-attribute default
+        # priority rows the coalescing path requires.
+        await seed_or_refresh_defaults(session, user, resource.id)
         await session.commit()
         return resource.id
 
