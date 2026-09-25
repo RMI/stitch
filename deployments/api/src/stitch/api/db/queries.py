@@ -32,6 +32,7 @@ from stitch.api.db.model import (
     MembershipModel,
     MembershipStatus,
     OGFieldResourceSourcePriority,
+    OGFieldResourceStateModel,
     OGFieldSourcePriority,
     OilGasFieldSourceModel,
     OilGasFieldSourceValueModel,
@@ -237,6 +238,88 @@ def add_ranking(base_cte: CTE) -> Select[tuple[Any, ...]]:
     return select(ranked).where(ranked.c.rn == 1)
 
 
+def resource_state_rows(
+    resource_ids: Collection[int] | None = None,
+) -> Select[tuple[Any, ...]]:
+    """Rows to persist into ``og_field_resource_state`` for the given resources.
+
+    Every ranked candidate value per ``(resource, field)`` -- the full candidate
+    list, not just the winner. This is the same tiered coalescing the live path
+    uses (built on the shared ``_ranked`` CTE, so the winner order never forks) but
+    with *no* licensing filter: all candidates are stored, and the read path
+    applies the caller's licensing to pick their winner. Pass ``None`` to rebuild
+    every resource; the base query already excludes repointed resources and
+    inactive memberships, so a repointed id yields no rows (an effective delete on
+    refresh).
+    """
+    base = construct_base_query_statement(resource_ids=resource_ids)
+    ranked = _ranked(base)
+    c = ranked.c
+    return select(
+        c.resource_id,
+        c.colname,
+        c.rn.label("rank"),
+        c.source,
+        c.source_pk,
+        c.value_text,
+        c.value_num,
+        c.value_json,
+    )
+
+
+def coalesced_state_winner_rows(
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+    resource_ids: Collection[int] | None = None,
+) -> Select[tuple[Any, ...]]:
+    """Winning ``(value, source)`` per ``(resource, field)`` from the state table.
+
+    The precomputed-table equivalent of ``add_ranking(construct_base_query_...)``:
+    same output shape (``resource_id, colname, value_text, value_num, value_json,
+    source, source_pk``), but read off ``og_field_resource_state`` instead of
+    rebuilding the 5-table coalescing CTE. Licensing is applied here (the stored
+    rows are the full unlicensed candidate list): filter to ``licensed_sources``,
+    then take the top surviving ``rank`` per field -- exactly the "narrow by
+    license, then rank" the live path does, so the winner is identical.
+    """
+    st = OGFieldResourceStateModel
+    base = select(
+        st.resource_id,
+        st.colname,
+        st.rank,
+        st.source,
+        st.source_pk,
+        st.value_text,
+        st.value_num,
+        st.value_json,
+    )
+    if licensed_sources is not None:
+        base = base.where(st.source.in_(list(dict.fromkeys(licensed_sources))))
+    if resource_ids is not None:
+        base = base.where(st.resource_id.in_(list(dict.fromkeys(resource_ids))))
+    licensed = base.cte("licensed_state")
+    ranked = (
+        select(licensed)
+        .add_columns(
+            func.row_number()
+            .over(
+                partition_by=(licensed.c.resource_id, licensed.c.colname),
+                order_by=(licensed.c.rank.asc(),),
+            )
+            .label("win_rn")
+        )
+        .cte("licensed_state_ranked")
+    )
+    return select(
+        ranked.c.resource_id,
+        ranked.c.colname,
+        ranked.c.value_text,
+        ranked.c.value_num,
+        ranked.c.value_json,
+        ranked.c.source,
+        ranked.c.source_pk,
+    ).where(ranked.c.win_rn == 1)
+
+
 def coalesced_winner_rows(
     resource_ids: Collection[int],
     licensed_sources: Collection[OGSISrcKey] | None = None,
@@ -266,39 +349,20 @@ def coalesced_winner_rows(
 def filter_option_rows(
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> Select[tuple[str, str]]:
-    """Distinct winning ``(colname, value)`` pairs for every filterable field."""
-    m = MembershipModel
-    v = OilGasFieldSourceValueModel
-    p = OGFieldSourcePriority
-    o = OGFieldResourceSourcePriority
+    """Distinct winning ``(colname, value)`` pairs for every filterable field.
 
-    base = (
-        select(
-            m.resource_id.label("resource_id"),
-            m.source.label("source"),
-            m.source_pk.label("source_pk"),
-            o.priority.label("override_priority"),
-            p.priority.label("default_priority"),
-            v.colname.label("colname"),
-            v.value_text,
-        )
-        .select_from(m)
-        .join(v, v.source_pk == m.source_pk)
-        .join(p, p.source == m.source)
-        .outerjoin(o, _override_join(m.resource_id))
-        .where(
-            m.status == MembershipStatus.ACTIVE,
-            v.colname.in_(FILTER_OPTION_FIELDS),
-        )
-    )
-    if licensed_sources is not None:
-        base = base.where(m.source.in_(list(dict.fromkeys(licensed_sources))))
-
-    ranked = add_ranking(base.cte("filter_option_base")).cte("filter_option_ranked")
-    c = ranked.c
+    Reads the coalesced winners off the precomputed state table (see
+    ``coalesced_state_winner_rows``) rather than rebuilding the ranking CTE, then
+    keeps the distinct non-null text values of the filterable fields.
+    """
+    winners = coalesced_state_winner_rows(licensed_sources).cte("filter_option_winners")
+    c = winners.c
     return (
         select(c.colname, c.value_text)
-        .where(c.value_text.is_not(None))  # rn == 1 already applied by add_ranking
+        .where(
+            c.colname.in_(FILTER_OPTION_FIELDS),
+            c.value_text.is_not(None),
+        )
         .distinct()
         .order_by(c.colname, c.value_text)
     )
@@ -417,15 +481,16 @@ def base_resource_query(
         base = universe
         conditions: list[ColumnElement[bool]] = []
     else:
-        base_cte = construct_base_query_statement(licensed_sources)
-        ranked = add_ranking(base_cte).cte("ranked")
+        # Coalesced winners come from the precomputed state table (licensing
+        # applied there), not a per-request rebuild of the ranking CTE.
+        winners = coalesced_state_winner_rows(licensed_sources).cte("ranked")
         pivot = _add_pivot_columns(
-            select(ranked.c.resource_id.label("resource_id")),
+            select(winners.c.resource_id.label("resource_id")),
             involved,
-            ranked.c.colname,
-            lambda field_name: getattr(ranked.c, value_attr_for(field_name)),
+            winners.c.colname,
+            lambda field_name: getattr(winners.c, value_attr_for(field_name)),
         )
-        pivot_cte = pivot.group_by(ranked.c.resource_id).cte("resource_pivot")
+        pivot_cte = pivot.group_by(winners.c.resource_id).cte("resource_pivot")
 
         # LEFT JOIN the licensed/coalesced pivot onto the membership universe: a
         # resource with no licensed values keeps its row (null-shell) but is

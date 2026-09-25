@@ -22,6 +22,7 @@ from stitch.api.db.model import (
     ResourceModel,
 )
 from stitch.api.db.queries import filter_option_rows
+from stitch.api.db.resource_state import refresh_resource_state
 from stitch.api.entities import (
     FILTER_OPTION_FIELDS,
     OGFieldQueryParams,
@@ -64,6 +65,9 @@ async def _create_resource_with_sources(
         )
 
     await session.flush()
+    # Mirror the production write paths, which keep og_field_resource_state in
+    # step; these helpers insert models directly, so refresh explicitly.
+    await refresh_resource_state(session, [resource.id])
     return resource.id
 
 
@@ -84,6 +88,7 @@ async def _add_source(session, user, rid: int, **attrs) -> int:
         )
     )
     await session.flush()
+    await refresh_resource_state(session, [rid])
     return source.id
 
 
@@ -116,6 +121,8 @@ async def _override(
         )
     )
     await session.flush()
+    # Overrides change coalesced winners; keep the state table consistent.
+    await refresh_resource_state(session, [rid])
     return pk
 
 
@@ -1096,6 +1103,9 @@ class TestResourceFilterOptionsAction:
         assert inactive_membership is not None
         inactive_membership.status = MembershipStatus.INACTIVE
         await seeded_integration_session.flush()
+        # Deactivating a membership changes coalesced output; production does this
+        # only via merge (which refreshes). Mirror that here.
+        await refresh_resource_state(seeded_integration_session, [inactive_id])
 
         options = await resource_actions.filter_options(seeded_integration_session)
 
@@ -2013,6 +2023,9 @@ class TestCoalescingEngineParity:
                 )
             )
         await session.flush()
+        # Overrides change coalesced winners; refresh state (production does this
+        # in set_field_source_priority).
+        await refresh_resource_state(session, [rid])
 
         # rmi unlicensed -> falls through; among licensed sources wm (override)
         # wins, and the lowest source_pk among the duplicate wm records wins.
