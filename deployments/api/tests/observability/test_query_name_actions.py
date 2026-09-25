@@ -248,8 +248,8 @@ class TestActionCallSiteLabels:
         session.add(resource)
         await session.flush()
         rid = resource.id
-        await _attach_source(session, test_user, rid, "gem", country="Gemland")
-        await _attach_source(session, test_user, rid, "rmi", country="Rmiland")
+        await _attach_source(session, test_user, rid, "gem", country="SAU")
+        await _attach_source(session, test_user, rid, "rmi", country="USA")
         await session.commit()
 
         # Both sources carry `country`, so both are eligible; reverse the current

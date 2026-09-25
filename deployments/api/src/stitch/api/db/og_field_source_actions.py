@@ -23,6 +23,7 @@ from .model import (
 from .queries import (
     base_source_query,
 )
+from .read_model.state import refresh_resource_state
 from .utils import resource_model_to_entity
 
 
@@ -194,6 +195,10 @@ async def _attach_source_models(
     ]
     session.add_all(memberships)
     await session.flush()
+    # Attaching sources changes the resource's coalesced current state; keep the
+    # read model in sync within this transaction. This is the single choke point
+    # for membership creation on the attach path (create/attach/create-and-attach).
+    await refresh_resource_state(session, resource.id)
 
 
 async def attach_sources_to_resource(
