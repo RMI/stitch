@@ -18,6 +18,14 @@ function getMatchGroups(result) {
   return Array.isArray(result?.match_groups) ? result.match_groups : [];
 }
 
+function formatTimestamp(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  // Date + time, not time alone: a linkage pass can span more than a day, so a
+  // bare time would be ambiguous across midnight (STIT-740).
+  return Number.isNaN(date.getTime()) ? null : date.toLocaleString();
+}
+
 function getResultDetails(result) {
   if (!result || typeof result !== "object" || Array.isArray(result)) {
     return result;
@@ -78,6 +86,77 @@ function MatchGroupsSummary({ groups }) {
   );
 }
 
+function LinkProgressView({ progress }) {
+  const scanned =
+    typeof progress?.resources_scanned === "number"
+      ? progress.resources_scanned
+      : 0;
+  const total =
+    typeof progress?.total_resources === "number"
+      ? progress.total_resources
+      : null;
+  // The total is a start-of-run snapshot. Only scanned > total means it went
+  // stale (dataset grew); equality is normal near the end of a run, so keep it
+  // determinate and treat only genuine overshoot (and an unknown total) as
+  // indeterminate rather than showing a stuck/false "100%".
+  const hasReliableTotal = total !== null && total > 0 && scanned <= total;
+  // Floor, not round; and clamp to 99, since this bar only shows while running so
+  // it should never read a "done"-looking 100%.
+  const percent = hasReliableTotal
+    ? Math.min(99, Math.floor((scanned / total) * 100))
+    : null;
+  const updatedAt = formatTimestamp(progress?.updated_at);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-sm font-medium text-ink">
+          {hasReliableTotal
+            ? `Processing ${scanned.toLocaleString()} of ${total.toLocaleString()}`
+            : `Processing ${scanned.toLocaleString()}…`}
+        </p>
+        {percent !== null && (
+          <span className="text-sm font-semibold text-ink-muted">
+            {percent}%
+          </span>
+        )}
+      </div>
+
+      <div
+        className="h-2 w-full overflow-hidden rounded-full bg-surface"
+        role="progressbar"
+        aria-label="Linkage run progress"
+        aria-valuenow={percent ?? undefined}
+        aria-valuemin={percent !== null ? 0 : undefined}
+        aria-valuemax={percent !== null ? 100 : undefined}
+      >
+        {percent !== null ? (
+          <div
+            className="h-full rounded-full bg-primary transition-[width] duration-500"
+            style={{ width: `${percent}%` }}
+          />
+        ) : (
+          // Total unknown: show an indeterminate bar rather than a false 0%.
+          <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
+        )}
+      </div>
+
+      <p className="text-xs text-ink-muted">
+        {formatCount(progress?.merge_candidates_created ?? 0, "candidate")}{" "}
+        created
+        {" · "}
+        {progress?.merge_candidates_skipped ?? 0} skipped
+        {" · "}
+        {progress?.resources_failed ?? 0} failed
+      </p>
+
+      {updatedAt && (
+        <p className="text-xs text-ink-muted">Last updated {updatedAt}</p>
+      )}
+    </div>
+  );
+}
+
 function RunResult({ record }) {
   if (!record) {
     return (
@@ -117,9 +196,13 @@ function RunResult({ record }) {
           </section>
         </>
       ) : record.state === "running" ? (
-        <p className="text-sm text-ink-muted">
-          Run in progress — status refreshes automatically.
-        </p>
+        record.progress ? (
+          <LinkProgressView progress={record.progress} />
+        ) : (
+          <p className="text-sm text-ink-muted">
+            Run in progress — status refreshes automatically.
+          </p>
+        )
       ) : record.state === "failed" ? (
         <div className="rounded-md border border-danger/25 bg-danger-soft p-3 text-sm text-danger">
           {record.error || "Run failed."}
@@ -142,7 +225,7 @@ export default function EntityLinkagePage() {
   const { getAccessTokenSilently } = useAuth0();
   const baseUrl = config.entityLinkageBaseUrl;
 
-  const [applyMerges, setApplyMerges] = useState(false);
+  const [applyMerges, setApplyMerges] = useState(true);
   const [starting, setStarting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [record, setRecord] = useState(null);
@@ -276,17 +359,7 @@ export default function EntityLinkagePage() {
       </div>
 
       <div className="mb-6 rounded-md border border-line bg-panel p-4">
-        <label className="flex items-center gap-3 text-sm font-medium text-ink">
-          <input
-            type="checkbox"
-            checked={applyMerges}
-            onChange={(e) => setApplyMerges(e.target.checked)}
-            className="accent-primary"
-          />
-          <span>Initiate merges</span>
-        </label>
-
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             onClick={handleStart}
             disabled={starting || isRunning}
@@ -302,6 +375,16 @@ export default function EntityLinkagePage() {
             {refreshing ? "Refreshing…" : "Refresh status"}
           </Button>
         </div>
+
+        <label className="mt-4 flex items-center gap-3 text-sm font-medium text-ink">
+          <input
+            type="checkbox"
+            checked={applyMerges}
+            onChange={(e) => setApplyMerges(e.target.checked)}
+            className="accent-primary"
+          />
+          <span>Initiate merges</span>
+        </label>
       </div>
 
       {error ? (

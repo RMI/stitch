@@ -24,7 +24,7 @@ from pydantic import BaseModel, SerializeAsAny
 
 logger = logging.getLogger("stitch.entity_linkage")
 
-RunThunk = Callable[[], Awaitable[BaseModel]]
+RunThunk = Callable[["JobRecord"], Awaitable[BaseModel]]
 
 
 class JobState(str, Enum):
@@ -39,6 +39,7 @@ class JobRecord(BaseModel):
     params: SerializeAsAny[BaseModel]
     started_at: datetime
     finished_at: datetime | None = None
+    progress: SerializeAsAny[BaseModel] | None = None
     result: SerializeAsAny[BaseModel] | None = None
     error: str | None = None
 
@@ -53,7 +54,8 @@ class JobManager:
     """Single-job, in-memory run manager.
 
     State is lost on restart and concurrent runs are rejected. The run body is
-    supplied per start as a zero-arg coroutine, so this manager is generic.
+    supplied per start as a coroutine that receives the live ``JobRecord``, so it
+    can publish progress onto the record while it runs; this manager stays generic.
     """
 
     def __init__(self) -> None:
@@ -81,7 +83,7 @@ class JobManager:
 
     async def _run(self, record: JobRecord, run: RunThunk) -> None:
         try:
-            record.result = await run()
+            record.result = await run(record)
             record.state = JobState.succeeded
         except Exception as exc:
             logger.exception("Linkage run %s failed", record.job_id)

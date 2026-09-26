@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from stitch.entity_linkage.jobs import (
     JobAlreadyRunningError,
+    JobRecord,
     JobState,
     get_job_manager,
     reset_manager,
@@ -19,6 +20,10 @@ class _Params(BaseModel):
 
 class _Result(BaseModel):
     doubled: int
+
+
+class _Progress(BaseModel):
+    scanned: int
 
 
 @pytest.fixture(autouse=True)
@@ -42,7 +47,7 @@ def test_run_thunk_success_records_result() -> None:
     async def scenario() -> None:
         mgr = get_job_manager()
 
-        async def run() -> _Result:
+        async def run(_record: JobRecord) -> _Result:
             return _Result(doubled=6)
 
         record = await mgr.start(_Params(n=3), run)
@@ -63,7 +68,7 @@ def test_run_thunk_failure_records_error() -> None:
     async def scenario() -> None:
         mgr = get_job_manager()
 
-        async def run() -> _Result:
+        async def run(_record: JobRecord) -> _Result:
             raise RuntimeError("kaboom")
 
         await mgr.start(_Params(), run)
@@ -82,12 +87,32 @@ def test_manager_rejects_concurrent_start() -> None:
     async def scenario() -> None:
         mgr = get_job_manager()
 
-        async def slow() -> _Result:
+        async def slow(_record: JobRecord) -> _Result:
             await asyncio.sleep(0.5)
             return _Result(doubled=0)
 
         await mgr.start(_Params(), slow)
         with pytest.raises(JobAlreadyRunningError):
             await mgr.start(_Params(), slow)
+
+    asyncio.run(scenario())
+
+
+def test_run_thunk_can_write_progress_onto_record() -> None:
+    async def scenario() -> None:
+        mgr = get_job_manager()
+
+        async def run(record: JobRecord) -> _Result:
+            # The run body writes progress onto the live record; a poller reading
+            # mgr.current() must see it while the run is still in flight.
+            record.progress = _Progress(scanned=42)
+            return _Result(doubled=0)
+
+        await mgr.start(_Params(), run)
+        for _ in range(200):
+            if mgr.current().state != JobState.running:
+                break
+            await asyncio.sleep(0.01)
+        assert mgr.current().progress.model_dump() == {"scanned": 42}
 
     asyncio.run(scenario())

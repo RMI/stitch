@@ -21,13 +21,15 @@ page at a time, so it never materializes the whole table either.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 
 import httpx
 
 from stitch.entity_linkage.client import StitchApiClient
 from stitch.entity_linkage.entities import (
     BulkLinkResponse,
+    LinkProgress,
     ResourceLinkResult,
     normalize_country,
     normalize_name,
@@ -35,6 +37,11 @@ from stitch.entity_linkage.entities import (
 from stitch.entity_linkage.errors import StitchAPIError
 
 logger = logging.getLogger(__name__)
+
+# How often the bulk pass publishes a progress snapshot, in resources scanned.
+# Small enough that a 2s poller sees frequent movement, large enough to avoid
+# building a progress model on every one of hundreds of thousands of resources.
+PROGRESS_UPDATE_EVERY = 100
 
 # A 4xx from create-merge-candidate is an expected, non-fatal outcome during a
 # run: the API rejects a duplicate fingerprint (a candidate already exists) or a
@@ -171,16 +178,32 @@ async def link_all(
     apply_merges: bool,
     page_size: int,
     initiated_by: str,
+    on_progress: Callable[[LinkProgress], None] | None = None,
 ) -> BulkLinkResponse:
     """Run the bounded matcher over every resource, streaming ids page by page.
 
     Groups are de-duplicated by fingerprint across the run, so each block is
     submitted at most once even though every member rediscovers it. Members of an
     already-formed block are skipped without re-searching.
+
+    ``on_progress``, when supplied, is called with a :class:`LinkProgress`
+    snapshot periodically (every ``PROGRESS_UPDATE_EVERY`` resources) and once
+    more at the end, so a poller can track a long run's advance.
     """
     # Only needed when we will actually POST; skip the (currently unpaginated)
     # candidate-list fetch entirely on a dry run.
     known_existing = await _existing_fingerprints(client) if apply_merges else None
+
+    # Denominator for progress; only worth an extra request when a progress
+    # consumer is listening. None if unavailable -- a failure here must not abort
+    # the pass, so fall back to an unknown total.
+    total_resources: int | None = None
+    if on_progress is not None:
+        try:
+            total_resources = await client.get_oil_gas_fields_total()
+        except (StitchAPIError, httpx.HTTPError, OSError) as exc:
+            logger.warning("Could not fetch resource total for progress: %s", exc)
+            total_resources = None
 
     groups_by_fingerprint: dict[str, list[int]] = {}
     processed_ids: set[int] = set()
@@ -189,8 +212,30 @@ async def link_all(
     skipped = 0
     failed = 0
 
+    def emit_progress() -> None:
+        if on_progress is None:
+            return
+        on_progress(
+            LinkProgress(
+                resources_scanned=resources_scanned,
+                total_resources=total_resources,
+                merge_candidates_created=created,
+                merge_candidates_skipped=skipped,
+                resources_failed=failed,
+                updated_at=datetime.now(UTC),
+            )
+        )
+
+    # Publish a 0/total snapshot up front so a poller sees a denominator (and any
+    # progress at all) before the 100th resource -- and, for a run shorter than
+    # one throttle window, at all, since the state flips to succeeded right after
+    # the final snapshot with no yield in between.
+    emit_progress()
+
     async for candidate in client.iter_oil_gas_fields(page_size=page_size):
         resources_scanned += 1
+        if resources_scanned % PROGRESS_UPDATE_EVERY == 0:
+            emit_progress()
         if candidate.id in processed_ids:
             continue
 
@@ -231,6 +276,9 @@ async def link_all(
             created += 1
         elif was_skipped:
             skipped += 1
+
+    # Final snapshot so the last poll before completion reflects the exact totals.
+    emit_progress()
 
     return BulkLinkResponse(
         initiated_by=initiated_by,

@@ -34,6 +34,7 @@ class FakeMatchingClient(AbstractAsyncContextManager["FakeMatchingClient"]):
         self.iter_q: list[str | None] = []
         self.create_calls: list[list[int]] = []
         self.list_candidates_calls = 0
+        self.total_calls = 0
 
     async def __aenter__(self) -> "FakeMatchingClient":
         return self
@@ -44,6 +45,10 @@ class FakeMatchingClient(AbstractAsyncContextManager["FakeMatchingClient"]):
     async def get_oil_gas_field_detail(self, resource_id: int) -> FieldDetailCandidate:
         self.detail_calls.append(resource_id)
         return self.details_by_id[resource_id]
+
+    async def get_oil_gas_fields_total(self) -> int | None:
+        self.total_calls += 1
+        return len(self.items)
 
     async def iter_oil_gas_fields(
         self,
@@ -407,3 +412,105 @@ async def test_link_all_does_not_swallow_programming_errors() -> None:
         await matching.link_all(
             client, apply_merges=True, page_size=200, initiated_by="Tester"
         )
+
+
+@pytest.mark.anyio
+async def test_link_all_reports_progress_via_callback() -> None:
+    # With fewer resources than PROGRESS_UPDATE_EVERY, an initial 0 snapshot and a
+    # final snapshot are emitted; the final must carry the exact totals and the
+    # fetched denominator.
+    client = FakeMatchingClient(
+        items=[
+            FieldCandidate(id=1, name="Alpha", country="US"),
+            FieldCandidate(id=2, name="alpha", country="US"),
+            FieldCandidate(id=3, name="Beta", country="CA"),
+        ],
+        details_by_id={
+            1: FieldDetailCandidate(id=1, name="Alpha", country="US"),
+            2: FieldDetailCandidate(id=2, name="alpha", country="US"),
+            3: FieldDetailCandidate(id=3, name="Beta", country="CA"),
+        },
+    )
+
+    snapshots: list = []
+    await matching.link_all(
+        client,
+        apply_merges=True,
+        page_size=200,
+        initiated_by="Tester",
+        on_progress=snapshots.append,
+    )
+
+    assert snapshots, "expected at least a final progress snapshot"
+    # An up-front 0/total snapshot gives pollers a denominator immediately.
+    assert snapshots[0].resources_scanned == 0
+    assert snapshots[0].total_resources == 3
+    final = snapshots[-1]
+    assert final.resources_scanned == 3
+    assert final.total_resources == 3
+    assert final.merge_candidates_created == 1
+    assert final.merge_candidates_skipped == 0
+    assert final.resources_failed == 0
+    assert final.updated_at is not None
+    # The denominator is fetched when a progress consumer is listening.
+    assert client.total_calls == 1
+
+
+@pytest.mark.anyio
+async def test_link_all_emits_progress_mid_run() -> None:
+    # Scan more than PROGRESS_UPDATE_EVERY resources so the throttled heartbeat
+    # fires during the run, not just the final snapshot. Unique names keep every
+    # resource a singleton (no match groups), isolating the progress cadence.
+    count = matching.PROGRESS_UPDATE_EVERY * 2 + 5
+    items = [
+        FieldCandidate(id=i, name=f"Field {i}", country="US")
+        for i in range(1, count + 1)
+    ]
+    details_by_id = {
+        i: FieldDetailCandidate(id=i, name=f"Field {i}", country="US")
+        for i in range(1, count + 1)
+    }
+    client = FakeMatchingClient(items=items, details_by_id=details_by_id)
+
+    snapshots: list = []
+    await matching.link_all(
+        client,
+        apply_merges=False,
+        page_size=200,
+        initiated_by="Tester",
+        on_progress=snapshots.append,
+    )
+
+    # Initial 0 snapshot, two throttled emits (100, 200), and the final one (205).
+    assert len(snapshots) >= 4
+    scanned_values = [s.resources_scanned for s in snapshots]
+    assert scanned_values == sorted(scanned_values)
+    assert len(set(scanned_values)) == len(scanned_values)
+    assert scanned_values[0] == 0
+    assert matching.PROGRESS_UPDATE_EVERY in scanned_values
+    assert snapshots[-1].resources_scanned == count
+    # Denominator is fetched once and carried on every snapshot.
+    assert client.total_calls == 1
+    assert all(s.total_resources == count for s in snapshots)
+
+
+@pytest.mark.anyio
+async def test_link_all_skips_total_fetch_without_progress_consumer() -> None:
+    # No on_progress: the denominator is never used, so the extra request that
+    # fetches it must be skipped.
+    client = FakeMatchingClient(
+        items=[
+            FieldCandidate(id=1, name="Alpha", country="US"),
+            FieldCandidate(id=2, name="alpha", country="US"),
+        ],
+        details_by_id={
+            1: FieldDetailCandidate(id=1, name="Alpha", country="US"),
+            2: FieldDetailCandidate(id=2, name="alpha", country="US"),
+        },
+    )
+
+    await matching.link_all(
+        client, apply_merges=True, page_size=200, initiated_by="Tester"
+    )
+
+    assert client.total_calls == 0

@@ -71,6 +71,9 @@ class FakeStitchApiClient(AbstractAsyncContextManager["FakeStitchApiClient"]):
             raise self.detail_error
         return self.details_by_id[resource_id]
 
+    async def get_oil_gas_fields_total(self) -> int | None:
+        return len(self.items)
+
     async def iter_oil_gas_fields(
         self,
         *,
@@ -282,6 +285,14 @@ def test_link_all_launches_job_and_status_succeeds(test_client, install_client) 
     assert result["merge_candidates_skipped"] == 0
     assert fake.create_calls == [[1, 2]]
 
+    # The run publishes a final progress snapshot onto the record.
+    progress = final["progress"]
+    assert progress is not None
+    assert progress["resources_scanned"] == 3
+    assert progress["total_resources"] == 3
+    assert progress["merge_candidates_created"] == 1
+    assert progress["updated_at"] is not None
+
 
 def test_link_all_records_downstream_failure_in_status(
     test_client, install_client
@@ -311,7 +322,9 @@ def test_link_all_rejects_concurrent_run_with_409(
 ) -> None:
     install_client()
 
-    async def slow_link_all(client, *, apply_merges, page_size, initiated_by):
+    async def slow_link_all(
+        client, *, apply_merges, page_size, initiated_by, on_progress=None
+    ):
         import asyncio
 
         await asyncio.sleep(0.5)
