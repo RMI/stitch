@@ -36,7 +36,7 @@ from .model import (
     OGFieldResourceState,
     ResourceModel,
 )
-from .priorities import seed_or_refresh_defaults, set_curated
+from .priorities import lock_resource, seed_or_refresh_defaults, set_curated
 from .model.oil_gas_field_source_value import (
     ATTRIBUTE_NAMES,
     materialize_value,
@@ -390,6 +390,11 @@ async def set_field_source_priority(
     if len(set(ordered_source_pks)) != len(ordered_source_pks):
         raise InvalidActionError("ordered_source_pks contains duplicate ids.")
 
+    # Serialize with concurrent mutations of this resource before we read the
+    # candidate snapshot and rewrite its priority/state rows.
+    with named_query("resources.set_field_source_priority.load"):
+        await lock_resource(session, id)
+
     # Belt-and-suspenders behind the route's all-source-read requirement: this
     # write replaces the field's entire override set, so a caller who cannot read
     # every source could clobber rankings for sources they can't see. Require the
@@ -506,6 +511,12 @@ async def apply_resource_merge(
     # the target is fresh; a later PR handles an explicit reset if merge semantics
     # ever preserve an existing resource.)
     with named_query("resources.merge.apply"):
+        # Lock the originals (sorted, to avoid deadlock between overlapping merges)
+        # before repointing + rebuilding derived state, serializing with concurrent
+        # attaches/merges on them.
+        for original_id in sorted(unique_ids):
+            await lock_resource(session, original_id)
+
         new_resource = ResourceModel.create(created_by=user)
         session.add(new_resource)
         await session.flush()

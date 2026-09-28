@@ -376,3 +376,47 @@ class TestTargetedRebuild:
 
         # Nothing changed after the distant future.
         assert set(await refresh_changed_since(session, future)) == set()
+
+
+class TestReadModelRoundTrip:
+    """JSON (owners/operators) and numeric fields survive the typed-column store."""
+
+    async def test_json_and_numeric_fields_round_trip(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid = await _new_resource(session, test_user)
+        await _add(
+            session,
+            test_user,
+            rid,
+            "gem",
+            name="Round Trip",
+            country="USA",
+            latitude=12.5,
+            longitude=-7.25,
+            discovery_year=1990,
+            owners=[{"name": "Acme", "stake": 50}],
+            operators=[{"name": "OpCo", "stake": 100}],
+        )
+        await rebuild_all_resource_state(session)
+
+        licensed = _PROFILES["all"]
+        items, _ = await resource_actions.query(
+            session, OGFieldQueryParams(), licensed_sources=licensed
+        )
+        item = next(i for i in items if i.id == rid)
+
+        # Numeric columns keep their type/value through the read model.
+        assert item.data.latitude == 12.5
+        assert item.data.longitude == -7.25
+        assert item.data.discovery_year == 1990
+        # JSON columns rebuild into the nested models.
+        assert [(o.name, o.stake) for o in item.data.owners] == [("Acme", 50)]
+        assert [(o.name, o.stake) for o in item.data.operators] == [("OpCo", 100)]
+
+        # And the whole item is identical to the live coalescing path.
+        live_items, _ = await _query_live(
+            session, OGFieldQueryParams(), licensed_sources=licensed
+        )
+        assert item == next(i for i in live_items if i.id == rid)

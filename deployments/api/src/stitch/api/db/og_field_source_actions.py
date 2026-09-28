@@ -23,7 +23,7 @@ from .model import (
 from .queries import (
     base_source_query,
 )
-from .priorities import seed_or_refresh_defaults
+from .priorities import lock_resource, seed_or_refresh_defaults
 from .read_model.state import refresh_resource_state
 from .utils import resource_model_to_entity
 
@@ -185,6 +185,9 @@ async def _attach_source_models(
     user: User,
 ) -> None:
     """Create ACTIVE memberships linking each source model to ``resource``."""
+    # Serialize with any concurrent mutation of this resource before we rebuild its
+    # derived priority/state rows below.
+    await lock_resource(session, resource.id)
     memberships = [
         MembershipModel.create(
             created_by=user,

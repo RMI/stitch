@@ -30,8 +30,25 @@ from .model import (
     MembershipStatus,
     OGFieldResourceAttributePriority,
     OilGasFieldSourceValueModel,
+    ResourceModel,
 )
 from .source_priority import source_priority_rank
+
+
+async def lock_resource(session: AsyncSession, resource_id: int) -> None:
+    """Serialize derived-state rebuilds for one resource via a row lock.
+
+    Every path that rebuilds a resource's priority/state rows (attach, reprioritize,
+    merge) takes this lock first, so two concurrent mutations of the same resource
+    cannot interleave their delete+reinsert and collide on a unique key or leave
+    stale derived state. ``FOR UPDATE`` is a no-op on SQLite (unsupported), which is
+    fine for the single-connection test suite; it serializes under PostgreSQL.
+    """
+    await session.execute(
+        select(ResourceModel.id)
+        .where(ResourceModel.id == resource_id)
+        .with_for_update()
+    )
 
 
 async def _valued_members(

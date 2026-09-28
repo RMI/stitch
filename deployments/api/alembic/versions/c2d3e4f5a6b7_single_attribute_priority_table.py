@@ -74,7 +74,7 @@ SELECT
                  default_priority, source_pk
     ) - 1 AS priority,
     (override_priority IS NOT NULL) AS is_curated,
-    now(), now(), created_by_id, last_updated_by_id
+    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, created_by_id, last_updated_by_id
 FROM (
     SELECT
         m.resource_id,
