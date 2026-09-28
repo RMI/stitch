@@ -11,10 +11,11 @@ one row per ``(resource, permission_mask)`` holding the coalesced value of every
 Schema only. The table is *derived* data and is populated by the application's
 rebuild routine (``stitch.api.db.read_model.state.rebuild_all_resource_state``,
 runnable via ``python -m stitch.api.db.read_model.rebuild``). Run that once after
-upgrading (and after any data restore); ongoing writes keep it current in-band.
-The read path falls back to live coalescing for any caller it cannot serve, so an
-un-rebuilt table degrades to today's behavior rather than returning wrong data --
-except for canonical (all-public) profiles, which is why the rebuild must run.
+upgrading (and after any data restore) to get the performance benefit; ongoing
+writes keep it current in-band thereafter. The read path falls back to live
+coalescing whenever the model can't serve a caller -- including a canonical
+(all-public) caller while the table is unpopulated -- so an un-rebuilt table
+degrades to today's behavior (correct, just not accelerated), never empty or wrong.
 """
 
 from __future__ import annotations

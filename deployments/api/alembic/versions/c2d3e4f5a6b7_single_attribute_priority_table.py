@@ -96,13 +96,17 @@ FROM (
 ) sub
 """
 
-_DISCOVER_MEMBERSHIP_FK_SQL = """
-SELECT c.conname
+# Every foreign key (from any table) that references og_field_source_priority, so
+# they can be dropped before the table itself. Matching on the *referenced* table
+# (confrelid) is robust to DB-generated constraint names. og_field_memberships is
+# the only expected referencer once og_field_resource_source_priority is dropped.
+_DISCOVER_FKS_TO_PRIORITY_SQL = """
+SELECT c.conname, t.relname AS table_name
 FROM pg_constraint c
 JOIN pg_class t ON t.oid = c.conrelid
-WHERE t.relname = 'og_field_memberships'
+JOIN pg_class rt ON rt.oid = c.confrelid
+WHERE rt.relname = 'og_field_source_priority'
   AND c.contype = 'f'
-  AND pg_get_constraintdef(c.oid) LIKE '%og_field_source_priority%'
 """
 
 
@@ -157,15 +161,17 @@ def upgrade() -> None:
     bind = op.get_bind()
     bind.execute(sa.text(_BACKFILL_SQL))
 
-    # Drop the membership FK to the (about-to-be-dropped) default priority table.
-    # Its name is DB-generated, so discover it on PostgreSQL.
-    if bind.dialect.name == "postgresql":
-        fk_name = bind.execute(sa.text(_DISCOVER_MEMBERSHIP_FK_SQL)).scalar()
-        if fk_name:
-            op.drop_constraint(fk_name, "og_field_memberships", type_="foreignkey")
-
     # Override table first (it FKs the default table), then the default table.
     op.drop_table("og_field_resource_source_priority")
+
+    # Drop any remaining FK referencing og_field_source_priority (DB-generated
+    # names, so discover them) before dropping the table itself.
+    if bind.dialect.name == "postgresql":
+        for conname, table_name in bind.execute(
+            sa.text(_DISCOVER_FKS_TO_PRIORITY_SQL)
+        ).all():
+            op.drop_constraint(conname, table_name, type_="foreignkey")
+
     op.drop_table("og_field_source_priority")
 
 

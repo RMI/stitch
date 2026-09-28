@@ -71,6 +71,8 @@ async def query(
     combination of wm/ccr) are served from the precomputed
     ``og_field_resource_state`` read model; every other profile (unscoped, or a
     partial public grant) falls back to live coalescing, which is always correct.
+    An unpopulated read model (e.g. before the post-migration rebuild has run) also
+    falls back to live, so a canonical caller is never served an empty page.
     """
     if params.sort_by == "source":
         raise HTTPException(
@@ -80,8 +82,26 @@ async def query(
 
     mask = read_model_mask(licensed_sources)
     if mask is not None:
-        return await _query_read_model(session, params, mask)
+        items, total = await _query_read_model(session, params, mask)
+        # An empty page from a canonical caller is only trustworthy when the read
+        # model is actually populated; otherwise fall back to the live path. The
+        # populated check runs only on an empty result, so the common (non-empty)
+        # path pays nothing extra.
+        if total or await _read_model_populated(session):
+            return items, total
     return await _query_live(session, params, licensed_sources)
+
+
+async def _read_model_populated(session: AsyncSession) -> bool:
+    """True when the read model has any rows (a cheap ``LIMIT 1`` probe).
+
+    Used to fall back to live coalescing when the model has not been rebuilt yet.
+    Any row implies every mask is present for every listable resource, since the
+    rebuild/refresh paths always write all masks together.
+    """
+    return (
+        await session.scalar(select(OGFieldResourceState.resource_id).limit(1))
+    ) is not None
 
 
 async def _query_read_model(
@@ -175,7 +195,7 @@ async def filter_options(
     canonical visibility profiles; falls back to live coalescing otherwise.
     """
     mask = read_model_mask(licensed_sources)
-    if mask is None:
+    if mask is None or not await _read_model_populated(session):
         return await _filter_options_live(session, licensed_sources)
 
     state = OGFieldResourceState

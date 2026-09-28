@@ -33,7 +33,11 @@ from stitch.api.db.read_model.permissions import (
     PUBLIC_SOURCES,
 )
 from stitch.api.db.priorities import seed_or_refresh_defaults
-from stitch.api.db.read_model.state import rebuild_all_resource_state
+from stitch.api.db.read_model.state import (
+    rebuild_all_resource_state,
+    refresh_changed_since,
+    refresh_resource_states,
+)
 from stitch.api.entities import OGFieldQueryParams, User
 from tests.utils import make_source_model
 
@@ -296,3 +300,79 @@ class TestReadModelSync:
             == merged.id
         )
         await self._assert_synced(session)
+
+
+class TestReadModelFallback:
+    """An unpopulated read model falls back to live coalescing (never empty/wrong)."""
+
+    async def test_query_falls_back_when_unpopulated(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        await _seed_dataset(session, test_user)
+        # Deliberately do NOT rebuild -> og_field_resource_state is empty.
+        licensed = _PROFILES["all"]
+        params = OGFieldQueryParams()
+
+        model_items, model_total = await resource_actions.query(
+            session, params, licensed_sources=licensed
+        )
+        live_items, live_total = await _query_live(
+            session, params, licensed_sources=licensed
+        )
+        assert model_total == live_total
+        assert model_total > 0  # dataset is non-empty, so this proves fallback ran
+        assert model_items == live_items
+
+    async def test_filter_options_falls_back_when_unpopulated(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        await _seed_dataset(session, test_user)
+        licensed = _PROFILES["all"]
+
+        opts = await resource_actions.filter_options(session, licensed_sources=licensed)
+        assert opts == await _filter_options_live(session, licensed_sources=licensed)
+        assert any(opts.values())  # non-empty -> came from live, not an empty table
+
+
+class TestTargetedRebuild:
+    async def test_refresh_resource_states_only_touches_given_ids(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        ids = await _seed_dataset(session, test_user)
+
+        await refresh_resource_states(session, [ids[0]])
+        present = set(
+            (await session.scalars(select(OGFieldResourceState.resource_id))).all()
+        )
+        assert present == {ids[0]}
+
+        await rebuild_all_resource_state(session)
+        present_all = set(
+            (await session.scalars(select(OGFieldResourceState.resource_id))).all()
+        )
+        assert set(ids) <= present_all
+
+    async def test_refresh_changed_since_bounds(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        from datetime import datetime
+
+        session = seeded_integration_session
+        ids = await _seed_dataset(session, test_user)
+
+        # Naive bounds to match SQLite's naive timestamp storage in tests.
+        past = datetime(2000, 1, 1)
+        future = datetime(2100, 1, 1)
+
+        changed = set(await refresh_changed_since(session, past))
+        assert set(ids) <= changed  # everything changed after the distant past
+        present = set(
+            (await session.scalars(select(OGFieldResourceState.resource_id))).all()
+        )
+        assert set(ids) <= present
+
+        # Nothing changed after the distant future.
+        assert set(await refresh_changed_since(session, future)) == set()
