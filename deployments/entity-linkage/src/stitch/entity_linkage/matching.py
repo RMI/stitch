@@ -55,11 +55,12 @@ def merge_fingerprint(resource_ids: Sequence[int]) -> str:
 def pairwise_candidates(resource_ids: Sequence[int]) -> list[tuple[int, int]]:
     """Break a match block into its pairwise (2-member) candidates.
 
-    Every member of a block shares the same normalized name and country, so each
-    unordered pair is itself a valid duplicate candidate. A 2-member block yields
-    its single pair; an N-member block yields every ``C(N, 2)`` pair. The matcher
-    never emits a candidate with three or more members: a 3+ block is offered as a
-    set of pairwise candidates the reviewer can approve or reject independently.
+    A 2-member block yields its single pair; an N-member block yields every
+    ``C(N, 2)`` pair. The matcher never emits a candidate with three or more
+    members: a 3+ block is offered as a set of pairwise candidates the reviewer
+    can approve or reject independently. "Extra" pairs are created as
+    candidates, and will collapse (be deleted) as other candidates are merged,
+    so that reviews do not need to be order-dependent.
     """
     unique = sorted(set(resource_ids))
     return list(itertools.combinations(unique, 2))
