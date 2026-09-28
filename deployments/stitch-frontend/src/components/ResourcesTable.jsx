@@ -154,11 +154,12 @@ export default function ResourcesTable({
       {isFetching && (
         <div role="status" className="absolute inset-0 flex justify-center">
           <span className="sr-only">Updating resources...</span>
-          {/* Starts near the top of the table, then sticks at mid-screen as
-              you scroll, so a table taller than the screen never hides it. */}
+          {/* Sticks toward mid-screen but stays inside the table, so a table
+              taller than the screen never hides it. Keep the top margin small:
+              spinner plus margin must fit a one-row table, or it pokes out. */}
           <span
             aria-hidden="true"
-            className="sticky top-[calc(50vh-1rem)] mt-16 h-8 w-8 animate-spin rounded-full border-2 border-line border-t-ink-muted motion-reduce:animate-none"
+            className="sticky top-[calc(50vh-1rem)] mt-8 h-8 w-8 animate-spin rounded-full border-2 border-line border-t-ink-muted motion-reduce:animate-none"
           />
         </div>
       )}
