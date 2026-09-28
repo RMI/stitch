@@ -16,6 +16,7 @@ from .types import (
     GEMSrcKey,
     LLMSrcKey,
     LocationType,
+    NORSrcKey,
     OGSISrcKey,
     RMISrcKey,
     WMSrcKey,
@@ -42,6 +43,8 @@ __all__ = [
     "ALBSourceView",
     "BCSource",
     "BCSourceView",
+    "NORSource",
+    "NORSourceView",
     "SourceRecord",
     "LocationType",
     "OGFieldName",
@@ -59,6 +62,7 @@ WM_SRC: Final[WMSrcKey] = "wm"
 CCR_SRC: Final[CCRSrcKey] = "ccr"
 ALB_SRC: Final[ALBSrcKey] = "alb"
 BC_SRC: Final[BCSrcKey] = "bc"
+NOR_SRC: Final[NORSrcKey] = "nor"
 
 # Canonical source coalescing priority (highest first). Single source of truth
 # for the coalescer, the query-param default, and the DB seed.
@@ -68,6 +72,7 @@ SOURCE_PRIORITY: Final[tuple[OGSISrcKey, ...]] = (
     CCR_SRC,
     BC_SRC,
     ALB_SRC,
+    NOR_SRC,
     GEM_SRC,
     LLM_SRC,
 )
@@ -105,6 +110,14 @@ class BCSourceView(SourceView[int, BCSrcKey], OilGasFieldBase):
     source: BCSrcKey = BC_SRC
 
 
+class NORSource(Source[int, NORSrcKey], OilGasFieldBase):
+    source: NORSrcKey = NOR_SRC
+
+
+class NORSourceView(SourceView[int, NORSrcKey], OilGasFieldBase):
+    source: NORSrcKey = NOR_SRC
+
+
 class WoodMacSource(Source[int, WMSrcKey], OilGasFieldBase):
     source: WMSrcKey = WM_SRC
 
@@ -136,7 +149,8 @@ OGFieldSource = Annotated[
     | LLMSource
     | CCRSource
     | ALBSource
-    | BCSource,
+    | BCSource
+    | NORSource,
     Field(discriminator="source"),
 ]
 
@@ -147,7 +161,8 @@ OGFieldSourceView = Annotated[
     | LLMSourceView
     | CCRSourceView
     | ALBSourceView
-    | BCSourceView,
+    | BCSourceView
+    | NORSourceView,
     Field(discriminator="source"),
 ]
 
