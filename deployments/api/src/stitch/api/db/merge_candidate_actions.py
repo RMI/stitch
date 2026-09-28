@@ -308,7 +308,6 @@ async def _reroute_pending_candidates(
     user: CurrentUser,
     merged_away_ids: Sequence[int],
     new_id: int,
-    exclude_candidate_id: int,
 ) -> None:
     """Repoint other PENDING candidates off resources that a merge just consumed.
 
@@ -322,8 +321,15 @@ async def _reroute_pending_candidates(
     stays PENDING and reviewable, and because ``get_merge_candidate`` builds the
     comparison live from the stored item rows, the review pane immediately shows
     ``new_id``'s current values. Rides the caller's transaction.
+
+    Call this *after* the approved candidate has been marked APPROVED: the query
+    below autoflushes that status change, so the ``status == PENDING`` filter
+    excludes it on its own and no explicit exclude id is needed.
     """
     merged_away = set(merged_away_ids)
+    # Targeted query: only candidates that actually reference a merged-away
+    # resource can be stale, so join through the items and filter on
+    # ``resource_id`` rather than scanning every PENDING candidate.
     stmt = (
         select(MergeCandidateModel)
         .join(
@@ -333,7 +339,6 @@ async def _reroute_pending_candidates(
         .where(
             MergeCandidateItemModel.resource_id.in_(merged_away),
             MergeCandidateModel.status == MergeCandidateStatus.PENDING,
-            MergeCandidateModel.id != exclude_candidate_id,
         )
         .options(selectinload(MergeCandidateModel.items))
         .distinct()
@@ -345,9 +350,9 @@ async def _reroute_pending_candidates(
     # A rerouted candidate always contains new_id, which is brand-new, so its
     # fingerprint cannot collide with any pre-existing candidate -- only with
     # another candidate rerouted in this same pass (e.g. A+C and B+C both become
-    # D+C). Track survivors' fingerprints and drop later duplicates: they are now
+    # D+C). Track survivors' member sets and drop later duplicates: they are now
     # the identical proposal. Order by id so the survivor is deterministic.
-    seen_fingerprints: set[str] = set()
+    kept: set[str] = set()
     for candidate in sorted(candidates, key=lambda c: c.id):
         # Rewrite each merged-away member to new_id. If a candidate held more than
         # one merged-away id (e.g. approving A+B collapses a member of A+B+C),
@@ -366,20 +371,18 @@ async def _reroute_pending_candidates(
             seen_ids.add(target)
             new_ids.append(target)
 
-        # A candidate whose members were all merged away (a subset of the approved
-        # candidate, e.g. A+B when A+B+C is approved) collapses to just [new_id].
-        # A single-member candidate can never be approved (`_normalize_resource_ids`
-        # requires >=2), so it would be a permanent dead end -- and it is fully
-        # subsumed by the approval anyway. Delete it.
-        if len(new_ids) < 2:
-            await session.delete(candidate)
-            continue
-
+        # Delete the candidate when it can no longer stand on its own:
+        #   * fewer than two members -- it was a subset of the approved candidate
+        #     (e.g. A+B when A+B+C is approved), collapsed to just [new_id], and a
+        #     single-member candidate can never be approved (_normalize_resource_ids
+        #     requires >=2). It is fully subsumed by the approval anyway.
+        #   * a member set already kept this pass -- it is now the identical
+        #     proposal as an earlier survivor.
         fingerprint = _fingerprint(new_ids)
-        if fingerprint in seen_fingerprints:
+        if len(new_ids) < 2 or fingerprint in kept:
             await session.delete(candidate)
             continue
-        seen_fingerprints.add(fingerprint)
+        kept.add(fingerprint)
         candidate.fingerprint = fingerprint
         candidate.last_updated_by_id = user.id
 
@@ -410,20 +413,22 @@ async def approve_merge_candidate(
         resource_ids=resource_ids,
     )
 
-    await _reroute_pending_candidates(
-        session=session,
-        user=user,
-        merged_away_ids=resource_ids,
-        new_id=merged_resource.id,
-        exclude_candidate_id=candidate.id,
-    )
-
     candidate.status = MergeCandidateStatus.APPROVED
     candidate.review_notes = request.review_notes if request else None
     candidate.reviewed_at = datetime.now(timezone.utc)
     candidate.reviewed_by_id = user.id
     candidate.last_updated_by_id = user.id
     candidate.merged_resource_id = merged_resource.id
+
+    # Reroute after marking this candidate APPROVED: the reroute query autoflushes
+    # the status change, so its PENDING filter excludes this candidate on its own.
+    await _reroute_pending_candidates(
+        session=session,
+        user=user,
+        merged_away_ids=resource_ids,
+        new_id=merged_resource.id,
+    )
+
     with named_query("merge_candidates.approve.persist"):
         await session.flush()
         candidate = await _load_candidate_model(session, candidate_id)

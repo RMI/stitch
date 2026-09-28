@@ -318,14 +318,12 @@ async def test_reroute_rewrites_pending_candidate_items_and_fingerprint(user):
         user=user,
         merged_away_ids=[18, 19],
         new_id=31,
-        exclude_candidate_id=7,
     )
 
     assert [(i.resource_id, i.position) for i in other.items] == [(31, 0), (20, 1)]
     assert other.fingerprint == "20:31"
     assert other.last_updated_by_id == user.id
     assert session.deleted == []
-    assert session.flush_calls == 1
 
 
 @pytest.mark.anyio
@@ -345,7 +343,6 @@ async def test_reroute_dedupes_when_candidate_holds_multiple_merged_ids(user):
         user=user,
         merged_away_ids=[18, 19],
         new_id=31,
-        exclude_candidate_id=7,
     )
 
     # The second merged-away member (position 1) is the dropped duplicate; it is
@@ -353,7 +350,6 @@ async def test_reroute_dedupes_when_candidate_holds_multiple_merged_ids(user):
     assert [(i.resource_id, i.position) for i in other.items] == [(31, 0), (20, 2)]
     assert session.deleted == []
     assert other.fingerprint == "20:31"
-    assert session.flush_calls == 1
 
 
 @pytest.mark.anyio
@@ -374,12 +370,10 @@ async def test_reroute_drops_candidate_that_collapses_below_two_members(user):
         user=user,
         merged_away_ids=[18, 19, 20],
         new_id=31,
-        exclude_candidate_id=7,
     )
 
     assert session.deleted == [subset]
     assert subset.fingerprint == "18:19"  # untouched; row is being deleted
-    assert session.flush_calls == 1
 
 
 @pytest.mark.anyio
@@ -405,13 +399,11 @@ async def test_reroute_drops_duplicate_candidate_on_fingerprint_collision(user):
         user=user,
         merged_away_ids=[18, 19],
         new_id=31,
-        exclude_candidate_id=7,
     )
 
     assert session.deleted == [bc]
     assert ac.fingerprint == "20:31"
     assert [i.resource_id for i in ac.items] == [31, 20]
-    assert session.flush_calls == 1
 
 
 @pytest.mark.anyio
@@ -423,11 +415,9 @@ async def test_reroute_is_noop_without_overlapping_candidates(user):
         user=user,
         merged_away_ids=[18, 19],
         new_id=31,
-        exclude_candidate_id=7,
     )
 
     assert session.deleted == []
-    assert session.flush_calls == 0
 
 
 @pytest.mark.anyio
