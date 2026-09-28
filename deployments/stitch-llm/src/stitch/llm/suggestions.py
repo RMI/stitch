@@ -91,7 +91,7 @@ def build_field_suggestion_input(
         {
             "role": "system",
             "content": (
-                "You infer one missing oil and gas field value from Stitch data. "
+                "You infer one oil and gas field value from Stitch data. "
                 "Use public web search evidence when needed. "
                 "Respond using exactly two lines in this format:\n"
                 "VALUE: <value or null>\n"
