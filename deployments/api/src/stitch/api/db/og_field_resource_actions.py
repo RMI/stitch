@@ -577,20 +577,32 @@ async def _repoint_memberships(
         )
     ).all()
 
-    # create new memberships pointing to the new resource
-    new_memberships: list[MembershipModel] = []
+    # Dedup by source_pk: the merged resource gets at most one membership per source
+    # record (uphold uq_membership_resource_source, since the same source may be a
+    # member of more than one of the merged resources). The target membership is
+    # ACTIVE if any contributing membership was active. Every old ACTIVE membership
+    # is still flipped INACTIVE.
+    by_source_pk: dict[int, tuple[str, bool]] = {}
     for mem in existing_memberships:
-        # set status on
-        new_memberships.append(
-            MembershipModel.create(
-                created_by=user,
-                resource_id=res.id,
-                source=mem.source,
-                source_pk=mem.source_pk,
-                status=mem.status,
-            )
+        source, any_active = by_source_pk.get(mem.source_pk, (mem.source, False))
+        by_source_pk[mem.source_pk] = (
+            source,
+            any_active or mem.status == MembershipStatus.ACTIVE,
         )
         if mem.status == MembershipStatus.ACTIVE:
             mem.status = MembershipStatus.INACTIVE
+
+    new_memberships = [
+        MembershipModel.create(
+            created_by=user,
+            resource_id=res.id,
+            source=source,
+            source_pk=source_pk,
+            status=(
+                MembershipStatus.ACTIVE if any_active else MembershipStatus.INACTIVE
+            ),
+        )
+        for source_pk, (source, any_active) in by_source_pk.items()
+    ]
     session.add_all(new_memberships)
     return new_memberships

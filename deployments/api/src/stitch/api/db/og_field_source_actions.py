@@ -184,19 +184,38 @@ async def _attach_source_models(
     src_models: Sequence[OilGasFieldSourceModel],
     user: User,
 ) -> None:
-    """Create ACTIVE memberships linking each source model to ``resource``."""
-    # Serialize with any concurrent mutation of this resource before we rebuild its
-    # derived priority/state rows below.
+    """Create ACTIVE memberships linking each source model to ``resource``.
+
+    A source is attached to a resource at most once: sources already attached (or
+    repeated within this batch) are skipped, upholding
+    ``uq_membership_resource_source``.
+    """
+    # Serialize with any concurrent mutation of this resource before we read the
+    # membership snapshot and rebuild its derived priority/state rows below.
     await lock_resource(session, resource.id)
-    memberships = [
-        MembershipModel.create(
-            created_by=user,
-            resource_id=resource.id,
-            source=src.source,
-            source_pk=src.id,
+    already_attached = set(
+        (
+            await session.scalars(
+                select(MembershipModel.source_pk).where(
+                    MembershipModel.resource_id == resource.id
+                )
+            )
+        ).all()
+    )
+    memberships: list[MembershipModel] = []
+    seen: set[int] = set()
+    for src in src_models:
+        if src.id in already_attached or src.id in seen:
+            continue
+        seen.add(src.id)
+        memberships.append(
+            MembershipModel.create(
+                created_by=user,
+                resource_id=resource.id,
+                source=src.source,
+                source_pk=src.id,
+            )
         )
-        for src in src_models
-    ]
     session.add_all(memberships)
     await session.flush()
     # Single choke point for membership creation on the attach path

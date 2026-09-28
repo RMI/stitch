@@ -2118,3 +2118,66 @@ class TestPriorityCollapseBehaviour:
             ("rmi", False),
             ("wm", False),
         ]
+
+
+class TestMembershipUniqueness:
+    """(resource, source) is unique; merge dedups a source shared across parents."""
+
+    @pytest.mark.anyio
+    async def test_duplicate_membership_rejected(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid = await _create_resource_with_sources(
+            session, test_user, {"source": "gem", "name": "X", "country": "USA"}
+        )
+        (pk,) = await _source_pks(session, rid, "gem")
+        session.add(
+            MembershipModel.create(
+                created_by=test_user, resource_id=rid, source="gem", source_pk=pk
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await session.flush()
+
+    @pytest.mark.anyio
+    async def test_merge_dedups_source_shared_by_parents(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        # One source record, attached to two resources (allowed across resources).
+        rid_a = ResourceModel.create(created_by=test_user)
+        rid_b = ResourceModel.create(created_by=test_user)
+        session.add_all([rid_a, rid_b])
+        await session.flush()
+        source = make_source_model(
+            source="gem", created_by_id=test_user.id, name="Shared", country="USA"
+        )
+        session.add(source)
+        await session.flush()
+        for rid in (rid_a.id, rid_b.id):
+            session.add(
+                MembershipModel.create(
+                    created_by=test_user,
+                    resource_id=rid,
+                    source="gem",
+                    source_pk=source.id,
+                )
+            )
+        await session.flush()
+
+        merged = await resource_actions.apply_resource_merge(
+            session, test_user, [rid_a.id, rid_b.id]
+        )
+
+        # The merged resource has exactly one membership for the shared source
+        # (no uq_membership_resource_source violation).
+        count = await session.scalar(
+            select(func.count())
+            .select_from(MembershipModel)
+            .where(
+                MembershipModel.resource_id == merged.id,
+                MembershipModel.source_pk == source.id,
+            )
+        )
+        assert count == 1

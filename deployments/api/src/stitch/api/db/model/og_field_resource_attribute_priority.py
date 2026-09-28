@@ -80,6 +80,18 @@ class OGFieldResourceAttributePriority(TimestampMixin, UserAuditMixin, Base):
             name="fk_attr_priority_source_value",
             ondelete="CASCADE",
         ),
+        # The source must actually be attached to this resource (a real membership),
+        # not merely exist and carry a value. Backed by
+        # uq_membership_resource_source on og_field_memberships.
+        ForeignKeyConstraint(
+            ["resource_id", "source_pk"],
+            [
+                "og_field_memberships.resource_id",
+                "og_field_memberships.source_pk",
+            ],
+            name="fk_attr_priority_membership",
+            ondelete="CASCADE",
+        ),
     )
 
     @classmethod
