@@ -18,13 +18,14 @@ reproduces the previous two-tier (override-then-default) coalescing exactly.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from stitch.api.entities import User
 
+from .errors import InvalidActionError
 from .model import (
     MembershipModel,
     MembershipStatus,
@@ -82,15 +83,31 @@ def _default_order(members: dict[int, str]) -> list[int]:
 
 
 async def seed_or_refresh_defaults(
-    session: AsyncSession, user: User, resource_id: int
+    session: AsyncSession,
+    user: User,
+    resource_id: int,
+    source_pks: Collection[int] | None = None,
 ) -> None:
     """Rebuild the default priority rows for a resource, preserving curation.
 
     For each field the resource has a value for, curated rows are left untouched
     and the remaining valued sources are (re)written as default rows in global
     order, positioned after the curated block. Idempotent.
+
+    ``source_pks`` scopes the work: when given (e.g. the sources just attached),
+    only fields those sources carry a value for are rebuilt, so an attach doesn't
+    churn every field's default rows. ``None`` rebuilds all fields (bootstrap/merge).
     """
     valued = await _valued_members(session, resource_id)
+    if source_pks is not None:
+        scope = set(source_pks)
+        valued = {
+            colname: members
+            for colname, members in valued.items()
+            if scope.intersection(members)
+        }
+    if not valued:
+        return
 
     existing = (
         await session.scalars(
@@ -150,6 +167,16 @@ async def set_curated(
     """
     members = (await _valued_members(session, resource_id)).get(colname, {})
     curated = list(ordered_source_pks)
+    # Every curated source must actually carry a value for this field; guard here so
+    # a bad id is a clean client error, not a KeyError below. (Callers such as
+    # set_field_source_priority validate this too; this keeps the helper safe on its
+    # own.)
+    unknown = [pk for pk in curated if pk not in members]
+    if unknown:
+        raise InvalidActionError(
+            f"Cannot curate sources with no value for field {colname!r} on "
+            f"resource {resource_id}: {unknown}"
+        )
     curated_set = set(curated)
 
     await session.execute(
