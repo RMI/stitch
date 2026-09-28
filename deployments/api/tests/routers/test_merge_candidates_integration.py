@@ -342,6 +342,57 @@ class TestMergeCandidateDetailIntegration:
         assert dropped.status_code == 404, dropped.text
 
     @pytest.mark.anyio
+    async def test_pairwise_triangle_collapses_over_sequential_merges(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        # Entity linkage emits pairwise candidates, so a 3-cluster {A,B,C} yields
+        # A+B, B+C, and A+C. Merging the cluster edge by edge must collapse the
+        # redundant third candidate rather than leave it as a stale dead end.
+        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
+        id_c = await _create_resource(
+            integration_client, og_create_res_fact, "Safaniya"
+        )
+        candidate_ab = await _create_candidate(integration_client, [id_a, id_b])
+        candidate_bc = await _create_candidate(integration_client, [id_b, id_c])
+        candidate_ac = await _create_candidate(integration_client, [id_a, id_c])
+
+        # Merge A+B -> D. Both B+C and A+C re-route to D+C (the same proposal), so
+        # the later-created A+C is dropped and B+C survives.
+        approve_ab = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{candidate_ab}/approve",
+        )
+        assert approve_ab.status_code == 200, approve_ab.text
+        merged_d = approve_ab.json()["merged_resource_id"]
+
+        dropped = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_ac}"
+        )
+        assert dropped.status_code == 404, dropped.text
+
+        survivor = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_bc}"
+        )
+        assert survivor.status_code == 200, survivor.text
+        assert survivor.json()["status"] == "PENDING"
+        assert survivor.json()["resource_ids"] == [merged_d, id_c]
+
+        # Merge the surviving edge (now D+C) to finish the 3-way. A+C stays gone --
+        # no stale candidate resurfaces.
+        approve_bc = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{candidate_bc}/approve",
+        )
+        assert approve_bc.status_code == 200, approve_bc.text
+        assert approve_bc.json()["merged_resource_id"] is not None
+
+        still_dropped = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_ac}"
+        )
+        assert still_dropped.status_code == 404, still_dropped.text
+
+    @pytest.mark.anyio
     async def test_three_way_candidate_that_also_collides_is_dropped(
         self,
         integration_client: AsyncClient,
