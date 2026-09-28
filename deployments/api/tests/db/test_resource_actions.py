@@ -2181,3 +2181,77 @@ class TestMembershipUniqueness:
             )
         )
         assert count == 1
+
+
+class TestPrioritySeeding:
+    """set_curated guards bad ids; attach-time default seeding is field-scoped."""
+
+    @pytest.mark.anyio
+    async def test_set_curated_rejects_source_without_value(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid = await _create_resource_with_sources(
+            session, test_user, {"source": "gem", "name": "N", "country": "USA"}
+        )
+        (gem_pk,) = await _source_pks(session, rid, "gem")
+        # gem has no value for `basin`, so it cannot be curated there -> clean error.
+        with pytest.raises(InvalidActionError):
+            await set_curated(session, test_user, rid, "basin", [gem_pk])
+
+    @pytest.mark.anyio
+    async def test_seed_defaults_scoped_to_given_sources(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        from datetime import datetime
+
+        session = seeded_integration_session
+        rid = await _create_resource_with_sources(
+            session, test_user, {"source": "gem", "name": "N", "basin": "B"}
+        )
+        # Attach an rmi source carrying only `region`, WITHOUT seeding priorities.
+        rmi = make_source_model(source="rmi", created_by_id=test_user.id, region="R")
+        session.add(rmi)
+        await session.flush()
+        session.add(
+            MembershipModel.create(
+                created_by=test_user,
+                resource_id=rid,
+                source="rmi",
+                source_pk=rmi.id,
+                status=MembershipStatus.ACTIVE,
+            )
+        )
+        await session.flush()
+
+        # Stamp the existing (name/basin) rows so any rewrite is detectable.
+        sentinel = datetime(2000, 1, 1)
+        for row in (
+            await session.scalars(
+                select(OGFieldResourceAttributePriority).where(
+                    OGFieldResourceAttributePriority.resource_id == rid
+                )
+            )
+        ).all():
+            row.created = sentinel
+        await session.flush()
+
+        # Scope the seed to the rmi source -> only `region` should be (re)built.
+        await seed_or_refresh_defaults(session, test_user, rid, source_pks=[rmi.id])
+        session.expire_all()
+
+        by_colname: dict[str, list] = {}
+        for row in (
+            await session.scalars(
+                select(OGFieldResourceAttributePriority).where(
+                    OGFieldResourceAttributePriority.resource_id == rid
+                )
+            )
+        ).all():
+            by_colname.setdefault(row.colname, []).append(row)
+
+        # region got a fresh row; name/basin were untouched (sentinel preserved).
+        assert "region" in by_colname
+        assert by_colname["region"][0].created != sentinel
+        assert all(r.created == sentinel for r in by_colname["name"])
+        assert all(r.created == sentinel for r in by_colname["basin"])

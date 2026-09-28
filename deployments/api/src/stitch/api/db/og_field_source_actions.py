@@ -219,11 +219,12 @@ async def _attach_source_models(
     session.add_all(memberships)
     await session.flush()
     # Single choke point for membership creation on the attach path
-    # (create/attach/create-and-attach): seed default priority rows for the newly
-    # attached sources (preserving any existing curation), then refresh the read
-    # model. Priority rows must exist before the read model coalesces, and both
-    # stay inside this transaction.
-    await seed_or_refresh_defaults(session, user, resource.id)
+    # (create/attach/create-and-attach): seed default priority rows, scoped to just
+    # the fields the newly attached sources carry (no churn on unaffected fields),
+    # preserving existing curation; then refresh the read model. Priority rows must
+    # exist before the read model coalesces, and both stay in this transaction.
+    attached_pks = {mem.source_pk for mem in memberships}
+    await seed_or_refresh_defaults(session, user, resource.id, source_pks=attached_pks)
     await refresh_resource_state(session, resource.id)
 
 
