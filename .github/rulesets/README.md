@@ -1,58 +1,61 @@
 # GitHub Rulesets
 
-These JSON files represent [GitHub Rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets).
+This directory defines the [GitHub Rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets)
+this repo expects to be in effect. CI compares them against the repo's **live**
+rulesets and fails if they drift.
 
-Each is created by exporting an existing ruleset in effect in this repo.
+The check logic and the shared ruleset **templates** are maintained centrally in
+[**RMI/actions**](https://github.com/RMI/actions) — see
+[`actions/admin/rulesets-check`](https://github.com/RMI/actions/tree/main/actions/admin/rulesets-check)
+for the full template list, overlay format, and merge semantics. This repo's
+workflow ([`admin-check_rulesets.yml`](../workflows/admin-check_rulesets.yml))
+just delegates to that action.
 
-## Important limitation
+## Overlay files (`*.overlay.json`)
 
-GitHub's rulesets API only returns `bypass_actors` when the caller has write
-access to the ruleset. The default Actions token used in
-[`admin-check_rulesets.yml`](../workflows/admin-check_rulesets.yml)
-does not reliably expose that field, so the rulesets check intentionally ignores
-`bypass_actors` in both the local files and the remote API response.
+Each ruleset is described by a small **overlay** that names a shared template and
+lists only what this repo changes on top of it. A key is checked *only if* an
+overlay (or its template) defines it — everything else GitHub returns is ignored.
 
-That means bypass lists are currently treated as UI-managed policy rather than
-fully verified by CI.
+```jsonc
+{
+  "template": "gitflow-main",          // required: a template from RMI/actions
+  "rules": {                            // sparse overrides, keyed by rule type
+    "pull_request": {
+      "parameters": { "required_approving_review_count": 1 }
+    },
+    "required_status_checks": {         // required-check contexts are per-repo
+      "parameters": { "required_status_checks": [ /* ...this repo's checks... */ ] }
+    }
+  }
+}
+```
 
-# Export
+A template-only overlay (`{ "template": "gitflow-next-pr" }`) means "use the
+template verbatim". For a ruleset that maps to no shared template, use the
+`blank` template and author the whole thing in the overlay.
 
-To create a ruleset file from an existing ruleset (usually created through the web UI):
+Current overlays here: `gitflow-main`, `gitflow-production`,
+`gitflow-next-lifecycle`, `gitflow-next-pr`.
 
-- In Repo Settings, on the sidebar, go to "Rules" -> "Rulesets".
-- Find the ruleset you want to export.
-- In the "..." (three dots) menu, "Export Ruleset".
+## Changing a ruleset
 
-# Import
+The overlay is the *intended* state; the live GitHub ruleset is *reality*. To
+change one, update **both** so they match (CI verifies they do):
 
-NOTE: If you are updating an existing ruleset, see "Update" below.
+1. Edit the relevant `*.overlay.json` here.
+2. Update the live ruleset to match, in **Repo Settings → Rules → Rulesets**
+   (or via `gh api`).
+3. Push — the rulesets check confirms the overlay and the live ruleset agree.
 
-To import a new ruleset (from a file) into the repo's settings:
+To change a setting for *all* RMI repos rather than just this one, change the
+template in [RMI/actions](https://github.com/RMI/actions) instead of overriding
+it here.
 
-- In Repo Settings, on the sidebar, go to "Rules" -> "Rulesets".
-- Click the green "New Ruleset" -> "Import a ruleset".
-- Navigate to a JSON file (on your local machine) that defines the ruleset you want.
-- Scroll to bottom of page and **"Create"**
+## Notes
 
-# Update
-
-If you want to alter an existing ruleset:
-
-- In Repo Settings, on the sidebar, go to "Rules" -> "Rulesets".
-- Find the ruleset you want to update.
-- Click on the ruleset name (not three-dots) to see ruleset definition in the WebUI.
-  - Rename the ruleset (suggestion `rule-name` -> `rule-name-old`)
-  - Set "Enforcement Status" to "Disabled"
-  - Scroll to bottom of page and **"Save Changes"**
-- Return to "Rulesets" main page, and import the updated definition (see above, "Import").
-- Repeat if changing multiple rulesets
-- _(Testing):_
-  - Trigger an empty commit: `git commit -m "Trigger CI" --allow-empty` and push to trigger checking action
-  - The action **should fail** while the temporary `*_old` ruleset still exists.
-    - In the diff, confirm that:
-      - the updated ruleset has no unexpected differences from the JSON file in this repo
-      - the only remaining mismatch is the extra disabled `*_old` ruleset in GitHub
-  - If there are no differences in the ruleset you updated, then it has imported as expected, and you can delete the `*_old` ruleset in the Repo settings.
-    - "Rulesets" -> "`*_old`" -> "..." -> "Delete ruleset".
-  - Trigger a new empty commit and push.
-  - There should be no diffs, and actions run cleanly with new rulesets in effect.
+- `bypass_actors` and other volatile/identity fields are intentionally **not**
+  tracked (see the acknowledged-untracked list in RMI/actions). Bypass lists are
+  treated as UI-managed policy, not verified by CI.
+- New properties GitHub adds to the ruleset schema are caught centrally by a
+  nightly coverage check in RMI/actions, not by this repo's PR check.

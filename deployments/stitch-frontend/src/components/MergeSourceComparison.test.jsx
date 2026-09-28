@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import MergeSourceComparison from "./MergeSourceComparison";
+import { MERGE_COMPARISON_CORE_FIELDS } from "../constants/fieldMeta";
 
 const RESOURCE_IDS = [101, 102];
 
@@ -145,6 +146,24 @@ describe("MergeSourceComparison", () => {
 
     const row = screen.getByRole("group", { name: "Discovery Year" });
     expect(within(row).getAllByText("Match")).toHaveLength(2);
+  });
+
+  it("shows the most decision-relevant other attributes first", async () => {
+    const user = userEvent.setup();
+    renderComparison();
+
+    await user.click(screen.getByText(/Other attributes \(\d+\)/));
+
+    const labels = screen
+      .getAllByRole("group")
+      .map((group) => group.getAttribute("aria-label"))
+      .filter(Boolean);
+    const coreLabelCount = MERGE_COMPARISON_CORE_FIELDS.length;
+
+    expect(labels.slice(coreLabelCount, coreLabelCount + 2)).toEqual([
+      "Field Status",
+      "Production Start Year",
+    ]);
   });
 
   it("shows a note when fewer than two resources", () => {

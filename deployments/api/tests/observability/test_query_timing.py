@@ -8,7 +8,11 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from stitch.api.observability import query_timing
-from stitch.api.observability.context import db_stats_var, new_db_stats
+from stitch.api.observability.context import (
+    db_stats_var,
+    named_query,
+    new_db_stats,
+)
 from stitch.api.observability.query_timing import _START_KEY
 from stitch.observability import JsonFormatter, configure_logging
 
@@ -56,6 +60,41 @@ class TestQueryTiming:
 
         assert stats["count"] == 2
         assert stats["time_ms"] >= 0
+
+    @pytest.mark.anyio
+    async def test_named_query_labels_event(self, timed_engine):
+        engine, captured = timed_engine
+
+        async with engine.connect() as conn:
+            with named_query("resources.count"):
+                await conn.execute(text("SELECT 1"))
+
+        assert len(captured) == 1
+        assert captured[0]["query_name"] == "resources.count"
+
+    @pytest.mark.anyio
+    async def test_query_name_absent_when_unset(self, timed_engine):
+        engine, captured = timed_engine
+
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+
+        assert len(captured) == 1
+        # Field is omitted entirely for unlabeled queries so existing log
+        # consumers see no new key.
+        assert "query_name" not in captured[0]
+
+    @pytest.mark.anyio
+    async def test_named_query_scope_resets(self, timed_engine):
+        engine, captured = timed_engine
+
+        async with engine.connect() as conn:
+            with named_query("resources.count"):
+                await conn.execute(text("SELECT 1"))
+            await conn.execute(text("SELECT 2"))
+
+        assert captured[0]["query_name"] == "resources.count"
+        assert "query_name" not in captured[1]
 
     @pytest.mark.anyio
     async def test_respects_slow_query_threshold(self, monkeypatch):

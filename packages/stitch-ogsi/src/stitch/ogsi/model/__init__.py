@@ -16,6 +16,7 @@ from .types import (
     GEMSrcKey,
     LLMSrcKey,
     LocationType,
+    NORSrcKey,
     OGSISrcKey,
     RMISrcKey,
     WMSrcKey,
@@ -42,6 +43,8 @@ __all__ = [
     "ALBSourceView",
     "BCSource",
     "BCSourceView",
+    "NORSource",
+    "NORSourceView",
     "SourceRecord",
     "LocationType",
     "OGFieldName",
@@ -59,6 +62,7 @@ WM_SRC: Final[WMSrcKey] = "wm"
 CCR_SRC: Final[CCRSrcKey] = "ccr"
 ALB_SRC: Final[ALBSrcKey] = "alb"
 BC_SRC: Final[BCSrcKey] = "bc"
+NOR_SRC: Final[NORSrcKey] = "nor"
 
 # Canonical source coalescing priority (highest first). Single source of truth
 # for the coalescer, the query-param default, and the DB seed.
@@ -68,6 +72,7 @@ SOURCE_PRIORITY: Final[tuple[OGSISrcKey, ...]] = (
     CCR_SRC,
     BC_SRC,
     ALB_SRC,
+    NOR_SRC,
     GEM_SRC,
     LLM_SRC,
 )
@@ -105,6 +110,14 @@ class BCSourceView(SourceView[int, BCSrcKey], OilGasFieldBase):
     source: BCSrcKey = BC_SRC
 
 
+class NORSource(Source[int, NORSrcKey], OilGasFieldBase):
+    source: NORSrcKey = NOR_SRC
+
+
+class NORSourceView(SourceView[int, NORSrcKey], OilGasFieldBase):
+    source: NORSrcKey = NOR_SRC
+
+
 class WoodMacSource(Source[int, WMSrcKey], OilGasFieldBase):
     source: WMSrcKey = WM_SRC
 
@@ -136,7 +149,8 @@ OGFieldSource = Annotated[
     | LLMSource
     | CCRSource
     | ALBSource
-    | BCSource,
+    | BCSource
+    | NORSource,
     Field(discriminator="source"),
 ]
 
@@ -147,7 +161,8 @@ OGFieldSourceView = Annotated[
     | LLMSourceView
     | CCRSourceView
     | ALBSourceView
-    | BCSourceView,
+    | BCSourceView
+    | NORSourceView,
     Field(discriminator="source"),
 ]
 
@@ -156,6 +171,10 @@ OG_FIELD_SOURCE_VIEW_ADAPTER = TypeAdapter(OGFieldSourceView)
 
 class OGFieldView(OilGasFieldBase):
     id: int
+    # STIT-418: when a request for a merged-away resource is redirected to the
+    # resource it was merged into, this holds the id the caller originally asked
+    # for. ``None`` when the caller received exactly the resource it requested.
+    requested_resource_id: int | None = None
 
 
 class OGFieldListItemView(BaseModel):
@@ -166,6 +185,9 @@ class OGFieldListItemView(BaseModel):
 
 class OGFieldDetailView(OGFieldListItemView):
     source_data: list[OGFieldSourceView] = Field(default_factory=list)
+    # STIT-418: see ``OGFieldView.requested_resource_id``. Set when the detail
+    # endpoint redirected a merged-away resource to its terminal resource.
+    requested_resource_id: int | None = None
 
     @field_validator("source_data", mode="before")
     @classmethod

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager
 
+import httpx
 import pytest
 
 from stitch.entity_linkage import matching
@@ -75,6 +76,24 @@ class FakeMatchingClient(AbstractAsyncContextManager["FakeMatchingClient"]):
 def test_merge_fingerprint_is_sorted_and_deduped() -> None:
     assert matching.merge_fingerprint([3, 1, 2, 1]) == "1:2:3"
     assert matching.merge_fingerprint([2, 1]) == matching.merge_fingerprint([1, 2])
+
+
+def test_pairwise_candidates_expands_block() -> None:
+    # A 2-member block is a single pair; a 3+ block is every C(N, 2) pair,
+    # sorted and de-duplicated.
+    assert matching.pairwise_candidates([1, 2]) == [(1, 2)]
+    assert matching.pairwise_candidates([3, 1, 2]) == [(1, 2), (1, 3), (2, 3)]
+    assert matching.pairwise_candidates([1, 2, 2, 3]) == [(1, 2), (1, 3), (2, 3)]
+
+
+def _alpha_us_block(ids: list[int]) -> "FakeMatchingClient":
+    """A same-name (``Alpha``) + country (``US``) block over the given ids."""
+    return FakeMatchingClient(
+        items=[FieldCandidate(id=i, name="Alpha", country="US") for i in ids],
+        details_by_id={
+            i: FieldDetailCandidate(id=i, name="Alpha", country="US") for i in ids
+        },
+    )
 
 
 @pytest.mark.anyio
@@ -319,3 +338,234 @@ async def test_link_all_skips_groups_already_in_the_queue() -> None:
     assert response.merge_candidates_skipped == 1
     assert client.create_calls == []
     assert client.list_candidates_calls == 1
+
+
+class _FailingDetailClient(FakeMatchingClient):
+    """Client whose detail fetch raises for one resource id."""
+
+    def __init__(self, *, fail_id: int, fail_error: Exception, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._fail_id = fail_id
+        self._fail_error = fail_error
+
+    async def get_oil_gas_field_detail(self, resource_id: int) -> FieldDetailCandidate:
+        if resource_id == self._fail_id:
+            raise self._fail_error
+        return await super().get_oil_gas_field_detail(resource_id)
+
+
+@pytest.mark.anyio
+async def test_link_all_isolates_and_counts_a_failing_resource() -> None:
+    # Resource 3's detail fetch fails persistently (retries already exhausted in
+    # the shared client). The run must skip it, count it, and still process the
+    # {1,2} block.
+    client = _FailingDetailClient(
+        fail_id=3,
+        fail_error=httpx.ReadTimeout("read timed out"),
+        items=[
+            FieldCandidate(id=1, name="Alpha", country="US"),
+            FieldCandidate(id=2, name="alpha", country="US"),
+            FieldCandidate(id=3, name="Gamma", country="US"),
+        ],
+        details_by_id={
+            1: FieldDetailCandidate(id=1, name="Alpha", country="US"),
+            2: FieldDetailCandidate(id=2, name="alpha", country="US"),
+        },
+    )
+
+    response = await matching.link_all(
+        client, apply_merges=True, page_size=200, initiated_by="Tester"
+    )
+
+    assert response.resources_scanned == 3
+    assert response.resources_failed == 1
+    assert response.match_groups == [[1, 2]]
+    assert response.merge_candidates_created == 1
+    assert client.create_calls == [[1, 2]]
+
+
+@pytest.mark.anyio
+async def test_link_all_failed_submit_is_counted_not_reported_as_matched() -> None:
+    # When _submit_group raises (a non-400 downstream error), the block is
+    # counted as failed and must NOT appear in match_groups.
+    client = FakeMatchingClient(
+        items=[
+            FieldCandidate(id=1, name="Alpha", country="US"),
+            FieldCandidate(id=2, name="alpha", country="US"),
+        ],
+        details_by_id={
+            1: FieldDetailCandidate(id=1, name="Alpha", country="US"),
+            2: FieldDetailCandidate(id=2, name="alpha", country="US"),
+        },
+        create_error=StitchAPIError("boom", status_code=500),
+    )
+
+    response = await matching.link_all(
+        client, apply_merges=True, page_size=200, initiated_by="Tester"
+    )
+
+    assert response.resources_failed == 1
+    assert response.match_groups == []
+    assert response.merge_candidates_created == 0
+    # Marked processed on first failure, so the block is attempted once, not
+    # once per member.
+    assert client.create_calls == [[1, 2]]
+
+
+@pytest.mark.anyio
+async def test_find_match_group_still_returns_full_block() -> None:
+    # The matcher itself is unchanged: it returns the entire same-name+country
+    # block. Splitting into pairs happens at submission, not here.
+    client = _alpha_us_block([1, 2, 3])
+
+    matched = await matching.find_match_group_for_resource(client, 1)
+
+    assert matched == [1, 2, 3]
+
+
+@pytest.mark.anyio
+async def test_link_resource_explodes_multi_block_into_pairs() -> None:
+    # A 3-member block is submitted as its three pairwise candidates, never as a
+    # single 3-member candidate. matched_ids still reports the full block.
+    client = _alpha_us_block([1, 2, 3])
+
+    result = await matching.link_resource(client, 1, apply_merges=True)
+
+    assert result.matched_ids == [1, 2, 3]
+    assert result.merge_candidate_created is True
+    assert result.skipped_existing is False
+    assert client.create_calls == [[1, 2], [1, 3], [2, 3]]
+
+
+@pytest.mark.anyio
+async def test_link_all_submits_pairwise_for_multi_block() -> None:
+    # One 3-member block, discovered once at seed 1 (members 2 and 3 are then
+    # skipped as processed), yields three pairwise POSTs.
+    client = _alpha_us_block([1, 2, 3])
+
+    response = await matching.link_all(
+        client, apply_merges=True, page_size=200, initiated_by="Tester"
+    )
+
+    assert response.resources_scanned == 3
+    assert response.match_groups == [[1, 2], [1, 3], [2, 3]]
+    assert response.merge_candidates_created == 3
+    assert response.merge_candidates_skipped == 0
+    assert client.create_calls == [[1, 2], [1, 3], [2, 3]]
+
+
+@pytest.mark.anyio
+async def test_link_all_skips_known_existing_pair_within_multi_block() -> None:
+    # A single pair of a 3-member block is already queued: that pair is skipped
+    # without a POST while the other two pairs are still created.
+    client = _alpha_us_block([1, 2, 3])
+    client.existing_candidates = [
+        {"id": 99, "resource_ids": [1, 2], "status": "PENDING"}
+    ]
+
+    response = await matching.link_all(
+        client, apply_merges=True, page_size=200, initiated_by="Tester"
+    )
+
+    assert response.match_groups == [[1, 2], [1, 3], [2, 3]]
+    assert response.merge_candidates_created == 2
+    assert response.merge_candidates_skipped == 1
+    assert client.create_calls == [[1, 3], [2, 3]]
+
+
+@pytest.mark.anyio
+async def test_link_all_fans_larger_block_out_to_every_pair() -> None:
+    # A block larger than three still becomes strictly pairwise: a 4-member block
+    # yields all C(4, 2) = 6 pairs, never a 3+ member candidate.
+    client = _alpha_us_block([1, 2, 3, 4])
+
+    response = await matching.link_all(
+        client, apply_merges=True, page_size=200, initiated_by="Tester"
+    )
+
+    expected_pairs = [[1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]]
+    assert response.match_groups == expected_pairs
+    assert response.merge_candidates_created == 6
+    assert client.create_calls == expected_pairs
+    # Every emitted candidate is a pair -- the matcher never suggests 3+ members.
+    assert all(len(pair) == 2 for pair in response.match_groups)
+
+
+@pytest.mark.anyio
+async def test_link_all_pairs_do_not_dedupe_against_a_legacy_multi_candidate() -> None:
+    # A pre-existing multi (3+ member) candidate has a whole-block fingerprint
+    # ("1:2:3") that never matches a pair fingerprint, so the pairwise candidates
+    # for the same cluster are still emitted alongside it. This documents the
+    # accepted migration behavior (see PR reviewer notes).
+    client = _alpha_us_block([1, 2, 3])
+    client.existing_candidates = [
+        {"id": 99, "resource_ids": [1, 2, 3], "status": "PENDING"}
+    ]
+
+    response = await matching.link_all(
+        client, apply_merges=True, page_size=200, initiated_by="Tester"
+    )
+
+    assert response.match_groups == [[1, 2], [1, 3], [2, 3]]
+    assert response.merge_candidates_created == 3
+    assert response.merge_candidates_skipped == 0
+    assert client.create_calls == [[1, 2], [1, 3], [2, 3]]
+
+
+class _FailingCreateClient(FakeMatchingClient):
+    """Client whose create raises for one specific pair of resource ids."""
+
+    def __init__(
+        self, *, fail_pair: list[int], fail_error: Exception, **kwargs
+    ) -> None:
+        super().__init__(**kwargs)
+        self._fail_pair = fail_pair
+        self._fail_error = fail_error
+
+    async def create_merge_candidate(self, *, resource_ids: list[int]) -> dict:
+        self.create_calls.append(list(resource_ids))
+        if list(resource_ids) == self._fail_pair:
+            raise self._fail_error
+        return {"ok": True, "resource_ids": list(resource_ids)}
+
+
+@pytest.mark.anyio
+async def test_link_all_keeps_earlier_pairs_when_a_later_pair_fails() -> None:
+    # In a 3-member block, pair (1,2) is created before pair (1,3) raises a
+    # non-400 error. The already-created pair must stay counted and in
+    # match_groups (its candidate really exists); the resource is counted failed
+    # and the run stops submitting the rest of the block.
+    client = _FailingCreateClient(
+        fail_pair=[1, 3],
+        fail_error=StitchAPIError("boom", status_code=500),
+        items=[FieldCandidate(id=i, name="Alpha", country="US") for i in (1, 2, 3)],
+        details_by_id={
+            i: FieldDetailCandidate(id=i, name="Alpha", country="US") for i in (1, 2, 3)
+        },
+    )
+
+    response = await matching.link_all(
+        client, apply_merges=True, page_size=200, initiated_by="Tester"
+    )
+
+    assert response.resources_failed == 1
+    assert response.match_groups == [[1, 2]]
+    assert response.merge_candidates_created == 1
+    assert response.merge_candidates_skipped == 0
+    # (1,2) created, (1,3) raised and aborted the block; (2,3) never attempted.
+    assert client.create_calls == [[1, 2], [1, 3]]
+
+
+@pytest.mark.anyio
+async def test_link_all_does_not_swallow_programming_errors() -> None:
+    # A KeyError is a bug, not a transient failure: it must abort the run rather
+    # than be counted as a skipped resource.
+    client = FakeMatchingClient(
+        items=[FieldCandidate(id=1, name="Alpha", country="US")],
+        details_by_id={},  # detail lookup raises KeyError
+    )
+
+    with pytest.raises(KeyError):
+        await matching.link_all(
+            client, apply_merges=True, page_size=200, initiated_by="Tester"
+        )

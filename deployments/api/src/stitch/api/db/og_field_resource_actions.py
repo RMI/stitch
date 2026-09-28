@@ -13,9 +13,9 @@ from stitch.api.db.errors import (
     ResourceNotFoundError,
 )
 from stitch.api.auth import CurrentUser
+from stitch.api.observability.context import named_query
 from stitch.api.entities import (
-    FilterOptionField,
-    OGFieldFilterOptionsParams,
+    FILTER_OPTION_FIELDS,
     OGFieldQueryParams,
 )
 from stitch.api.db.og_field_source_actions import (
@@ -38,13 +38,11 @@ from .model import (
 from .model.oil_gas_field_source_value import (
     ATTRIBUTE_NAMES,
     materialize_value,
-    value_attr_for,
 )
 from .queries import (
-    add_ranking,
     base_resource_query,
-    construct_base_query_statement,
     field_source_candidates,
+    filter_option_rows,
 )
 from .utils import (
     coalesce_resources,
@@ -53,7 +51,6 @@ from .utils import (
 )
 
 
-_FILTER_OPTION_FIELDS: frozenset[str] = frozenset(get_args(FilterOptionField))
 _ALL_SOURCES: frozenset[OGSISrcKey] = frozenset(get_args(OGSISrcKey))
 
 
@@ -77,45 +74,35 @@ async def query(
 
     ids_stmt = base_resource_query(params, licensed_sources)
     count_stmt = select(func.count()).select_from(ids_stmt.subquery())
-    total = (await session.scalar(count_stmt)) or 0
+    with named_query("resources.count"):
+        total = (await session.scalar(count_stmt)) or 0
     ids_stmt = ids_stmt.limit(params.limit).offset(params.offset)
-    ids = list((await session.scalars(ids_stmt)).all())
+    with named_query("resources.list_ids"):
+        ids = list((await session.scalars(ids_stmt)).all())
 
     if not ids:
         return [], total
 
     # Hydrate the page with the shared SQL coalescer (same one the detail path
     # uses), then the shared list-item projection, in phase-1 order.
-    coalesced = await coalesce_resources(session, ids, licensed_sources)
+    with named_query("resources.list_hydrate"):
+        coalesced = await coalesce_resources(session, ids, licensed_sources)
     items = [resource_to_list_item_view(coalesced[rid]) for rid in ids]
     return items, total
 
 
 async def filter_options(
     session: AsyncSession,
-    params: OGFieldFilterOptionsParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
-) -> list[str]:
-    """Return distinct coalesced resource values for one filterable field.
-
-    Reads the shared coalescing core narrowed to the single field, so values are
-    priority/override-coalesced and licensed before being deduped and sorted.
-    ``params.source`` is ignored (see ``query``).
-    """
-    if params.field not in _FILTER_OPTION_FIELDS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"field={params.field} is not supported for resource filter options.",
-        )
-
-    base_cte = construct_base_query_statement(licensed_sources)
-    filtered = select(base_cte).where(base_cte.c.colname == params.field).cte()
-    ranked = add_ranking(filtered).cte("ranked")
-    value_col = getattr(ranked.c, value_attr_for(params.field))
-    labeled = value_col.label("value")
-    stmt = select(labeled).where(value_col.is_not(None)).distinct().order_by(labeled)
-    values = await session.scalars(stmt)
-    return list(values.all())
+) -> dict[str, list[str]]:
+    """Distinct coalesced values for every filterable field, in one query."""
+    options: dict[str, list[str]] = {field: [] for field in FILTER_OPTION_FIELDS}
+    with named_query("resources.filter_options"):
+        for colname, value in await session.execute(
+            filter_option_rows(licensed_sources)
+        ):
+            options[colname].append(value)
+    return options
 
 
 async def get(
@@ -123,20 +110,74 @@ async def get(
     id: int,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> OGFieldResource:
-    stmt = (
-        select(ResourceModel)
-        .options(selectinload(ResourceModel.memberships))
-        .where(ResourceModel.id == id)
-    )
-    model = await session.scalar(stmt)
-    if model is None:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND, detail=f"No Resource with id `{id}` found."
+    with named_query("resources.detail"):
+        stmt = (
+            select(ResourceModel)
+            .options(selectinload(ResourceModel.memberships))
+            .where(ResourceModel.id == id)
         )
-    await session.refresh(model, ["memberships"])
-    return await resource_model_to_entity(
-        session, model, licensed_sources=licensed_sources
-    )
+        model = await session.scalar(stmt)
+        if model is None:
+            raise HTTPException(
+                status_code=HTTP_404_NOT_FOUND,
+                detail=f"No Resource with id `{id}` found.",
+            )
+        await session.refresh(model, ["memberships"])
+        return await resource_model_to_entity(
+            session, model, licensed_sources=licensed_sources
+        )
+
+
+async def resolve_root_id(session: AsyncSession, id: int) -> int:
+    """Resolve a resource id to its terminal (root) resource id, following repoints.
+
+    404 if ``id`` does not exist; a non-repointed id returns itself. Read-only
+    endpoints use this so a request for a merged-away resource acts on the
+    resource it was merged into. The write path (merges, priority edits)
+    intentionally does NOT resolve -- it must act on the exact requested row.
+
+    Resolution collapses the whole chain: ``A -> C -> F -> J`` resolves ``A`` to
+    ``J``. The ``repointed_id`` graph is acyclic by construction
+    (``apply_resource_merge`` always targets a brand-new row), so ``get_root``
+    terminates.
+    """
+    with named_query("resources.resolve_root"):
+        model = await session.scalar(
+            select(ResourceModel).where(ResourceModel.id == id)
+        )
+        if model is None:
+            raise HTTPException(
+                status_code=HTTP_404_NOT_FOUND,
+                detail=f"No Resource with id `{id}` found.",
+            )
+        if model.repointed_id is None:
+            return id
+        try:
+            return (await model.get_root(session)).id
+        except ResourceNotFoundError as exc:
+            # Unreachable under current invariants (FK + acyclic merges + the
+            # self-reference validator), but a corrupt repoint chain must not
+            # surface as an unhandled 500 on a read path.
+            raise HTTPException(
+                status_code=HTTP_404_NOT_FOUND,
+                detail=(
+                    f"Resource `{id}` could not be resolved to a current resource."
+                ),
+            ) from exc
+
+
+async def get_resolved(
+    session: AsyncSession,
+    id: int,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> OGFieldResource:
+    """Return resource ``id``, following repoints to the terminal (root) resource.
+
+    Read-only wrapper over ``resolve_root_id`` + ``get``; see ``resolve_root_id``
+    for the resolution semantics.
+    """
+    root_id = await resolve_root_id(session, id)
+    return await get(session, root_id, licensed_sources=licensed_sources)
 
 
 async def field_source_values(
@@ -159,17 +200,20 @@ async def field_source_values(
             status_code=422,
             detail=f"field={field} is not a known resource field.",
         )
-    if await session.get(ResourceModel, id) is None:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND, detail=f"No Resource with id `{id}` found."
-        )
+    # Resolve repoints so a merged-away id returns the terminal resource's field
+    # sources (and 404s a genuinely missing id), consistent with the
+    # single-resource read endpoints.
+    root_id = await resolve_root_id(session, id)
 
     # field_source_candidates ranks in SQL by the same tiered key as the coalesce
     # winner, so the row order is winner-first and rank is just the enumerate
     # index. Empty text can't be persisted, so every returned row is a real value.
-    rows = (
-        await session.execute(field_source_candidates(id, field, licensed_sources))
-    ).all()
+    with named_query("resources.field_source_values"):
+        rows = (
+            await session.execute(
+                field_source_candidates(root_id, field, licensed_sources)
+            )
+        ).all()
     return [
         OGFieldSourceValueView(
             source=row.source,
@@ -211,7 +255,8 @@ async def set_field_source_priority(
             status_code=422,
             detail=f"field={field} is not a known resource field.",
         )
-    resource = await session.get(ResourceModel, id)
+    with named_query("resources.set_field_source_priority.load"):
+        resource = await session.get(ResourceModel, id)
     if resource is None:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND, detail=f"No Resource with id `{id}` found."
@@ -236,9 +281,10 @@ async def set_field_source_priority(
     # Eligibility + current effective order come from the same ranked read the GET
     # endpoint uses: licensed sources with a non-empty value for the field,
     # winner-first.
-    rows = (
-        await session.execute(field_source_candidates(id, field, licensed_sources))
-    ).all()
+    with named_query("resources.set_field_source_priority.candidates"):
+        rows = (
+            await session.execute(field_source_candidates(id, field, licensed_sources))
+        ).all()
     current_order = [row.source_pk for row in rows]
     eligible = set(current_order)
     requested = set(ordered_source_pks)
@@ -255,24 +301,25 @@ async def set_field_source_priority(
         return await field_source_values(session, id, field, licensed_sources)
 
     source_by_pk = {row.source_pk: row.source for row in rows}
-    await session.execute(
-        delete(OGFieldResourceSourcePriority).where(
-            OGFieldResourceSourcePriority.resource_id == id,
-            OGFieldResourceSourcePriority.colname == field,
-        )
-    )
-    for priority, source_pk in enumerate(ordered_source_pks):
-        session.add(
-            OGFieldResourceSourcePriority.create(
-                created_by=user,
-                resource_id=id,
-                source=source_by_pk[source_pk],
-                source_pk=source_pk,
-                colname=field,
-                priority=priority,
+    with named_query("resources.set_field_source_priority.persist"):
+        await session.execute(
+            delete(OGFieldResourceSourcePriority).where(
+                OGFieldResourceSourcePriority.resource_id == id,
+                OGFieldResourceSourcePriority.colname == field,
             )
         )
-    await session.flush()
+        for priority, source_pk in enumerate(ordered_source_pks):
+            session.add(
+                OGFieldResourceSourcePriority.create(
+                    created_by=user,
+                    resource_id=id,
+                    source=source_by_pk[source_pk],
+                    source_pk=source_pk,
+                    colname=field,
+                    priority=priority,
+                )
+            )
+        await session.flush()
     return await field_source_values(session, id, field, licensed_sources)
 
 
@@ -291,17 +338,20 @@ async def create(
         raise ResourceIntegrityError(
             f"Cannot create resource that has been repointed.\n\tNew: {repr(resource)}"
         )
-    model = ResourceModel.create(created_by=user)
-    session.add(model)
-    await session.flush()
-    if resource.source_data:
-        src_models = await get_or_create_sources(session, user, resource.source_data)
-        res = await attach_sources_to_resource(
-            session=session, resource_id=model.id, source_rows=src_models, user=user
-        )
-        return res
-    await session.refresh(model, ["memberships"])
-    return await resource_model_to_entity(session, model)
+    with named_query("resources.create"):
+        model = ResourceModel.create(created_by=user)
+        session.add(model)
+        await session.flush()
+        if resource.source_data:
+            src_models = await get_or_create_sources(
+                session, user, resource.source_data
+            )
+            res = await attach_sources_to_resource(
+                session=session, resource_id=model.id, source_rows=src_models, user=user
+            )
+            return res
+        await session.refresh(model, ["memberships"])
+        return await resource_model_to_entity(session, model)
 
 
 async def apply_resource_merge(
@@ -325,7 +375,8 @@ async def apply_resource_merge(
 
     stmt = select(ResourceModel).where(ResourceModel.id.in_(unique_ids))
 
-    results = (await session.scalars(stmt)).all()
+    with named_query("resources.merge.load"):
+        results = (await session.scalars(stmt)).all()
     missing_ids = set(unique_ids).difference(set([r.id for r in results]))
     if len(missing_ids) > 0:
         msg = f"Resources not found for ids: [{','.join(map(str, missing_ids))}]"
@@ -346,20 +397,21 @@ async def apply_resource_merge(
     # originals are intentionally NOT carried over -- merging resets ordering to
     # default. (No-op reset today since the target is fresh; a later PR handles
     # an explicit reset if merge semantics ever preserve an existing resource.)
-    new_resource = ResourceModel.create(created_by=user)
-    session.add(new_resource)
-    await session.flush()
+    with named_query("resources.merge.apply"):
+        new_resource = ResourceModel.create(created_by=user)
+        session.add(new_resource)
+        await session.flush()
 
-    # all results are still members of the session
-    # changes will be picked up on commit
-    for res in results:
-        res.repointed_id = new_resource.id
+        # all results are still members of the session
+        # changes will be picked up on commit
+        for res in results:
+            res.repointed_id = new_resource.id
 
-    _ = await _repoint_memberships(session, user, new_resource.id, unique_ids)
+        _ = await _repoint_memberships(session, user, new_resource.id, unique_ids)
 
-    # Return the canonical resource entity
-    await session.refresh(new_resource, ["memberships"])
-    return await resource_model_to_entity(session, new_resource)
+        # Return the canonical resource entity
+        await session.refresh(new_resource, ["memberships"])
+        return await resource_model_to_entity(session, new_resource)
 
 
 async def _repoint_memberships(

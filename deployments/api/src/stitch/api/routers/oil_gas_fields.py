@@ -13,7 +13,6 @@ from stitch.auth.permissions import (
 )
 
 from stitch.api.entities import (
-    OGFieldFilterOptionsParams,
     OGFieldFilterOptionsResponse,
     MergeCandidateCreateRequest,
     MergeCandidateDetailView,
@@ -84,20 +83,20 @@ async def get_all_resources(
     )
 
 
+# Must stay above GET /{id}: Starlette matches routes in declaration order, so a
+# later static path would be swallowed by the id route.
 @router.get("/filter-options", response_model=OGFieldFilterOptionsResponse)
 async def get_resource_filter_options(
     *,
     uow: UnitOfWorkDep,
     _user: CurrentUser,
     claims: Claims,
-    params: Annotated[OGFieldFilterOptionsParams, Query()],
 ) -> OGFieldFilterOptionsResponse:
-    values = await resource_actions.filter_options(
+    opts = await resource_actions.filter_options(
         session=uow.session,
-        params=params,
         licensed_sources=licensed_sources(claims),
     )
-    return OGFieldFilterOptionsResponse(field=params.field, values=values)
+    return OGFieldFilterOptionsResponse(**opts)
 
 
 @router.get(
@@ -236,6 +235,12 @@ async def deny_merge_candidate(
         )
 
 
+def _requested_resource_id(requested_id: int, resolved: OGFieldResource) -> int | None:
+    """The originally-requested id when the resolver returned a different resource
+    (i.e. the request was redirected through a merge); ``None`` otherwise."""
+    return requested_id if resolved.id != requested_id else None
+
+
 @router.get(
     "/{id}",
     response_model=OGFieldView,
@@ -244,10 +249,12 @@ async def deny_merge_candidate(
 async def get_resource(
     *, uow: UnitOfWorkDep, user: CurrentUser, claims: Claims, id: int
 ) -> OGFieldView:
-    res: OGFieldResource = await resource_actions.get(
+    res: OGFieldResource = await resource_actions.get_resolved(
         session=uow.session, id=id, licensed_sources=licensed_sources(claims)
     )
-    return resource_to_view(resource=res)
+    return resource_to_view(
+        resource=res, requested_resource_id=_requested_resource_id(id, res)
+    )
 
 
 @router.get(
@@ -258,10 +265,12 @@ async def get_resource(
 async def get_resource_detail(
     *, uow: UnitOfWorkDep, user: CurrentUser, claims: Claims, id: int
 ) -> OGFieldDetailView:
-    res: OGFieldResource = await resource_actions.get(
+    res: OGFieldResource = await resource_actions.get_resolved(
         session=uow.session, id=id, licensed_sources=licensed_sources(claims)
     )
-    return resource_to_detail_view(resource=res)
+    return resource_to_detail_view(
+        resource=res, requested_resource_id=_requested_resource_id(id, res)
+    )
 
 
 @router.get(

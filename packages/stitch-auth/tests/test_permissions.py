@@ -12,6 +12,7 @@ from stitch.auth.permissions import (
     SOURCE_READ_BC,
     SOURCE_READ_CCR,
     SOURCE_READ_GEM,
+    SOURCE_READ_NOR,
     SOURCE_READ_PERMISSIONS,
     SOURCE_READ_RMI,
     SOURCE_WRITE,
@@ -75,6 +76,19 @@ def test_source_read_sources_resolves_alb():
         [SOURCE_READ_ALB],
         valid_sources={"alb"},
     ) == frozenset({"alb"})
+
+
+def test_nor_source_read_permission_is_registered():
+    assert SOURCE_READ_NOR == "source:read:nor"
+    assert SOURCE_READ_NOR in SOURCE_READ_PERMISSIONS
+    assert SOURCE_READ_NOR in ALL_PERMISSIONS
+
+
+def test_source_read_sources_resolves_nor():
+    assert source_read_sources(
+        [SOURCE_READ_NOR],
+        valid_sources={"nor"},
+    ) == frozenset({"nor"})
 
 
 def test_missing_permissions_uses_exact_matching():

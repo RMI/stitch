@@ -152,7 +152,7 @@ class TestBaseQuerySubstringSearch:
         rows, total = await _execute(
             seeded_integration_session,
             q="perm",
-            country="USA",
+            country=["USA"],
         )
         names = {r.name for r in rows}
         assert total == 2
@@ -171,8 +171,8 @@ class TestBaseQueryExactFilters:
         """country=USA AND field_status=Producing returns Permian Basin, Permian Delaware."""
         rows, total = await _execute(
             seeded_integration_session,
-            country="USA",
-            field_status="Producing",
+            country=["USA"],
+            field_status=["Producing"],
         )
         names = {r.name for r in rows}
         assert total == 2
@@ -187,7 +187,7 @@ class TestBaseQueryExactFilters:
         """country=XYZ returns empty."""
         rows, total = await _execute(
             seeded_integration_session,
-            country="XYZ",
+            country=["XYZ"],
         )
         assert total == 0
         assert len(rows) == 0
@@ -254,7 +254,7 @@ class TestBaseQuerySortAndPagination:
         rows, total = await _execute(
             seeded_integration_session,
             q="perm",
-            field_status="Producing",
+            field_status=["Producing"],
             sort_by="name",
             sort_order="desc",
             page=1,
@@ -315,7 +315,7 @@ class TestNarrowingProofs:
     @pytest.mark.anyio
     async def test_filter_by_basin(self, seeded_integration_session, seeded_sources):
         """basin=Permian proves basin is pivoted (two Permian rows)."""
-        rows, total = await _execute(seeded_integration_session, basin="Permian")
+        rows, total = await _execute(seeded_integration_session, basin=["Permian"])
         assert total == 2
         assert {r.name for r in rows} == {"Permian Basin", "Permian Delaware"}
 

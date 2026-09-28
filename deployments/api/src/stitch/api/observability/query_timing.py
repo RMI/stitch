@@ -20,7 +20,7 @@ from stitch.observability.middleware import (
     scenario_var,
 )
 
-from .context import db_stats_var
+from .context import db_stats_var, query_name_var
 from .sinks import emit_query_event
 
 try:  # py3.12+: monotonic, nanosecond resolution
@@ -93,16 +93,18 @@ def register_query_timing(
         except Exception:  # pragma: no cover - driver dependent
             rowcount = None
 
-        emit_query_event(
-            {
-                "duration_ms": round(elapsed_ms, 2),
-                "rowcount": rowcount
-                if rowcount is not None and rowcount >= 0
-                else None,
-                "executemany": executemany,
-                "statement": _normalize_statement(statement, statement_max_chars),
-                "request_id": request_id_var.get(),
-                "route": route_var.get(),
-                "scenario": scenario_var.get(),
-            }
-        )
+        event = {
+            "duration_ms": round(elapsed_ms, 2),
+            "rowcount": rowcount if rowcount is not None and rowcount >= 0 else None,
+            "executemany": executemany,
+            "statement": _normalize_statement(statement, statement_max_chars),
+            "request_id": request_id_var.get(),
+            "route": route_var.get(),
+            "scenario": scenario_var.get(),
+        }
+        # Optional label from the active ``named_query`` scope. Omitted entirely
+        # when unset so existing log consumers see no new field for unlabeled
+        # queries.
+        if (query_name := query_name_var.get()) is not None:
+            event["query_name"] = query_name
+        emit_query_event(event)

@@ -27,7 +27,7 @@ on:
         type: string
       deployment-lane:
         description: >
-          Deployment environment name (e.g. preview, dress-rehearsal). When
+          Deployment environment name (e.g. preview, production). When
           provided, the job runs in that GH environment and reads STITCH_APP_PASSWORD
           directly from its secrets. Required for the live DB check; omit for the
           throwaway path (password is read from env.example instead).

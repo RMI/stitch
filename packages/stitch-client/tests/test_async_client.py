@@ -22,6 +22,7 @@ def make_client(
     *,
     base_url: str = "http://example.test/api/v1",
     headers_provider=None,
+    **client_kwargs,
 ) -> tuple[AsyncStitchClient, httpx.AsyncClient]:
     raw_client = httpx.AsyncClient(
         transport=httpx.MockTransport(handler),
@@ -30,6 +31,7 @@ def make_client(
     client = AsyncStitchClient(
         headers_provider=headers_provider,
         client=raw_client,
+        **client_kwargs,
     )
     return client, raw_client
 
@@ -244,6 +246,211 @@ async def test_wait_for_health_raises_after_retries_are_exhausted() -> None:
         await client.wait_for_health(retries=2, delay=0)
 
     assert str(exc_info.value) == "GET /health did not become ready in time"
+
+    await raw_client.aclose()
+
+
+# --- opt-in retry on transient statuses -------------------------------------
+
+
+@pytest.mark.anyio
+async def test_retry_statuses_retries_then_succeeds() -> None:
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(len(calls) + 1)
+        if len(calls) == 1:
+            return httpx.Response(503, text="unavailable")
+        return httpx.Response(200, json={"ok": True})
+
+    client, raw_client = make_client(
+        handler, retry_statuses=frozenset({503}), backoff_base_seconds=0
+    )
+
+    assert await client.get_auth_me() == {"ok": True}
+    assert calls == [1, 2]
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_retry_statuses_raises_after_attempts_exhausted() -> None:
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(len(calls) + 1)
+        return httpx.Response(503, text="still unavailable")
+
+    client, raw_client = make_client(
+        handler,
+        retry_statuses=frozenset({503}),
+        max_attempts=3,
+        backoff_base_seconds=0,
+    )
+
+    with pytest.raises(StitchAPIError) as exc_info:
+        await client.get_auth_me()
+
+    assert exc_info.value.status_code == 503
+    assert calls == [1, 2, 3]
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_status_not_in_retry_set_fast_fails() -> None:
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(len(calls) + 1)
+        return httpx.Response(422, text="unprocessable")
+
+    client, raw_client = make_client(handler, retry_statuses=frozenset({503}))
+
+    with pytest.raises(StitchAPIError) as exc_info:
+        await client.get_auth_me()
+
+    assert exc_info.value.status_code == 422
+    assert calls == [1]  # a non-listed status is never retried
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_default_client_does_not_retry_statuses() -> None:
+    """No ``retry_statuses`` (the default) preserves fast-fail on a 5xx, so
+    existing callers are unaffected."""
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(len(calls) + 1)
+        return httpx.Response(503, text="unavailable")
+
+    client, raw_client = make_client(handler)
+
+    with pytest.raises(StitchAPIError):
+        await client.get_auth_me()
+
+    assert calls == [1]
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_post_is_not_retried_on_5xx_status() -> None:
+    """A listed 5xx is not retried on a non-idempotent POST: the request may
+    have already taken effect, so re-sending it could duplicate the write."""
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(len(calls) + 1)
+        return httpx.Response(503, text="unavailable")
+
+    client, raw_client = make_client(
+        handler, retry_statuses=frozenset({503}), backoff_base_seconds=0
+    )
+
+    with pytest.raises(StitchAPIError) as exc_info:
+        await client.create_merge_candidate([1, 2])
+
+    assert exc_info.value.status_code == 503
+    assert calls == [1]  # POST + 5xx: fast-fail, no retry
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_post_is_retried_on_429_status() -> None:
+    """A listed status < 500 (e.g. 429) is unprocessed, so it retries even on a
+    non-idempotent POST."""
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(len(calls) + 1)
+        if len(calls) == 1:
+            return httpx.Response(429, text="slow down")
+        return httpx.Response(200, json={"id": 5})
+
+    client, raw_client = make_client(
+        handler, retry_statuses=frozenset({429}), backoff_base_seconds=0
+    )
+
+    assert await client.create_merge_candidate([1, 2]) == {"id": 5}
+    assert calls == [1, 2]
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_post_is_not_retried_on_post_send_transport_error() -> None:
+    """A read timeout may follow a write the server already applied, so it is not
+    retried on a non-idempotent POST."""
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(len(calls) + 1)
+        raise httpx.ReadTimeout("read timed out", request=request)
+
+    client, raw_client = make_client(handler, backoff_base_seconds=0)
+
+    with pytest.raises(httpx.ReadTimeout):
+        await client.create_merge_candidate([1, 2])
+
+    assert calls == [1]  # POST + post-send transport error: no retry
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_post_is_retried_on_connect_error() -> None:
+    """A connect failure never reached the server, so it is safe to retry even a
+    non-idempotent POST."""
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(len(calls) + 1)
+        if len(calls) == 1:
+            raise httpx.ConnectError("connection refused", request=request)
+        return httpx.Response(200, json={"id": 5})
+
+    client, raw_client = make_client(handler, backoff_base_seconds=0)
+
+    assert await client.create_merge_candidate([1, 2]) == {"id": 5}
+    assert calls == [1, 2]
+
+    await raw_client.aclose()
+
+
+def test_negative_backoff_base_seconds_is_rejected() -> None:
+    with pytest.raises(ValueError, match="backoff_base_seconds must be >= 0"):
+        AsyncStitchClient(
+            base_url="http://example.test/api/v1", backoff_base_seconds=-1.0
+        )
+
+
+@pytest.mark.anyio
+async def test_retry_after_header_is_honored(monkeypatch: pytest.MonkeyPatch) -> None:
+    import stitch.client.async_client as async_client_module
+
+    slept: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        slept.append(delay)
+
+    monkeypatch.setattr(async_client_module.asyncio, "sleep", fake_sleep)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if not slept:
+            return httpx.Response(429, headers={"Retry-After": "7"})
+        return httpx.Response(200, json={"ok": True})
+
+    client, raw_client = make_client(
+        handler, retry_statuses=frozenset({429}), backoff_base_seconds=0.5
+    )
+
+    assert await client.get_auth_me() == {"ok": True}
+    # The header wins over the 0.5s exponential backoff.
+    assert slept == [7.0]
 
     await raw_client.aclose()
 
@@ -1126,3 +1333,105 @@ def test_raise_for_status_raises_stitch_api_error(
     )
     assert exc_info.value.status_code == status_code
     assert exc_info.value.response_text == text
+
+
+def _retry_client(
+    handler,
+    *,
+    max_attempts: int = 3,
+) -> tuple[AsyncStitchClient, httpx.AsyncClient]:
+    """Build a client whose transport runs ``handler`` with zero backoff delay."""
+    raw_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url="http://example.test/api/v1",
+    )
+    client = AsyncStitchClient(
+        client=raw_client,
+        max_attempts=max_attempts,
+        backoff_base_seconds=0.0,
+    )
+    return client, raw_client
+
+
+@pytest.mark.anyio
+async def test_transient_timeout_is_retried_then_succeeds() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise httpx.ReadTimeout("read timed out", request=request)
+        return httpx.Response(200, json={"items": [], "total_pages": 1})
+
+    client, raw_client = _retry_client(handler)
+
+    payload = await client.list_oil_gas_fields_page()
+
+    assert payload == {"items": [], "total_pages": 1}
+    assert calls == 2
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_persistent_transient_error_reraises_after_max_attempts() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise httpx.ReadTimeout("read timed out", request=request)
+
+    client, raw_client = _retry_client(handler, max_attempts=3)
+
+    with pytest.raises(httpx.ReadTimeout):
+        await client.list_oil_gas_fields_page()
+
+    assert calls == 3
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_status_error_is_not_retried() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(404, text="missing")
+
+    client, raw_client = _retry_client(handler)
+
+    with pytest.raises(StitchAPIError) as exc_info:
+        await client.list_oil_gas_fields_page()
+
+    assert exc_info.value.status_code == 404
+    assert calls == 1
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_max_attempts_one_disables_retry() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise httpx.ReadTimeout("read timed out", request=request)
+
+    client, raw_client = _retry_client(handler, max_attempts=1)
+
+    with pytest.raises(httpx.ReadTimeout):
+        await client.list_oil_gas_fields_page()
+
+    assert calls == 1
+
+    await raw_client.aclose()
+
+
+def test_max_attempts_below_one_is_rejected() -> None:
+    with pytest.raises(ValueError, match="max_attempts must be >= 1"):
+        AsyncStitchClient(base_url="http://example.test/api/v1", max_attempts=0)

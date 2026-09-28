@@ -8,7 +8,7 @@ requires-python = ">=3.12.12"
 dependencies = [
   "alembic>=1.19.1",
   "fastapi[standard-no-fastapi-cloud-cli]>=0.141.1",
-  "greenlet>=3.3.0",
+  "greenlet>=3.5.5",
   "psycopg[binary]>=3.3.4",
   # opentelemetry-sdk stays: the API imports `opentelemetry.trace` directly
   # (request_logging) and its tests use opentelemetry.sdk. The OTLP exporter and
