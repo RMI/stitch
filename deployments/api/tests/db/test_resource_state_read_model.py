@@ -20,7 +20,9 @@ from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db.model import (
     MembershipModel,
     MembershipStatus,
+    OGFieldResourceAttributePriority,
     OGFieldResourceState,
+    OilGasFieldSourceValueModel,
     ResourceModel,
 )
 from stitch.api.db.model.oil_gas_field_source_value import ATTRIBUTE_NAMES
@@ -420,3 +422,79 @@ class TestReadModelRoundTrip:
             session, OGFieldQueryParams(), licensed_sources=licensed
         )
         assert item == next(i for i in live_items if i.id == rid)
+
+
+class TestSeedingCompleteness:
+    """Every active value has a priority row -- the invariant the LEFT join relies on.
+
+    If it holds, coalescing's ``priority ASC NULLS LAST`` can never hide a real
+    winner behind a NULL, so keeping the priority join defensive (LEFT) is safe.
+    """
+
+    async def _assert_complete(self, session: AsyncSession) -> None:
+        valued = {
+            tuple(row)
+            for row in (
+                await session.execute(
+                    select(
+                        MembershipModel.resource_id,
+                        OilGasFieldSourceValueModel.colname,
+                        MembershipModel.source_pk,
+                    )
+                    .join(
+                        OilGasFieldSourceValueModel,
+                        OilGasFieldSourceValueModel.source_pk
+                        == MembershipModel.source_pk,
+                    )
+                    .join(
+                        ResourceModel, ResourceModel.id == MembershipModel.resource_id
+                    )
+                    .where(
+                        MembershipModel.status == MembershipStatus.ACTIVE,
+                        ResourceModel.repointed_id.is_(None),
+                    )
+                )
+            ).all()
+        }
+        priority = {
+            tuple(row)
+            for row in (
+                await session.execute(
+                    select(
+                        OGFieldResourceAttributePriority.resource_id,
+                        OGFieldResourceAttributePriority.colname,
+                        OGFieldResourceAttributePriority.source_pk,
+                    )
+                )
+            ).all()
+        }
+        missing = valued - priority
+        assert not missing, f"active values without a priority row: {sorted(missing)}"
+
+    async def test_complete_after_seed_and_reprioritize(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        ids = await _seed_dataset(session, test_user)
+        await self._assert_complete(session)
+
+        # Reprioritize a 2-source field (r2 has gem+wm for name) -> set_curated
+        # rewrites its priority rows; completeness must still hold.
+        rows = await resource_actions.field_source_values(session, ids[1], "name")
+        reordered = [r.source_id for r in reversed(rows)]
+        await resource_actions.set_field_source_priority(
+            session, test_user, ids[1], "name", reordered
+        )
+        await self._assert_complete(session)
+
+    async def test_complete_after_create_action(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+        og_create_res_fact,
+    ):
+        session = seeded_integration_session
+        await resource_actions.create(
+            session, test_user, og_create_res_fact(name="Created")
+        )
+        await self._assert_complete(session)

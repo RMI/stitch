@@ -134,7 +134,9 @@ def construct_base_query_statement(
         # neither drops nor duplicates candidate rows in practice. Kept as an outer
         # join so the source-listing path (which ignores priority) never loses a
         # value row, and a missing priority row degrades to "ranks last" rather than
-        # silently vanishing.
+        # silently vanishing. That completeness invariant (every active value has a
+        # priority row) is what keeps NULLS LAST from ever hiding a real winner; it
+        # is guarded by test_seeding_completeness in test_resource_state_read_model.
         .outerjoin(
             ap,
             and_(
