@@ -144,6 +144,22 @@ describe("MergeCandidateReviewPage", () => {
     expect(screen.getByText("Total")).toBeInTheDocument();
   });
 
+  it("puts the candidate panel before the queue in reading order", () => {
+    // On one-column screens the panel is shown first. Keeping that order in
+    // the DOM (not just visually) means screen readers and keyboard focus
+    // meet the candidate before the queue, matching what is on screen.
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    const panel = screen.getByRole("article");
+    const queue = screen
+      .getByRole("heading", { name: "Queue" })
+      .closest("aside");
+
+    expect(
+      panel.compareDocumentPosition(queue) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("shows the resolved candidate name in the queue, hiding raw resource ids", async () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 

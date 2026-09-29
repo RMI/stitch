@@ -102,8 +102,11 @@ function QueuePanel({
   hasHiddenApproved,
 }) {
   return (
-    <aside className="min-w-0 rounded-md border border-line bg-panel">
-      <div className="border-b border-line px-4 py-3">
+    // From md up the queue sits in the left column as a sticky, viewport-tall
+    // box whose list scrolls on its own, so scrolling the candidates never
+    // moves the decision panel beside it.
+    <aside className="min-w-0 rounded-md border border-line bg-panel md:sticky md:top-4 md:col-start-1 md:row-start-1 md:flex md:max-h-[calc(100vh-2rem)] md:flex-col md:self-start">
+      <div className="shrink-0 border-b border-line px-4 py-3">
         <h2 className="text-base font-semibold text-ink">Queue</h2>
         <label className="mt-2 flex items-center gap-2 text-sm text-ink-muted">
           <input
@@ -116,7 +119,7 @@ function QueuePanel({
         </label>
       </div>
 
-      <div className="p-2">
+      <div className="p-2 md:min-h-0 md:overflow-y-auto">
         {isLoading ? (
           <p className="px-2 py-3 text-sm text-ink-muted">
             Loading candidates…
@@ -517,7 +520,25 @@ export default function MergeCandidateReviewPage() {
         </div>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[20rem_minmax(0,1fr)]">
+      {/* The panel comes first in the DOM so one-column screens show the
+          candidate above the queue, and screen readers and keyboard focus
+          follow the same order. From md up, grid placement moves the queue
+          into the left column. */}
+      <div className="grid gap-6 md:grid-cols-[16rem_minmax(0,1fr)] lg:grid-cols-[20rem_minmax(0,1fr)]">
+        <div className="min-w-0 md:col-start-2 md:row-start-1">
+          <CandidateDecisionPanel
+            selectedId={selectedId}
+            listCandidate={listCandidate}
+            candidateQuery={candidateQuery}
+            reviewNotes={reviewNotes}
+            onReviewNotesChange={setReviewNotes}
+            onReview={handleReview}
+            actionError={actionError}
+            actionLoading={actionLoading}
+            activeReviewAction={activeReviewAction}
+          />
+        </div>
+
         <QueuePanel
           candidates={visibleCandidates}
           isLoading={listLoading}
@@ -530,18 +551,6 @@ export default function MergeCandidateReviewPage() {
           hasHiddenApproved={
             Boolean(candidates?.length) && !visibleCandidates?.length
           }
-        />
-
-        <CandidateDecisionPanel
-          selectedId={selectedId}
-          listCandidate={listCandidate}
-          candidateQuery={candidateQuery}
-          reviewNotes={reviewNotes}
-          onReviewNotesChange={setReviewNotes}
-          onReview={handleReview}
-          actionError={actionError}
-          actionLoading={actionLoading}
-          activeReviewAction={activeReviewAction}
         />
       </div>
     </div>
