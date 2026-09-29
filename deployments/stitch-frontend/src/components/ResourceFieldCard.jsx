@@ -309,7 +309,9 @@ function FieldSourcesPanel({
 
   return (
     <div className="mt-2 space-y-2 rounded-md border border-line bg-panel p-3">
-      <div className="flex items-center justify-between gap-2">
+      {/* Wraps so the actions drop below the label in narrow cards (the
+          four-column grid) instead of pushing Save past the card's edge. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
           All sources
         </p>
@@ -319,7 +321,7 @@ function FieldSourcesPanel({
           </Button>
         )}
         {isEditing && (
-          <div className="flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2">
             <Button
               variant="ghost"
               className="px-2 py-1"
