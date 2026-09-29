@@ -54,7 +54,7 @@
 **Request Body:** `OGFieldResource`
 
 - `id`: integer | null
-- `source_data`: array[GemSource-Input | WoodMacSource-Input | RMISource-Input | LLMSource-Input]
+- `source_data`: array[GemSource-Input | WoodMacSource-Input | RMISource-Input | LLMSource-Input | CCRSource-Input | ALBSource-Input | BCSource-Input]
 - `repointed_to`: integer | null
 - `constituents`: array[integer]
 - `provenance`: object[string, array[object] | null]
@@ -63,7 +63,7 @@
 **Response:** `200`
 
 - `id`: integer | null
-- `source_data`: array[GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView]
+- `source_data`: array[GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView]
 - `repointed_to`: integer | null
 - `constituents`: array[integer]
 - `provenance`: object[string, array[object] | null]
@@ -77,8 +77,12 @@
 
 **Response:** `200`
 
-- `field`: string
-- `values`: array[string]
+- `basin`: array[string]
+- `country`: array[string]
+- `field_status`: array[string]
+- `primary_hydrocarbon_group`: array[string]
+- `region`: array[string]
+- `state_province`: array[string]
 
 ---
 
@@ -133,18 +137,7 @@
 - `last_updated_by_id`: integer
 - `reviewed_at`: string | null
 - `reviewed_by_id`: integer | null
-
----
-
-### `GET /api/v1/oil-gas-fields/merge-candidates/{id}/preview`
-
-<!-- description -->
-
-**Response:** `200`
-
-- `resource_ids`: array[integer]
-- `data`: OilGasFieldBase
-- `provenance`: object[string, string | null]
+- `compare`: array[FieldComparisonView]
 
 ---
 
@@ -219,6 +212,7 @@
 - `fid_year`: integer | null
 - `field_status`: string | null
 - `id`: integer
+- `requested_resource_id`: integer | null
 
 ---
 
@@ -231,7 +225,8 @@
 - `id`: integer
 - `data`: OilGasFieldBase
 - `provenance`: object[string, string | null]
-- `source_data`: array[GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView]
+- `source_data`: array[GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView]
+- `requested_resource_id`: integer | null
 
 ---
 
@@ -245,16 +240,30 @@
 
 ---
 
+### `PUT /api/v1/oil-gas-fields/{id}/fields/{field}/sources/priority`
+
+<!-- description -->
+
+**Request Body:** `SetFieldPriorityRequest`
+
+- `ordered_source_pks`: array[integer]
+
+**Response:** `200`
+
+- array[OGFieldSourceValueView]
+
+---
+
 ### `POST /api/v1/oil-gas-fields/{id}/sources`
 
 <!-- description -->
 
-**Request Body:** GemSource-Input | WoodMacSource-Input | RMISource-Input | LLMSource-Input
+**Request Body:** GemSource-Input | WoodMacSource-Input | RMISource-Input | LLMSource-Input | CCRSource-Input | ALBSource-Input | BCSource-Input
 
 
 **Response:** `200`
 
-- GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView
+- GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView
 
 ---
 
@@ -264,12 +273,12 @@
 
 <!-- description -->
 
-**Request Body:** GemSource-Input | WoodMacSource-Input | RMISource-Input | LLMSource-Input
+**Request Body:** GemSource-Input | WoodMacSource-Input | RMISource-Input | LLMSource-Input | CCRSource-Input | ALBSource-Input | BCSource-Input
 
 
 **Response:** `200`
 
-- GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView
+- GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView
 
 ---
 
@@ -279,7 +288,7 @@
 
 **Response:** `200`
 
-- `items`: array[GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView]
+- `items`: array[GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView]
 - `total_count`: integer
 - `page`: integer
 - `page_size`: integer
@@ -293,7 +302,7 @@
 
 **Response:** `200`
 
-- GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView
+- GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView
 
 ---
 
@@ -303,6 +312,6 @@
 
 **Response:** `200`
 
-- GemSource-Output | WoodMacSource-Output | RMISource-Output | LLMSource-Output
+- GemSource-Output | WoodMacSource-Output | RMISource-Output | LLMSource-Output | CCRSource-Output | ALBSource-Output | BCSource-Output
 
 ---

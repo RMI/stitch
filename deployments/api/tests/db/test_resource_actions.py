@@ -21,8 +21,9 @@ from stitch.api.db.model import (
     OilGasFieldSourceValueModel,
     ResourceModel,
 )
+from stitch.api.db.queries import filter_option_rows
 from stitch.api.entities import (
-    OGFieldFilterOptionsParams,
+    FILTER_OPTION_FIELDS,
     OGFieldQueryParams,
     User,
 )
@@ -798,12 +799,59 @@ class TestResourceUniverseAndNarrowing:
             {"source": "gem", "name": "B", "country": "USA", "basin": "Neuquen"},
         )
 
-        params = _QueryParams(basin="Permian", page=1, page_size=10)
+        params = _QueryParams(basin=["Permian"], page=1, page_size=10)
         items, total = await resource_actions.query(seeded_integration_session, params)
 
         assert total == 1
         assert [item.id for item in items] == [permian_id]
         assert items[0].data.basin == "Permian"
+
+    @pytest.mark.anyio
+    async def test_filter_by_multiple_countries_returns_all_of_them(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """Several values for one filter are OR'd, not silently narrowed to one."""
+        nor_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "N", "country": "NOR", "basin": "North Sea"},
+        )
+        sau_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "S", "country": "SAU", "basin": "Arabian"},
+        )
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "U", "country": "USA", "basin": "Permian"},
+        )
+
+        params = _QueryParams(country=["NOR", "SAU"], page=1, page_size=10)
+        items, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 2
+        assert {item.id for item in items} == {nor_id, sau_id}
+
+    @pytest.mark.anyio
+    async def test_empty_filter_list_does_not_narrow(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """An empty list means "no filter", never "match nothing" (IN () matches none)."""
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "name": "N", "country": "NOR"},
+        )
+
+        params = _QueryParams(country=[], page=1, page_size=10)
+        _, total = await resource_actions.query(seeded_integration_session, params)
+
+        assert total == 1
 
     @pytest.mark.anyio
     async def test_sort_by_discovery_year_numeric_nulls_last(
@@ -955,6 +1003,7 @@ class TestResourceFilterOptionsAction:
             seeded_integration_session,
             test_user,
             {"source": "rmi", "country": "USA"},
+            {"source": "llm", "country": "GBR"},
         )
         await _create_resource_with_sources(
             seeded_integration_session,
@@ -967,12 +1016,9 @@ class TestResourceFilterOptionsAction:
             {"source": "rmi", "country": None},
         )
 
-        values = await resource_actions.filter_options(
-            seeded_integration_session,
-            OGFieldFilterOptionsParams(field="country"),
-        )
+        options = await resource_actions.filter_options(seeded_integration_session)
 
-        assert values == ["CAN", "USA"]
+        assert options["country"] == ["CAN", "USA"]
 
     @pytest.mark.anyio
     async def test_honors_licensed_sources_after_coalescing(
@@ -992,41 +1038,57 @@ class TestResourceFilterOptionsAction:
             {"source": "rmi", "country": "USA"},
         )
 
-        values = await resource_actions.filter_options(
+        options = await resource_actions.filter_options(
             seeded_integration_session,
-            OGFieldFilterOptionsParams(field="country"),
             licensed_sources=frozenset({"gem", "wm", "llm"}),
         )
 
-        assert values == ["CAN"]
+        assert options["country"] == ["CAN"]
 
     @pytest.mark.anyio
-    async def test_excludes_repointed_and_inactive_memberships(
+    async def test_licensing_promotes_next_priority_value(
         self,
         seeded_integration_session: AsyncSession,
         test_user: User,
     ):
-        active_id = await _create_resource_with_sources(
+        """Dropping the winning source's license promotes the runner-up value,
+        rather than blanking the field.
+        """
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "wm", "country": "USA"},
+            {"source": "gem", "country": "CAN"},
+        )
+
+        with_wm = await resource_actions.filter_options(
+            seeded_integration_session,
+            licensed_sources=frozenset({"gem", "wm"}),
+        )
+        assert with_wm["country"] == ["USA"]
+
+        without_wm = await resource_actions.filter_options(
+            seeded_integration_session,
+            licensed_sources=frozenset({"gem"}),
+        )
+        assert without_wm["country"] == ["CAN"]
+
+    @pytest.mark.anyio
+    async def test_excludes_inactive_memberships(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        await _create_resource_with_sources(
             seeded_integration_session,
             test_user,
             {"source": "rmi", "country": "USA"},
-        )
-        repointed_to_id = await _create_resource_with_sources(
-            seeded_integration_session,
-            test_user,
-            {"source": "rmi", "country": "BRA"},
         )
         inactive_id = await _create_resource_with_sources(
             seeded_integration_session,
             test_user,
             {"source": "rmi", "country": "CAN"},
         )
-
-        repointed_resource = await seeded_integration_session.get(
-            ResourceModel, repointed_to_id
-        )
-        assert repointed_resource is not None
-        repointed_resource.repointed_id = active_id
 
         inactive_membership = await seeded_integration_session.scalar(
             select(MembershipModel).where(MembershipModel.resource_id == inactive_id)
@@ -1035,36 +1097,68 @@ class TestResourceFilterOptionsAction:
         inactive_membership.status = MembershipStatus.INACTIVE
         await seeded_integration_session.flush()
 
-        values = await resource_actions.filter_options(
+        options = await resource_actions.filter_options(seeded_integration_session)
+
+        assert options["country"] == ["USA"]
+
+    @pytest.mark.anyio
+    async def test_returns_every_field_including_empty_ones(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        await _create_resource_with_sources(
             seeded_integration_session,
-            OGFieldFilterOptionsParams(field="country"),
+            test_user,
+            {"source": "rmi", "country": "USA"},
         )
 
-        assert values == ["USA"]
+        options = await resource_actions.filter_options(seeded_integration_session)
 
-    def test_postgres_distinct_query_orders_by_selected_value_alias(self):
-        """The rewritten filter_options construction compiles on Postgres.
+        assert set(options.keys()) == set(FILTER_OPTION_FIELDS)
+        assert options["country"] == ["USA"]
+        assert options["field_status"] == []
+        assert options["basin"] == []
 
-        Mirrors ``filter_options``: distinct over the coalesced value column for
-        one field, ordered by the selected alias.
-        """
-        params = OGFieldFilterOptionsParams(field="basin")
-        base_cte = resource_actions.construct_base_query_statement(
+    @pytest.mark.anyio
+    async def test_returns_each_field_from_one_pass(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {
+                "source": "rmi",
+                "country": "USA",
+                "state_province": "Texas",
+                "basin": "Permian",
+                "region": "North America",
+            },
+        )
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {
+                "source": "gem",
+                "country": "CAN",
+                "state_province": "Alberta",
+                "basin": "Texas",
+            },
+        )
+
+        options = await resource_actions.filter_options(seeded_integration_session)
+
+        assert options["country"] == ["CAN", "USA"]
+        assert options["state_province"] == ["Alberta", "Texas"]
+        assert options["basin"] == ["Permian", "Texas"]
+        assert options["region"] == ["North America"]
+
+    def test_postgres_distinct_query_orders_by_selected_columns(self):
+        """``filter_option_rows`` compiles on Postgres."""
+        stmt = filter_option_rows(
             licensed_sources=frozenset({"gem", "wm", "rmi", "llm"}),
-        )
-        filtered = (
-            resource_actions.select(base_cte)
-            .where(base_cte.c.colname == params.field)
-            .cte()
-        )
-        ranked = resource_actions.add_ranking(filtered).cte("ranked")
-        value_col = getattr(ranked.c, resource_actions.value_attr_for(params.field))
-        labeled = value_col.label("value")
-        stmt = (
-            resource_actions.select(labeled)
-            .where(value_col.is_not(None), value_col != "")
-            .distinct()
-            .order_by(labeled)
         )
 
         sql = str(
@@ -1074,8 +1168,10 @@ class TestResourceFilterOptionsAction:
             )
         )
 
-        assert "SELECT DISTINCT ranked.value_text AS value" in sql
-        assert "ORDER BY value" in sql
+        assert "SELECT DISTINCT" in sql
+        assert "ORDER BY" in sql
+        ordered = sql[sql.index("ORDER BY") :]
+        assert "colname" in ordered and "value_text" in ordered
 
     @pytest.mark.anyio
     async def test_only_unlicensed_selected_sources_still_return_resource(
@@ -1130,7 +1226,7 @@ class TestResourceFilterOptionsAction:
             },
         )
 
-        params = _QueryParams(state_province="Texas", page=1, page_size=10)
+        params = _QueryParams(state_province=["Texas"], page=1, page_size=10)
         items, total = await resource_actions.query(seeded_integration_session, params)
 
         assert total == 0

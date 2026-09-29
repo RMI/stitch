@@ -17,6 +17,7 @@ from stitch.ogsi.model import (
     CCRSource,
     GemSource,
     LLMSource,
+    NORSource,
     OGSISrcKey,
     RMISource,
     WoodMacSource,
@@ -117,6 +118,8 @@ def make_source(
             return ALBSource(**kwargs)
         case "bc":
             return BCSource(**kwargs)
+        case "nor":
+            return NORSource(**kwargs)
 
 
 def make_resource(

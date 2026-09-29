@@ -43,10 +43,30 @@ It then handles deployments for:
 
 - the database, assuming an existing Azure PostgreSQL flexible server
 - the API Container App, assuming an existing Container Apps environment
+  (see "Log routing" below)
 - the entity-linkage Container App in the same environment
 - the stitch-llm Container App in the same environment
 - the ETL Container App (`etl`) in the same environment, on non-`development`
   lanes only (see below)
+
+### Log routing
+
+Container App logs (structured JSON on stdout) are forwarded to a Log Analytics
+workspace by the **Container Apps environment** (`appLogsConfiguration`), not by
+this pipeline or the app — so every app in an environment, including per-PR
+preview apps, shares one workspace. Current topology: `development` and
+`staging` lanes both feed the non-prod workspace **`stitch-staging`**
+(`STITCH-DEV-RG`); `production` is isolated in its own workspace.
+
+To change where a lane's logs go, edit that lane's environment (named by its
+`AZURE_CONTAINER_APP_ENVIRONMENT` variable) — Portal: **Settings → Logging**, or
+CLI: `az containerapp env update --logs-destination log-analytics
+--logs-workspace-id <customerId> --logs-workspace-key <key>`. Keep "Parse JSON
+logs into columns" **off** on every environment sharing a workspace, so the
+table schema stays uniform (the KQL in [`PERFORMANCE.md`](./PERFORMANCE.md) and
+`tools/analyze_logs.py` assume the raw-`Log_s` form). This binding lives outside
+the repo, so recreating an environment reverts it to `None` (a greyed-out Logs
+blade) — reconfigure it when that happens.
 
 ### ETL pipelines (temporary POC wiring)
 
