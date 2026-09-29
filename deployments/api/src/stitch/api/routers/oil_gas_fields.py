@@ -197,12 +197,11 @@ async def link_all_merge_candidates(
     new_groups = [group for group in groups if frozenset(group) not in existing]
 
     if apply_merges:
-        for group in new_groups:
-            await merge_candidate_actions.create_merge_candidate(
-                session=uow.session,
-                user=user,
-                request=MergeCandidateCreateRequest(resource_ids=list(group)),
-            )
+        await merge_candidate_actions.create_merge_candidates_bulk(
+            session=uow.session,
+            user=user,
+            groups=new_groups,
+        )
         await uow.commit()
 
     return LinkAllResponse(
