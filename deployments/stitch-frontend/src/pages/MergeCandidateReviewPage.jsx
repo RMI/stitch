@@ -104,7 +104,9 @@ function QueuePanel({
   return (
     // From md up the queue sits in the left column as a sticky, viewport-tall
     // box whose list scrolls on its own, so scrolling the candidates never
-    // moves the decision panel beside it.
+    // moves the decision panel beside it. It sticks 60px down (top-15) to
+    // clear the non-production EnvironmentBanner, itself sticky at the top
+    // and 46px tall when collapsed; max-h keeps a 1rem gap at the bottom.
     <aside className="min-w-0 rounded-md border border-line bg-panel md:sticky md:top-15 md:col-start-1 md:row-start-1 md:flex md:max-h-[calc(100vh-4.75rem)] md:flex-col md:self-start">
       <div className="shrink-0 border-b border-line px-4 py-3">
         <h2 className="text-base font-semibold text-ink">Queue</h2>
