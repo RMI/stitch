@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, within, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { screen, within, fireEvent, act } from "@testing-library/react";
 import { useNavigate } from "react-router";
 import { renderWithQueryClient } from "../test/utils";
 import ResourcesView from "./ResourcesView";
 import { useResourceFilterOptions, useResources } from "../hooks/useResources";
 import { DEFAULT_PAGE_SIZE, DEFAULT_PAGE } from "../queries/resources";
+import { DEFAULT_DEBOUNCE_MS } from "../hooks/useDebouncedValue";
 
 vi.mock("../hooks/useResources");
 
@@ -68,6 +69,8 @@ const defaultHookReturn = {
 };
 
 beforeEach(() => {
+  // ResourcesView debounces the list query; tests call settle() to let it fire.
+  vi.useFakeTimers();
   vi.mocked(useResources).mockReturnValue({
     ...defaultHookReturn,
     refetch: vi.fn(),
@@ -84,6 +87,16 @@ beforeEach(() => {
     },
   });
 });
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+// Advances past the list query's debounce window so the latest view state
+// reaches useResources.
+function settle() {
+  act(() => vi.advanceTimersByTime(DEFAULT_DEBOUNCE_MS));
+}
 
 // Mirrors ResourceDetailPage's "← Back" (navigate(-1)). Rendered as a sibling of
 // <ResourcesView /> so it shares the router. window.history.back() does not
@@ -393,7 +406,7 @@ describe("ResourcesView", () => {
       fireEvent.change(screen.getByLabelText("Per page:"), {
         target: { value: "25" },
       });
-
+      settle();
       expect(useResources).toHaveBeenLastCalledWith(
         ENDPOINT,
         expect.objectContaining({ page: DEFAULT_PAGE, page_size: 25 }),
@@ -413,7 +426,7 @@ describe("ResourcesView", () => {
       // scope to the table to avoid matching the FilterBar's Basin dropdown button
       const table = screen.getByRole("table");
       fireEvent.click(within(table).getByRole("button", { name: /^basin/i }));
-
+      settle();
       expect(useResources).toHaveBeenLastCalledWith(
         ENDPOINT,
         expect.objectContaining({ sort_by: "basin", sort_order: "asc" }),
@@ -431,7 +444,7 @@ describe("ResourcesView", () => {
       const table = screen.getByRole("table");
       fireEvent.click(within(table).getByRole("button", { name: /^basin/i }));
       fireEvent.click(within(table).getByRole("button", { name: /^basin/i }));
-
+      settle();
       expect(useResources).toHaveBeenLastCalledWith(
         ENDPOINT,
         expect.objectContaining({ sort_by: "basin", sort_order: "desc" }),
@@ -448,7 +461,7 @@ describe("ResourcesView", () => {
 
       const table = screen.getByRole("table");
       fireEvent.click(within(table).getByRole("button", { name: /^country/i }));
-
+      settle();
       expect(useResources).toHaveBeenLastCalledWith(
         ENDPOINT,
         expect.objectContaining({ sort_by: "country", sort_order: "asc" }),
@@ -514,6 +527,7 @@ describe("ResourcesView", () => {
       fireEvent.click(option);
 
       // ...but the value sent to the API is the alpha-3 code.
+      settle();
       expect(useResources).toHaveBeenLastCalledWith(
         ENDPOINT,
         expect.objectContaining({
@@ -569,7 +583,7 @@ describe("ResourcesView", () => {
         }),
       );
       fireEvent.click(screen.getByRole("checkbox", { name: /middle east/i }));
-
+      settle();
       expect(useResources).toHaveBeenLastCalledWith(
         ENDPOINT,
         expect.objectContaining({
@@ -593,7 +607,7 @@ describe("ResourcesView", () => {
       );
       fireEvent.click(screen.getByRole("checkbox", { name: /middle east/i }));
       fireEvent.click(screen.getByRole("button", { name: /clear all/i }));
-
+      settle();
       expect(useResources).toHaveBeenLastCalledWith(
         ENDPOINT,
         expect.objectContaining({
@@ -637,7 +651,7 @@ describe("ResourcesView", () => {
         },
       );
       fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
-
+      settle();
       expect(useResources).toHaveBeenLastCalledWith(
         ENDPOINT,
         expect.objectContaining({ q: "ghawar" }),
@@ -652,7 +666,7 @@ describe("ResourcesView", () => {
       });
       fireEvent.change(input, { target: { value: "ghawar" } });
       fireEvent.submit(input.closest("form"));
-
+      settle();
       expect(useResources).toHaveBeenLastCalledWith(
         ENDPOINT,
         expect.objectContaining({ q: "ghawar" }),
@@ -667,7 +681,7 @@ describe("ResourcesView", () => {
         { target: { value: "  ghawar  " } },
       );
       fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
-
+      settle();
       expect(useResources).toHaveBeenLastCalledWith(
         ENDPOINT,
         expect.objectContaining({ q: "ghawar" }),
@@ -690,7 +704,7 @@ describe("ResourcesView", () => {
         },
       );
       fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
-
+      settle();
       expect(useResources).toHaveBeenLastCalledWith(
         ENDPOINT,
         expect.objectContaining({
@@ -729,14 +743,14 @@ describe("ResourcesView", () => {
       });
       fireEvent.change(input, { target: { value: "ghawar" } });
       fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
-
+      settle();
       expect(useResources).toHaveBeenLastCalledWith(
         ENDPOINT,
         expect.objectContaining({ q: "ghawar" }),
       );
 
       fireEvent.change(input, { target: { value: "" } });
-
+      settle();
       expect(useResources).toHaveBeenLastCalledWith(
         ENDPOINT,
         expect.objectContaining({ q: undefined }),
@@ -776,10 +790,79 @@ describe("ResourcesView", () => {
       fireEvent.click(screen.getByRole("button", { name: /clear search/i }));
 
       expect(input).toHaveValue("");
+      settle();
       expect(useResources).toHaveBeenLastCalledWith(
         ENDPOINT,
         expect.objectContaining({ q: undefined }),
       );
+    });
+  });
+
+  describe("debouncing", () => {
+    it("waits for clicks to settle before querying, then queries once with the final state", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: mockResourceData,
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+      vi.mocked(useResources).mockClear();
+
+      const table = screen.getByRole("table");
+      fireEvent.click(within(table).getByRole("button", { name: /^basin/i }));
+      fireEvent.click(
+        within(screen.getByTestId("filter-bar")).getByRole("button", {
+          name: /region/i,
+        }),
+      );
+      fireEvent.click(screen.getByRole("checkbox", { name: /middle east/i }));
+
+      const changedCalls = () =>
+        vi
+          .mocked(useResources)
+          .mock.calls.filter(
+            ([, params]) =>
+              params.sort_by !== undefined || params.filters.region?.length > 0,
+          );
+
+      // The controls update immediately, but no query has changed yet.
+      expect(screen.getByText("Sort: Basin ascending")).toBeInTheDocument();
+      expect(changedCalls()).toHaveLength(0);
+
+      act(() => vi.advanceTimersByTime(DEFAULT_DEBOUNCE_MS - 1));
+      expect(changedCalls()).toHaveLength(0);
+
+      act(() => vi.advanceTimersByTime(1));
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({
+          sort_by: "basin",
+          sort_order: "asc",
+          filters: expect.objectContaining({ region: ["Middle East"] }),
+        }),
+      );
+      // Only one distinct query: the settled state, never an intermediate one.
+      const distinctParams = new Set(
+        changedCalls().map(([, params]) => JSON.stringify(params)),
+      );
+      expect(distinctParams.size).toBe(1);
+    });
+
+    it("does not mark the table busy while waiting for clicks to settle", () => {
+      // Waiting is not loading: if the settled query is cached, its rows swap
+      // in instantly, so a busy state here would only flash for 300ms.
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: mockResourceData,
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+      const table = screen.getByRole("table");
+
+      fireEvent.click(within(table).getByRole("button", { name: /^basin/i }));
+
+      expect(screen.getByRole("table")).not.toHaveAttribute("aria-busy");
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
     });
   });
 });
