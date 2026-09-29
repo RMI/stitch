@@ -7,12 +7,7 @@ const REQUIRED_CONFIG_KEYS = [
   "auth0ClientId",
   "auth0Audience",
 ];
-const OPTIONAL_STRING_CONFIG_KEYS = [
-  "apiUrl",
-  "entityLinkageUrl",
-  "stitchLlmUrl",
-  "etlUrl",
-];
+const OPTIONAL_STRING_CONFIG_KEYS = ["apiUrl", "stitchLlmUrl", "etlUrl"];
 
 const DEFAULT_CONFIG_PATH = "/config.json";
 
@@ -58,8 +53,6 @@ function freezeConfig(runtimeConfig) {
       viteVersion: import.meta.env.VITE_VITE_VERSION || "unknown",
       buildTime: import.meta.env.VITE_BUILD_TIME || "unknown",
     }),
-    entityLinkageBaseUrl:
-      runtimeConfig.entityLinkageUrl || "http://localhost:8001/api/v1",
     stitchLlmBaseUrl:
       runtimeConfig.stitchLlmUrl || "http://localhost:8002/api/v1",
     etlBaseUrl: runtimeConfig.etlUrl || "http://localhost:8100/api/v1/etl",

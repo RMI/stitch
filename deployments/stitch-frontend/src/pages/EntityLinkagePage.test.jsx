@@ -5,26 +5,17 @@ import { useAuth0 } from "@auth0/auth0-react";
 import EntityLinkagePage from "./EntityLinkagePage";
 import { auth0TestDefaults, renderWithQueryClient } from "../test/utils";
 
-const START_URL = "http://localhost:8001/api/v1/oil-gas-fields/link";
-const STATUS_URL = "http://localhost:8001/api/v1/oil-gas-fields/link/status";
+const LINK_ALL_URL =
+  "http://localhost:8000/api/v1/oil-gas-fields/merge-candidates/link-all";
 
-const SUCCEEDED_RECORD = {
-  job_id: "job-1",
-  state: "succeeded",
-  started_at: "2026-06-11T10:00:00Z",
-  finished_at: "2026-06-11T10:05:00Z",
-  error: null,
-  result: {
-    initiated_by: "Test User",
-    apply_merges: false,
-    resources_scanned: 5,
-    match_groups: [
-      [101, 102],
-      [203, 204, 205],
-    ],
-    merge_candidates_created: 0,
-    merge_candidates_skipped: 0,
-  },
+const LINK_ALL_RESPONSE = {
+  apply_merges: false,
+  match_groups: [
+    [101, 102],
+    [203, 204, 205],
+  ],
+  merge_candidates_created: 0,
+  merge_candidates_skipped: 0,
 };
 
 function jsonResponse(status, body) {
@@ -46,29 +37,24 @@ describe("EntityLinkagePage", () => {
     });
   });
 
-  it("launches a background run and shows the running state", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(202, {
-        job_id: "job-1",
-        state: "running",
-        started_at: "2026-06-11T10:00:00Z",
-        initiated_by: "Test User",
-      }),
-    );
+  it("posts an authenticated dry run to the API", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, LINK_ALL_RESPONSE));
 
     renderWithQueryClient(<EntityLinkagePage />);
 
     await userEvent.click(screen.getByRole("button", { name: "Start run" }));
 
     await waitFor(() => {
-      expect(screen.getAllByText("running").length).toBeGreaterThan(0);
+      expect(fetchMock).toHaveBeenCalled();
     });
 
     expect(getAccessTokenSilently).toHaveBeenCalledWith({
       authorizationParams: { audience: "https://stitch-api.local" },
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      START_URL,
+      `${LINK_ALL_URL}?apply_merges=false`,
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
@@ -78,27 +64,36 @@ describe("EntityLinkagePage", () => {
     );
   });
 
-  it("renders match groups from the polled job result", async () => {
+  // apply_merges is a query parameter, so a body would be silently ignored and
+  // every run would quietly be a dry run.
+  it("sends apply_merges as a query parameter when the box is checked", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockImplementation(async (url, options) => {
-        if (String(url) === START_URL && options?.method === "POST") {
-          return jsonResponse(202, {
-            job_id: "job-1",
-            state: "running",
-            started_at: "2026-06-11T10:00:00Z",
-            initiated_by: "Test User",
-          });
-        }
-        return jsonResponse(200, SUCCEEDED_RECORD);
-      });
+      .mockResolvedValue(jsonResponse(200, LINK_ALL_RESPONSE));
+
+    renderWithQueryClient(<EntityLinkagePage />);
+
+    await userEvent.click(screen.getByLabelText("Initiate merges"));
+    await userEvent.click(screen.getByRole("button", { name: "Start run" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
+      `${LINK_ALL_URL}?apply_merges=true`,
+    );
+    expect(fetchMock.mock.calls[0][1]).not.toHaveProperty("body");
+  });
+
+  it("renders match groups from the response", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, LINK_ALL_RESPONSE),
+    );
 
     renderWithQueryClient(<EntityLinkagePage />);
 
     await userEvent.click(screen.getByRole("button", { name: "Start run" }));
-    await userEvent.click(
-      screen.getByRole("button", { name: "Refresh status" }),
-    );
 
     await waitFor(() => {
       expect(
@@ -112,21 +107,13 @@ describe("EntityLinkagePage", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Resource 101")).toBeInTheDocument();
     expect(screen.getByText("Resource 205")).toBeInTheDocument();
-
-    // Status poll is authenticated (our /status is permission-gated).
-    expect(fetchMock).toHaveBeenCalledWith(
-      STATUS_URL,
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer test-access-token",
-        }),
-      }),
-    );
   });
 
-  it("surfaces a friendly message when a run is already in progress (409)", async () => {
+  it("surfaces the status code when the request is rejected", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(409, { detail: "A job is already running: job-1" }),
+      jsonResponse(403, {
+        detail: "Missing permission: merge-candidate:create",
+      }),
     );
 
     renderWithQueryClient(<EntityLinkagePage />);
@@ -135,10 +122,12 @@ describe("EntityLinkagePage", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText(
-          "A run is already in progress — refresh status to check.",
-        ),
+        screen.getByRole("heading", { name: "Run error" }),
       ).toBeInTheDocument();
     });
+
+    expect(
+      screen.getByText(/Missing permission: merge-candidate:create/),
+    ).toBeInTheDocument();
   });
 });

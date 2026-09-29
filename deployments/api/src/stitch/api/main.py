@@ -96,7 +96,7 @@ configure_logging(
     resource_attributes=resource_attributes_from_env(),
 )
 
-# Unlike entity-linkage / stitch-llm (which call the shared ``setup_fastapi_tracing``
+# Unlike stitch-llm (which calls the shared ``setup_fastapi_tracing``
 # one-shot), the API splits tracing *configuration* from app *assembly*: configure
 # the global provider here, then let ``create_app`` own ``instrument_fastapi``. That
 # keeps a single app-assembly path — shared with the instrumentation tests, which

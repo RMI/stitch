@@ -68,7 +68,6 @@ const ALL_PERMISSIONS = [
   "merge-candidate:read",
   "merge-candidate:create",
   "merge-candidate:review",
-  "service:entity-linkage:run",
   "service:llm:suggest",
 ];
 
@@ -273,8 +272,8 @@ describe("App", () => {
       ).not.toBeInTheDocument();
     });
 
-    it("shows Entity linkage only when the caller can run the service", () => {
-      mockPermissions({ data: ["service:entity-linkage:run"] });
+    it("shows Entity linkage only when the caller can create merge candidates", () => {
+      mockPermissions({ data: ["merge-candidate:create"] });
       renderWithQueryClient(<App />);
 
       expect(

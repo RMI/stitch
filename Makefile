@@ -5,7 +5,6 @@ DOCKER_COMPOSE_DEV := $(DOCKER_COMPOSE) -f docker-compose.local.yml
 DOCKER_COMPOSE_OTEL := $(DOCKER_COMPOSE_DEV) -f docker-compose.otel.yml
 PYTEST := $(UV) run pytest
 RUFF := $(UV) run ruff
-TEST_PKG := ./scripts/test-package.py
 
 # ---- Build metadata ---------------------------------------------------------
 
@@ -48,8 +47,8 @@ py-lint: uv-dev
 py-test: py-deployment-test pkg-test
 py-test-exact: py-deployment-test-exact pkg-test-exact
 
-py-deployment-test: api-test entity-linkage-test seed-test stitch-llm-test
-py-deployment-test-exact: api-test-exact entity-linkage-test-exact seed-test-exact stitch-llm-test-exact
+py-deployment-test: api-test seed-test stitch-llm-test
+py-deployment-test-exact: api-test-exact seed-test-exact stitch-llm-test-exact
 
 py-format-check: uv-dev
 	$(RUFF) format --check
@@ -63,7 +62,7 @@ py-format: uv-dev
 py-clean-cache:
 	rm -rf .ruff_cache .pytest_cache
 
-py-build: api-build entity-linkage-build stitch-llm-build pkg-build
+py-build: api-build stitch-llm-build pkg-build
 
 uv-sync:
 	$(UV) sync
@@ -152,7 +151,7 @@ alembic-check:
 
 stack-api-dev:
 	SEED_API_BASE_URL=http://host.docker.internal:8000/api/v1 \
-	ENTITY_LINKAGE_API_BASE_URL=http://host.docker.internal:8000/api/v1 \
+	STITCH_LLM_API_BASE_URL=http://host.docker.internal:8000/api/v1 \
 	VITE_GIT_SHA=$(GIT_SHA) \
 	VITE_BUILD_ID=$(BUILD_ID) \
 	VITE_BUILD_TIME=$(BUILD_TIME) \
@@ -164,13 +163,6 @@ stack-api-dev:
 		--profile friends \
 		up --build \
 		-d
-
-entity-linkage-build:
-	$(UV) build --package stitch-entity-linkage
-entity-linkage-test:
-	$(MAKE) uv-test-target PKG=stitch-entity-linkage TEST_PATH=deployments/entity-linkage
-entity-linkage-test-exact:
-	$(MAKE) uv-test-target-exact PKG=stitch-entity-linkage TEST_PATH=deployments/entity-linkage
 
 stitch-llm-build:
 	$(UV) build --package stitch-llm
@@ -280,37 +272,40 @@ reboot-docker-heavy: clean-docker
 follow-stack-logs:
 	$(DOCKER_COMPOSE_DEV) --profile full logs -f
 
-.PHONY: \
-	# Workspace
-	check lint test format format-check lock-check \
-	build-all \
-	clean clean-build \
-	\
-	# Python (uv)
-	py-lint py-test py-test-exact py-format py-format-check py-lock-check py-clean-cache \
-	py-build \
-	uv-dev uv-sync uv-sync-dev \
-	uv-test-target uv-test-target-exact \
-	\
-	# Packages
-	pkg-test pkg-test-exact \
-	pkg-build-auth pkg-test-auth pkg-test-exact-auth \
-	pkg-build-client pkg-test-client pkg-test-exact-client \
-	pkg-build-models pkg-test-models pkg-test-exact-models \
-	pkg-build-ogsi pkg-test-ogsi pkg-test-exact-ogsi \
-	pkg-build-observability pkg-test-observability pkg-test-exact-observability \
-	\
-	# API
-	api-build api-test api-test-exact api-dev stack-api-dev \
-	alembic-autogenerate \
-	seed-test seed-test-exact \
-	stitch-llm-build stitch-llm-test stitch-llm-test-exact \
-	\
-	# Frontend
-	frontend frontend-install frontend-build frontend-test frontend-lint \
-	frontend-format frontend-format-check \
-	frontend-dev frontend-clean \
-	\
-	# Docker
-	clean-docker dev-docker reboot-docker reboot-docker-heavy \
-	stack-frontend-dev follow-stack-logs
+# A comment inside a backslash-continued .PHONY line swallows the rest of the
+# logical line, which left this declaration with no prerequisites at all.
+# .PHONY accumulates across lines, so one line per group keeps the grouping.
+
+# Workspace
+.PHONY: check lint test format format-check lock-check
+.PHONY: build-all
+.PHONY: clean clean-build
+
+# Python (uv)
+.PHONY: py-lint py-test py-test-exact py-format py-format-check py-lock-check py-clean-cache
+.PHONY: py-build py-deployment-test py-deployment-test-exact
+.PHONY: uv-dev uv-sync uv-sync-dev
+.PHONY: uv-test-target uv-test-target-exact
+
+# Packages
+.PHONY: pkg-build pkg-test pkg-test-exact
+.PHONY: pkg-build-auth pkg-test-auth pkg-test-exact-auth
+.PHONY: pkg-build-client pkg-test-client pkg-test-exact-client
+.PHONY: pkg-build-models pkg-test-models pkg-test-exact-models
+.PHONY: pkg-build-ogsi pkg-test-ogsi pkg-test-exact-ogsi
+.PHONY: pkg-build-observability pkg-test-observability pkg-test-exact-observability
+
+# API
+.PHONY: api-build api-test api-test-exact api-dev stack-api-dev
+.PHONY: alembic-autogenerate alembic-check
+.PHONY: seed-test seed-test-exact
+.PHONY: stitch-llm-build stitch-llm-test stitch-llm-test-exact
+
+# Frontend
+.PHONY: frontend frontend-install frontend-build frontend-test frontend-lint
+.PHONY: frontend-format frontend-format-check
+.PHONY: frontend-dev frontend-clean
+
+# Docker
+.PHONY: clean-docker dev-docker reboot-docker reboot-docker-heavy
+.PHONY: stack-frontend-dev follow-stack-logs
