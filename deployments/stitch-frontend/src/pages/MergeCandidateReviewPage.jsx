@@ -105,7 +105,7 @@ function QueuePanel({
     // From md up the queue sits in the left column as a sticky, viewport-tall
     // box whose list scrolls on its own, so scrolling the candidates never
     // moves the decision panel beside it.
-    <aside className="min-w-0 rounded-md border border-line bg-panel md:sticky md:top-4 md:col-start-1 md:row-start-1 md:flex md:max-h-[calc(100vh-2rem)] md:flex-col md:self-start">
+    <aside className="min-w-0 rounded-md border border-line bg-panel md:sticky md:top-15 md:col-start-1 md:row-start-1 md:flex md:max-h-[calc(100vh-4.75rem)] md:flex-col md:self-start">
       <div className="shrink-0 border-b border-line px-4 py-3">
         <h2 className="text-base font-semibold text-ink">Queue</h2>
         <label className="mt-2 flex items-center gap-2 text-sm text-ink-muted">
