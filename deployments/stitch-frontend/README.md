@@ -110,7 +110,6 @@ This file contains public, deployment-specific browser settings such as:
 
 - `appEnv`
 - `apiUrl`
-- `entityLinkageUrl`
 - `auth0Domain`
 - `auth0ClientId`
 - `auth0Audience`
@@ -123,7 +122,6 @@ Example:
 {
   "appEnv": "local",
   "apiUrl": "http://localhost:8000/api/v1",
-  "entityLinkageUrl": "http://localhost:8001/api/v1",
   "auth0Domain": "rmi-spd.us.auth0.com",
   "auth0ClientId": "TS1V1soQbccAV1sitFFCfUaIlSwHD2S2",
   "auth0Audience": "https://stitch-api.local"
@@ -534,7 +532,6 @@ Recommended deploy sequence:
 SWA_NAME=stitch-frontend-demo-02
 RESOURCE_GROUP=STITCH-DEV-RG
 API_URL=https://stitch-db-demo-02.<region>.azurecontainerapps.io/api/v1
-ENTITY_LINKAGE_URL=https://stitch-entity-linkage-demo-02.<region>.azurecontainerapps.io/api/v1
 AUTH0_DOMAIN=rmi-spd.us.auth0.com
 AUTH0_CLIENT_ID=<public-client-id>
 AUTH_AUDIENCE=https://stitch-api.local
@@ -546,7 +543,6 @@ Example runtime config:
 {
   "appEnv": "preview",
   "apiUrl": "https://stitch-db-demo-02.<region>.azurecontainerapps.io/api/v1",
-  "entityLinkageUrl": "https://stitch-entity-linkage-demo-02.<region>.azurecontainerapps.io/api/v1",
   "auth0Domain": "rmi-spd.us.auth0.com",
   "auth0ClientId": "<public-client-id>",
   "auth0Audience": "https://stitch-api.local"

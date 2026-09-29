@@ -155,6 +155,13 @@ class MergeCandidateCreateRequest(BaseModel):
     resource_ids: list[int] = Field(..., min_length=2)
 
 
+class LinkAllResponse(BaseModel):
+    apply_merges: bool
+    match_groups: list[list[int]]
+    merge_candidates_created: int
+    merge_candidates_skipped: int
+
+
 class MergeCandidateReviewRequest(BaseModel):
     review_notes: str | None = None
 

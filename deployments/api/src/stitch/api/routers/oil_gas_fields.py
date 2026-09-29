@@ -13,6 +13,7 @@ from stitch.auth.permissions import (
 )
 
 from stitch.api.entities import (
+    LinkAllResponse,
     OGFieldFilterOptionsResponse,
     MergeCandidateCreateRequest,
     MergeCandidateDetailView,
@@ -23,6 +24,7 @@ from stitch.api.entities import (
     SetFieldPriorityRequest,
 )
 
+from stitch.api.db import link_actions
 from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db import merge_candidate_actions
 from stitch.api.db import og_field_source_actions
@@ -167,6 +169,48 @@ async def create_merge_candidate(
             status_code=500,
             detail="Internal error during merge candidate creation",
         )
+
+
+@router.post(
+    "/merge-candidates/link-all",
+    response_model=LinkAllResponse,
+    dependencies=[Depends(require_permissions(MERGE_CANDIDATE_CREATE))],
+)
+async def link_all_merge_candidates(
+    *,
+    uow: UnitOfWorkDep,
+    user: CurrentUser,
+    claims: Claims,
+    apply_merges: bool = False,
+) -> LinkAllResponse:
+    """Queue every group of duplicate resources for review."""
+    groups = await link_actions.match(
+        session=uow.session,
+        licensed_sources=licensed_sources(claims),
+    )
+    existing = {
+        frozenset(candidate.resource_ids)
+        for candidate in await merge_candidate_actions.list_merge_candidates(
+            session=uow.session
+        )
+    }
+    new_groups = [group for group in groups if frozenset(group) not in existing]
+
+    if apply_merges:
+        for group in new_groups:
+            await merge_candidate_actions.create_merge_candidate(
+                session=uow.session,
+                user=user,
+                request=MergeCandidateCreateRequest(resource_ids=list(group)),
+            )
+        await uow.commit()
+
+    return LinkAllResponse(
+        apply_merges=apply_merges,
+        match_groups=[list(group) for group in groups],
+        merge_candidates_created=len(new_groups) if apply_merges else 0,
+        merge_candidates_skipped=len(groups) - len(new_groups),
+    )
 
 
 @router.post(
