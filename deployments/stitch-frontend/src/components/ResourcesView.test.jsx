@@ -90,6 +90,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  // The chosen page size is remembered for the session.
+  window.sessionStorage.clear();
 });
 
 // Advances past the list query's debounce window so the latest view state
@@ -104,6 +106,13 @@ function settle() {
 function BackButton() {
   const navigate = useNavigate();
   return <button onClick={() => navigate(-1)}>test-back</button>;
+}
+
+// Mirrors the header's "Resources" tab and the logotype: both link to a bare
+// "/", which carries none of the list's URL state.
+function ResourcesTabButton() {
+  const navigate = useNavigate();
+  return <button onClick={() => navigate("/")}>test-resources-tab</button>;
 }
 
 describe("ResourcesView", () => {
@@ -410,6 +419,48 @@ describe("ResourcesView", () => {
       expect(useResources).toHaveBeenLastCalledWith(
         ENDPOINT,
         expect.objectContaining({ page: DEFAULT_PAGE, page_size: 25 }),
+      );
+    });
+
+    it("keeps the chosen page size when returning via the Resources tab", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: { ...mockResourceData, total_pages: 3, total_count: 150 },
+      });
+
+      renderWithQueryClient(
+        <>
+          <ResourcesView endpoint={ENDPOINT} />
+          <ResourcesTabButton />
+        </>,
+        { initialEntries: ["/?country=NOR"] },
+      );
+
+      fireEvent.change(screen.getByLabelText("Per page:"), {
+        target: { value: "50" },
+      });
+      settle();
+      fireEvent.click(screen.getByText("test-resources-tab"));
+      settle();
+
+      // The tab still clears the view (filters), but the page size stays.
+      expect(screen.getByLabelText("Per page:")).toHaveValue("50");
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({
+          page: DEFAULT_PAGE,
+          page_size: 50,
+          filters: expect.objectContaining({ country: [] }),
+        }),
+      );
+    });
+
+    it("uses the default page size on a first visit", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      expect(useResources).toHaveBeenLastCalledWith(
+        ENDPOINT,
+        expect.objectContaining({ page_size: DEFAULT_PAGE_SIZE }),
       );
     });
   });

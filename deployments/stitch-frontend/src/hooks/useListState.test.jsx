@@ -1,10 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter, useLocation, useNavigate } from "react-router";
 import { useListState } from "./useListState";
+import { PAGE_SIZE_STORAGE_KEY } from "../config/pageSizePreference";
 
 function Probe() {
-  const { setFilters, setSort, setSearch, setPage, setPageSize } =
+  const { pageSize, setFilters, setSort, setSearch, setPage, setPageSize } =
     useListState();
   const navigate = useNavigate();
   const location = useLocation();
@@ -12,6 +13,7 @@ function Probe() {
   return (
     <>
       <output data-testid="url">{location.pathname + location.search}</output>
+      <output data-testid="pageSize">{pageSize}</output>
       <button onClick={() => setFilters({ country: ["NOR"] })}>filter</button>
       <button onClick={() => setSort({ column: "name", direction: "desc" })}>
         sort
@@ -20,6 +22,8 @@ function Probe() {
       <button onClick={() => setPage(3)}>page</button>
       <button onClick={() => setPageSize(25)}>pageSize</button>
       <button onClick={() => navigate(-1)}>back</button>
+      {/* What the Resources tab and logotype do: a bare list URL. */}
+      <button onClick={() => navigate("/")}>resources tab</button>
     </>
   );
 }
@@ -33,6 +37,11 @@ function renderProbe(listUrl = "/") {
 }
 
 const url = () => screen.getByTestId("url").textContent;
+const pageSize = () => screen.getByTestId("pageSize").textContent;
+
+afterEach(() => {
+  window.sessionStorage.clear();
+});
 
 describe("useListState", () => {
   it("writes filters to the URL", () => {
@@ -84,5 +93,47 @@ describe("useListState", () => {
     expect(url()).toContain("q=ghawar");
     expect(url()).toContain("sort_by=name");
     expect(url()).toContain("country=NOR");
+  });
+
+  describe("remembered page size", () => {
+    it("uses the default page size on a first visit", () => {
+      renderProbe("/");
+      expect(pageSize()).toBe("10");
+    });
+
+    it("keeps the chosen page size after returning to a bare list URL", () => {
+      renderProbe("/");
+      fireEvent.click(screen.getByText("pageSize"));
+      expect(url()).toBe("/?page_size=25");
+
+      fireEvent.click(screen.getByText("resources tab"));
+
+      expect(url()).toBe("/");
+      expect(pageSize()).toBe("25");
+    });
+
+    it("writes the remembered size into the URL on the next change", () => {
+      window.sessionStorage.setItem(PAGE_SIZE_STORAGE_KEY, "50");
+      renderProbe("/");
+      fireEvent.click(screen.getByText("filter"));
+      expect(url()).toBe("/?page_size=50&country=NOR");
+    });
+
+    it("lets a page_size in the URL win without changing what is remembered", () => {
+      window.sessionStorage.setItem(PAGE_SIZE_STORAGE_KEY, "50");
+      renderProbe("/?page_size=100");
+
+      expect(pageSize()).toBe("100");
+      expect(window.sessionStorage.getItem(PAGE_SIZE_STORAGE_KEY)).toBe("50");
+    });
+
+    it("keeps an explicit page_size=10 from a URL when something else changes", () => {
+      window.sessionStorage.setItem(PAGE_SIZE_STORAGE_KEY, "50");
+      renderProbe("/?page_size=10");
+      fireEvent.click(screen.getByText("filter"));
+
+      expect(url()).toBe("/?page_size=10&country=NOR");
+      expect(pageSize()).toBe("10");
+    });
   });
 });

@@ -132,3 +132,49 @@ describe("toListParams", () => {
     expect(parseListParams(toListParams(state))).toEqual(state);
   });
 });
+
+describe("remembered page size", () => {
+  // The page size a user chose earlier in the session stands in for the
+  // default when the URL has none (e.g. after the Resources tab or logotype).
+  const parseWith = (search, fallbackPageSize) =>
+    parseListParams(new URLSearchParams(search), { fallbackPageSize });
+  const serializeWith = (state, fallbackPageSize) =>
+    toListParams(state, { fallbackPageSize }).toString();
+
+  it("uses the remembered size when the URL has no page_size", () => {
+    expect(parseWith("", 50).pageSize).toBe(50);
+  });
+
+  it("lets the URL's page_size win over the remembered size", () => {
+    expect(parseWith("page_size=25", 50).pageSize).toBe(25);
+    expect(parseWith("page_size=10", 50).pageSize).toBe(10);
+  });
+
+  it("uses the remembered size when the URL's page_size is junk", () => {
+    expect(parseWith("page_size=7", 50).pageSize).toBe(50);
+  });
+
+  it("keeps an explicit page_size=10 when the remembered size differs", () => {
+    // Otherwise the next write would drop it and the list would jump to 50.
+    expect(serializeWith({ ...DEFAULT_STATE, pageSize: 10 }, 50)).toBe(
+      "page_size=10",
+    );
+  });
+
+  it("still writes a non-default page size, so copied links show it", () => {
+    expect(serializeWith({ ...DEFAULT_STATE, pageSize: 50 }, 50)).toBe(
+      "page_size=50",
+    );
+  });
+
+  it("round-trips any page size with a remembered size in place", () => {
+    for (const pageSize of [10, 25, 50, 100]) {
+      const state = { ...DEFAULT_STATE, pageSize };
+      expect(
+        parseListParams(toListParams(state, { fallbackPageSize: 50 }), {
+          fallbackPageSize: 50,
+        }),
+      ).toEqual(state);
+    }
+  });
+});

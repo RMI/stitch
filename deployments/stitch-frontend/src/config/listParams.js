@@ -27,6 +27,12 @@
  *   primary_hydrocarbon_group) the API rejects it with a 422, so a
  *   hand-edited URL can surface an error rather than an empty list.
  * - Params we do not own are ignored on read and dropped on the next write.
+ * - Page size alone has a second fallback: the size the user chose earlier in
+ *   the session (config/pageSizePreference.js), passed in as
+ *   `fallbackPageSize`. It applies only when the URL has no valid
+ *   `page_size`, so a URL always wins. `page_size` is omitted only when it is
+ *   the default AND matches that fallback, so an explicit `page_size=10`
+ *   survives the next write instead of snapping to the remembered size.
  */
 import { FILTER_FIELDS } from "./filters";
 import { SORTABLE_COLUMN_KEYS } from "./listColumns";
@@ -47,9 +53,9 @@ function parsePage(raw) {
     : DEFAULT_PAGE;
 }
 
-function parsePageSize(raw) {
+function parsePageSize(raw, fallbackPageSize) {
   const value = Number(raw);
-  return PAGE_SIZE_OPTIONS.includes(value) ? value : DEFAULT_PAGE_SIZE;
+  return PAGE_SIZE_OPTIONS.includes(value) ? value : fallbackPageSize;
 }
 
 // sort_by and sort_order are a unit: a lone order has no meaning, and an
@@ -66,7 +72,10 @@ function parseSort(rawSortBy, rawSortOrder) {
   };
 }
 
-export function parseListParams(searchParams) {
+export function parseListParams(
+  searchParams,
+  { fallbackPageSize = DEFAULT_PAGE_SIZE } = {},
+) {
   const filters = {};
   for (const key of FILTER_KEYS) {
     filters[key] = searchParams.getAll(key).filter((value) => value !== "");
@@ -74,25 +83,24 @@ export function parseListParams(searchParams) {
 
   return {
     page: parsePage(searchParams.get("page")),
-    pageSize: parsePageSize(searchParams.get("page_size")),
+    pageSize: parsePageSize(searchParams.get("page_size"), fallbackPageSize),
     q: (searchParams.get("q") ?? "").trim(),
     ...parseSort(searchParams.get("sort_by"), searchParams.get("sort_order")),
     filters,
   };
 }
 
-export function toListParams({
-  page,
-  pageSize,
-  q,
-  sortBy,
-  sortOrder,
-  filters,
-}) {
+export function toListParams(
+  { page, pageSize, q, sortBy, sortOrder, filters },
+  { fallbackPageSize = DEFAULT_PAGE_SIZE } = {},
+) {
   const params = new URLSearchParams();
 
   if (page > DEFAULT_PAGE) params.set("page", String(page));
-  if (pageSize && pageSize !== DEFAULT_PAGE_SIZE) {
+  if (
+    pageSize &&
+    (pageSize !== DEFAULT_PAGE_SIZE || pageSize !== fallbackPageSize)
+  ) {
     params.set("page_size", String(pageSize));
   }
 

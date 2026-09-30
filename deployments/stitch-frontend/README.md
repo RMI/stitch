@@ -195,7 +195,7 @@ The resources list encodes its whole view in the query string, so a copied URL r
 | Param                                                                                       | Values                                                                                              | Omitted when     |
 | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------- |
 | `page`                                                                                      | integer ≥ 1                                                                                         | page 1           |
-| `page_size`                                                                                 | 10, 25, 50, 100                                                                                     | 10               |
+| `page_size`                                                                                 | 10, 25, 50, 100                                                                                     | 10 (see notes)   |
 | `q`                                                                                         | free text                                                                                           | empty            |
 | `sort_by`                                                                                   | `name`, `country`, `state_province`, `region`, `basin`, `field_status`, `primary_hydrocarbon_group` | not sorted       |
 | `sort_order`                                                                                | `asc`, `desc`                                                                                       | not sorted       |
@@ -210,8 +210,9 @@ Example — Norway and Saudi Arabia, searching "ghawar", sorted by name, page 2:
 Notes:
 
 - Filter values are the stored API values (`NOR`), not display names (`Norway`), so a shared link means the same thing for every viewer.
-- Defaults are left out, so the default view is a bare `/`. That is why clicking the Stitch logotype returns you to an unfiltered list.
-- Unrecognized params are ignored and dropped from the URL on the next interaction, and a malformed `page`, `page_size` or sort falls back to its default.
+- Defaults are left out, so the default view is a bare `/`. That is why clicking the Stitch logotype (or the Resources tab) returns you to an unfiltered list.
+- The page size is the exception: the size you pick is remembered for the browser session (session storage, per tab), and a bare `/` uses it instead of 10. A `page_size` in the URL always wins, so shared links are unaffected, and opening one doesn't change what you've chosen.
+- Unrecognized params are ignored and dropped from the URL on the next interaction, and a malformed `page`, `page_size` or sort falls back to its default (for `page_size`, the size remembered this session, if any).
 - Filter _values_ are not checked against the API's allowed values: an unknown country or basin simply matches nothing, but an unknown `field_status` or `primary_hydrocarbon_group` is rejected by the API, so a hand-edited URL can show an error instead of an empty list.
 
 The schema lives in `src/config/listParams.js`.
