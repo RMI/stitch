@@ -190,7 +190,7 @@ The real and mock implementations are separate functions selected once at module
 
 ## List view URLs
 
-The resources list encodes its whole view in the query string, so a copied URL reproduces exactly what you are looking at, and back/forward work as expected.
+The resources list encodes its whole view in the query string, so a copied URL reproduces what you are looking at (with one page-size exception, below), and back/forward work as expected.
 
 | Param                                                                                       | Values                                                                                              | Omitted when     |
 | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------- |
@@ -211,7 +211,7 @@ Notes:
 
 - Filter values are the stored API values (`NOR`), not display names (`Norway`), so a shared link means the same thing for every viewer.
 - Defaults are left out, so the default view is a bare `/`. That is why clicking the Stitch logotype (or the Resources tab) returns you to an unfiltered list.
-- The page size is the exception: the size you pick is remembered for the browser session (session storage, per tab), and a bare `/` uses it instead of 10. A `page_size` in the URL always wins, so shared links are unaffected, and opening one doesn't change what you've chosen.
+- The page size is the exception: the size you pick is remembered for the browser session (session storage, per tab), and a URL with no `page_size` uses it instead of 10. A `page_size` in the URL always wins, and opening such a link doesn't change what you've chosen. But `page_size` is left out when it's 10 and your remembered size is also 10, so a copied link without it opens at the _recipient's_ remembered size, which may not be 10. Sizes other than 10 are always written into the URL, so a link shared at 25, 50 or 100 opens at that size for everyone.
 - Unrecognized params are ignored and dropped from the URL on the next interaction, and a malformed `page`, `page_size` or sort falls back to its default (for `page_size`, the size remembered this session, if any).
 - Filter _values_ are not checked against the API's allowed values: an unknown country or basin simply matches nothing, but an unknown `field_status` or `primary_hydrocarbon_group` is rejected by the API, so a hand-edited URL can show an error instead of an empty list.
 
