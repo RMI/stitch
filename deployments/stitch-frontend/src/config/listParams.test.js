@@ -178,3 +178,40 @@ describe("remembered page size", () => {
     }
   });
 });
+
+describe("page_size alongside other settings", () => {
+  // With page size remembered per session, a link that leaves page_size out
+  // would open at the recipient's remembered size -- and page=3 at 50 per
+  // page is different rows from page=3 at 10. So any URL carrying other
+  // state also carries page_size; only a bare "/" follows the viewer's size.
+  const serializeWith = (state, fallbackPageSize = 10) =>
+    decodeURIComponent(toListParams(state, { fallbackPageSize }).toString());
+
+  it.each([
+    [
+      "a filter",
+      { filters: { ...DEFAULT_STATE.filters, country: ["NOR"] } },
+      "page_size=10&country=NOR",
+    ],
+    ["a page", { page: 3 }, "page=3&page_size=10"],
+    ["a search", { q: "ghawar" }, "page_size=10&q=ghawar"],
+    [
+      "a sort",
+      { sortBy: "name", sortOrder: "asc" },
+      "page_size=10&sort_by=name&sort_order=asc",
+    ],
+  ])("writes page_size=10 with %s", (_, changes, expected) => {
+    expect(serializeWith({ ...DEFAULT_STATE, ...changes })).toBe(expected);
+  });
+
+  it("still leaves a fully default view as a bare URL", () => {
+    expect(serializeWith(DEFAULT_STATE)).toBe("");
+  });
+
+  it("leaves a bare URL at the remembered size bare", () => {
+    expect(serializeWith({ ...DEFAULT_STATE, pageSize: 50 }, 50)).toBe(
+      "page_size=50",
+    );
+    expect(serializeWith({ ...DEFAULT_STATE, pageSize: 10 }, 10)).toBe("");
+  });
+});

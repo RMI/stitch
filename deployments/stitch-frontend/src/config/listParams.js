@@ -30,9 +30,12 @@
  * - Page size alone has a second fallback: the size the user chose earlier in
  *   the session (config/pageSizePreference.js), passed in as
  *   `fallbackPageSize`. It applies only when the URL has no valid
- *   `page_size`, so a URL always wins. `page_size` is omitted only when it is
- *   the default AND matches that fallback, so an explicit `page_size=10`
- *   survives the next write instead of snapping to the remembered size.
+ *   `page_size`, so a URL always wins. Because a URL without `page_size`
+ *   therefore opens at the *viewer's* remembered size, `page_size` is written
+ *   into every URL that carries any other state (a page, search, sort or
+ *   filter) -- page=3 at 50 per page is different rows from page=3 at 10.
+ *   It is omitted only from an otherwise bare URL whose size matches the
+ *   fallback, so a bare "/" means "the list at my page size".
  */
 import { FILTER_FIELDS } from "./filters";
 import { SORTABLE_COLUMN_KEYS } from "./listColumns";
@@ -95,16 +98,26 @@ export function toListParams(
   { fallbackPageSize = DEFAULT_PAGE_SIZE } = {},
 ) {
   const params = new URLSearchParams();
+  const trimmedSearch = (q ?? "").trim();
+  const hasFilters = FILTER_KEYS.some((key) =>
+    (filters?.[key] ?? []).some((value) => value !== ""),
+  );
+  const hasOtherState =
+    page > DEFAULT_PAGE ||
+    Boolean(trimmedSearch) ||
+    Boolean(sortBy) ||
+    hasFilters;
 
   if (page > DEFAULT_PAGE) params.set("page", String(page));
   if (
     pageSize &&
-    (pageSize !== DEFAULT_PAGE_SIZE || pageSize !== fallbackPageSize)
+    (hasOtherState ||
+      pageSize !== DEFAULT_PAGE_SIZE ||
+      pageSize !== fallbackPageSize)
   ) {
     params.set("page_size", String(pageSize));
   }
 
-  const trimmedSearch = (q ?? "").trim();
   if (trimmedSearch) params.set("q", trimmedSearch);
 
   if (sortBy) {

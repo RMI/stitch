@@ -190,12 +190,12 @@ The real and mock implementations are separate functions selected once at module
 
 ## List view URLs
 
-The resources list encodes its whole view in the query string, so a copied URL reproduces what you are looking at (with one page-size exception, below), and back/forward work as expected.
+The resources list encodes its whole view in the query string, so a copied URL reproduces exactly what you are looking at, and back/forward work as expected. (A bare `/` is the one exception: it opens at the viewer's remembered page size, below.)
 
 | Param                                                                                       | Values                                                                                              | Omitted when     |
 | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------- |
 | `page`                                                                                      | integer ≥ 1                                                                                         | page 1           |
-| `page_size`                                                                                 | 10, 25, 50, 100                                                                                     | 10 (see notes)   |
+| `page_size`                                                                                 | 10, 25, 50, 100                                                                                     | see notes        |
 | `q`                                                                                         | free text                                                                                           | empty            |
 | `sort_by`                                                                                   | `name`, `country`, `state_province`, `region`, `basin`, `field_status`, `primary_hydrocarbon_group` | not sorted       |
 | `sort_order`                                                                                | `asc`, `desc`                                                                                       | not sorted       |
@@ -204,14 +204,14 @@ The resources list encodes its whole view in the query string, so a copied URL r
 Example — Norway and Saudi Arabia, searching "ghawar", sorted by name, page 2:
 
 ```
-/?page=2&q=ghawar&sort_by=name&sort_order=desc&country=NOR&country=SAU
+/?page=2&page_size=10&q=ghawar&sort_by=name&sort_order=desc&country=NOR&country=SAU
 ```
 
 Notes:
 
 - Filter values are the stored API values (`NOR`), not display names (`Norway`), so a shared link means the same thing for every viewer.
-- Defaults are left out, so the default view is a bare `/`. That is why clicking the Stitch logotype (or the Resources tab) returns you to an unfiltered list.
-- The page size is the exception: the size you pick is remembered for the browser session (session storage, per tab), and a URL with no `page_size` uses it instead of 10. A `page_size` in the URL always wins, and opening such a link doesn't change what you've chosen. But `page_size` is left out when it's 10 and your remembered size is also 10, so a copied link without it opens at the _recipient's_ remembered size, which may not be 10. Sizes other than 10 are always written into the URL, so a link shared at 25, 50 or 100 opens at that size for everyone.
+- Defaults are left out, so the default view is a bare `/`. That is why clicking the Stitch logotype (or the Resources tab) returns you to an unfiltered list. `page_size` is the exception: it is written into every URL that has any other param, even at 10, because it changes which rows `page` refers to.
+- The page size you pick is remembered for the browser session (session storage, per tab), and a URL with no `page_size` uses it instead of 10. A `page_size` in the URL always wins, and opening such a link doesn't change what you've chosen. `page_size` is only ever left out of a bare `/`, so any link with filters, search, sort or a page opens at the same page size for everyone, while a bare `/` opens at the recipient's own remembered size.
 - Unrecognized params are ignored and dropped from the URL on the next interaction, and a malformed `page`, `page_size` or sort falls back to its default (for `page_size`, the size remembered this session, if any).
 - Filter _values_ are not checked against the API's allowed values: an unknown country or basin simply matches nothing, but an unknown `field_status` or `primary_hydrocarbon_group` is rejected by the API, so a hand-edited URL can show an error instead of an empty list.
 

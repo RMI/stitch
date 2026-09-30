@@ -47,7 +47,8 @@ describe("useListState", () => {
   it("writes filters to the URL", () => {
     renderProbe();
     fireEvent.click(screen.getByText("filter"));
-    expect(url()).toBe("/?country=NOR");
+    // page_size rides along with any other state, so the link is exact.
+    expect(url()).toBe("/?page_size=10&country=NOR");
   });
 
   it.each([["filter"], ["sort"], ["search"]])(
@@ -63,7 +64,7 @@ describe("useListState", () => {
   it("pushes a history entry when the page changes", () => {
     renderProbe();
     fireEvent.click(screen.getByText("page"));
-    expect(url()).toBe("/?page=3");
+    expect(url()).toBe("/?page=3&page_size=10");
     fireEvent.click(screen.getByText("back"));
     expect(url()).toBe("/");
   });
