@@ -208,10 +208,13 @@ describe("page_size alongside other settings", () => {
     expect(serializeWith(DEFAULT_STATE)).toBe("");
   });
 
-  it("leaves a bare URL at the remembered size bare", () => {
+  it("writes a non-default size even when it is the remembered one", () => {
     expect(serializeWith({ ...DEFAULT_STATE, pageSize: 50 }, 50)).toBe(
       "page_size=50",
     );
+  });
+
+  it("leaves the default size out of an otherwise bare URL when it is also remembered", () => {
     expect(serializeWith({ ...DEFAULT_STATE, pageSize: 10 }, 10)).toBe("");
   });
 });
