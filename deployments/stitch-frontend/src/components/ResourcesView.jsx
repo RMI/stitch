@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useResources } from "../hooks/useResources";
 import { useListState } from "../hooks/useListState";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import ResourcesTable from "./ResourcesTable";
 import FilterBar from "./FilterBar";
 import Pagination from "./Pagination";
@@ -53,16 +54,34 @@ export default function ResourcesView({ className = "", endpoint }) {
     setSearchText(q);
   }
 
+  // The controls reflect every click immediately, but the query waits until
+  // clicking settles so a burst of filter/sort/page changes sends one request.
+  // The params are serialized because `filters` is a new object each render,
+  // which would otherwise restart the debounce timer forever.
+  const listParamsKey = JSON.stringify({
+    page,
+    page_size: pageSize,
+    filters,
+    q: q || undefined,
+    sort_by: sort.column ?? undefined,
+    sort_order: sort.column ? sort.direction : undefined,
+  });
+  const debouncedListParamsKey = useDebouncedValue(listParamsKey);
+
+  // Rebuilt field by field: JSON drops undefined keys, and useResources should
+  // see the same param shape whether or not a search or sort is active.
+  const settledListParams = JSON.parse(debouncedListParamsKey);
+
   const { data, isLoading, isFetching, isError, error, refetch } = useResources(
     endpoint,
     {
-      page,
-      page_size: pageSize,
+      page: settledListParams.page,
+      page_size: settledListParams.page_size,
       enabled: true,
-      filters,
-      q: q || undefined,
-      sort_by: sort.column ?? undefined,
-      sort_order: sort.column ? sort.direction : undefined,
+      filters: settledListParams.filters,
+      q: settledListParams.q,
+      sort_by: settledListParams.sort_by,
+      sort_order: settledListParams.sort_order,
     },
   );
 
