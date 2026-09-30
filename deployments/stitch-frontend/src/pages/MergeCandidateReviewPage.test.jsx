@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useAuth0 } from "@auth0/auth0-react";
@@ -158,6 +158,100 @@ describe("MergeCandidateReviewPage", () => {
     expect(
       panel.compareDocumentPosition(queue) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  describe("selecting a candidate", () => {
+    // jsdom has neither matchMedia nor scrollIntoView, so each test stubs the
+    // layout it needs: two columns (md and up) or one.
+    let scrollIntoView;
+
+    function useLayout({ twoColumns }) {
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn((query) => ({ matches: twoColumns, media: query })),
+      );
+    }
+
+    async function selectCandidate13() {
+      const user = userEvent.setup();
+      vi.mocked(useMergeCandidates).mockReturnValue({
+        ...defaultHookReturn,
+        data: [pendingCandidate, nextPendingCandidate],
+      });
+      vi.mocked(useMergeCandidate).mockImplementation((_endpoint, id) => ({
+        ...defaultHookReturn,
+        data:
+          id === nextPendingCandidate.id ? nextPendingCandidate : pendingDetail,
+      }));
+
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      const queue = screen
+        .getByRole("heading", { name: "Queue" })
+        .closest("aside");
+      await user.click(
+        within(queue).getByRole("button", { name: /Candidate #13/ }),
+      );
+      return user;
+    }
+
+    beforeEach(() => {
+      scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      delete Element.prototype.scrollIntoView;
+    });
+
+    it("moves focus to the candidate panel", async () => {
+      // The panel precedes the queue in the DOM, so without this, Tab from the
+      // chosen queue item would move away from its decision controls.
+      useLayout({ twoColumns: true });
+      const user = await selectCandidate13();
+
+      const panel = screen.getByRole("region", { name: "Selected candidate" });
+      expect(panel).toHaveFocus();
+
+      // The next Tab lands inside the panel, on the way to Deny/Approve.
+      await user.tab();
+      expect(panel).toContainElement(document.activeElement);
+    });
+
+    it("does not scroll the page in the two-column layout", async () => {
+      // The panel is beside the queue, so scrolling would only make the page
+      // jump under the reviewer's pointer.
+      useLayout({ twoColumns: true });
+      await selectCandidate13();
+
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    });
+
+    it("scrolls the panel into view in the one-column layout", async () => {
+      // The panel sits above the queue, so without this the change happens
+      // off-screen.
+      useLayout({ twoColumns: false });
+      await selectCandidate13();
+
+      expect(
+        screen.getByRole("region", { name: "Selected candidate" }),
+      ).toHaveFocus();
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(scrollIntoView.mock.contexts[0]).toBe(
+        screen.getByRole("region", { name: "Selected candidate" }),
+      );
+    });
+
+    it("does not move focus or scroll on first load", () => {
+      useLayout({ twoColumns: false });
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      expect(
+        screen.getByRole("region", { name: "Selected candidate" }),
+      ).not.toHaveFocus();
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    });
   });
 
   it("shows the resolved candidate name in the queue, hiding raw resource ids", async () => {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router";
 import Button from "../components/Button";
 import MergeSourceComparison from "../components/MergeSourceComparison";
@@ -15,6 +15,9 @@ import { pickCompareName } from "../utils/candidateCompare";
 import { isEmptyValue } from "../utils/mergeComparison";
 
 const ENDPOINT = "oil-gas-fields";
+// Tailwind's md breakpoint, where the queue moves beside the decision panel
+// (the md: grid classes in the page layout below).
+const TWO_COLUMN_LAYOUT_QUERY = "(min-width: 48rem)";
 
 function getStatusClasses(status) {
   if (status === "PENDING") {
@@ -406,6 +409,7 @@ export default function MergeCandidateReviewPage() {
   const [selectedId, setSelectedId] = useState(null);
   const [reviewNotes, setReviewNotes] = useState("");
   const [showApproved, setShowApproved] = useState(false);
+  const selectedPanelRef = useRef(null);
 
   const reviewMutation = useReviewMergeCandidate(ENDPOINT);
   const actionLoading = reviewMutation.isPending;
@@ -460,6 +464,17 @@ export default function MergeCandidateReviewPage() {
 
   function handleSelect(id) {
     setSelectedId(id);
+    // The panel precedes the queue in the DOM (see the layout below), so move
+    // focus to it: the next Tab then reaches the chosen candidate's decision
+    // controls. Focusing must not scroll by itself -- the panel is taller than
+    // the screen, so the browser would jump the page on every click. Scroll
+    // only in the one-column layout, where the panel sits above the queue and
+    // would otherwise change off-screen.
+    const panel = selectedPanelRef.current;
+    panel?.focus({ preventScroll: true });
+    if (!window.matchMedia(TWO_COLUMN_LAYOUT_QUERY).matches) {
+      panel?.scrollIntoView({ block: "start" });
+    }
     setReviewNotes("");
     // Clear any error left over from reviewing the previous candidate.
     reviewMutation.reset();
@@ -525,9 +540,16 @@ export default function MergeCandidateReviewPage() {
       {/* The panel comes first in the DOM so one-column screens show the
           candidate above the queue, and screen readers and keyboard focus
           follow the same order. From md up, grid placement moves the queue
-          into the left column. */}
+          into the left column; handleSelect keeps keyboard flow working by
+          moving focus to the panel. */}
       <div className="grid gap-6 md:grid-cols-[16rem_minmax(0,1fr)] lg:grid-cols-[20rem_minmax(0,1fr)]">
-        <div className="min-w-0 md:col-start-2 md:row-start-1">
+        <div
+          ref={selectedPanelRef}
+          role="region"
+          aria-label="Selected candidate"
+          tabIndex={-1}
+          className="min-w-0 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 md:col-start-2 md:row-start-1"
+        >
           <CandidateDecisionPanel
             selectedId={selectedId}
             listCandidate={listCandidate}
