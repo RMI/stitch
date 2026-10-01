@@ -568,6 +568,54 @@ describe("ResourcesView", () => {
       expect(labels).toEqual(["China", "Denmark", "Germany"]);
     });
 
+    it.each([
+      ["Country", true],
+      ["Region", true],
+      ["State/Province", true],
+      ["Basin", true],
+      ["Field status", false],
+      ["Primary hydrocarbon group", false],
+    ])("gives the %s filter a search box: %s", (filterLabel, hasSearch) => {
+      // Only the long, open-ended lists get one; short fixed lists don't.
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      const filterBar = screen.getByTestId("filter-bar");
+      fireEvent.click(
+        within(filterBar).getByRole("button", {
+          name: new RegExp(`^${filterLabel.replace("/", "\\/")}`, "i"),
+        }),
+      );
+
+      const search = within(filterBar).queryByRole("searchbox", {
+        name: `Search ${filterLabel}`,
+      });
+      if (hasSearch) {
+        expect(search).toBeInTheDocument();
+      } else {
+        expect(search).not.toBeInTheDocument();
+      }
+    });
+
+    it("filters the Country options by name as the user types", () => {
+      // The default filter options offer NOR and SAU; the search matches
+      // the names users see, not the codes.
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      const filterBar = screen.getByTestId("filter-bar");
+      fireEvent.click(
+        within(filterBar).getByRole("button", { name: /^country/i }),
+      );
+      fireEvent.change(
+        within(filterBar).getByRole("searchbox", { name: "Search Country" }),
+        { target: { value: "nor" } },
+      );
+
+      const labels = within(filterBar)
+        .getAllByRole("checkbox")
+        .map((checkbox) => checkbox.closest("label").textContent.trim());
+      expect(labels).toEqual(["Norway"]);
+    });
+
     it("passes active filters to useResources", () => {
       vi.mocked(useResources).mockReturnValue({
         ...defaultHookReturn,
