@@ -229,3 +229,8 @@ __marimo__/
 /PRODUCT.md
 /DESIGN.md
 /.impeccable/
+
+# demo & db backups
+**/*.sql
+**/*.dump
+scripts/data
