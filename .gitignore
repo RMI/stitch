@@ -14,7 +14,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# Anchored: unanchored "lib/" matches at any depth and hid scripts/lib/.
+/lib/
 lib64/
 parts/
 sdist/
