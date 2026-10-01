@@ -290,8 +290,13 @@ def mint(args: argparse.Namespace) -> int:
     if args.force_auth0:
         logger.info("--force-auth0 given; not reusing %s", DEFAULT_OUT)
 
-    # refresh_tokens.sh runs this first and only widens Auth0 when it says yes.
+    # refresh_tokens.sh runs this first and only widens Auth0 when it says yes,
+    # so every SCRIPTS__ key has to be resolved here, before the tenant is
+    # touched, rather than part way through the mint.
     if args.needs_mint:
+        for account in ACCOUNTS:
+            email_of(account)
+            sub_of(account)
         return 0 if tokens is None else 1
 
     if tokens:
@@ -413,7 +418,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument(
+    # Shared via parents= so -v is accepted on either side of the subcommand;
+    # declaring it on both parsers would let the subparser reset it to False.
+    shared = argparse.ArgumentParser(add_help=False)
+    shared.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -422,7 +430,7 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     minter = subparsers.add_parser(
-        "mint", help="mint both tokens and write them locally"
+        "mint", parents=[shared], help="mint both tokens and write them locally"
     )
     minter.set_defaults(run=mint)
     minter.add_argument(
@@ -442,7 +450,7 @@ def main() -> int:
     minter.add_argument("--needs-mint", action="store_true", help=argparse.SUPPRESS)
 
     checker = subparsers.add_parser(
-        "check", help="report what the tokens on disk carry"
+        "check", parents=[shared], help="report what the tokens on disk carry"
     )
     checker.set_defaults(run=check)
     checker.add_argument(
