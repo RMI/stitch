@@ -69,12 +69,12 @@ SNAPSHOT_SQL = text(f"""
 
 async def write_snapshot(session: AsyncSession, mask: int) -> int:
     """Stream the coalesced rows out to JSONL, one record per resource id."""
+    result = await session.stream(SNAPSHOT_SQL, {"mask": mask})
+
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     written = 0
 
     with RESOURCES_PATH.open("w", encoding="utf-8") as handle:
-        result = await session.stream(SNAPSHOT_SQL, {"mask": mask})
-
         async for row in result.mappings():
             record: dict = {"id": row["resource_id"]}
             for field in FIELD_ORDER:
