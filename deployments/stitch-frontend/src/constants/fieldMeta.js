@@ -2,6 +2,11 @@
  * Field metadata dictionary.
  * Maps JSON payload keys to display configuration.
  * `section` groups fields into page sections on the detail view.
+ * `options` lists every value the API accepts for a fixed-value field, so
+ * manual edit offers a dropdown instead of free text. These must match the
+ * Literal types in packages/stitch-ogsi/src/stitch/ogsi/model/types.py --
+ * a value missing here cannot be chosen, and a value the API no longer
+ * accepts would be rejected on save.
  */
 export const FIELD_META = {
   // Identity & Location
@@ -13,21 +18,43 @@ export const FIELD_META = {
   basin: { label: "Basin", section: "identity" },
   latitude: { label: "Latitude", section: "identity" },
   longitude: { label: "Longitude", section: "identity" },
-  location_type: { label: "Location Type", section: "identity" },
+  location_type: {
+    label: "Location Type",
+    section: "identity",
+    options: ["Onshore", "Offshore", "Unknown"],
+  },
 
   // Organizations
   owners: { label: "Owner", section: "organizations" },
   operators: { label: "Operator", section: "organizations" },
 
   // Production & Geology
-  field_status: { label: "Field Status", section: "production" },
+  field_status: {
+    label: "Field Status",
+    section: "production",
+    options: ["Producing", "Non-Producing", "Abandoned", "Planned"],
+  },
   production_conventionality: {
     label: "Production Conventionality",
     section: "production",
+    options: ["Conventional", "Unconventional", "Mixed", "Unknown"],
   },
   primary_hydrocarbon_group: {
     label: "Primary Hydrocarbon Group",
     section: "production",
+    options: [
+      "Ultra-Light Oil",
+      "Light Oil",
+      "Medium Oil",
+      "Heavy Oil",
+      "Extra-Heavy Oil",
+      "Dry Gas",
+      "Wet Gas",
+      "Acid Gas",
+      "Condensate",
+      "Mixed",
+      "Unknown",
+    ],
   },
   reservoir_formation: { label: "Reservoir Formation", section: "production" },
   discovery_year: { label: "Discovery Year", section: "production" },
