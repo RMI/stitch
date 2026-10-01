@@ -12,14 +12,26 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from stitch.api.db.model import UserModel
 from stitch.api.entities import User
 
+from .candidates import CANDIDATES_PATH, RESOURCES_PATH
 from .paths import data_dir, repo_root, scripts_dir
 from .settings import script_settings
+
+__all__ = [
+    "CANDIDATES_PATH",
+    "DATA_DIR",
+    "DEV_SUB",
+    "REPO_ROOT",
+    "RESOURCES_PATH",
+    "SCRIPTS_DIR",
+    "dev_user",
+    "distinct_sources",
+    "flatten_list_item",
+    "open_session",
+]
 
 SCRIPTS_DIR = scripts_dir()
 REPO_ROOT = repo_root()
 DATA_DIR = data_dir()
-RESOURCES_PATH = DATA_DIR / "resources.jsonl"
-CANDIDATES_PATH = DATA_DIR / "candidates.json"
 
 DEV_SUB = "dev|local-placeholder"
 
