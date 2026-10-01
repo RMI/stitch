@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from stitch.ogsi.model.types import OGSISrcKey
 
@@ -28,16 +28,25 @@ class MembershipModel(TimestampMixin, UserAuditMixin, Base):
     resource_id: Mapped[int] = mapped_column(
         ForeignKey("og_field_resources.id"), nullable=False
     )
-    source: Mapped[OGSISrcKey] = mapped_column(
-        String(10),
-        ForeignKey("og_field_source_priority.source"),
-        nullable=False,
-    )
+    # Source key of the membership. Validity is guaranteed by the OGSISrcKey enum
+    # and the write path; there is no longer an og_field_source_priority table to
+    # FK against (source ordering moved to og_field_resource_attribute_priority).
+    source: Mapped[OGSISrcKey] = mapped_column(String(10), nullable=False)
     source_pk: Mapped[int] = mapped_column(
         ForeignKey("oil_gas_field_sources.id"), nullable=False
     )
     status: Mapped[MembershipStatus] = mapped_column(
         default=MembershipStatus.ACTIVE, nullable=False
+    )
+
+    __table_args__ = (
+        # A source record is attached to a resource at most once. The write paths
+        # dedup (attach + merge) to uphold this; it also lets
+        # og_field_resource_attribute_priority FK against (resource_id, source_pk),
+        # guaranteeing a priority row's source is a real member of its resource.
+        UniqueConstraint(
+            "resource_id", "source_pk", name="uq_membership_resource_source"
+        ),
     )
 
     @classmethod
