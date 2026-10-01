@@ -1,13 +1,19 @@
-"""Throwaway: dump a CREATE TABLE script as a Mermaid ER diagram.
-
-Usage: python scripts/sql_to_mermaid.py docs/01_schema.sql > docs/01_schema.md
-"""
+"""Dump a CREATE TABLE script as a Mermaid ER diagram: <script>.sql > <out>.md."""
 
 import re
 import sys
 
 sql = open(sys.argv[1]).read()
-skip = ("CONSTRAINT", "PRIMARY KEY", "UNIQUE", "CHECK", "FOREIGN KEY", "REFERENCES", "ON", "--")
+skip = (
+    "CONSTRAINT",
+    "PRIMARY KEY",
+    "UNIQUE",
+    "CHECK",
+    "FOREIGN KEY",
+    "REFERENCES",
+    "ON",
+    "--",
+)
 
 print("```mermaid\nerDiagram")
 for table, body in re.findall(r"CREATE TABLE (\w+) \((.*?)\n\);", sql, re.S):

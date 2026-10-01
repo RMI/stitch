@@ -15,16 +15,7 @@ def load_script_env(
     *extra: Path | str,
     root: Path | None = None,
 ) -> list[Path]:
-    """Load env files into ``os.environ``; return those that existed, in load order.
-
-    Precedence, highest first: variables already exported in the environment,
-    then each path in ``extra`` in the order given, then ``DEFAULT_ENV_FILES``.
-    Because no file overwrites a value that is already set, this load order
-    *is* the precedence chain.
-
-    Relative paths resolve against the repo root, so callers need not know
-    where they were invoked from.
-    """
+    """Load env files into ``os.environ``; return those that existed, in load order."""
     base = root or repo_root()
     loaded: list[Path] = []
 

@@ -1,16 +1,5 @@
 #!/usr/bin/env python3
-"""Dump/restore a staging database, or check the connection with --smoke.
-
-Runs psql/pg_dump/pg_restore via the official postgres Docker image, so nothing needs to
-be installed locally besides Docker.
-
-Put PGUSER/PGPASSWORD in .env.scripts first (chmod 600). Connection settings
-otherwise come from the repo env files (see lib.env.DEFAULT_ENV_FILES).
-
-    ./scripts/pg_dump.py out.dump -d <database>
-    ./scripts/pg_dump.py --restore in.dump -d <database> [--clean] [--create]
-    ./scripts/pg_dump.py --smoke -d <database>
-"""
+"""Dump/restore a database via the postgres Docker image; PG* come from the env files."""
 
 import argparse
 import os
@@ -76,8 +65,6 @@ parser.add_argument(
 parser.add_argument("-d", "--database", type=str, help="the database name")
 args = parser.parse_args()
 
-# -d must apply to every subcommand, not just --restore: the dump path reads
-# PGDATABASE, so without this it would silently dump the default database.
 if args.database:
     os.environ["PGDATABASE"] = args.database
 

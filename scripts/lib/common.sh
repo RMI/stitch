@@ -1,20 +1,12 @@
-# Shared bash helpers for the scripts in scripts/. Source it, do not execute:
-#
-#     source "${BASH_SOURCE[0]%/*}/lib/common.sh"
-#
-# Requires bash (uses indirect expansion to test whether a name is already set).
-# Mirrors scripts/lib/env.py: same file order, same "already set wins" rule.
+# Shared bash helpers; source it, do not execute. Requires bash.
 
+# The monorepo root, or $STITCH_REPO_ROOT when set.
 stitch_repo_root() {
-  # STITCH_REPO_ROOT is the bash counterpart of env.py's `root=` argument:
-  # an explicit override, mainly for tests and for running against a copy.
   if [ -n "${STITCH_REPO_ROOT:-}" ]; then
     printf '%s\n' "$STITCH_REPO_ROOT"
     return 0
   fi
 
-  # Every workspace member carries a pyproject.toml, so pair it with a marker
-  # only the root has.
   local dir="${1:-${BASH_SOURCE[0]%/*}}"
   dir=$(cd "$dir" 2>/dev/null && pwd) || return 1
 
@@ -31,33 +23,32 @@ stitch_repo_root() {
   return 1
 }
 
-# Load one env file without clobbering anything already exported.
+# Export KEY=VALUE pairs from one env file, keeping anything already set.
 stitch_load_env_file() {
   local line key value
   while IFS= read -r line || [ -n "$line" ]; do
-    line="${line#"${line%%[![:space:]]*}"}" # strip leading blanks
+    line="${line#"${line%%[![:space:]]*}"}"
     case "$line" in '' | '#'*) continue ;; esac
     line="${line#export }"
 
     key="${line%%=*}"
-    [ "$key" = "$line" ] && continue # no '=' on the line
+    [ "$key" = "$line" ] && continue
     value="${line#*=}"
-    key="${key%"${key##*[![:space:]]}"}" # strip trailing blanks
+    key="${key%"${key##*[![:space:]]}"}"
 
     case "$key" in '' | *[!A-Za-z0-9_]*) continue ;; esac
 
-    # Strip one layer of matching quotes, as dotenv does.
     case "$value" in
       \"*\") value="${value#\"}" && value="${value%\"}" ;;
       \'*\') value="${value#\'}" && value="${value%\'}" ;;
     esac
 
-    [ -n "${!key+set}" ] && continue # already set: keep it
+    [ -n "${!key+set}" ] && continue
     export "$key=$value"
   done <"$1"
 }
 
-# Load extra files (highest precedence, in the order given) then the defaults.
+# Load any extra files given, then .env.scripts, scripts/.env and .env.
 stitch_load_env() {
   local root file
   root=$(stitch_repo_root) || return 1
