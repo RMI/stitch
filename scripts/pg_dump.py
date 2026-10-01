@@ -1,24 +1,26 @@
 #!/usr/bin/env python3
-"""Dump/restore the PR #295 staging database, or check the connection with --smoke.
+"""Dump/restore a staging database, or check the connection with --smoke.
 
 Runs psql/pg_dump/pg_restore via the official postgres Docker image, so nothing needs to
 be installed locally besides Docker.
 
-Put PGUSER/PGPASSWORD in scripts/_local/.env.pg first (chmod 600).
+Put PGUSER/PGPASSWORD in scripts/.env.pg first (chmod 600). Connection settings
+otherwise come from the repo env files (see lib.env.DEFAULT_ENV_FILES).
 
-    ./scripts/_local/pg_dump.py out.dump
-    ./scripts/_local/pg_dump.py --restore in.dump
-    ./scripts/_local/pg_dump.py --smoke
+    ./scripts/pg_dump.py out.dump -d <database>
+    ./scripts/pg_dump.py --restore in.dump -d <database> [--clean] [--create]
+    ./scripts/pg_dump.py --smoke -d <database>
 """
 
 import argparse
 import os
 import subprocess
-from pathlib import Path
 
-from dotenv import load_dotenv
+from lib.env import load_script_env
+from lib.paths import scripts_dir
 
-load_dotenv(Path(__file__).parent / ".env.pg")
+# scripts/.env.pg carries the credentials and outranks the repo-wide env files.
+load_script_env(scripts_dir() / ".env.pg")
 os.environ.setdefault("PGHOST", "stitch-staging.postgres.database.azure.com")
 os.environ.setdefault("PGPORT", "5432")
 os.environ.setdefault("PGDATABASE", "pr_0295_demo_integrate_6dbf")
