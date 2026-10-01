@@ -1,23 +1,33 @@
 #!/usr/bin/env python3
-"""Dump/restore a database via the postgres Docker image; PG* come from the env files."""
+"""Dump or restore a database via the postgres Docker image; target from lib.settings."""
 
 import argparse
 import os
 import subprocess
 
-from lib.env import load_script_env
+from lib.settings import script_settings
 
-load_script_env()
-os.environ.setdefault("PGHOST", "stitch-staging.postgres.database.azure.com")
-os.environ.setdefault("PGPORT", "5432")
-os.environ.setdefault("PGDATABASE", "pr_0295_demo_integrate_6dbf")
-os.environ.setdefault("PGSSLMODE", "require")
+DOCKER_HOST_GATEWAY = "host.docker.internal"
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+LOCAL_HOSTS = LOOPBACK_HOSTS | {DOCKER_HOST_GATEWAY}
 
-ENV_FLAGS = [
-    f
-    for v in ("PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD", "PGSSLMODE")
-    for f in ("-e", v)
-]
+PG_VARS = ("PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD", "PGSSLMODE")
+
+ENV_FLAGS = [flag for var in PG_VARS for flag in ("-e", var)]
+
+
+def pg_env(url) -> dict[str, str]:
+    """The PG* variables the containerized client needs to reach ``url``."""
+    host = url.host or "localhost"
+    is_local = host in LOCAL_HOSTS
+    return {
+        "PGHOST": DOCKER_HOST_GATEWAY if is_local else host,
+        "PGPORT": str(url.port or 5432),
+        "PGDATABASE": url.database or "postgres",
+        "PGUSER": url.username or "postgres",
+        "PGPASSWORD": url.password or "",
+        "PGSSLMODE": "disable" if is_local else "require",
+    }
 
 
 def docker_run(*cmd, stdout=None, stdin_data=None):
@@ -42,7 +52,9 @@ def docker_run(*cmd, stdout=None, stdin_data=None):
         )
 
 
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(
+    description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+)
 parser.add_argument("file", nargs="?")
 parser.add_argument(
     "--smoke", "--dry-run", action="store_true", help="check the connection, don't dump"
@@ -62,22 +74,40 @@ parser.add_argument(
     action="store_true",
     help="create the database from the archive before restoring into it",
 )
-parser.add_argument("-d", "--database", type=str, help="the database name")
+parser.add_argument(
+    "--db-url", help="whole SQLAlchemy URL; overrides every other target option"
+)
+parser.add_argument(
+    "--db-host", help="hostname, or a shorthand: local, staging (see lib.settings)"
+)
+parser.add_argument("--db-port", type=int, help="database port")
+parser.add_argument(
+    "-d", "--db-name", "--database", dest="db_name", help="database name"
+)
+parser.add_argument("--db-user", help="database user")
 args = parser.parse_args()
 
-if args.database:
-    os.environ["PGDATABASE"] = args.database
+url = script_settings().database_url(
+    url=args.db_url,
+    host=args.db_host,
+    port=args.db_port,
+    database=args.db_name,
+    user=args.db_user,
+)
+os.environ.update(pg_env(url))
+print(f"db: {url}")
 
 if args.smoke:
     docker_run("psql", "-tqc", "select 1")
     print("ok")
 elif args.restore:
-    if not args.file or not args.database:
-        parser.error("[file] and --database required with --restore")
+    if not args.file or not args.db_name:
+        parser.error("[file] and --db-name required with --restore")
     with open(args.file, "rb") as f:
         dump_data = f.read()
+    database = url.database
     if dump_data.startswith(b"PGDMP"):
-        cmd = ["pg_restore", "-d", args.database]
+        cmd = ["pg_restore", "-d", database]
         if args.clean:
             cmd.append("-c")
         if args.create:
@@ -85,7 +115,7 @@ elif args.restore:
         docker_run(*cmd, stdin_data=dump_data)
     else:
         docker_run(
-            "psql", "-v", "ON_ERROR_STOP=1", "-d", args.database, stdin_data=dump_data
+            "psql", "-v", "ON_ERROR_STOP=1", "-d", database, stdin_data=dump_data
         )
     print(f"restored from {args.file}")
 elif args.file:
