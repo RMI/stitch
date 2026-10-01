@@ -337,8 +337,12 @@ jobs:
         OTEL_SERVICE_NAME=stitch-api
         OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: api
-      # Only the production release stays warm; everything else scales to zero.
-      min-replicas: ${{ needs.resolve-context.outputs.always-on }}
+      # demo/trace: pinned warm with bumped resources for the Climate Trace demo.
+      # Revert to `min-replicas: ${{ needs.resolve-context.outputs.always-on }}`
+      # (and drop cpu/memory) before merging.
+      min-replicas: "1"
+      cpu: "2.0"
+      memory: "4.0Gi"
 
   deploy-stitch-llm:
     name: "Deploy stitch-llm"
@@ -370,8 +374,8 @@ jobs:
         OTEL_SERVICE_NAME=stitch-llm
         OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: stitch-llm
-      # Only the production release stays warm; everything else scales to zero.
-      min-replicas: ${{ needs.resolve-context.outputs.always-on }}
+      # demo/trace: pinned warm for the Climate Trace demo. Revert before merging.
+      min-replicas: "1"
 
   deploy-etl:
     name: "Deploy ETL"
