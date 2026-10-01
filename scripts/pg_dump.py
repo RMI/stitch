@@ -4,7 +4,7 @@
 Runs psql/pg_dump/pg_restore via the official postgres Docker image, so nothing needs to
 be installed locally besides Docker.
 
-Put PGUSER/PGPASSWORD in scripts/.env.pg first (chmod 600). Connection settings
+Put PGUSER/PGPASSWORD in .env.scripts first (chmod 600). Connection settings
 otherwise come from the repo env files (see lib.env.DEFAULT_ENV_FILES).
 
     ./scripts/pg_dump.py out.dump -d <database>
@@ -17,10 +17,8 @@ import os
 import subprocess
 
 from lib.env import load_script_env
-from lib.paths import scripts_dir
 
-# scripts/.env.pg carries the credentials and outranks the repo-wide env files.
-load_script_env(scripts_dir() / ".env.pg")
+load_script_env()
 os.environ.setdefault("PGHOST", "stitch-staging.postgres.database.azure.com")
 os.environ.setdefault("PGPORT", "5432")
 os.environ.setdefault("PGDATABASE", "pr_0295_demo_integrate_6dbf")

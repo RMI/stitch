@@ -8,8 +8,6 @@ from dotenv import load_dotenv
 
 from .paths import repo_root
 
-# Most specific first. Nothing already set is overwritten, so an earlier file
-# wins and the repo-wide `.env` still supplies whatever the others leave unset.
 DEFAULT_ENV_FILES = (".env.scripts", "scripts/.env", ".env")
 
 
@@ -34,8 +32,6 @@ def load_script_env(
         candidate = Path(raw)
         path = candidate if candidate.is_absolute() else base / candidate
         if path.is_file():
-            # override=False is the default; stated here because the whole
-            # precedence model depends on it.
             load_dotenv(path, override=False)
             loaded.append(path)
 
