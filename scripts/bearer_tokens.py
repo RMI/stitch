@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Mint and inspect the two downstream bearer tokens.
 
-    ./scripts/bearer_tokens.py mint                 # mint and write locally
-    ./scripts/bearer_tokens.py mint --push          # also all three environments
-    ./scripts/bearer_tokens.py mint --push staging  # just one
-    ./scripts/bearer_tokens.py check                # report what the tokens carry
+    ./scripts/bearer_tokens.py mint
+    ./scripts/bearer_tokens.py mint --push
+    ./scripts/bearer_tokens.py mint --push staging
+    ./scripts/bearer_tokens.py check
     ./scripts/bearer_tokens.py check --file ../stitch-etl/.env --min-hours 168
 
 Run `mint` through `refresh_tokens.sh`, which widens the API's token lifetime and
@@ -64,12 +64,8 @@ _DIR = Path(__file__).resolve().parent
 PW_FILE = _DIR / ".env.auth0.pw"
 DEFAULT_OUT = _DIR / ".env.stitch-tokens"
 
-# `gh` on this machine is a zsh function wrapping `op plugin run`, and a script
-# never sees it, so the plugin is invoked by name instead.
 GH = ["op", "plugin", "run", "--", "gh"] if shutil.which("op") else ["gh"]
 
-# Widening this to log a raw value, or raising http.client's debuglevel, would
-# dump the password in the form body and the permissions in the token.
 SENSITIVE = frozenset({"access_token", "id_token", "password", "refresh_token"})
 
 logger = logging.getLogger("bearer")
@@ -82,8 +78,6 @@ class Account:
     expected: frozenset[str]
 
 
-# Dedupe reads every source before posting, so a missing source:read:<key> would
-# silently re-post that dataset instead of failing.
 ACCOUNTS = (
     Account(
         "etl",
@@ -234,8 +228,6 @@ def mint_one(account: Account, password: str) -> str:
         "[%s] claims %s", account.key, json.dumps(redact(claims), sort_keys=True)
     )
 
-    # A token for the wrong account authenticates fine and fails much later, as a
-    # permission error pointing nowhere near the real cause.
     if claims.get("sub") != expected_sub:
         sys.exit(f"[{account.key}] sub is {claims.get('sub')}, expected {expected_sub}")
 
@@ -257,7 +249,6 @@ def push(tokens: dict[str, str], environments: list[str]) -> None:
     """Set both secrets on each GitHub environment, under the same names."""
     for environment in environments:
         for var, token in tokens.items():
-            # Value on stdin, never argv, so it stays out of the process list.
             command = [*GH, "secret", "set", var, "--repo", REPO, "--env", environment]
             logger.info("Running: %s (value on stdin)", " ".join(command))
             started = time.monotonic()
@@ -270,8 +261,6 @@ def push(tokens: dict[str, str], environments: list[str]) -> None:
             if result.returncode:
                 hint = ""
                 if "not accessible by personal access token" in result.stderr:
-                    # Reading repos and environments needs no Secrets permission,
-                    # so the token looks fine right up until this call.
                     hint = (
                         "\nThe token authenticated but lacks the Secrets permission. Add "
                         "Repository permissions -> Secrets: Read and write for "
@@ -290,9 +279,6 @@ def mint(args: argparse.Namespace) -> int:
     if args.force_auth0:
         logger.info("--force-auth0 given; not reusing %s", DEFAULT_OUT)
 
-    # refresh_tokens.sh runs this first and only widens Auth0 when it says yes,
-    # so every SCRIPTS__ key has to be resolved here, before the tenant is
-    # touched, rather than part way through the mint.
     if args.needs_mint:
         for account in ACCOUNTS:
             email_of(account)
@@ -307,8 +293,6 @@ def mint(args: argparse.Namespace) -> int:
             sys.exit(f"{PW_FILE} is missing (ETL_PASSWORD=, LLM_PASSWORD=)")
         passwords = read_env_file(PW_FILE)
 
-        # Mint both before writing either, so a failure on the second account
-        # cannot leave the output file half updated.
         tokens = {}
         for account in ACCOUNTS:
             password = passwords.get(f"{account.key.upper()}_PASSWORD")
@@ -323,7 +307,6 @@ def mint(args: argparse.Namespace) -> int:
         logger.info("%s %s (0600)", "Overwrote" if existed else "Created", DEFAULT_OUT)
         print(f"\nWrote {', '.join(tokens)} to {DEFAULT_OUT} (0600).")
 
-    # argparse gives None when --push is absent and [] when it is bare.
     if args.push is not None:
         environments = args.push or list(ENVIRONMENTS)
         print(f"\nSetting secrets on {REPO}:")
@@ -418,8 +401,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    # Shared via parents= so -v is accepted on either side of the subcommand;
-    # declaring it on both parsers would let the subparser reset it to False.
     shared = argparse.ArgumentParser(add_help=False)
     shared.add_argument(
         "-v",
@@ -446,7 +427,6 @@ def main() -> int:
         action="store_true",
         help="mint even when the tokens on disk still have more than a day left",
     )
-    # How refresh_tokens.sh asks whether it needs to widen Auth0 at all.
     minter.add_argument("--needs-mint", action="store_true", help=argparse.SUPPRESS)
 
     checker = subparsers.add_parser(
