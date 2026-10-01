@@ -105,6 +105,10 @@ jobs:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       container-app-name: ${{ format('{0}-api', needs.resolve-context.outputs.deployment-name) }}
 
+  # The entity-linkage service was removed; entity linkage is now an endpoint
+  # on stitch-api. This teardown job stays so PR lanes that deployed an `-el`
+  # container app before the removal still clean themselves up on close.
+  # Delete it once no open lane has one (see the tech-debt ticket).
   delete-entity-linkage-container-app:
     name: Delete entity-linkage container app
     needs: [resolve-context]

@@ -141,6 +141,26 @@
 
 ---
 
+### `POST /api/v1/oil-gas-fields/merge-candidates/link-all`
+
+Query every group of duplicate resources and queue each one for review.
+`apply_merges` defaults to false, which makes the call a dry run that reports the
+groups and writes nothing. Groups whose resource-id set already has a candidate are
+skipped, so repeat runs are safe.
+
+**Query Parameters:**
+
+- `apply_merges`: boolean (default `false`)
+
+**Response:** `200` — `LinkAllResponse`
+
+- `apply_merges`: boolean
+- `match_groups`: array[array[integer]]
+- `merge_candidates_created`: integer
+- `merge_candidates_skipped`: integer
+
+---
+
 ### `POST /api/v1/oil-gas-fields/merge-candidates/{id}/approve`
 
 <!-- description -->

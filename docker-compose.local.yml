@@ -61,40 +61,16 @@ services:
     depends_on:
       api:
         condition: service_healthy
+        # `stack-api-dev` runs the API on the host, so the `api` service is
+        # not in the project there. Compose refuses to load a project whose
+        # depends_on target is excluded by the active profiles, so marking
+        # this optional is what lets that mode start at all. When `api` is in
+        # the project (the `full` profile) the health condition still applies.
+        required: false
     volumes:
       - ./deployments/seed/data:/mnt/data:ro
     restart: "no"
     profiles: ["seed", "full"]
-
-  entity-linkage:
-    build:
-      context: .
-      dockerfile: deployments/entity-linkage/Dockerfile
-    env_file:
-      - .env
-    environment:
-      LOG_LEVEL: ${ENTITY_LINKAGE_LOG_LEVEL:-info}
-      ENTITY_LINKAGE_API_BASE_URL: ${ENTITY_LINKAGE_API_BASE_URL:-http://api:8000/api/v1}
-      STITCH_CLIENT_BEARER_TOKEN: ${STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN:?STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN must be set}
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=2).read()\" || exit 1"
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
-      start_interval: 1s
-    ports:
-      - "8001:8000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      api:
-        condition: service_healthy
-    profiles: ["entity-linkage", "full", "friends"]
 
   stitch-llm:
     build:
@@ -104,6 +80,8 @@ services:
       - .env
     environment:
       LOG_LEVEL: ${STITCH_LLM_LOG_LEVEL:-info}
+      # Inside compose network, talk to the api service by name.
+      STITCH_LLM_API_BASE_URL: ${STITCH_LLM_API_BASE_URL:-http://api:8000/api/v1}
       STITCH_CLIENT_BEARER_TOKEN: ${STITCH_CLIENT_LLM_BEARER_TOKEN:?STITCH_CLIENT_LLM_BEARER_TOKEN must be set}
     healthcheck:
       test:
@@ -123,4 +101,10 @@ services:
     depends_on:
       api:
         condition: service_healthy
+        # `stack-api-dev` runs the API on the host, so the `api` service is
+        # not in the project there. Compose refuses to load a project whose
+        # depends_on target is excluded by the active profiles, so marking
+        # this optional is what lets that mode start at all. When `api` is in
+        # the project (the `full` profile) the health condition still applies.
+        required: false
     profiles: ["stitch-llm", "full", "friends"]

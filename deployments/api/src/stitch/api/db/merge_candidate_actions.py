@@ -386,6 +386,33 @@ async def _reroute_pending_candidates(
     await session.flush()
 
 
+async def create_merge_candidates_bulk(
+    session: AsyncSession,
+    user: CurrentUser,
+    groups: Sequence[Sequence[int]],
+) -> None:
+    with named_query("merge_candidates.bulk_create"):
+        candidates = [
+            MergeCandidateModel.create(created_by=user, fingerprint=_fingerprint(group))
+            for group in groups
+        ]
+        session.add_all(candidates)
+        await session.flush()
+
+        session.add_all(
+            [
+                MergeCandidateItemModel(
+                    merge_candidate_id=candidate.id,
+                    resource_id=resource_id,
+                    position=position,
+                )
+                for candidate, group in zip(candidates, groups)
+                for position, resource_id in enumerate(group)
+            ]
+        )
+        await session.flush()
+
+
 async def approve_merge_candidate(
     session: AsyncSession,
     user: CurrentUser,
