@@ -12,12 +12,13 @@ afterEach(() => {
 });
 
 describe("mergeReviewSortPreference", () => {
-  it("offers newest, oldest and both name orders, newest first by default", () => {
+  it("offers newest, oldest, both name orders and status, newest first by default", () => {
     expect(MERGE_REVIEW_SORT_OPTIONS.map((o) => o.value)).toEqual([
       "newest",
       "oldest",
       "name-asc",
       "name-desc",
+      "status",
     ]);
     expect(DEFAULT_MERGE_REVIEW_SORT).toBe("newest");
   });

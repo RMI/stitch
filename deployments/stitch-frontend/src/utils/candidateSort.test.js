@@ -24,6 +24,20 @@ describe("sortCandidates", () => {
     expect(ids(list)).toEqual([5, 4, 3, 2, 1]);
   });
 
+  it("groups by status for 'status': candidates, then denied, then approved, newest first within each", () => {
+    const mixed = [
+      { id: 6, status: "APPROVED" },
+      { id: 5, status: "PENDING" },
+      { id: 4, status: "DENIED" },
+      { id: 3, status: "APPROVED" },
+      { id: 2, status: "PENDING" },
+      { id: 1, status: "DENIED" },
+    ];
+    expect(ids(sortCandidates(mixed, "status", new Map()))).toEqual([
+      5, 2, 4, 1, 6, 3,
+    ]);
+  });
+
   describe("by name", () => {
     const names = new Map([
       [5, "burgan"],

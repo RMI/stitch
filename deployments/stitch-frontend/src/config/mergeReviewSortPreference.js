@@ -13,6 +13,7 @@ export const MERGE_REVIEW_SORT_OPTIONS = [
   { value: "oldest", label: "Oldest first" },
   { value: "name-asc", label: "Name A–Z" },
   { value: "name-desc", label: "Name Z–A" },
+  { value: "status", label: "Status" },
 ];
 
 export const DEFAULT_MERGE_REVIEW_SORT = "newest";

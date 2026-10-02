@@ -762,7 +762,13 @@ describe("MergeCandidateReviewPage", () => {
         within(sort)
           .getAllByRole("option")
           .map((option) => option.textContent),
-      ).toEqual(["Newest first", "Oldest first", "Name A–Z", "Name Z–A"]);
+      ).toEqual([
+        "Newest first",
+        "Oldest first",
+        "Name A–Z",
+        "Name Z–A",
+        "Status",
+      ]);
     });
 
     it("orders the queue by name once the names have loaded", async () => {
@@ -794,6 +800,37 @@ describe("MergeCandidateReviewPage", () => {
         "oldest",
       );
       expect(queueOrder()).toEqual(["Arabian Merged", "Bergan"]);
+    });
+
+    it("orders the queue by status: candidates first, then denied, then approved", async () => {
+      const deniedCandidate = {
+        id: 15,
+        status: "DENIED",
+        resource_ids: [501, 502],
+        merged_resource_id: null,
+      };
+      vi.mocked(useMergeCandidates).mockReturnValue({
+        ...defaultHookReturn,
+        // API order (newest first): approved, denied, pending.
+        data: [candidates[1], deniedCandidate, pendingCandidate],
+      });
+      const user = userEvent.setup();
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+      await user.click(screen.getByLabelText("Show approved merges"));
+
+      await user.selectOptions(
+        within(queue()).getByRole("combobox", { name: "Sort" }),
+        "status",
+      );
+
+      const statuses = within(queue())
+        .getAllByRole("button")
+        .map((item) => item.textContent.match(/CANDIDATE|DENIED|APPROVED/)[0]);
+      expect(statuses).toEqual(["CANDIDATE", "DENIED", "APPROVED"]);
+      // Status needs no names, so there is nothing to wait for.
+      expect(
+        within(queue()).queryByText(/Loading names/),
+      ).not.toBeInTheDocument();
     });
 
     it("says the name order is not final while names are still loading", async () => {
