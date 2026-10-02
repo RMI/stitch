@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { sortCandidates } from "./candidateSort";
 
 // The API lists candidates newest first; tests use that order as given.
@@ -66,5 +66,41 @@ describe("sortCandidates", () => {
         3, 1, 5, 4, 2,
       ]);
     });
+  });
+});
+
+describe("sortCandidates in a non-English browser", () => {
+  // In Swedish, "ä" is its own letter sorted after "z", even at base
+  // sensitivity. The control promises accent-insensitive names everywhere,
+  // so the order must not depend on the browser's language.
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.resetModules();
+  });
+
+  it("still sorts accented letters with their base letter", async () => {
+    const RealCollator = Intl.Collator;
+    // A regular function, not an arrow, because the code calls it with `new`.
+    vi.spyOn(Intl, "Collator").mockImplementation(
+      function SwedishDefaultCollator(locales, options) {
+        return new RealCollator(locales ?? "sv", options);
+      },
+    );
+    vi.resetModules();
+    const { sortCandidates: sortWithSwedishDefault } =
+      await import("./candidateSort");
+
+    const names = new Map([
+      [3, "Zeta"],
+      [2, "Ägir"],
+      [1, "Alpha"],
+    ]);
+    const sorted = sortWithSwedishDefault(
+      [{ id: 3 }, { id: 2 }, { id: 1 }],
+      "name-asc",
+      names,
+    );
+    // "Ägir" sorts as "Agir": before "Alpha", not after "Zeta".
+    expect(sorted.map((candidate) => candidate.id)).toEqual([2, 1, 3]);
   });
 });

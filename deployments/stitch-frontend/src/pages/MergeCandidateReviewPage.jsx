@@ -559,7 +559,8 @@ export default function MergeCandidateReviewPage() {
         // once the refreshed data is on its way. Failures surface via
         // `reviewMutation.error` and keep the current candidate selected.
         onSuccess: () => {
-          const nextPending = candidates?.find(
+          // Continue through the queue as displayed, in the chosen sort.
+          const nextPending = visibleCandidates?.find(
             (item) => item.id !== candidate.id && item.status === "PENDING",
           );
           if (nextPending) {

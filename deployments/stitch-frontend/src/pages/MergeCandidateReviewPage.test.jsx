@@ -840,6 +840,43 @@ describe("MergeCandidateReviewPage", () => {
       ).not.toBeInTheDocument();
     });
 
+    it("moves on to the next pending candidate in the displayed order after a review", async () => {
+      // API order (newest first) is 11, 13, 14; "Oldest first" shows 14, 13,
+      // 11 and selects 14. After approving it, the next one shown is 13 --
+      // not 11, the first pending candidate in the API's order.
+      const thirdPendingCandidate = {
+        id: 14,
+        status: "PENDING",
+        resource_ids: [401, 402],
+        merged_resource_id: null,
+      };
+      vi.mocked(useMergeCandidates).mockReturnValue({
+        ...defaultHookReturn,
+        data: [pendingCandidate, nextPendingCandidate, thirdPendingCandidate],
+      });
+      vi.mocked(useMergeCandidate).mockImplementation((_endpoint, id) => ({
+        ...defaultHookReturn,
+        data:
+          id === pendingCandidate.id
+            ? pendingDetail
+            : id === nextPendingCandidate.id
+              ? nextPendingCandidate
+              : thirdPendingCandidate,
+      }));
+      window.sessionStorage.setItem("stitch.mergeReview.sort", "oldest");
+      const user = userEvent.setup();
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+      expect(
+        screen.getByRole("heading", { name: "Candidate #14" }),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Approve merge" }));
+
+      expect(
+        await screen.findByRole("heading", { name: "Candidate #13" }),
+      ).toBeInTheDocument();
+    });
+
     it("remembers the chosen sort when the page is opened again", async () => {
       const user = userEvent.setup();
       const { unmount } = renderWithQueryClient(<MergeCandidateReviewPage />);

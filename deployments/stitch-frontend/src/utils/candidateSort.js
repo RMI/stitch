@@ -8,7 +8,10 @@
 // from `namesById`) cannot be placed, so those go at the end, newest first,
 // until their names arrive.
 
-const nameCollator = new Intl.Collator(undefined, { sensitivity: "base" });
+// Pinned to English rather than the browser's language: some locales treat
+// accented letters as letters of their own (Swedish sorts "ä" after "z"), which
+// would break the accent-insensitive order the control promises.
+const nameCollator = new Intl.Collator("en", { sensitivity: "base" });
 
 export function sortCandidates(candidates, sort, namesById) {
   if (sort === "oldest") return [...candidates].reverse();
