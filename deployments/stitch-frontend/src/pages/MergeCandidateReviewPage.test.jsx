@@ -21,10 +21,17 @@ vi.mock("../queries/api", () => ({
 }));
 
 vi.mock("../components/MergeSourceComparison", () => ({
-  default: ({ resourceIds, compare, isLoading }) => (
+  default: ({ resourceIds, compare, isLoading, sourceDetails }) => (
     <div>
       Source comparison for {resourceIds.join(", ")}
       {compare ? " (compare loaded)" : isLoading ? " (loading)" : ""}
+      {sourceDetails?.data ? (
+        <span>
+          {" "}
+          (name sources:{" "}
+          {sourceDetails.data.map((d) => d?.provenance?.name).join(", ")})
+        </span>
+      ) : null}
     </div>
   ),
 }));
@@ -319,7 +326,12 @@ describe("MergeCandidateReviewPage", () => {
     expect(
       screen.getByRole("button", { name: /Arabian Merged/ }),
     ).toBeInTheDocument();
-    expect(getResourceDetail).not.toHaveBeenCalled();
+    // Only the selected candidate's resources are fetched, for its source
+    // mix; the other rows' resources (201, 202, 301) are not.
+    const fetchedIds = vi
+      .mocked(getResourceDetail)
+      .mock.calls.map(([, id]) => id);
+    expect(new Set(fetchedIds)).toEqual(new Set([101, 102]));
   });
 
   it("shows the detail's name in the panel heading once it loads", () => {
@@ -345,6 +357,22 @@ describe("MergeCandidateReviewPage", () => {
       "href",
       "/oil-gas-fields/102",
     );
+  });
+
+  it("gives the source comparison each resource's source details", async () => {
+    vi.mocked(getResourceDetail).mockImplementation((_config, id) =>
+      Promise.resolve(
+        {
+          101: { provenance: { name: "gem" } },
+          102: { provenance: { name: "wm" } },
+        }[id],
+      ),
+    );
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      await screen.findByText(/\(name sources: gem, wm\)/),
+    ).toBeInTheDocument();
   });
 
   it("shows the source comparison instead of the merged preview", () => {
@@ -521,6 +549,23 @@ describe("MergeCandidateReviewPage", () => {
     expect(
       screen.queryByText("Source comparison for 201, 202"),
     ).not.toBeInTheDocument();
+  });
+
+  it("does not fetch source details for an already-merged candidate", () => {
+    const mergedCandidate = candidates[1];
+    mockQueue([mergedCandidate]);
+    vi.mocked(useMergeCandidate).mockReturnValue({
+      ...defaultHookReturn,
+      data: mergedCandidate,
+    });
+
+    renderWithQueryClient(<MergeCandidateReviewPage />, {
+      initialEntries: [ALL_STATUSES_URL],
+    });
+
+    // The merged resource replaces the comparison, so its source mix is unused.
+    expect(screen.getByText("Merged resource 301")).toBeInTheDocument();
+    expect(getResourceDetail).not.toHaveBeenCalled();
   });
 
   it("shows the merged resource's name in the heading once merged", async () => {

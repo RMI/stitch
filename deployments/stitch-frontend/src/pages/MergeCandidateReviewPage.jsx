@@ -12,6 +12,7 @@ import {
 } from "../config/mergeReviewParams";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useMergeReviewState } from "../hooks/useMergeReviewState";
+import { useMergeSourceDetails } from "../hooks/useMergeSourceDetails";
 import {
   useMergeCandidates,
   useMergeCandidate,
@@ -349,6 +350,15 @@ function CandidateDecisionPanel({
   } = candidateQuery;
 
   const candidate = detailCandidate ?? listCandidate;
+  // The source resources' detail views, for the per-column source mix in the
+  // comparison. Fetched for the selected candidate only (the queue no longer
+  // loads them, since the API names each candidate), and skipped once merged,
+  // when the merged resource is shown instead of the comparison.
+  const sourceDetails = useMergeSourceDetails(
+    ENDPOINT,
+    candidate?.resource_ids,
+    !candidate?.merged_resource_id,
+  );
 
   if (!selectedId) {
     return (
@@ -429,6 +439,7 @@ function CandidateDecisionPanel({
           isLoading={candidateLoading}
           isError={candidateError}
           error={candidateErrorObj}
+          sourceDetails={sourceDetails}
         />
       )}
 
