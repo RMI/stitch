@@ -583,4 +583,62 @@ describe("ColophonPanel", () => {
       screen.queryByRole("button", { name: "Refresh token" }),
     ).not.toBeInTheDocument();
   });
+
+  it("disables copying while a refresh is in progress", async () => {
+    const { default: ColophonPanel } = await import("./ColophonPanel");
+
+    renderWithQueryClient(<ColophonPanel diagnosticsOpen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("test-access-token")).toBeInTheDocument();
+    });
+
+    let finishRefresh;
+    getAccessTokenSilently.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishRefresh = resolve;
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "More token actions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh token" }));
+
+    expect(
+      screen.getByRole("button", { name: "Refreshing..." }),
+    ).toBeDisabled();
+
+    finishRefresh("refreshed-access-token");
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Token refreshed!" }),
+      ).toBeEnabled();
+    });
+  });
+
+  it("shows copy feedback when copying right after a refresh", async () => {
+    const { default: ColophonPanel } = await import("./ColophonPanel");
+
+    renderWithQueryClient(<ColophonPanel diagnosticsOpen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("test-access-token")).toBeInTheDocument();
+    });
+
+    getAccessTokenSilently.mockResolvedValue("refreshed-access-token");
+
+    fireEvent.click(screen.getByRole("button", { name: "More token actions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh token" }));
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Token refreshed!" }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Token copied!" }),
+      ).toBeInTheDocument();
+    });
+    expect(clipboardSpy).toHaveBeenCalledWith("refreshed-access-token");
+  });
 });
