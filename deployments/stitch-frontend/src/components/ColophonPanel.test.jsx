@@ -476,4 +476,75 @@ describe("ColophonPanel", () => {
 
     expect(clipboardSpy).toHaveBeenCalledWith("test-access-token");
   });
+
+  it("refreshes the token without using the cache and reloads diagnostics", async () => {
+    const { default: ColophonPanel } = await import("./ColophonPanel");
+
+    const { queryClient } = renderWithQueryClient(
+      <ColophonPanel diagnosticsOpen />,
+    );
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    await waitFor(() => {
+      expect(screen.getByText("stitch-api")).toBeInTheDocument();
+    });
+
+    const authMeUrl = "http://localhost:8000/api/v1/auth/me";
+    const authMeCallsBefore = fetchMock.mock.calls.filter(
+      ([url]) => url === authMeUrl,
+    ).length;
+    getAccessTokenSilently.mockResolvedValue("refreshed-access-token");
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh token" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Token refreshed!" }),
+      ).toBeInTheDocument();
+    });
+
+    expect(getAccessTokenSilently).toHaveBeenCalledWith({
+      authorizationParams: { audience: "https://stitch-api.local" },
+      cacheMode: "off",
+    });
+    expect(screen.getByText("refreshed-access-token")).toBeInTheDocument();
+    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.filter(([url]) => url === authMeUrl).length,
+      ).toBeGreaterThan(authMeCallsBefore);
+    });
+  });
+
+  it("shows a failure and keeps the current token when refresh fails", async () => {
+    const { default: ColophonPanel } = await import("./ColophonPanel");
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    renderWithQueryClient(<ColophonPanel diagnosticsOpen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("test-access-token")).toBeInTheDocument();
+    });
+
+    getAccessTokenSilently.mockRejectedValueOnce(new Error("login_required"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh token" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Refresh failed" }),
+      ).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("test-access-token")).toBeInTheDocument();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "Failed to refresh access token:",
+      expect.any(Error),
+    );
+
+    consoleErrorSpy.mockRestore();
+  });
 });
