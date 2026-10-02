@@ -12,9 +12,9 @@ properties:
       replicaCompletionCount: 1
     secrets:
       - name: pgpassword
-        value: "${LANE_PGPASSWORD}"
+        value: ${LANE_PGPASSWORD_JSON}
       - name: storagekey
-        value: "${LANE_STORAGE_KEY}"
+        value: ${LANE_STORAGE_KEY_JSON}
   template:
     volumes:
       - name: scratch

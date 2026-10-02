@@ -59,5 +59,9 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Ensure containerapp extension is available
+        run: |
+          az extension add --name containerapp --upgrade --allow-preview true
+
       - name: Deploy the backup job
         run: .github/scripts/deploy_backup_job.sh
