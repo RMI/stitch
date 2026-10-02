@@ -495,6 +495,7 @@ describe("ColophonPanel", () => {
     ).length;
     getAccessTokenSilently.mockResolvedValue("refreshed-access-token");
 
+    fireEvent.click(screen.getByRole("button", { name: "More token actions" }));
     fireEvent.click(screen.getByRole("button", { name: "Refresh token" }));
 
     await waitFor(() => {
@@ -531,6 +532,7 @@ describe("ColophonPanel", () => {
 
     getAccessTokenSilently.mockRejectedValueOnce(new Error("login_required"));
 
+    fireEvent.click(screen.getByRole("button", { name: "More token actions" }));
     fireEvent.click(screen.getByRole("button", { name: "Refresh token" }));
 
     await waitFor(() => {
@@ -546,5 +548,39 @@ describe("ColophonPanel", () => {
     );
 
     consoleErrorSpy.mockRestore();
+  });
+
+  it("opens the token menu from the arrow and closes it on Escape or an outside click", async () => {
+    const { default: ColophonPanel } = await import("./ColophonPanel");
+
+    renderWithQueryClient(<ColophonPanel diagnosticsOpen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("stitch-api")).toBeInTheDocument();
+    });
+
+    const menuButton = screen.getByRole("button", {
+      name: "More token actions",
+    });
+    expect(menuButton).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("button", { name: "Refresh token" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(menuButton);
+    expect(menuButton).toHaveAttribute("aria-expanded", "true");
+    const refreshItem = screen.getByRole("button", { name: "Refresh token" });
+
+    fireEvent.keyDown(refreshItem, { key: "Escape" });
+    expect(
+      screen.queryByRole("button", { name: "Refresh token" }),
+    ).not.toBeInTheDocument();
+    expect(menuButton).toHaveFocus();
+
+    fireEvent.click(menuButton);
+    fireEvent.mouseDown(document.body);
+    expect(
+      screen.queryByRole("button", { name: "Refresh token" }),
+    ).not.toBeInTheDocument();
   });
 });
