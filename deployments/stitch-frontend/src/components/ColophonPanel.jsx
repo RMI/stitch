@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { createAuthenticatedFetcher } from "../auth/api";
 import useBackendDiagnostics from "../hooks/useBackendDiagnostics";
 import { useConfig } from "../config/useConfig";
@@ -146,6 +147,7 @@ function getApiDocsUrl(apiBaseUrl) {
 
 export default function ColophonPanel({ diagnosticsOpen = false }) {
   const config = useConfig();
+  const queryClient = useQueryClient();
   const systemInfo = useSystemInfo();
   const { getAccessTokenSilently, isAuthenticated, isLoading } = useAuth0();
   const authenticatedFetcher = useMemo(() => {
@@ -173,6 +175,7 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
   const [copyError, setCopyError] = useState(false);
   const [tokenCopied, setTokenCopied] = useState(false);
   const [tokenCopyError, setTokenCopyError] = useState(false);
+  const [tokenRefreshStatus, setTokenRefreshStatus] = useState("idle");
 
   const apiDocsUrl = getApiDocsUrl(config.apiBaseUrl);
 
@@ -298,6 +301,32 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
     }
   }
 
+  // Logging out now ends the Auth0 session (STIT-721), so a quick log out and
+  // back in no longer picks up permission changes. Skipping the token cache
+  // makes Auth0 issue a new token that carries the user's current permissions;
+  // the diagnostics and any loaded app data are then refetched with it.
+  async function handleRefreshToken() {
+    setTokenRefreshStatus("refreshing");
+
+    try {
+      const token = await getAccessTokenSilently({
+        authorizationParams: { audience: config.auth0.audience },
+        cacheMode: "off",
+      });
+
+      setAccessToken(token);
+      setTokenStatus("Available");
+      backendDiagnostics.reload();
+      void queryClient.invalidateQueries();
+      setTokenRefreshStatus("refreshed");
+    } catch (error) {
+      console.error("Failed to refresh access token:", error);
+      setTokenRefreshStatus("failed");
+    }
+
+    window.setTimeout(() => setTokenRefreshStatus("idle"), 2000);
+  }
+
   return (
     <div className="border-b border-line bg-surface">
       <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6 lg:px-8">
@@ -317,6 +346,22 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
                 : tokenCopyError
                   ? "Token copy failed"
                   : "Copy token"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleRefreshToken()}
+              disabled={!isAuthenticated || tokenRefreshStatus === "refreshing"}
+              className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:border-line-strong hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              title="Get a new access token with your latest permissions"
+            >
+              {tokenRefreshStatus === "refreshing"
+                ? "Refreshing..."
+                : tokenRefreshStatus === "refreshed"
+                  ? "Token refreshed!"
+                  : tokenRefreshStatus === "failed"
+                    ? "Refresh failed"
+                    : "Refresh token"}
             </button>
 
             {apiDocsUrl ? (

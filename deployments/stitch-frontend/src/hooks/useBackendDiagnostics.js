@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 async function parseJsonResponse(response) {
   return response.json().catch(() => null);
@@ -32,6 +32,8 @@ export default function useBackendDiagnostics(
     error: null,
     data: null,
   });
+  const [reloadCount, setReloadCount] = useState(0);
+  const reload = useCallback(() => setReloadCount((count) => count + 1), []);
 
   useEffect(() => {
     if (!enabled) {
@@ -110,7 +112,7 @@ export default function useBackendDiagnostics(
     return () => {
       cancelled = true;
     };
-  }, [apiBaseUrl, authFetcher, enabled]);
+  }, [apiBaseUrl, authFetcher, enabled, reloadCount]);
 
-  return state;
+  return useMemo(() => ({ ...state, reload }), [state, reload]);
 }
