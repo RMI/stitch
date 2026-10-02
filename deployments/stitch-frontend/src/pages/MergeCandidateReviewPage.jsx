@@ -6,6 +6,7 @@ import MergedResourceView from "../components/MergedResourceView";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useMergeCandidateName } from "../hooks/useMergeCandidateName";
 import { useMergedResourceDetail } from "../hooks/useMergedResourceDetail";
+import { useMergeSourceDetails } from "../hooks/useMergeSourceDetails";
 import {
   useMergeCandidates,
   useMergeCandidate,
@@ -289,6 +290,13 @@ function CandidateDecisionPanel({
   // queue items already issued, so no extra requests — because falling back
   // to the id would flash "Candidate #N" on first selection.
   const queueName = useMergeCandidateName(ENDPOINT, candidate?.resource_ids);
+  // The source resources' detail views, for the per-column source mix in the
+  // comparison. Same cache entry the name lookup above reads, so no extra
+  // requests.
+  const sourceDetails = useMergeSourceDetails(
+    ENDPOINT,
+    candidate?.resource_ids,
+  );
   // Post-merge, the source resources are null shells and compare carries no
   // name, so the merged resource is the authoritative source. It shares the
   // cache entry MergedResourceView fetches, so this adds no requests.
@@ -382,6 +390,7 @@ function CandidateDecisionPanel({
           isLoading={candidateLoading}
           isError={candidateError}
           error={candidateErrorObj}
+          sourceDetails={sourceDetails}
         />
       )}
 
