@@ -189,12 +189,21 @@ export async function createSourceForResource(
   return await response.json();
 }
 
+// `status` is a list sent as a repeated param (any of them matches); omitted,
+// the API returns every status.
 export async function getMergeCandidates(
   config,
   fetcher,
   endpoint = "oil-gas-fields",
+  { page = 1, page_size = 50, status, sort_by, sort_order } = {},
 ) {
-  const url = `${config.apiBaseUrl}/${endpoint}/merge-candidates`;
+  const params = new URLSearchParams({ page, page_size });
+  for (const value of status ?? []) {
+    params.append("status", value);
+  }
+  if (sort_by) params.set("sort_by", sort_by);
+  if (sort_order) params.set("sort_order", sort_order);
+  const url = `${config.apiBaseUrl}/${endpoint}/merge-candidates?${params}`;
   const response = await fetcher(url);
 
   if (!response.ok) {

@@ -427,13 +427,70 @@ class AsyncStitchClient:
         )
         return self._expect_dict(payload, "POST /oil-gas-fields/merge-candidates")
 
-    async def list_merge_candidates(self) -> list[dict[str, Any]]:
+    async def list_merge_candidates_page(
+        self,
+        *,
+        page: int = 1,
+        page_size: int = 50,
+        status: Sequence[str] | None = None,
+    ) -> dict[str, Any]:
+        """One page of merge candidates, newest first.
+
+        ``status`` limits the page to candidates in any of the given statuses
+        (``PENDING``, ``APPROVED``, ``DENIED``); omitted, every status is
+        returned.
+
+        Raises:
+            ValueError: if ``page``/``page_size`` are out of range.
+            StitchAPIError: on a non-2xx response.
+        """
+        self._validate_page_params(page, page_size)
+        params: dict[str, Any] = {"page": page, "page_size": page_size}
+        if status is not None:
+            params["status"] = list(status)
         payload = await self._request_json(
             method="GET",
             path="/oil-gas-fields/merge-candidates",
             operation="GET /oil-gas-fields/merge-candidates",
+            params=params,
         )
-        return self._expect_list(payload, "GET /oil-gas-fields/merge-candidates")
+        return self._expect_dict(payload, "GET /oil-gas-fields/merge-candidates")
+
+    async def iter_merge_candidates(
+        self,
+        *,
+        page_size: int = MAX_PAGE_SIZE,
+        status: Sequence[str] | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Yield every merge candidate, fetching one page at a time.
+
+        Page-termination logic mirrors ``iter_oil_gas_fields``.
+        """
+        page = 1
+        while True:
+            payload = await self.list_merge_candidates_page(
+                page=page, page_size=page_size, status=status
+            )
+            raw_item_count = self._item_count(payload)
+            page_items = self._extract_items(payload)
+
+            if raw_item_count == 0:
+                return
+
+            for item in page_items:
+                yield item
+
+            total_pages = payload.get("total_pages")
+            if isinstance(total_pages, int) and page >= total_pages:
+                return
+
+            if not isinstance(total_pages, int) and not page_items:
+                return
+
+            if raw_item_count < page_size:
+                return
+
+            page += 1
 
     def _headers(self) -> dict[str, str]:
         if self._headers_provider is None:
@@ -601,16 +658,6 @@ class AsyncStitchClient:
         if isinstance(payload, dict):
             return payload
         raise StitchAPIError(f"{operation} returned non-object JSON payload")
-
-    @staticmethod
-    def _expect_list(payload: Any, operation: str) -> list[dict[str, Any]]:
-        if not isinstance(payload, list):
-            raise StitchAPIError(f"{operation} returned non-array JSON payload")
-        if not all(isinstance(item, dict) for item in payload):
-            raise StitchAPIError(
-                f"{operation} returned an array with non-object elements"
-            )
-        return payload
 
     @staticmethod
     def _extract_items(payload: dict[str, Any]) -> list[dict[str, Any]]:

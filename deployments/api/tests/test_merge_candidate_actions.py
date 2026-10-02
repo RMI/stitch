@@ -9,6 +9,7 @@ import pytest
 from stitch.api.entities import (
     MergeCandidateCreateRequest,
     MergeCandidateDetailView,
+    MergeCandidateQueryParams,
     MergeCandidateReviewRequest,
     MergeCandidateStatus,
 )
@@ -52,6 +53,7 @@ class FakeMergedResource:
 class FakeSession:
     scalar_result: object | None = None
     scalars_result: list[object] = field(default_factory=list)
+    execute_rows: list[tuple] = field(default_factory=list)
     added: list[object] = field(default_factory=list)
     added_all: list[object] = field(default_factory=list)
     deleted: list[object] = field(default_factory=list)
@@ -63,6 +65,9 @@ class FakeSession:
 
     async def scalars(self, _stmt):
         return SimpleNamespace(all=lambda: list(self.scalars_result))
+
+    async def execute(self, _stmt):
+        return SimpleNamespace(all=lambda: list(self.execute_rows))
 
     def add(self, obj):
         self.added.append(obj)
@@ -116,8 +121,18 @@ def test_candidate_to_view_sorts_items_by_position():
     assert view.id == 1
 
 
+def _named(name: str | None, source: str = "rmi", source_pk: int = 1):
+    """A coalesced resource whose only known field is ``name``."""
+    return SimpleNamespace(
+        view=OilGasFieldBase(name=name, country=None),
+        provenance={"name": None if name is None else (name, source, source_pk)},
+    )
+
+
 @pytest.mark.anyio
-async def test_list_merge_candidates_returns_views_in_query_order():
+async def test_list_merge_candidates_returns_page_with_names_and_counts(
+    monkeypatch,
+):
     first = FakeCandidate(
         id=2,
         status=MergeCandidateStatus.PENDING,
@@ -125,16 +140,69 @@ async def test_list_merge_candidates_returns_views_in_query_order():
     )
     second = FakeCandidate(
         id=1,
-        status=MergeCandidateStatus.DENIED,
+        status=MergeCandidateStatus.APPROVED,
         items=[FakeItem(20, 0), FakeItem(21, 1)],
+        merged_resource_id=30,
     )
-    session = FakeSession(scalars_result=[first, second])
+    session = FakeSession(
+        scalar_result=7,
+        scalars_result=[first, second],
+        execute_rows=[("PENDING", 5), ("APPROVED", 2)],
+    )
 
-    views = await mca.list_merge_candidates(session)
+    async def fake_coalesce(session_arg, resource_ids, licensed):
+        assert resource_ids == [18, 19, 20, 21, 30]
+        assert licensed == ["rmi"]
+        return {
+            18: _named("From WM", source="wm"),
+            19: _named("From RMI", source="rmi"),
+            # Merged-away originals are null shells; the merged resource names it.
+            20: _named(None),
+            21: _named(None),
+            30: _named("Merged"),
+        }
 
-    assert [view.id for view in views] == [2, 1]
-    assert views[0].resource_ids == [18, 19]
-    assert views[1].status == MergeCandidateStatus.DENIED
+    monkeypatch.setattr(mca, "coalesce_resources", fake_coalesce)
+
+    page = await mca.list_merge_candidates(
+        session, MergeCandidateQueryParams(page=1, page_size=2), ["rmi"]
+    )
+
+    assert [view.id for view in page.items] == [2, 1]
+    assert page.items[0].resource_ids == [18, 19]
+    # Best-ranked source wins regardless of resource order.
+    assert page.items[0].name == "From RMI"
+    assert page.items[1].name == "Merged"
+    assert page.total_count == 7
+    assert page.total_pages == 4
+    # Every status is reported, including ones with no candidates.
+    assert page.status_counts == {
+        MergeCandidateStatus.PENDING: 5,
+        MergeCandidateStatus.APPROVED: 2,
+        MergeCandidateStatus.DENIED: 0,
+    }
+
+
+def test_candidate_name_breaks_rank_ties_by_resource_position():
+    candidate = FakeCandidate(
+        id=1,
+        status=MergeCandidateStatus.PENDING,
+        items=[FakeItem(19, 1), FakeItem(18, 0)],
+    )
+    coalesced = {18: _named("First"), 19: _named("Second")}
+
+    assert mca._candidate_name(candidate, coalesced) == "First"
+
+
+def test_candidate_name_is_none_without_a_licensed_name():
+    candidate = FakeCandidate(
+        id=1,
+        status=MergeCandidateStatus.PENDING,
+        items=[FakeItem(18, 0), FakeItem(19, 1)],
+    )
+    coalesced = {18: _named(None), 19: _named(None)}
+
+    assert mca._candidate_name(candidate, coalesced) is None
 
 
 @pytest.mark.anyio
@@ -561,6 +629,7 @@ async def test_get_merge_candidate_returns_detail_view_in_item_order(monkeypatch
             rid: SimpleNamespace(
                 source_data=[SimpleNamespace(source="rmi", id=rid, name=f"name-{rid}")],
                 view=OilGasFieldBase(name=f"name-{rid}", country="USA"),
+                provenance={"name": (f"name-{rid}", "rmi", rid)},
             )
             for rid in resource_ids
         }
@@ -578,6 +647,7 @@ async def test_get_merge_candidate_returns_detail_view_in_item_order(monkeypatch
 
     assert isinstance(view, MergeCandidateDetailView)
     assert view.resource_ids == [18, 19]
+    assert view.name == "name-18"
     # resources detail objects are gone; compare carries the per-source values
     assert not hasattr(view, "resources")
     assert [c.field for c in view.compare] == list(OilGasFieldBase.model_fields)
@@ -607,10 +677,16 @@ async def test_get_merge_candidate_after_merge_yields_empty_compare(monkeypatch)
     async def fake_coalesce(session_arg, resource_ids, licensed):
         return {
             rid: SimpleNamespace(
-                source_data=[], view=OilGasFieldBase(name=None, country=None)
+                source_data=[],
+                view=OilGasFieldBase(name=None, country=None),
+                provenance={"name": None},
             )
             for rid in resource_ids
         }
+
+    async def fake_coalesce_merged(session_arg, resource_ids, licensed):
+        assert resource_ids == [31]
+        return {31: _named("Merged")}
 
     async def fake_default_priority(session_arg):
         return {"rmi": 1, "gem": 2, "wm": 3, "llm": 4}
@@ -618,10 +694,12 @@ async def test_get_merge_candidate_after_merge_yields_empty_compare(monkeypatch)
     monkeypatch.setattr(mca, "_load_candidate_model", fake_load_candidate_model)
     monkeypatch.setattr(mca, "coalesce_resources_with_sources", fake_coalesce)
     monkeypatch.setattr(mca, "_default_source_priority", fake_default_priority)
+    monkeypatch.setattr(mca, "coalesce_resources", fake_coalesce_merged)
 
     view = await mca.get_merge_candidate(AsyncMock(), candidate_id=2)
 
     assert view.merged_resource_id == 31
+    assert view.name == "Merged"
     # every resource is null on every field -> they all agree (match), no values
     assert all(c.status == "match" for c in view.compare)
     assert all(c.values == [] for c in view.compare)

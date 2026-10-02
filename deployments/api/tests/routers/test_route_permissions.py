@@ -17,6 +17,7 @@ from stitch.auth.permissions import (
 
 from stitch.api.auth import get_token_claims
 from stitch.api.db.config import get_uow
+from stitch.api.entities import MergeCandidatePage, MergeCandidateStatus
 from stitch.api.main import app
 
 
@@ -144,8 +145,16 @@ async def test_merge_candidate_read_permission_allows_list_route(
     app.dependency_overrides[get_uow] = _uow_override(mock_uow)
 
     with patch("stitch.api.routers.oil_gas_fields.merge_candidate_actions") as actions:
-        actions.list_merge_candidates = AsyncMock(return_value=[])
+        actions.list_merge_candidates = AsyncMock(
+            return_value=MergeCandidatePage(
+                items=[],
+                total_count=0,
+                page=1,
+                page_size=50,
+                status_counts=dict.fromkeys(MergeCandidateStatus, 0),
+            )
+        )
         response = await async_client.get("/oil-gas-fields/merge-candidates")
 
     assert response.status_code == 200
-    assert response.json() == []
+    assert response.json()["items"] == []

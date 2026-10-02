@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -19,12 +19,15 @@ from stitch.api.entities import (
     FieldComparisonView,
     MergeCandidateCreateRequest,
     MergeCandidateDetailView,
+    MergeCandidateListItemView,
+    MergeCandidatePage,
+    MergeCandidateQueryParams,
     MergeCandidateReviewRequest,
     MergeCandidateStatus,
     MergeCandidateView,
 )
 from stitch.api.observability.context import named_query
-from stitch.ogsi.model import OGFieldSource
+from stitch.ogsi.model import SOURCE_PRIORITY, OGFieldResource, OGFieldSource
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
 
@@ -35,7 +38,7 @@ from .model import (
     ResourceModel,
 )
 from .og_field_resource_actions import apply_resource_merge
-from .utils import coalesce_resources_with_sources
+from .utils import coalesce_resources, coalesce_resources_with_sources
 
 
 def _normalize_resource_ids(resource_ids: Sequence[int]) -> list[int]:
@@ -172,14 +175,72 @@ async def _default_source_priority(session: AsyncSession) -> dict[str, int]:
     return {source: priority for source, priority in rows.all()}
 
 
+def _ordered_resource_ids(model: MergeCandidateModel) -> list[int]:
+    return [item.resource_id for item in sorted(model.items, key=lambda i: i.position)]
+
+
+def _source_rank(source: OGSISrcKey) -> int:
+    return (
+        SOURCE_PRIORITY.index(source)
+        if source in SOURCE_PRIORITY
+        else len(SOURCE_PRIORITY)
+    )
+
+
+def _candidate_name(
+    model: MergeCandidateModel, coalesced: Mapping[int, OGFieldResource]
+) -> str | None:
+    """Display name for a candidate; see ``MergeCandidateListItemView.name``.
+
+    ``coalesced`` must hold the candidate's resources and, once merged, its
+    merged resource. Source resources are ranked by the global
+    ``SOURCE_PRIORITY`` (the same rule the frontend used to apply), with ties
+    going to the earlier resource.
+    """
+    if model.merged_resource_id is not None:
+        merged = coalesced[model.merged_resource_id].view
+        if merged is not None and merged.name is not None:
+            return merged.name
+
+    best: tuple[int, str] | None = None
+    for resource_id in _ordered_resource_ids(model):
+        provenance = coalesced[resource_id].provenance.get("name")
+        if provenance is None:
+            continue
+        name, source, _source_pk = provenance
+        rank = _source_rank(source)
+        if best is None or rank < best[0]:
+            best = (rank, name)
+    return None if best is None else best[1]
+
+
+def _name_resource_ids(models: Sequence[MergeCandidateModel]) -> list[int]:
+    """Every resource ``_candidate_name`` reads for these candidates."""
+    ids: list[int] = []
+    for model in models:
+        ids.extend(_ordered_resource_ids(model))
+        if model.merged_resource_id is not None:
+            ids.append(model.merged_resource_id)
+    return list(dict.fromkeys(ids))
+
+
+def _candidate_to_list_item_view(
+    model: MergeCandidateModel, name: str | None
+) -> MergeCandidateListItemView:
+    return MergeCandidateListItemView(
+        **_candidate_to_view(model).model_dump(), name=name
+    )
+
+
 def _candidate_to_detail_view(
     model: MergeCandidateModel,
+    name: str | None,
     compare: Sequence[FieldComparisonView],
 ) -> MergeCandidateDetailView:
-    # MergeCandidateDetailView is MergeCandidateView + `compare`; reuse the base
+    # MergeCandidateDetailView is the list item + `compare`; reuse the base
     # mapping so the shared fields stay defined in one place.
     return MergeCandidateDetailView(
-        **_candidate_to_view(model).model_dump(),
+        **_candidate_to_list_item_view(model, name).model_dump(),
         compare=list(compare),
     )
 
@@ -200,15 +261,64 @@ async def _load_candidate_model(
     return model
 
 
-async def list_merge_candidates(session: AsyncSession) -> list[MergeCandidateView]:
+async def list_merge_candidates(
+    session: AsyncSession,
+    params: MergeCandidateQueryParams,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> MergeCandidatePage:
+    """One page of merge candidates, with whole-queue counts by status."""
+    filtered = select(MergeCandidateModel.id)
+    if params.status:
+        filtered = filtered.where(MergeCandidateModel.status.in_(params.status))
+
+    with named_query("merge_candidates.list.count"):
+        total = (
+            await session.scalar(select(func.count()).select_from(filtered.subquery()))
+        ) or 0
+
+    sort_column = getattr(MergeCandidateModel, params.sort_by)
+    if params.sort_order == "asc":
+        order_by = (sort_column.asc().nulls_last(), MergeCandidateModel.id.asc())
+    else:
+        order_by = (sort_column.desc().nulls_last(), MergeCandidateModel.id.desc())
     stmt = (
         select(MergeCandidateModel)
         .options(selectinload(MergeCandidateModel.items))
-        .order_by(MergeCandidateModel.created.desc())
+        .where(MergeCandidateModel.id.in_(filtered))
+        .order_by(*order_by)
+        .limit(params.limit)
+        .offset(params.offset)
     )
     with named_query("merge_candidates.list"):
         candidates = (await session.scalars(stmt)).all()
-    return [_candidate_to_view(candidate) for candidate in candidates]
+
+    with named_query("merge_candidates.list.status_counts"):
+        rows = await session.execute(
+            select(MergeCandidateModel.status, func.count()).group_by(
+                MergeCandidateModel.status
+            )
+        )
+    status_counts = dict.fromkeys(MergeCandidateStatus, 0)
+    for status, count in rows.all():
+        status_counts[MergeCandidateStatus(status)] = count
+
+    with named_query("merge_candidates.list.names"):
+        coalesced = await coalesce_resources(
+            session, _name_resource_ids(candidates), licensed_sources
+        )
+
+    return MergeCandidatePage(
+        items=[
+            _candidate_to_list_item_view(
+                candidate, _candidate_name(candidate, coalesced)
+            )
+            for candidate in candidates
+        ],
+        total_count=total,
+        page=params.page,
+        page_size=params.page_size,
+        status_counts=status_counts,
+    )
 
 
 async def get_merge_candidate(
@@ -219,9 +329,7 @@ async def get_merge_candidate(
     with named_query("merge_candidates.detail.load"):
         candidate = await _load_candidate_model(session, candidate_id)
 
-    resource_ids = [
-        item.resource_id for item in sorted(candidate.items, key=lambda i: i.position)
-    ]
+    resource_ids = _ordered_resource_ids(candidate)
 
     # Computed live: repointed (post-merge) resources coalesce to a null-shell
     # here, so an APPROVED candidate's `compare` reflects the emptied originals.
@@ -251,7 +359,18 @@ async def get_merge_candidate(
     resource_views = [by_id[rid].view for rid in resource_ids]
     compare = _build_comparison(resource_views, sources_with_priority)
 
-    return _candidate_to_detail_view(candidate, compare)
+    name_sources: dict[int, OGFieldResource] = dict(by_id)
+    if candidate.merged_resource_id is not None:
+        with named_query("merge_candidates.detail.merged_name"):
+            name_sources.update(
+                await coalesce_resources(
+                    session, [candidate.merged_resource_id], licensed_sources
+                )
+            )
+
+    return _candidate_to_detail_view(
+        candidate, _candidate_name(candidate, name_sources), compare
+    )
 
 
 async def create_merge_candidate(
