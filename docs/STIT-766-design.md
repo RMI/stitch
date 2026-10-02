@@ -2,7 +2,7 @@
 
 **Status:** draft
 **Author:** Michael Barlow
-**Reviewer:** John McGrath
+**Reviewer:** John McGrath, Alex Axthelm
 **Jira:** [STIT-766](https://rmi1.atlassian.net/browse/STIT-766) (epic [STIT-689](https://rmi1.atlassian.net/browse/STIT-689))
 **Created**: 2026-09-17
 
