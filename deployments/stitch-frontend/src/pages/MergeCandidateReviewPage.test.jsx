@@ -727,4 +727,133 @@ describe("MergeCandidateReviewPage", () => {
       ).not.toBeInTheDocument();
     });
   });
+
+  describe("sorting the queue", () => {
+    // Two pending candidates. The API lists 11 first (newest). Their names
+    // resolve from the mocked resource details: 11 -> "Bergan" (wm outranks
+    // gem), 13 -> "Arabian Merged" (resource 301).
+    beforeEach(() => {
+      vi.mocked(useMergeCandidates).mockReturnValue({
+        ...defaultHookReturn,
+        data: [pendingCandidate, nextPendingCandidate],
+      });
+    });
+
+    afterEach(() => {
+      window.sessionStorage.clear();
+    });
+
+    function queue() {
+      return screen.getByRole("heading", { name: "Queue" }).closest("aside");
+    }
+
+    function queueOrder() {
+      return within(queue())
+        .getAllByRole("button")
+        .map((item) => item.textContent.replace("CANDIDATE", "").trim());
+    }
+
+    it("offers a Sort control that starts on Newest first", () => {
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      const sort = within(queue()).getByRole("combobox", { name: "Sort" });
+      expect(sort).toHaveValue("newest");
+      expect(
+        within(sort)
+          .getAllByRole("option")
+          .map((option) => option.textContent),
+      ).toEqual(["Newest first", "Oldest first", "Name A–Z", "Name Z–A"]);
+    });
+
+    it("orders the queue by name once the names have loaded", async () => {
+      const user = userEvent.setup();
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+      await within(queue()).findByText("Arabian Merged");
+      expect(queueOrder()).toEqual(["Bergan", "Arabian Merged"]);
+
+      await user.selectOptions(
+        within(queue()).getByRole("combobox", { name: "Sort" }),
+        "name-asc",
+      );
+      expect(queueOrder()).toEqual(["Arabian Merged", "Bergan"]);
+
+      await user.selectOptions(
+        within(queue()).getByRole("combobox", { name: "Sort" }),
+        "name-desc",
+      );
+      expect(queueOrder()).toEqual(["Bergan", "Arabian Merged"]);
+    });
+
+    it("orders the queue oldest first", async () => {
+      const user = userEvent.setup();
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+      await within(queue()).findByText("Arabian Merged");
+
+      await user.selectOptions(
+        within(queue()).getByRole("combobox", { name: "Sort" }),
+        "oldest",
+      );
+      expect(queueOrder()).toEqual(["Arabian Merged", "Bergan"]);
+    });
+
+    it("says the name order is not final while names are still loading", async () => {
+      // Resource details never arrive, so no names resolve.
+      vi.mocked(getResourceDetail).mockImplementation(
+        () => new Promise(() => {}),
+      );
+      const user = userEvent.setup();
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      await user.selectOptions(
+        within(queue()).getByRole("combobox", { name: "Sort" }),
+        "name-asc",
+      );
+
+      expect(
+        within(queue()).getByText("Loading names… 0 of 2. Order will update."),
+      ).toBeInTheDocument();
+    });
+
+    it("drops the loading note once every name has loaded", async () => {
+      const user = userEvent.setup();
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+      await user.selectOptions(
+        within(queue()).getByRole("combobox", { name: "Sort" }),
+        "name-asc",
+      );
+
+      await waitFor(() => {
+        expect(
+          within(queue()).queryByText(/Loading names/),
+        ).not.toBeInTheDocument();
+      });
+    });
+
+    it("never shows the loading note for the date sorts", () => {
+      vi.mocked(getResourceDetail).mockImplementation(
+        () => new Promise(() => {}),
+      );
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      expect(
+        within(queue()).queryByText(/Loading names/),
+      ).not.toBeInTheDocument();
+    });
+
+    it("remembers the chosen sort when the page is opened again", async () => {
+      const user = userEvent.setup();
+      const { unmount } = renderWithQueryClient(<MergeCandidateReviewPage />);
+      await user.selectOptions(
+        within(queue()).getByRole("combobox", { name: "Sort" }),
+        "name-desc",
+      );
+      unmount();
+
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      expect(
+        within(queue()).getByRole("combobox", { name: "Sort" }),
+      ).toHaveValue("name-desc");
+    });
+  });
 });
