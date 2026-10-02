@@ -137,7 +137,7 @@ function QueueSearch({ q, onSearch }) {
           type="search"
           value={searchText}
           onChange={handleChange}
-          placeholder="Name, basin or resource ID"
+          placeholder="Name, basin or ID"
           aria-label="Search candidates"
           className="w-full pr-9"
         />
