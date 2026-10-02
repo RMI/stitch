@@ -21,10 +21,17 @@ vi.mock("../queries/api", () => ({
 }));
 
 vi.mock("../components/MergeSourceComparison", () => ({
-  default: ({ resourceIds, compare, isLoading }) => (
+  default: ({ resourceIds, compare, isLoading, sourceDetails }) => (
     <div>
       Source comparison for {resourceIds.join(", ")}
       {compare ? " (compare loaded)" : isLoading ? " (loading)" : ""}
+      {sourceDetails?.data ? (
+        <span>
+          {" "}
+          (name sources:{" "}
+          {sourceDetails.data.map((d) => d?.provenance?.name).join(", ")})
+        </span>
+      ) : null}
     </div>
   ),
 }));
@@ -330,6 +337,16 @@ describe("MergeCandidateReviewPage", () => {
       "href",
       "/oil-gas-fields/102",
     );
+  });
+
+  it("gives the source comparison each resource's source details", async () => {
+    // The per-column source mix reads the same cached detail views the queue
+    // already loads for candidate names, so no extra requests are made.
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      await screen.findByText(/\(name sources: gem, wm\)/),
+    ).toBeInTheDocument();
   });
 
   it("shows the source comparison instead of the merged preview", () => {
