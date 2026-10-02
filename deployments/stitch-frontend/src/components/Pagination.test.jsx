@@ -247,4 +247,45 @@ describe("Pagination", () => {
       ).toMatch(/(^|\s)flex-wrap(\s|$)/);
     });
   });
+
+  describe("compact", () => {
+    it("shows the page position as text instead of page buttons", () => {
+      const { container } = renderPagination({
+        page: 2,
+        totalCount: 143,
+        totalPages: 6,
+        compact: true,
+      });
+
+      expect(screen.getByText("Page 2 of 6")).toBeInTheDocument();
+      expect(pageButtons(container)).toHaveLength(0);
+      expect(screen.getByText("Showing 26–50 of 143")).toBeInTheDocument();
+    });
+
+    it("still steps with the arrows", async () => {
+      const user = userEvent.setup();
+      renderPagination({
+        page: 2,
+        totalCount: 143,
+        totalPages: 6,
+        compact: true,
+      });
+
+      await user.click(screen.getByLabelText("Previous page"));
+      await user.click(screen.getByLabelText("Next page"));
+
+      expect(onPageChange.mock.calls).toEqual([[1], [3]]);
+    });
+
+    it("formats large page counts with separators", () => {
+      renderPagination({
+        page: 12345,
+        totalCount: 1_000_000,
+        totalPages: 40_000,
+        compact: true,
+      });
+
+      expect(screen.getByText("Page 12,345 of 40,000")).toBeInTheDocument();
+    });
+  });
 });

@@ -219,6 +219,7 @@ function QueuePanel({
             totalPages={candidatePage.total_pages}
             onPageChange={handlePageChange}
             onPageSizeChange={viewState.setPageSize}
+            compact
           />
         </div>
       ) : null}
