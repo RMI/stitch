@@ -3,7 +3,7 @@
  *
  * Mirrors useListState: the URL is the single source of truth, and every
  * setter round-trips the complete state through the schema
- * (config/mergeReviewParams.js). Refining the view (statuses, sort) rewrites
+ * (config/mergeReviewParams.js). Refining the view (search, statuses, sort) rewrites
  * the current history entry; paging pushes, so Back steps through pages.
  * Page size is not remembered across visits, unlike the resources list.
  */
@@ -35,5 +35,6 @@ export function useMergeReviewState() {
       write({ statuses, page: DEFAULT_PAGE }, { replace: true }),
     setSortKey: (sortKey) =>
       write({ sortKey, page: DEFAULT_PAGE }, { replace: true }),
+    setSearch: (q) => write({ q, page: DEFAULT_PAGE }, { replace: true }),
   };
 }

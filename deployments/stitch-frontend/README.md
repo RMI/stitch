@@ -226,6 +226,7 @@ The Merge Review queue (`/merge-candidate-review`) encodes its view the same way
 | ------------------------ | --------------------------------------------------------- | ----------------------------- |
 | `page`                   | integer ≥ 1                                               | page 1                        |
 | `page_size`              | 10, 25, 50, 100                                           | 25                            |
+| `q`                      | free text                                                 | empty                         |
 | `status`                 | `PENDING`, `APPROVED`, `DENIED` (repeat per value), `all` | only `PENDING` is selected    |
 | `sort_by` + `sort_order` | `created` or `reviewed_at`, with `asc` or `desc`          | newest first (`created desc`) |
 
@@ -238,6 +239,7 @@ Example — approved and denied candidates, most recently reviewed first, page 2
 Notes:
 
 - The queue shows pending candidates by default, so a bare `/merge-candidate-review` is the review work still to do. Clearing every status in the Status filter shows all of them, written as `status=all`.
+- `q` finds a candidate when any of its resources matches the resources list search (name, local name, basin, state/province or region), or once approved, when its merged resource does. A number also matches the resource with that ID, so `q=2024` finds both "Block 2024" and resource 2024. Candidate IDs are not searched.
 - The page size is not remembered between visits, unlike the resources list.
 - Unknown statuses are dropped, and a malformed `page`, `page_size` or sort falls back to its default. A `page` past the end steps back to the last page.
 

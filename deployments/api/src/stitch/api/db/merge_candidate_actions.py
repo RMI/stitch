@@ -4,7 +4,7 @@ from collections.abc import Collection, Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -20,6 +20,7 @@ from stitch.api.entities import (
     MergeCandidateCreateRequest,
     MergeCandidateDetailView,
     MergeCandidateListItemView,
+    OGFieldQueryParams,
     MergeCandidatePage,
     MergeCandidateQueryParams,
     MergeCandidateReviewRequest,
@@ -38,6 +39,7 @@ from .model import (
     ResourceModel,
 )
 from .og_field_resource_actions import apply_resource_merge
+from .queries import base_resource_query
 from .utils import coalesce_resources, coalesce_resources_with_sources
 
 
@@ -261,6 +263,45 @@ async def _load_candidate_model(
     return model
 
 
+# Postgres bigint; a longer digit string cannot be a resource id (and would
+# overflow the comparison).
+_MAX_RESOURCE_ID = 2**63 - 1
+
+
+async def _resource_ids_matching(
+    session: AsyncSession,
+    q: str,
+    licensed_sources: Collection[OGSISrcKey] | None,
+) -> list[int]:
+    """Ids of queue resources (candidate members and merged resources) that
+    match ``q``; see ``MergeCandidateFilterParams.q``."""
+    with named_query("merge_candidates.list.search_scope"):
+        queue_resource_ids = list(
+            await session.scalars(
+                union(
+                    select(MergeCandidateItemModel.resource_id),
+                    select(MergeCandidateModel.merged_resource_id).where(
+                        MergeCandidateModel.merged_resource_id.is_not(None)
+                    ),
+                )
+            )
+        )
+
+    # The resource list's own search, limited to the queue's resources. Sorting
+    # by id keeps it from pivoting a sort column it does not need.
+    text_match = base_resource_query(
+        OGFieldQueryParams(q=q, sort_by="id"),
+        licensed_sources,
+        resource_ids=queue_resource_ids,
+    )
+    with named_query("merge_candidates.list.search"):
+        matching = set(await session.scalars(text_match))
+
+    if q.isdigit() and int(q) <= _MAX_RESOURCE_ID and int(q) in queue_resource_ids:
+        matching.add(int(q))
+    return sorted(matching)
+
+
 async def list_merge_candidates(
     session: AsyncSession,
     params: MergeCandidateQueryParams,
@@ -270,6 +311,19 @@ async def list_merge_candidates(
     filtered = select(MergeCandidateModel.id)
     if params.status:
         filtered = filtered.where(MergeCandidateModel.status.in_(params.status))
+    q = (params.q or "").strip()
+    if q:
+        matching = await _resource_ids_matching(session, q, licensed_sources)
+        filtered = filtered.where(
+            or_(
+                MergeCandidateModel.merged_resource_id.in_(matching),
+                MergeCandidateModel.id.in_(
+                    select(MergeCandidateItemModel.merge_candidate_id).where(
+                        MergeCandidateItemModel.resource_id.in_(matching)
+                    )
+                ),
+            )
+        )
 
     with named_query("merge_candidates.list.count"):
         total = (

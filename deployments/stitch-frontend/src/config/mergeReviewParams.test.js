@@ -11,6 +11,7 @@ const serialize = (state) => toMergeReviewParams(state).toString();
 const DEFAULT_STATE = {
   page: 1,
   pageSize: 25,
+  q: "",
   statuses: ["PENDING"],
   sortKey: "newest",
 };
@@ -23,15 +24,22 @@ describe("parseMergeReviewParams", () => {
   it("reads every supported param", () => {
     expect(
       parse(
-        "page=3&page_size=50&status=DENIED&status=APPROVED&sort_by=reviewed_at&sort_order=asc",
+        "page=3&page_size=50&q=ghawar&status=DENIED&status=APPROVED&sort_by=reviewed_at&sort_order=asc",
       ),
     ).toEqual({
       page: 3,
       pageSize: 50,
+      q: "ghawar",
       // Canonical order, whatever order the URL used.
       statuses: ["APPROVED", "DENIED"],
       sortKey: "earliest-reviewed",
     });
+  });
+
+  it("trims the search and treats a blank one as none", () => {
+    expect(parse("q=%20ghawar%20").q).toBe("ghawar");
+    expect(parse("q=%20%20").q).toBe("");
+    expect(serialize({ ...DEFAULT_STATE, q: "   " })).toBe("");
   });
 
   it("reads status=all as every status", () => {
@@ -63,11 +71,12 @@ describe("toMergeReviewParams", () => {
       serialize({
         page: 2,
         pageSize: 10,
+        q: " ghawar ",
         statuses: ["DENIED", "PENDING"],
         sortKey: "oldest",
       }),
     ).toBe(
-      "page=2&page_size=10&status=PENDING&status=DENIED&sort_by=created&sort_order=asc",
+      "page=2&page_size=10&q=ghawar&status=PENDING&status=DENIED&sort_by=created&sort_order=asc",
     );
   });
 
@@ -79,6 +88,7 @@ describe("toMergeReviewParams", () => {
     const state = {
       page: 4,
       pageSize: 100,
+      q: "Block 2024",
       statuses: [],
       sortKey: "recently-reviewed",
     };
@@ -92,16 +102,22 @@ describe("toMergeCandidateQuery", () => {
       toMergeCandidateQuery({
         page: 2,
         pageSize: 50,
+        q: "ghawar",
         statuses: ["PENDING", "DENIED"],
         sortKey: "recently-reviewed",
       }),
     ).toEqual({
       page: 2,
       page_size: 50,
+      q: "ghawar",
       status: ["PENDING", "DENIED"],
       sort_by: "reviewed_at",
       sort_order: "desc",
     });
+  });
+
+  it("sends no search when the box is empty", () => {
+    expect(toMergeCandidateQuery(DEFAULT_STATE).q).toBeUndefined();
   });
 
   it("sends no status filter when every status is wanted", () => {

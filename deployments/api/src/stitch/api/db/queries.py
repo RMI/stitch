@@ -388,28 +388,42 @@ def coalesced_candidate_rows(
     )
 
 
-def _resource_universe() -> Select[tuple[int]]:
+def _resource_universe(
+    resource_ids: Collection[int] | None = None,
+) -> Select[tuple[int]]:
     """Resources eligible to appear in a list: any non-repointed resource with an
     active membership. Membership-derived and ungated by licensing/source, so a
     resource whose licensed values are all absent still appears as a null-shell on
-    an unfiltered list (and drops out once a field is filtered)."""
+    an unfiltered list (and drops out once a field is filtered).
+
+    ``resource_ids`` narrows the universe to those resources."""
     m = MembershipModel
     r = ResourceModel
-    return (
+    stmt = (
         select(r.id.label("resource_id"))
         .select_from(r)
         .join(m, m.resource_id == r.id)
         .where(r.repointed_id.is_(None), m.status == MembershipStatus.ACTIVE)
         .distinct()
     )
+    if resource_ids is not None:
+        stmt = stmt.where(r.id.in_(list(dict.fromkeys(resource_ids))))
+    return stmt
 
 
 def base_resource_query(
     params: OGFieldQueryParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
+    resource_ids: Collection[int] | None = None,
 ) -> Select[tuple[int]]:
+    """Ids of the resources matching ``params``, in ``params``' sort order.
+
+    ``resource_ids`` limits the search to those resources, so callers that only
+    care about a known subset (e.g. the merge queue's resources) do not pivot
+    and rank every resource in the table.
+    """
     involved = _participating_columns(params)
-    universe = _resource_universe().cte("resource_universe")
+    universe = _resource_universe(resource_ids).cte("resource_universe")
 
     if not involved:
         # No value field filtered or sorted -> the universe alone (every active
@@ -417,7 +431,7 @@ def base_resource_query(
         base = universe
         conditions: list[ColumnElement[bool]] = []
     else:
-        base_cte = construct_base_query_statement(licensed_sources)
+        base_cte = construct_base_query_statement(licensed_sources, resource_ids)
         ranked = add_ranking(base_cte).cte("ranked")
         pivot = _add_pivot_columns(
             select(ranked.c.resource_id.label("resource_id")),

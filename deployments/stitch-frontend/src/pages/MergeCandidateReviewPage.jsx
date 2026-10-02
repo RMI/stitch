@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import Button from "../components/Button";
 import FilterDropdown from "../components/FilterDropdown";
+import Input from "../components/Input";
 import MergeSourceComparison from "../components/MergeSourceComparison";
 import MergedResourceView from "../components/MergedResourceView";
 import Pagination from "../components/Pagination";
@@ -99,6 +100,66 @@ function CandidateQueueItem({ candidate, isSelected, onSelect }) {
   );
 }
 
+// Mirrors the resources list search: the box holds its own text while you
+// type, and only submit and clear write to the URL, so typing neither rewrites
+// history nor refetches per keystroke. When the URL's q changes underneath it
+// (Back/Forward), the box is re-seeded to match.
+function QueueSearch({ q, onSearch }) {
+  const [searchText, setSearchText] = useState(q);
+  const [lastQ, setLastQ] = useState(q);
+  if (q !== lastQ) {
+    setLastQ(q);
+    setSearchText(q);
+  }
+
+  function handleChange(event) {
+    const newValue = event.target.value;
+    setSearchText(newValue);
+    // Emptying the box is a clear, not a search for nothing.
+    if (newValue === "" && q !== "") onSearch("");
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    const normalizedSearch = searchText.trim();
+    setSearchText(normalizedSearch);
+    onSearch(normalizedSearch);
+  }
+
+  function handleClear() {
+    setSearchText("");
+    onSearch("");
+  }
+
+  return (
+    <form onSubmit={handleSubmit} role="search" className="flex w-full gap-2">
+      <div className="relative min-w-0 flex-1">
+        <Input
+          type="search"
+          value={searchText}
+          onChange={handleChange}
+          placeholder="Name, basin or ID"
+          aria-label="Search candidates"
+          className="w-full pr-9"
+        />
+        {searchText && (
+          <button
+            type="button"
+            onClick={handleClear}
+            aria-label="Clear search"
+            className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-base leading-none text-ink-muted transition-colors hover:bg-rmiblue-100 hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-energy/60"
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        )}
+      </div>
+      <Button type="submit" variant="secondary">
+        Search
+      </Button>
+    </form>
+  );
+}
+
 function QueueControls({
   statuses,
   onStatusesChange,
@@ -111,7 +172,7 @@ function QueueControls({
   }));
 
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <FilterDropdown
         label="Status"
         options={statusOptions}
@@ -168,12 +229,15 @@ function QueuePanel({
     <aside className="min-w-0 rounded-md border border-line bg-panel md:sticky md:top-15 md:col-start-1 md:row-start-1 md:flex md:max-h-[calc(100vh-4.75rem)] md:flex-col md:self-start">
       <div className="shrink-0 border-b border-line px-4 py-3">
         <h2 className="text-base font-semibold text-ink">Queue</h2>
-        <QueueControls
-          statuses={viewState.statuses}
-          onStatusesChange={viewState.setStatuses}
-          sortKey={viewState.sortKey}
-          onSortKeyChange={viewState.setSortKey}
-        />
+        <div className="mt-2 space-y-2">
+          <QueueSearch q={viewState.q} onSearch={viewState.setSearch} />
+          <QueueControls
+            statuses={viewState.statuses}
+            onStatusesChange={viewState.setStatuses}
+            sortKey={viewState.sortKey}
+            onSortKeyChange={viewState.setSortKey}
+          />
+        </div>
       </div>
 
       <div ref={listRef} className="p-2 md:min-h-0 md:overflow-y-auto">
@@ -196,6 +260,11 @@ function QueuePanel({
               />
             ))}
           </div>
+        ) : viewState.q ? (
+          <p className="px-2 py-3 text-sm text-ink-muted">
+            No candidates match this search. Try a different name, or clear the
+            search.
+          </p>
         ) : queueTotal > 0 ? (
           <p className="px-2 py-3 text-sm text-ink-muted">
             No candidates match the selected statuses. Change the Status filter
