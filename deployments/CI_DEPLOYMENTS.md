@@ -423,51 +423,48 @@ then redeploy the lane so the backend containers pick up the new origin.
 
 ### Backups
 
-Nightly database backups run as an Azure Container Apps job, one per lane, on
-the `staging` and `production` lanes only. They are not part of
-`build-and-deploy.yml`: the job builds no image and is not tied to a branch, so
-it has its own workflow, `deploy-backup-job.yml`.
+Nightly database backups run as an Azure Container Apps job. The `staging` and
+`production` lanes each have one job, named `stitch-backup-<lane>`.
 
-That workflow deploys the job; it does not take the backup. It validates the
-lane's config, logs in, then hands off to `.github/scripts/deploy_backup_job.sh`,
-which renders `deployments/db/jobs/backup-job.yaml` with that config and applies
-it as `stitch-backup-<lane>`. Applying is idempotent, so re-running it is safe.
-It is triggered manually (`workflow_dispatch`) or by a push to `main` that
-touches the workflow, the script, or the spec.
+The job runs at 03:00 UTC. An init container runs `pg_dump -Fc` for every
+database named in `BACKUP_DATABASES` and writes each dump to a scratch volume.
+The main container then uploads each dump to the lane's `backups` blob container
+at `<lane>/<database>/<timestamp>.dump`. All dumps from one run share one
+timestamp. Both container commands run under `set -e`, so one failed dump fails
+the whole execution. A run has 30 minutes to finish and does not retry.
 
-The job itself runs at 03:00 UTC. An init container runs `pg_dump -Fc` for every
-database named in `BACKUP_DATABASES` onto a scratch volume, then the main
-container uploads each dump to the lane's `backups` blob container at
-`<lane>/<database>/<timestamp>.dump`. All of a run's dumps share one timestamp.
-The workflow creates the `backups` container if it is missing.
+#### Deploying the job
 
-Both container commands run under `set -e`, so a failed dump fails the whole
-execution. Without it, a failure on any database except the last would still
-report `Succeeded` — a broken backup that looks healthy.
+The workflow `deploy-backup-job.yml` deploys the job. It does not take the
+backup. It runs on manual dispatch (`workflow_dispatch`), or on a push to `main`
+that changes the workflow, the deploy script, or the job spec.
 
-Lane config, in each of the `staging` and `production` GitHub Environments:
+The workflow validates the lane's config, logs in to Azure, then runs
+`.github/scripts/deploy_backup_job.sh`. That script JSON-encodes the two secrets,
+then renders `deployments/db/jobs/backup-job.yaml` with the lane's config. A JSON
+string is valid YAML, so a secret value that contains a quote or a backslash
+renders correctly. The script then creates the job, or updates it when it already
+exists. If the `backups` blob container does not exist, the script creates it. A
+deploy is idempotent, so you can run the workflow again at any time.
+
+#### Lane config
+
+Set these in each of the `staging` and `production` GitHub Environments:
 
 - variable `BACKUP_DATABASES` (example: `dress_rehearsal pr_0295_demo_integrate_6dbf`) —
   space-separated database names to dump
 - variable `BACKUP_STORAGE_ACCOUNT` (example: `stitchstaging`) — storage account
-  holding the `backups` container
+  that holds the `backups` blob container
 - secret `BACKUP_STORAGE_KEY` — access key for that storage account
 
-It also reuses the lane's existing `AZURE_RESOURCE_GROUP`,
+The job also uses the lane's existing `AZURE_RESOURCE_GROUP`,
 `AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `POSTGRES_ADMIN_USER`, and
-`PGPASSWORD`. The storage key is a secret rather than something the workflow
-resolves at run time because `GHActions-stitch-cicd` cannot list storage account
-keys.
+`PGPASSWORD`.
 
-**Manual step, required before the first run.** `Container Apps Contributor`
-does not include any `Microsoft.App/jobs` action, so the deploy fails after a
-successful login until the managed identity can manage jobs. Grant
-`Container Apps Jobs Contributor` to `GHActions-stitch-cicd` on both
-`STITCH-DEV-RG` and `STITCH-PROD-RG`. Only an Owner or User Access
-Administrator can grant it.
+#### Retention
 
-Retention is not yet automated. Nothing deletes old dumps, so the `backups`
-container grows without limit until a blob lifecycle management policy is added.
+Nothing deletes old dumps. The `backups` container grows without limit until a
+blob lifecycle management policy is added.
 
 ## Azure Permissions
 
@@ -522,9 +519,7 @@ Container Apps environment):
 - `Reader` on `stitch-prod` (Container Apps Environment)
 - `Reader` on `STITCH-PROD-RG` (Resource Group)
 - `Container Apps Contributor` on `STITCH-PROD-RG` (Resource Group)
-- `Container Apps Jobs Contributor` on `STITCH-DEV-RG` (Resource Group) —
-  required by the backup job deploy; `Container Apps Contributor` covers
-  `containerApps` but includes no `Microsoft.App/jobs` action
+- `Container Apps Jobs Contributor` on `STITCH-DEV-RG` (Resource Group)
 - `Container Apps Jobs Contributor` on `STITCH-PROD-RG` (Resource Group)
 
 > **Reminder — when adding a new lane:** the federated-credential subject above
@@ -588,10 +583,10 @@ named:
 - `ETL_IMAGE_TAG` (example: `main`) — optional; consolidated ETL image tag to
   deploy, defaults to `main`. Only used on `staging` / `production`.
 - `BACKUP_DATABASES` (example: `dress_rehearsal pr_0295_demo_integrate_6dbf`) —
-  space-separated database names the nightly backup job dumps. Only needed on
-  `staging` / `production` (see "Backups" above).
-- `BACKUP_STORAGE_ACCOUNT` (example: `stitchstaging`) — storage account holding
-  the `backups` blob container. Only needed on `staging` / `production`.
+  space-separated database names that the nightly backup job dumps. Only needed
+  on `staging` / `production` (see "Backups" above).
+- `BACKUP_STORAGE_ACCOUNT` (example: `stitchstaging`) — storage account that
+  holds the `backups` blob container. Only needed on `staging` / `production`.
 
 The two frontend URLs together define the single CORS origin the API,
 entity-linkage, and stitch-llm services will accept for a given deployment, so
@@ -621,8 +616,8 @@ they have to match where the frontend actually lands:
 - `GHCR_ETL_PULL_TOKEN` — classic PAT with `read:packages` used to pull the ETL
   image from the `stitch-etl-poc` GHCR. Only needed on `staging` /
   `production`.
-- `BACKUP_STORAGE_KEY` — access key for `BACKUP_STORAGE_ACCOUNT`, used by the
-  nightly backup job to upload dumps. Only needed on `staging` / `production`.
+- `BACKUP_STORAGE_KEY` — access key for `BACKUP_STORAGE_ACCOUNT`. The nightly
+  backup job uses it to upload dumps. Only needed on `staging` / `production`.
 
 Current validation behavior:
 
