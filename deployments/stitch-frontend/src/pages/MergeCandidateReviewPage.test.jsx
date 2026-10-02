@@ -105,13 +105,37 @@ const resourceDetailsById = {
   301: { data: { name: "Arabian Merged" }, provenance: { name: "rmi" } },
 };
 
+// Stands in for the list endpoint: applies the requested status filter and
+// counts the whole queue by status, as the API does.
+function mockQueue(allCandidates) {
+  vi.mocked(useMergeCandidates).mockImplementation((_endpoint, params) => {
+    const items = allCandidates.filter(
+      (c) => !params?.status || params.status.includes(c.status),
+    );
+    const countOf = (status) =>
+      allCandidates.filter((c) => c.status === status).length;
+    return {
+      ...defaultHookReturn,
+      data: {
+        items,
+        total_count: items.length,
+        page: 1,
+        page_size: params?.page_size ?? 50,
+        total_pages: Math.ceil(items.length / (params?.page_size ?? 50)),
+        status_counts: {
+          PENDING: countOf("PENDING"),
+          APPROVED: countOf("APPROVED"),
+          DENIED: countOf("DENIED"),
+        },
+      },
+      refetch: vi.fn(),
+    };
+  });
+}
+
 beforeEach(() => {
   vi.mocked(useAuth0).mockReturnValue(auth0TestDefaults);
-  vi.mocked(useMergeCandidates).mockReturnValue({
-    ...defaultHookReturn,
-    data: candidates,
-    refetch: vi.fn(),
-  });
+  mockQueue(candidates);
   vi.mocked(useMergeCandidate).mockReturnValue({
     ...defaultHookReturn,
     data: pendingDetail,
@@ -174,10 +198,7 @@ describe("MergeCandidateReviewPage", () => {
 
     async function selectCandidate13() {
       const user = userEvent.setup();
-      vi.mocked(useMergeCandidates).mockReturnValue({
-        ...defaultHookReturn,
-        data: [pendingCandidate, nextPendingCandidate],
-      });
+      mockQueue([pendingCandidate, nextPendingCandidate]);
       vi.mocked(useMergeCandidate).mockImplementation((_endpoint, id) => ({
         ...defaultHookReturn,
         data:
@@ -390,10 +411,7 @@ describe("MergeCandidateReviewPage", () => {
 
   it("advances to the next pending candidate and clears notes after review", async () => {
     const user = userEvent.setup();
-    vi.mocked(useMergeCandidates).mockReturnValue({
-      ...defaultHookReturn,
-      data: [pendingCandidate, nextPendingCandidate, candidates[1]],
-    });
+    mockQueue([pendingCandidate, nextPendingCandidate, candidates[1]]);
     vi.mocked(useMergeCandidate).mockImplementation((_endpoint, id) => ({
       ...defaultHookReturn,
       data:
@@ -498,10 +516,7 @@ describe("MergeCandidateReviewPage", () => {
 
   it("shows the merged resource instead of the source comparison once merged_resource_id is set", async () => {
     const mergedCandidate = candidates[1];
-    vi.mocked(useMergeCandidates).mockReturnValue({
-      ...defaultHookReturn,
-      data: [mergedCandidate],
-    });
+    mockQueue([mergedCandidate]);
     vi.mocked(useMergeCandidate).mockReturnValue({
       ...defaultHookReturn,
       data: mergedCandidate,
@@ -520,10 +535,7 @@ describe("MergeCandidateReviewPage", () => {
 
   it("shows the merged resource's name in the heading once merged", async () => {
     const mergedCandidate = candidates[1];
-    vi.mocked(useMergeCandidates).mockReturnValue({
-      ...defaultHookReturn,
-      data: [mergedCandidate],
-    });
+    mockQueue([mergedCandidate]);
     // Post-merge, the originals are null shells: compare carries no name.
     vi.mocked(useMergeCandidate).mockReturnValue({
       ...defaultHookReturn,
@@ -545,10 +557,7 @@ describe("MergeCandidateReviewPage", () => {
 
   it("links the merged resource id to its detail page", async () => {
     const mergedCandidate = candidates[1];
-    vi.mocked(useMergeCandidates).mockReturnValue({
-      ...defaultHookReturn,
-      data: [mergedCandidate],
-    });
+    mockQueue([mergedCandidate]);
     vi.mocked(useMergeCandidate).mockReturnValue({
       ...defaultHookReturn,
       data: mergedCandidate,
@@ -566,11 +575,7 @@ describe("MergeCandidateReviewPage", () => {
   });
 
   it("blocks with an error when the detail query fails and the queue has no item", () => {
-    vi.mocked(useMergeCandidates).mockReturnValue({
-      ...defaultHookReturn,
-      data: [],
-      refetch: vi.fn(),
-    });
+    mockQueue([]);
     vi.mocked(useMergeCandidate).mockReturnValue({
       ...defaultHookReturn,
       data: null,
@@ -641,10 +646,7 @@ describe("MergeCandidateReviewPage", () => {
     });
 
     it("keeps denied candidates visible by default", async () => {
-      vi.mocked(useMergeCandidates).mockReturnValue({
-        ...defaultHookReturn,
-        data: [pendingCandidate, deniedCandidate, approvedCandidate],
-      });
+      mockQueue([pendingCandidate, deniedCandidate, approvedCandidate]);
       renderWithQueryClient(<MergeCandidateReviewPage />);
 
       const user = userEvent.setup();
@@ -679,10 +681,7 @@ describe("MergeCandidateReviewPage", () => {
     it("does not select a hidden approved candidate by default", async () => {
       // No pending work left: the fallback selection must land on the visible
       // denied candidate, never on the filtered-out approved one.
-      vi.mocked(useMergeCandidates).mockReturnValue({
-        ...defaultHookReturn,
-        data: [approvedCandidate, deniedCandidate],
-      });
+      mockQueue([approvedCandidate, deniedCandidate]);
       vi.mocked(useMergeCandidate).mockReturnValue({
         ...defaultHookReturn,
         data: { ...deniedCandidate, compare: [] },
@@ -696,10 +695,7 @@ describe("MergeCandidateReviewPage", () => {
     });
 
     it("explains an empty queue caused by the filter", async () => {
-      vi.mocked(useMergeCandidates).mockReturnValue({
-        ...defaultHookReturn,
-        data: [approvedCandidate],
-      });
+      mockQueue([approvedCandidate]);
       renderWithQueryClient(<MergeCandidateReviewPage />);
 
       expect(

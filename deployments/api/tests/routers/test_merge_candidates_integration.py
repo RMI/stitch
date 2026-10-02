@@ -1,14 +1,19 @@
-"""Integration tests for the merge-candidate detail endpoint (real SQLite)."""
+"""Integration tests for the merge-candidate list and detail endpoints (real SQLite)."""
 
 from collections.abc import Sequence
+from datetime import datetime, timezone
 
 from httpx import AsyncClient
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.factories import ResourceCreateFactory
-from stitch.api.db.model import MembershipModel, OGFieldResourceSourcePriority
+from stitch.api.db.model import (
+    MembershipModel,
+    MergeCandidateModel,
+    OGFieldResourceSourcePriority,
+)
 from stitch.ogsi.model import OGFieldResource, OGFieldSource
 
 
@@ -534,3 +539,162 @@ class TestMergeCandidateDetailIntegration:
             (id_a, "gem", "Bar"),
             (id_b, "rmi", "Foo"),
         }
+
+
+async def _create_disjoint_candidates(
+    client: AsyncClient, fact: ResourceCreateFactory, count: int
+) -> list[int]:
+    """``count`` two-resource candidates sharing no resources, in creation order."""
+    candidate_ids = []
+    for i in range(count):
+        id_a = await _create_resource(client, fact, f"Field {i}")
+        id_b = await _create_resource(client, fact, f"Field {i} dup")
+        candidate_ids.append(await _create_candidate(client, [id_a, id_b]))
+    return candidate_ids
+
+
+class TestMergeCandidateListIntegration:
+    @pytest.mark.anyio
+    async def test_pages_are_stable_when_candidates_share_a_timestamp(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+        integration_session_factory: async_sessionmaker[AsyncSession],
+    ):
+        candidate_ids = await _create_disjoint_candidates(
+            integration_client, og_create_res_fact, 5
+        )
+        # Bulk creation can stamp many candidates with the same time; the id
+        # tiebreak must still give every candidate exactly one page.
+        async with integration_session_factory() as session:
+            await session.execute(
+                update(MergeCandidateModel).values(
+                    created=datetime(2026, 1, 1, tzinfo=timezone.utc)
+                )
+            )
+            await session.commit()
+
+        seen = []
+        for page in (1, 2, 3):
+            resp = await integration_client.get(
+                "/oil-gas-fields/merge-candidates",
+                params={"page": page, "page_size": 2},
+            )
+            assert resp.status_code == 200, resp.text
+            body = resp.json()
+            assert body["total_count"] == 5
+            assert body["total_pages"] == 3
+            seen.extend(item["id"] for item in body["items"])
+
+        assert seen == sorted(candidate_ids, reverse=True)
+
+    @pytest.mark.anyio
+    async def test_status_filter_narrows_items_but_not_counts(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        approved_id, denied_id, pending_id = await _create_disjoint_candidates(
+            integration_client, og_create_res_fact, 3
+        )
+        for candidate_id, action in ((approved_id, "approve"), (denied_id, "deny")):
+            resp = await integration_client.post(
+                f"/oil-gas-fields/merge-candidates/{candidate_id}/{action}"
+            )
+            assert resp.status_code == 200, resp.text
+
+        pending = await integration_client.get(
+            "/oil-gas-fields/merge-candidates", params={"status": "PENDING"}
+        )
+        assert pending.status_code == 200, pending.text
+        assert [item["id"] for item in pending.json()["items"]] == [pending_id]
+        assert pending.json()["total_count"] == 1
+        assert pending.json()["status_counts"] == {
+            "PENDING": 1,
+            "APPROVED": 1,
+            "DENIED": 1,
+        }
+
+        reviewed = await integration_client.get(
+            "/oil-gas-fields/merge-candidates",
+            params=[("status", "APPROVED"), ("status", "DENIED")],
+        )
+        assert {item["id"] for item in reviewed.json()["items"]} == {
+            approved_id,
+            denied_id,
+        }
+
+        unfiltered = await integration_client.get("/oil-gas-fields/merge-candidates")
+        assert unfiltered.json()["total_count"] == 3
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("sort_order", ["asc", "desc"])
+    async def test_sort_by_reviewed_at_puts_unreviewed_last(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+        sort_order: str,
+    ):
+        first, second, unreviewed = await _create_disjoint_candidates(
+            integration_client, og_create_res_fact, 3
+        )
+        for candidate_id in (first, second):
+            resp = await integration_client.post(
+                f"/oil-gas-fields/merge-candidates/{candidate_id}/deny"
+            )
+            assert resp.status_code == 200, resp.text
+
+        resp = await integration_client.get(
+            "/oil-gas-fields/merge-candidates",
+            params={"sort_by": "reviewed_at", "sort_order": sort_order},
+        )
+        assert resp.status_code == 200, resp.text
+        reviewed = [first, second] if sort_order == "asc" else [second, first]
+        assert [item["id"] for item in resp.json()["items"]] == [
+            *reviewed,
+            unreviewed,
+        ]
+
+    @pytest.mark.anyio
+    async def test_items_carry_display_names(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
+        candidate_id = await _create_candidate(integration_client, [id_a, id_b])
+
+        resp = await integration_client.get("/oil-gas-fields/merge-candidates")
+        assert resp.status_code == 200, resp.text
+        (item,) = resp.json()["items"]
+        # Same source on both resources: the tie goes to the first resource.
+        assert item["name"] == "Ghawar"
+
+        # After approval the originals are emptied; the merged resource names it.
+        approve = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{candidate_id}/approve"
+        )
+        assert approve.status_code == 200, approve.text
+        resp = await integration_client.get("/oil-gas-fields/merge-candidates")
+        (item,) = resp.json()["items"]
+        assert item["name"] == "Ghawar"
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        "params",
+        [
+            {"status": "MAYBE"},
+            {"sort_by": "name"},
+            {"sort_order": "sideways"},
+            {"page": 0},
+            {"page_size": 201},
+        ],
+    )
+    async def test_rejects_invalid_params(
+        self, integration_client: AsyncClient, params: dict
+    ):
+        resp = await integration_client.get(
+            "/oil-gas-fields/merge-candidates", params=params
+        )
+        assert resp.status_code == 422, resp.text

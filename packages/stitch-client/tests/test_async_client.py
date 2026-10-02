@@ -594,52 +594,87 @@ async def test_iter_oil_gas_fields_respects_max_pages_and_forwards_q() -> None:
 
 
 @pytest.mark.anyio
-async def test_list_merge_candidates_sends_expected_request() -> None:
+async def test_list_merge_candidates_page_sends_expected_request() -> None:
     captured: dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["method"] = request.method
         captured["path"] = request.url.path
+        captured["params"] = list(request.url.params.multi_items())
         return httpx.Response(
             200,
-            json=[{"id": 1, "resource_ids": [1, 2], "status": "PENDING"}],
+            json={"items": [], "total_count": 0, "page": 2, "page_size": 10},
         )
 
     client, raw_client = make_client(handler)
 
-    candidates = await client.list_merge_candidates()
+    payload = await client.list_merge_candidates_page(
+        page=2, page_size=10, status=["PENDING", "DENIED"]
+    )
 
-    assert candidates == [{"id": 1, "resource_ids": [1, 2], "status": "PENDING"}]
+    assert payload["page"] == 2
     assert captured == {
         "method": "GET",
         "path": "/api/v1/oil-gas-fields/merge-candidates",
+        "params": [
+            ("page", "2"),
+            ("page_size", "10"),
+            ("status", "PENDING"),
+            ("status", "DENIED"),
+        ],
     }
 
     await raw_client.aclose()
 
 
 @pytest.mark.anyio
-async def test_list_merge_candidates_rejects_non_array_payload() -> None:
+async def test_list_merge_candidates_page_rejects_non_object_payload() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"not": "a-list"})
+        return httpx.Response(200, json=[{"id": 1}])
 
     client, raw_client = make_client(handler)
 
     with pytest.raises(StitchAPIError):
-        await client.list_merge_candidates()
+        await client.list_merge_candidates_page()
 
     await raw_client.aclose()
 
 
 @pytest.mark.anyio
-async def test_list_merge_candidates_rejects_non_object_elements() -> None:
+async def test_list_merge_candidates_page_validates_page_size() -> None:
+    client, raw_client = make_client(lambda request: httpx.Response(200, json={}))
+
+    with pytest.raises(ValueError, match="page_size"):
+        await client.list_merge_candidates_page(page_size=201)
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+async def test_iter_merge_candidates_follows_total_pages() -> None:
+    requested_pages: list[int] = []
+
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=[{"id": 1}, "not-a-dict"])
+        page = int(request.url.params["page"])
+        requested_pages.append(page)
+        items = {1: [{"id": 3}, {"id": 2}], 2: [{"id": 1}]}[page]
+        return httpx.Response(
+            200,
+            json={
+                "items": items,
+                "total_count": 3,
+                "page": page,
+                "page_size": 2,
+                "total_pages": 2,
+            },
+        )
 
     client, raw_client = make_client(handler)
 
-    with pytest.raises(StitchAPIError):
-        await client.list_merge_candidates()
+    ids = [c["id"] async for c in client.iter_merge_candidates(page_size=2)]
+
+    assert ids == [3, 2, 1]
+    assert requested_pages == [1, 2]
 
     await raw_client.aclose()
 

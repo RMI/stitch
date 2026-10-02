@@ -104,10 +104,14 @@ function useFieldSourceValuesReal(
   });
 }
 
-function useMergeCandidatesReal(endpoint = "oil-gas-fields", enabled = true) {
+function useMergeCandidatesReal(
+  endpoint = "oil-gas-fields",
+  params = {},
+  enabled = true,
+) {
   const config = useConfig();
   return useAuthenticatedQuery({
-    ...resourceQueries.mergeCandidates(config, endpoint),
+    ...resourceQueries.mergeCandidates(config, endpoint, params),
     enabled,
   });
 }
@@ -323,10 +327,24 @@ function useFieldSourceValuesMock(
   });
 }
 
-function useMergeCandidatesMock(endpoint = "oil-gas-fields", enabled = true) {
+function useMergeCandidatesMock(
+  endpoint = "oil-gas-fields",
+  params = {},
+  enabled = true,
+) {
+  const page = params.page ?? 1;
+  const page_size = params.page_size ?? 50;
   return useQuery({
-    ...resourceQueries.mergeCandidates(UNUSED_MOCK_CONFIG, endpoint),
-    queryFn: () => Promise.resolve([]),
+    ...resourceQueries.mergeCandidates(UNUSED_MOCK_CONFIG, endpoint, params),
+    queryFn: () =>
+      Promise.resolve({
+        items: [],
+        total_count: 0,
+        page,
+        page_size,
+        total_pages: 0,
+        status_counts: { PENDING: 0, APPROVED: 0, DENIED: 0 },
+      }),
     enabled,
   });
 }

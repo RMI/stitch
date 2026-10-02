@@ -72,6 +72,42 @@ async def test_get_oil_gas_field_detail_maps_payload(
 
 
 @pytest.mark.anyio
+async def test_list_merge_candidates_gathers_every_page_of_every_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(STITCH_CLIENT_BEARER_TOKEN_ENV_VAR, "token-123")
+    requests: list[list[tuple[str, str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = list(request.url.params.multi_items())
+        requests.append(params)
+        page = int(request.url.params["page"])
+        # A full first page, then one more candidate.
+        ids = range(200) if page == 1 else [200]
+        return httpx.Response(
+            200,
+            json={
+                "items": [{"id": i} for i in ids],
+                "total_count": 201,
+                "page": page,
+                "page_size": 200,
+                "total_pages": 2,
+            },
+        )
+
+    client = make_client(handler)
+
+    candidates = await client.list_merge_candidates()
+
+    assert [c["id"] for c in candidates] == list(range(201))
+    # No status filter: de-dupe must see reviewed candidates too.
+    assert requests == [
+        [("page", "1"), ("page_size", "200")],
+        [("page", "2"), ("page_size", "200")],
+    ]
+
+
+@pytest.mark.anyio
 async def test_post_merge_sends_current_branch_payload_shape(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

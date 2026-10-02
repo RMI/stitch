@@ -27,6 +27,7 @@ from stitch.api.db.model import MembershipModel, MembershipStatus, ResourceModel
 from stitch.api.db.model.oil_gas_field_source_value import ATTRIBUTE_NAMES
 from stitch.api.entities import (
     MergeCandidateCreateRequest,
+    MergeCandidateQueryParams,
     MergeCandidateReviewRequest,
     OGFieldQueryParams,
     User,
@@ -369,8 +370,16 @@ class TestActionCallSiteLabels:
         )
 
         captured_query_events.clear()
-        await mca.list_merge_candidates(session)
-        _assert_labels(captured_query_events, {"merge_candidates.list"})
+        await mca.list_merge_candidates(session, MergeCandidateQueryParams())
+        _assert_labels(
+            captured_query_events,
+            {
+                "merge_candidates.list.count",
+                "merge_candidates.list",
+                "merge_candidates.list.status_counts",
+                "merge_candidates.list.names",
+            },
+        )
 
         captured_query_events.clear()
         await mca.get_merge_candidate(session, approved.id)

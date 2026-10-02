@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   createLLMSuggestion,
   createSourceForResource,
+  getMergeCandidates,
   getResourceFilterOptions,
   getResources,
   getResource,
@@ -391,6 +392,50 @@ describe("API Functions", () => {
         message: "No resource found for id: 42",
         status: 404,
       });
+    });
+  });
+
+  describe("getMergeCandidates", () => {
+    it("requests the first page of every status by default", async () => {
+      mockFetcher.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ items: [] }),
+      });
+
+      await getMergeCandidates(config, mockFetcher);
+
+      expect(mockFetcher).toHaveBeenCalledWith(
+        "http://localhost:8000/api/v1/oil-gas-fields/merge-candidates?page=1&page_size=50",
+      );
+    });
+
+    it("sends statuses as repeated params alongside paging and sort", async () => {
+      mockFetcher.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ items: [] }),
+      });
+
+      await getMergeCandidates(config, mockFetcher, "oil-gas-fields", {
+        page: 2,
+        page_size: 25,
+        status: ["PENDING", "DENIED"],
+        sort_by: "reviewed_at",
+        sort_order: "asc",
+      });
+
+      expect(mockFetcher).toHaveBeenCalledWith(
+        "http://localhost:8000/api/v1/oil-gas-fields/merge-candidates?page=2&page_size=25&status=PENDING&status=DENIED&sort_by=reviewed_at&sort_order=asc",
+      );
+    });
+
+    it("throws with the HTTP status on failure", async () => {
+      mockFetcher.mockResolvedValueOnce({ ok: false, status: 503 });
+
+      await expect(
+        getMergeCandidates(config, mockFetcher),
+      ).rejects.toMatchObject({ status: 503 });
     });
   });
 

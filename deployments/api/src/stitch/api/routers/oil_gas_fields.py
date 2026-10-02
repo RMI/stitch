@@ -16,6 +16,8 @@ from stitch.api.entities import (
     OGFieldFilterOptionsResponse,
     MergeCandidateCreateRequest,
     MergeCandidateDetailView,
+    MergeCandidatePage,
+    MergeCandidateQueryParams,
     MergeCandidateReviewRequest,
     MergeCandidateView,
     OGFieldQueryParams,
@@ -101,13 +103,21 @@ async def get_resource_filter_options(
 
 @router.get(
     "/merge-candidates",
-    response_model=list[MergeCandidateView],
+    response_model=MergeCandidatePage,
     dependencies=[Depends(require_permissions(MERGE_CANDIDATE_READ))],
 )
 async def list_merge_candidates(
-    *, uow: UnitOfWorkDep, _user: CurrentUser
-) -> list[MergeCandidateView]:
-    return await merge_candidate_actions.list_merge_candidates(session=uow.session)
+    *,
+    uow: UnitOfWorkDep,
+    _user: CurrentUser,
+    claims: Claims,
+    params: Annotated[MergeCandidateQueryParams, Query()],
+) -> MergeCandidatePage:
+    return await merge_candidate_actions.list_merge_candidates(
+        session=uow.session,
+        params=params,
+        licensed_sources=licensed_sources(claims),
+    )
 
 
 @router.get(

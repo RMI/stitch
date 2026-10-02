@@ -76,7 +76,11 @@ class StitchApiClient:
             yield self._to_candidate(item)
 
     async def list_merge_candidates(self) -> list[dict[str, Any]]:
-        return await self._client.list_merge_candidates()
+        """Every merge candidate of every status, gathered page by page.
+
+        De-duplication needs reviewed candidates too, so no status filter.
+        """
+        return [item async for item in self._client.iter_merge_candidates()]
 
     @staticmethod
     def _to_candidate(item: dict[str, Any]) -> FieldCandidate:

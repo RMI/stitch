@@ -18,6 +18,11 @@ const ENDPOINT = "oil-gas-fields";
 // Tailwind's md breakpoint, where the queue moves beside the decision panel
 // (the md: grid classes in the page layout below).
 const TWO_COLUMN_LAYOUT_QUERY = "(min-width: 48rem)";
+// One API page (its maximum size) until the queue gets paging controls.
+const QUEUE_PAGE_SIZE = 200;
+// Approved merges are finished work, so the queue hides them unless the
+// reviewer opts in.
+const UNFINISHED_STATUSES = ["PENDING", "DENIED"];
 
 function getStatusClasses(status) {
   if (status === "PENDING") {
@@ -421,18 +426,21 @@ export default function MergeCandidateReviewPage() {
     : null;
 
   const {
-    data: candidates,
+    data: candidatePage,
     isLoading: listLoading,
     isError: listError,
     error: listErrorObj,
-  } = useMergeCandidates(ENDPOINT, true);
-
-  // Approved merges are finished work, so the queue hides them unless the
-  // reviewer opts in. Filtering here rather than in the API keeps the header
-  // counts below reporting on the whole workload, not just the visible rows.
-  const visibleCandidates = candidates?.filter(
-    (c) => showApproved || c.status !== "APPROVED",
+  } = useMergeCandidates(
+    ENDPOINT,
+    {
+      page: 1,
+      page_size: QUEUE_PAGE_SIZE,
+      // Omitting the status filter returns every status.
+      status: showApproved ? undefined : UNFINISHED_STATUSES,
+    },
+    true,
   );
+  const visibleCandidates = candidatePage?.items;
 
   // Default to the first pending candidate once the list loads. Done during
   // render (not in an effect) so the selection is set before the first paint
@@ -453,14 +461,16 @@ export default function MergeCandidateReviewPage() {
   // until the detail query lands. Without this, review actions dead-click
   // while the detail is in flight.
   const listCandidate =
-    candidates?.find((item) => item.id === selectedId) ?? null;
+    visibleCandidates?.find((item) => item.id === selectedId) ?? null;
   const candidate = candidateQuery.data ?? listCandidate;
 
-  const pendingCount =
-    candidates?.filter((c) => c.status === "PENDING").length ?? 0;
+  // The API counts the whole queue regardless of the status filter, so the
+  // header reports on the whole workload, not just the visible rows.
+  const statusCounts = candidatePage?.status_counts;
+  const pendingCount = statusCounts?.PENDING ?? 0;
   const reviewedCount =
-    candidates?.filter((c) => c.status === "APPROVED" || c.status === "DENIED")
-      .length ?? 0;
+    (statusCounts?.APPROVED ?? 0) + (statusCounts?.DENIED ?? 0);
+  const totalCount = pendingCount + reviewedCount;
 
   function handleSelect(id) {
     setSelectedId(id);
@@ -490,7 +500,7 @@ export default function MergeCandidateReviewPage() {
         // once the refreshed data is on its way. Failures surface via
         // `reviewMutation.error` and keep the current candidate selected.
         onSuccess: () => {
-          const nextPending = candidates?.find(
+          const nextPending = visibleCandidates?.find(
             (item) => item.id !== candidate.id && item.status === "PENDING",
           );
           if (nextPending) {
@@ -530,7 +540,7 @@ export default function MergeCandidateReviewPage() {
             <div className="rounded-md border border-line bg-panel px-3 py-2">
               <dt className="text-xs text-ink-muted">Total</dt>
               <dd className="font-mono text-lg font-medium tabular-nums text-ink">
-                {candidates?.length ?? 0}
+                {totalCount}
               </dd>
             </div>
           </dl>
@@ -572,9 +582,7 @@ export default function MergeCandidateReviewPage() {
           onSelect={handleSelect}
           showApproved={showApproved}
           onShowApprovedChange={setShowApproved}
-          hasHiddenApproved={
-            Boolean(candidates?.length) && !visibleCandidates?.length
-          }
+          hasHiddenApproved={!showApproved && (statusCounts?.APPROVED ?? 0) > 0}
         />
       </div>
     </div>

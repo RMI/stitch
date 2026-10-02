@@ -184,6 +184,49 @@ class MergeCandidateView(BaseModel):
     reviewed_by_id: int | None = None
 
 
+class MergeCandidateListItemView(MergeCandidateView):
+    """A merge candidate as read back by the list and detail endpoints.
+
+    ``name`` is the candidate's display name: the merged resource's name once
+    the candidate is approved (its source resources are emptied by the merge),
+    otherwise the name from the best-ranked source across its resources. It is
+    null when no licensed source carries a name.
+    """
+
+    name: str | None = None
+
+
+class MergeCandidateFilterParams(BaseModel):
+    """Repeat ``status`` once per value (``?status=PENDING&status=DENIED``) to
+    match any of them. Omitted, every status is returned."""
+
+    status: list[MergeCandidateStatus] | None = None
+
+
+class MergeCandidateSortParams(BaseModel):
+    # `id` is always appended in the same direction as a tiebreak, so pages
+    # stay stable when candidates share a timestamp (bulk creation).
+    sort_by: Literal["created", "reviewed_at"] = "created"
+    sort_order: Literal["asc", "desc"] = "desc"
+
+
+class MergeCandidateQueryParams(
+    PaginationParams, MergeCandidateFilterParams, MergeCandidateSortParams
+):
+    pass
+
+
+class MergeCandidatePage(PaginatedResponse[MergeCandidateListItemView]):
+    """A page of merge candidates.
+
+    ``status_counts`` covers the whole queue regardless of the ``status``
+    filter, so a reviewer always sees the full workload. Every status is
+    present, zero when none exist.
+    """
+
+    status_counts: dict[MergeCandidateStatus, int]
+
+
 class ComparisonValueView(OGFieldSourceValueView):
     """A source's value in a merge comparison, tagged with ``resource_id`` --
     the candidate resource the source is currently attached to.
@@ -228,5 +271,5 @@ class FieldComparisonView(BaseModel):
     values: list[ComparisonValueView]
 
 
-class MergeCandidateDetailView(MergeCandidateView):
+class MergeCandidateDetailView(MergeCandidateListItemView):
     compare: list[FieldComparisonView]

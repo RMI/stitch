@@ -45,6 +45,11 @@ const keys = {
     ...keys.all(endpoint),
     "merge-candidates",
   ],
+  mergeCandidateList: (endpoint = "oil-gas-fields", params) => [
+    ...keys.mergeCandidates(endpoint),
+    "list",
+    params,
+  ],
   mergeCandidate: (endpoint = "oil-gas-fields", id) => [
     ...keys.mergeCandidates(endpoint),
     id,
@@ -119,10 +124,16 @@ export const resourceQueries = {
       queryFn: (fetcher) => getResource(config, id, fetcher, endpoint),
     }),
 
-  mergeCandidates: (config, endpoint = "oil-gas-fields") =>
+  // `params` is { page, page_size, status, sort_by, sort_order }; see
+  // getMergeCandidates.
+  mergeCandidates: (config, endpoint = "oil-gas-fields", params = {}) =>
     queryOptions({
-      queryKey: keys.mergeCandidates(endpoint),
-      queryFn: (fetcher) => getMergeCandidates(config, fetcher, endpoint),
+      queryKey: keys.mergeCandidateList(endpoint, params),
+      queryFn: (fetcher) =>
+        getMergeCandidates(config, fetcher, endpoint, params),
+      // Keeps the previous page's queue on screen while the next page or
+      // filter fetches, instead of the queue flashing to a loading state.
+      placeholderData: keepPreviousData,
     }),
 
   mergeCandidate: (config, endpoint = "oil-gas-fields", id) =>
