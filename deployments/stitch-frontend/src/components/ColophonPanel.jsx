@@ -179,6 +179,11 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
   const [tokenMenuOpen, setTokenMenuOpen] = useState(false);
   const tokenMenuRef = useRef(null);
   const tokenMenuButtonRef = useRef(null);
+  const tokenRefreshResetTimer = useRef(null);
+
+  useEffect(() => {
+    return () => window.clearTimeout(tokenRefreshResetTimer.current);
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -326,7 +331,15 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
   // makes Auth0 issue a new token that carries the user's current permissions;
   // the diagnostics and any loaded app data are then refetched with it.
   async function handleRefreshToken() {
+    if (tokenRefreshStatus === "refreshing") {
+      return;
+    }
+
+    // The menu item is about to disappear; keep keyboard focus on the arrow.
     setTokenMenuOpen(false);
+    tokenMenuButtonRef.current?.focus();
+    // Cancel an earlier refresh's label reset so it can't end this one early.
+    window.clearTimeout(tokenRefreshResetTimer.current);
     setTokenRefreshStatus("refreshing");
 
     try {
@@ -345,7 +358,10 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
       setTokenRefreshStatus("failed");
     }
 
-    window.setTimeout(() => setTokenRefreshStatus("idle"), 2000);
+    tokenRefreshResetTimer.current = window.setTimeout(
+      () => setTokenRefreshStatus("idle"),
+      2000,
+    );
   }
 
   return (
@@ -392,9 +408,9 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
                 ref={tokenMenuButtonRef}
                 type="button"
                 onClick={() => setTokenMenuOpen((open) => !open)}
-                disabled={
-                  !isAuthenticated || tokenRefreshStatus === "refreshing"
-                }
+                // Stays enabled during a refresh so it can keep keyboard focus;
+                // the menu item is what blocks a second refresh.
+                disabled={!isAuthenticated}
                 aria-label="More token actions"
                 aria-expanded={tokenMenuOpen}
                 aria-controls="token-actions-menu"
@@ -411,7 +427,8 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
                   <button
                     type="button"
                     onClick={() => void handleRefreshToken()}
-                    className="block w-full px-3 py-1.5 text-left text-sm text-ink hover:bg-surface focus:outline-none focus-visible:bg-surface"
+                    disabled={tokenRefreshStatus === "refreshing"}
+                    className="block w-full px-3 py-1.5 text-left text-sm text-ink hover:bg-surface focus:outline-none focus-visible:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
                     title="Get a new access token with your latest permissions"
                   >
                     Refresh token
