@@ -259,6 +259,21 @@ describe("source mix per resource column", () => {
     expect(screen.getAllByTestId("source-mix-placeholder")).toHaveLength(2);
   });
 
+  it("shows cached source mixes even while the comparison itself loads", () => {
+    // The queue loads these details for candidate names, so they are usually
+    // cached before the comparison arrives. Showing them early costs no
+    // layout shift (the placeholder is the same height). The loading layout
+    // is hidden from screen readers, hence { hidden: true }.
+    renderComparison({ compare: undefined, isLoading: true, sourceDetails });
+
+    expect(
+      screen.getAllByRole("group", { name: /^Data source mix/, hidden: true }),
+    ).toHaveLength(2);
+    expect(
+      screen.queryByTestId("source-mix-placeholder"),
+    ).not.toBeInTheDocument();
+  });
+
   it('says "Source mix unavailable" when the source details fail to load', () => {
     renderComparison({
       sourceDetails: { data: undefined, isLoading: false, isError: true },
