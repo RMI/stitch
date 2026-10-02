@@ -304,6 +304,10 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
       return;
     }
 
+    // A refresh result may still be showing on this button; clear it so the
+    // copy feedback is what the user sees.
+    setTokenRefreshStatus("idle");
+
     try {
       await navigator.clipboard.writeText(accessToken);
       setTokenCopied(true);
@@ -367,7 +371,8 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
               <button
                 type="button"
                 onClick={() => void handleCopyToken()}
-                disabled={!accessToken}
+                // Copying mid-refresh would copy the token being replaced.
+                disabled={!accessToken || tokenRefreshStatus === "refreshing"}
                 className="rounded-l-md border border-line bg-panel px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:border-line-strong hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 title="Copy raw access token for API tools"
               >
