@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuth0 } from "@auth0/auth0-react";
 import { setConfigForTests } from "../config/env";
@@ -640,5 +640,81 @@ describe("ColophonPanel", () => {
       ).toBeInTheDocument();
     });
     expect(clipboardSpy).toHaveBeenCalledWith("refreshed-access-token");
+  });
+
+  it("moves focus back to the arrow after choosing Refresh token", async () => {
+    const { default: ColophonPanel } = await import("./ColophonPanel");
+
+    renderWithQueryClient(<ColophonPanel diagnosticsOpen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("test-access-token")).toBeInTheDocument();
+    });
+
+    const menuButton = screen.getByRole("button", {
+      name: "More token actions",
+    });
+    fireEvent.click(menuButton);
+    const refreshItem = screen.getByRole("button", { name: "Refresh token" });
+    refreshItem.focus();
+    fireEvent.click(refreshItem);
+
+    expect(menuButton).toHaveFocus();
+    await screen.findByRole("button", { name: "Token refreshed!" });
+    expect(menuButton).toHaveFocus();
+  });
+
+  it("does not let an earlier refresh's label reset end a retry early", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    try {
+      const { default: ColophonPanel } = await import("./ColophonPanel");
+
+      renderWithQueryClient(<ColophonPanel diagnosticsOpen />);
+
+      await waitFor(() => {
+        expect(screen.getByText("test-access-token")).toBeInTheDocument();
+      });
+
+      const menuButton = screen.getByRole("button", {
+        name: "More token actions",
+      });
+
+      getAccessTokenSilently.mockRejectedValueOnce(new Error("login_required"));
+      fireEvent.click(menuButton);
+      fireEvent.click(screen.getByRole("button", { name: "Refresh token" }));
+      await screen.findByRole("button", { name: "Refresh failed" });
+
+      let finishRetry;
+      getAccessTokenSilently.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishRetry = resolve;
+        }),
+      );
+      fireEvent.click(menuButton);
+      fireEvent.click(screen.getByRole("button", { name: "Refresh token" }));
+
+      // Past the first refresh's 2s reset, while the retry is still running.
+      await act(async () => {
+        vi.advanceTimersByTime(2500);
+      });
+
+      expect(
+        screen.getByRole("button", { name: "Refreshing..." }),
+      ).toBeDisabled();
+
+      await act(async () => {
+        finishRetry("refreshed-access-token");
+      });
+      expect(
+        screen.getByRole("button", { name: "Token refreshed!" }),
+      ).toBeEnabled();
+    } finally {
+      consoleErrorSpy.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });
