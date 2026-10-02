@@ -749,6 +749,35 @@ describe("MergeCandidateReviewPage", () => {
       expect(queueItems()).toHaveLength(3);
     });
 
+    it("returns to page 1 when a page past the end has no results", async () => {
+      mockQueue([]);
+      renderWithQueryClient(<MergeCandidateReviewPage />, {
+        initialEntries: ["/?page=4"],
+      });
+
+      await waitFor(() => expect(lastQueueRequest().page).toBe(1));
+    });
+
+    it("clears the selection when the page comes back empty", async () => {
+      const user = userEvent.setup();
+      mockQueue([pendingCandidate, deniedCandidate]);
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      expect(
+        screen.getByRole("heading", { name: "Bergan" }),
+      ).toBeInTheDocument();
+
+      // Only approved candidates, of which there are none.
+      await toggleStatus(user, "Approved");
+      await user.click(screen.getByRole("checkbox", { name: /Pending/ }));
+
+      expect(lastQueueRequest().status).toEqual(["APPROVED"]);
+      expect(screen.getByText("Select a candidate.")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Approve merge" }),
+      ).not.toBeInTheDocument();
+    });
+
     it("selects the first pending candidate on the page", () => {
       mockQueue([approvedCandidate, deniedCandidate, pendingCandidate]);
       renderWithQueryClient(<MergeCandidateReviewPage />, {

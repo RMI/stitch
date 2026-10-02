@@ -478,11 +478,12 @@ export default function MergeCandidateReviewPage() {
 
   // Reviewing the last candidate on the last page (or a link to a page that no
   // longer exists) leaves the page past the end; step back to the new last
-  // page instead of showing an empty queue. Replaces the history entry, since
-  // the empty page was never something the reviewer chose.
-  const lastPage = candidatePage?.total_pages ?? 0;
+  // page instead of showing an empty queue. An empty result has no pages, so
+  // page 1 counts as its last. Replaces the history entry, since the empty
+  // page was never something the reviewer chose.
+  const lastPage = Math.max(candidatePage?.total_pages ?? 0, 1);
   const pastLastPage =
-    !listIsPlaceholder && lastPage > 0 && viewState.page > lastPage;
+    Boolean(candidatePage) && !listIsPlaceholder && viewState.page > lastPage;
   const { setPage } = viewState;
   useEffect(() => {
     if (pastLastPage) setPage(lastPage, { replace: true });
@@ -494,10 +495,16 @@ export default function MergeCandidateReviewPage() {
   // paint and without a cascading re-render. Skipped while the previous
   // page's rows stand in for the next, so it never lands on a row that is
   // about to disappear.
+  // An empty page clears the selection instead, so the panel never offers
+  // review actions for a candidate the queue is not showing.
   const selectionOnPage = pageCandidates?.some((c) => c.id === selectedId);
-  if (pageCandidates?.length && !selectionOnPage && !listIsPlaceholder) {
-    const firstPending = pageCandidates.find((c) => c.status === "PENDING");
-    setSelectedId(firstPending?.id ?? pageCandidates[0].id);
+  if (pageCandidates && !selectionOnPage && !listIsPlaceholder) {
+    if (pageCandidates.length) {
+      const firstPending = pageCandidates.find((c) => c.status === "PENDING");
+      setSelectedId(firstPending?.id ?? pageCandidates[0].id);
+    } else if (selectedId !== null) {
+      setSelectedId(null);
+    }
   }
 
   const candidateQuery = useMergeCandidate(
