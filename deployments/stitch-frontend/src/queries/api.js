@@ -190,14 +190,15 @@ export async function createSourceForResource(
 }
 
 // `status` is a list sent as a repeated param (any of them matches); omitted,
-// the API returns every status.
+// the API returns every status. `q` searches the candidates' resources.
 export async function getMergeCandidates(
   config,
   fetcher,
   endpoint = "oil-gas-fields",
-  { page = 1, page_size = 50, status, sort_by, sort_order } = {},
+  { page = 1, page_size = 50, q, status, sort_by, sort_order } = {},
 ) {
   const params = new URLSearchParams({ page, page_size });
+  if (q) params.set("q", q);
   for (const value of status ?? []) {
     params.append("status", value);
   }

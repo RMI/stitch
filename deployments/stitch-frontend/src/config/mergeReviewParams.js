@@ -9,7 +9,7 @@
  *
  * Rules:
  * - Defaults are omitted, so the default view (pending candidates, newest
- *   first, page 1) is a bare /merge-candidate-review.
+ *   first, page 1, no search) is a bare /merge-candidate-review.
  * - Serialization order is fixed, so the same view always produces the same URL.
  * - Junk is tolerated, never fatal: an unknown status is dropped, and a
  *   malformed page, page_size or sort falls back to its default.
@@ -91,6 +91,7 @@ export function parseMergeReviewParams(searchParams) {
   return {
     page: parsePage(searchParams.get("page")),
     pageSize: parsePageSize(searchParams.get("page_size")),
+    q: (searchParams.get("q") ?? "").trim(),
     statuses: parseStatuses(searchParams.getAll("status")),
     sortKey: parseSort(
       searchParams.get("sort_by"),
@@ -99,12 +100,15 @@ export function parseMergeReviewParams(searchParams) {
   };
 }
 
-export function toMergeReviewParams({ page, pageSize, statuses, sortKey }) {
+export function toMergeReviewParams({ page, pageSize, q, statuses, sortKey }) {
   const params = new URLSearchParams();
   if (page > DEFAULT_PAGE) params.set("page", String(page));
   if (pageSize !== DEFAULT_QUEUE_PAGE_SIZE) {
     params.set("page_size", String(pageSize));
   }
+
+  const trimmedSearch = (q ?? "").trim();
+  if (trimmedSearch) params.set("q", trimmedSearch);
 
   if (statuses.length === 0) {
     params.set("status", ALL_STATUSES);
@@ -125,12 +129,19 @@ export function toMergeReviewParams({ page, pageSize, statuses, sortKey }) {
 
 // The list endpoint's query params for a parsed view. An empty status list
 // sends no status filter, which the API reads as every status.
-export function toMergeCandidateQuery({ page, pageSize, statuses, sortKey }) {
+export function toMergeCandidateQuery({
+  page,
+  pageSize,
+  q,
+  statuses,
+  sortKey,
+}) {
   const sort =
     QUEUE_SORT_OPTIONS.find((option) => option.key === sortKey) ?? DEFAULT_SORT;
   return {
     page,
     page_size: pageSize,
+    q: q || undefined,
     status: statuses.length ? statuses : undefined,
     sort_by: sort.sortBy,
     sort_order: sort.sortOrder,

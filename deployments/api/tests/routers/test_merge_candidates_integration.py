@@ -15,6 +15,14 @@ from stitch.api.db.model import (
     OGFieldResourceSourcePriority,
 )
 from stitch.ogsi.model import OGFieldResource, OGFieldSource
+from stitch.api.auth import get_token_claims
+from stitch.api.main import app
+from stitch.auth import TokenClaims
+from stitch.auth.permissions import (
+    MERGE_CANDIDATE_READ,
+    RESOURCE_READ,
+    SOURCE_READ_RMI,
+)
 
 
 async def _create_resource(
@@ -698,3 +706,187 @@ class TestMergeCandidateListIntegration:
             "/oil-gas-fields/merge-candidates", params=params
         )
         assert resp.status_code == 422, resp.text
+
+
+class TestMergeCandidateSearchIntegration:
+    """``q`` on the list: a candidate matches when any of its resources (or its
+    merged resource) matches the resource list's search, or a numeric ``q``
+    names one of those resources."""
+
+    @pytest.fixture
+    def make_resource(
+        self, integration_client, og_field_resource_factory, source_maker
+    ):
+        # The searchable fields default to blank, so only what a test sets can
+        # match (the factory would otherwise fill them with random text).
+        async def _make(*, source: str = "rmi", **fields) -> int:
+            searchable = {
+                "name_local": None,
+                "basin": None,
+                "state_province": None,
+                "region": None,
+            }
+            return await _create_resource_with_sources(
+                integration_client,
+                og_field_resource_factory,
+                [
+                    source_maker(
+                        source=source, managed=False, **{**searchable, **fields}
+                    )
+                ],
+            )
+
+        return _make
+
+    async def _search(self, client: AsyncClient, **params) -> list[int]:
+        resp = await client.get("/oil-gas-fields/merge-candidates", params=params)
+        assert resp.status_code == 200, resp.text
+        return [item["id"] for item in resp.json()["items"]]
+
+    @pytest.mark.anyio
+    async def test_matches_either_resource_by_name(
+        self, integration_client: AsyncClient, make_resource
+    ):
+        first = await make_resource(name="Zubair Main")
+        second = await make_resource(name="Zubayr Main")
+        candidate_id = await _create_candidate(integration_client, [first, second])
+        other = await _create_candidate(
+            integration_client,
+            [await make_resource(name="Ghawar"), await make_resource(name="Ghawar")],
+        )
+
+        # Case-insensitive substring, matching only the second resource.
+        assert await self._search(integration_client, q="zubayr") == [candidate_id]
+        assert await self._search(integration_client, q="Zub") == [candidate_id]
+        assert other not in await self._search(integration_client, q="zub")
+
+    @pytest.mark.anyio
+    async def test_matches_the_other_search_fields(
+        self, integration_client: AsyncClient, make_resource
+    ):
+        candidate_id = await _create_candidate(
+            integration_client,
+            [
+                await make_resource(name="Alpha", basin="Qwertian Basin"),
+                await make_resource(name="Alpha", region="Middle East"),
+            ],
+        )
+
+        assert await self._search(integration_client, q="qwertian") == [candidate_id]
+
+    @pytest.mark.anyio
+    async def test_finds_an_approved_candidate_by_its_merged_resource(
+        self, integration_client: AsyncClient, make_resource
+    ):
+        candidate_id = await _create_candidate(
+            integration_client,
+            [
+                await make_resource(name="Safaniya"),
+                await make_resource(name="Safaniya"),
+            ],
+        )
+        approve = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{candidate_id}/approve"
+        )
+        assert approve.status_code == 200, approve.text
+
+        # The originals are emptied by the merge; only the merged resource
+        # still carries the name.
+        assert await self._search(integration_client, q="safaniya") == [candidate_id]
+
+    @pytest.mark.anyio
+    async def test_numeric_q_matches_resource_ids(
+        self, integration_client: AsyncClient, make_resource
+    ):
+        target = await make_resource(name="Unrelated")
+        by_id = await _create_candidate(
+            integration_client, [target, await make_resource(name="Unrelated")]
+        )
+        await _create_candidate(
+            integration_client,
+            [await make_resource(name="Ghawar"), await make_resource(name="Ghawar")],
+        )
+
+        assert await self._search(integration_client, q=str(target)) == [by_id]
+        # Candidate ids are not searched: no resource has this id.
+        assert await self._search(integration_client, q="987654321") == []
+        # Too long to be an id; still searched as text, without erroring.
+        assert await self._search(integration_client, q="9" * 30) == []
+
+    @pytest.mark.anyio
+    async def test_numeric_q_also_matches_digits_in_text(
+        self, integration_client: AsyncClient, make_resource
+    ):
+        by_text = await _create_candidate(
+            integration_client,
+            [
+                await make_resource(name="Block 990077"),
+                await make_resource(name="Block 990077"),
+            ],
+        )
+
+        # Far above any resource id here, so only the name can match.
+        assert await self._search(integration_client, q="990077") == [by_text]
+
+    @pytest.mark.anyio
+    async def test_combines_with_status_and_leaves_counts_whole_queue(
+        self, integration_client: AsyncClient, make_resource
+    ):
+        pending = await _create_candidate(
+            integration_client,
+            [await make_resource(name="Rumaila"), await make_resource(name="Rumaila")],
+        )
+        denied = await _create_candidate(
+            integration_client,
+            [await make_resource(name="Rumaila"), await make_resource(name="Rumaila")],
+        )
+        await _create_candidate(
+            integration_client,
+            [await make_resource(name="Ghawar"), await make_resource(name="Ghawar")],
+        )
+        resp = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{denied}/deny"
+        )
+        assert resp.status_code == 200, resp.text
+
+        resp = await integration_client.get(
+            "/oil-gas-fields/merge-candidates",
+            params={"q": "rumaila", "status": "PENDING"},
+        )
+        body = resp.json()
+        assert [item["id"] for item in body["items"]] == [pending]
+        assert body["total_count"] == 1
+        assert body["status_counts"] == {"PENDING": 2, "APPROVED": 0, "DENIED": 1}
+
+    @pytest.mark.anyio
+    async def test_blank_q_is_no_search(
+        self, integration_client: AsyncClient, make_resource
+    ):
+        candidate_id = await _create_candidate(
+            integration_client,
+            [await make_resource(name="Ghawar"), await make_resource(name="Ghawar")],
+        )
+
+        assert await self._search(integration_client, q="   ") == [candidate_id]
+
+    @pytest.mark.anyio
+    async def test_ignores_names_from_unlicensed_sources(
+        self, integration_client: AsyncClient, make_resource
+    ):
+        await _create_candidate(
+            integration_client,
+            [
+                await make_resource(source="gem", name="Gemonly Field"),
+                await make_resource(source="gem", name="Gemonly Field"),
+            ],
+        )
+        app.dependency_overrides[get_token_claims] = lambda: TokenClaims(
+            sub="test|rmi-only",
+            email="rmi@test.com",
+            name="RMI Only",
+            permissions=frozenset(
+                {RESOURCE_READ, MERGE_CANDIDATE_READ, SOURCE_READ_RMI}
+            ),
+        )
+
+        assert await self._search(integration_client, q="gemonly") == []

@@ -382,6 +382,20 @@ class TestActionCallSiteLabels:
         )
 
         captured_query_events.clear()
+        await mca.list_merge_candidates(session, MergeCandidateQueryParams(q="Cand"))
+        _assert_labels(
+            captured_query_events,
+            {
+                "merge_candidates.list.search_scope",
+                "merge_candidates.list.search",
+                "merge_candidates.list.count",
+                "merge_candidates.list",
+                "merge_candidates.list.status_counts",
+                "merge_candidates.list.names",
+            },
+        )
+
+        captured_query_events.clear()
         await mca.get_merge_candidate(session, approved.id)
         _assert_labels(
             captured_query_events,

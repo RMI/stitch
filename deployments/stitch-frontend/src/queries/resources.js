@@ -124,7 +124,7 @@ export const resourceQueries = {
       queryFn: (fetcher) => getResource(config, id, fetcher, endpoint),
     }),
 
-  // `params` is { page, page_size, status, sort_by, sort_order }; see
+  // `params` is { page, page_size, q, status, sort_by, sort_order }; see
   // getMergeCandidates.
   mergeCandidates: (config, endpoint = "oil-gas-fields", params = {}) =>
     queryOptions({

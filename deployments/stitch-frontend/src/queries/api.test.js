@@ -430,6 +430,22 @@ describe("API Functions", () => {
       );
     });
 
+    it("sends the search as q", async () => {
+      mockFetcher.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ items: [] }),
+      });
+
+      await getMergeCandidates(config, mockFetcher, "oil-gas-fields", {
+        q: "Block 2024",
+      });
+
+      expect(mockFetcher).toHaveBeenCalledWith(
+        "http://localhost:8000/api/v1/oil-gas-fields/merge-candidates?page=1&page_size=50&q=Block+2024",
+      );
+    });
+
     it("throws with the HTTP status on failure", async () => {
       mockFetcher.mockResolvedValueOnce({ ok: false, status: 503 });
 
