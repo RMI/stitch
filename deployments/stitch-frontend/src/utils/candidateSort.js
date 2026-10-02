@@ -3,15 +3,17 @@
 //
 // `candidates` arrive in the API's order, which is newest first, so "newest"
 // keeps it and "oldest" reverses it. The name sorts compare the queue's
-// display names, ignoring case and accents ("Ábalos" sorts as "Abalos"), and
+// display names the way the reviewer's browser language alphabetizes, and
 // break ties newest first. A candidate whose name has not loaded yet (absent
 // from `namesById`) cannot be placed, so those go at the end, newest first,
 // until their names arrive.
 
-// Pinned to English rather than the browser's language: some locales treat
-// accented letters as letters of their own (Swedish sorts "ä" after "z"), which
-// would break the accent-insensitive order the control promises.
-const nameCollator = new Intl.Collator("en", { sensitivity: "base" });
+// The browser's language (no locale given), so each reviewer gets their own
+// language's alphabetical order. Base sensitivity ignores case; in English it
+// also ignores accents ("Ábalos" sorts as "Abalos"), while languages that treat
+// some accented letters as letters of their own keep that (Swedish sorts "ä"
+// after "z").
+const nameCollator = new Intl.Collator(undefined, { sensitivity: "base" });
 
 export function sortCandidates(candidates, sort, namesById) {
   if (sort === "oldest") return [...candidates].reverse();

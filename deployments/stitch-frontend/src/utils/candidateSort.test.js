@@ -33,7 +33,9 @@ describe("sortCandidates", () => {
       [1, "Zubair"],
     ]);
 
-    it("sorts A to Z, ignoring case and accents", () => {
+    // The test runs with an English default language, where base
+    // sensitivity ignores case and accents.
+    it("sorts A to Z, ignoring case and accents in English", () => {
       // "Ábalos" sorts with "Abalos", before "Abbott".
       expect(ids(sortCandidates(CANDIDATES, "name-asc", names))).toEqual([
         4, 3, 5, 2, 1,
@@ -70,15 +72,15 @@ describe("sortCandidates", () => {
 });
 
 describe("sortCandidates in a non-English browser", () => {
-  // In Swedish, "ä" is its own letter sorted after "z", even at base
-  // sensitivity. The control promises accent-insensitive names everywhere,
-  // so the order must not depend on the browser's language.
+  // Names sort the way the reviewer's browser language alphabetizes. In
+  // Swedish, "ä" is its own letter sorted after "z", so a Swedish reviewer
+  // sees Swedish order rather than English.
   afterEach(() => {
     vi.restoreAllMocks();
     vi.resetModules();
   });
 
-  it("still sorts accented letters with their base letter", async () => {
+  it("follows the browser's language", async () => {
     const RealCollator = Intl.Collator;
     // A regular function, not an arrow, because the code calls it with `new`.
     vi.spyOn(Intl, "Collator").mockImplementation(
@@ -100,7 +102,7 @@ describe("sortCandidates in a non-English browser", () => {
       "name-asc",
       names,
     );
-    // "Ägir" sorts as "Agir": before "Alpha", not after "Zeta".
-    expect(sorted.map((candidate) => candidate.id)).toEqual([2, 1, 3]);
+    // Swedish order: "Ägir" after "Zeta" (in English it would come first).
+    expect(sorted.map((candidate) => candidate.id)).toEqual([1, 3, 2]);
   });
 });
