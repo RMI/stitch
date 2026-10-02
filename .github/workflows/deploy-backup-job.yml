@@ -25,7 +25,6 @@ jobs:
       contents: read
     env:
       JOB_NAME: stitch-backup-${{ matrix.lane }}
-      BACKUP_CONTAINER: backups
       AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       AZURE_CONTAINER_APP_ENVIRONMENT: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
       LANE_PGHOST: ${{ vars.POSTGRES_HOST }}
