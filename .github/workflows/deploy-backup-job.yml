@@ -1,0 +1,66 @@
+---
+name: Deploy backup job
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - deployments/db/jobs/backup-job.yaml
+      - .github/scripts/deploy_backup_job.sh
+      - .github/workflows/deploy-backup-job.yml
+
+jobs:
+  deploy-backup-job:
+    name: Deploy backup job (${{ matrix.lane }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [staging, production]
+    environment: ${{ matrix.lane }}
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      JOB_NAME: stitch-backup-${{ matrix.lane }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_CONTAINER_APP_ENVIRONMENT: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
+      LANE_PGHOST: ${{ vars.POSTGRES_HOST }}
+      LANE_PGUSER: ${{ vars.POSTGRES_ADMIN_USER || 'postgres' }}
+      LANE_BACKUP_ENV: ${{ matrix.lane }}
+      LANE_BACKUP_DATABASES: ${{ vars.BACKUP_DATABASES }}
+      LANE_STORAGE_ACCOUNT: ${{ vars.BACKUP_STORAGE_ACCOUNT }}
+      LANE_PGPASSWORD: ${{ secrets.PGPASSWORD }}
+      LANE_STORAGE_KEY: ${{ secrets.BACKUP_STORAGE_KEY }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Validate lane config
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
+          : "${AZURE_CONTAINER_APP_ENVIRONMENT:?Missing required variable AZURE_CONTAINER_APP_ENVIRONMENT}"
+          : "${LANE_PGHOST:?Missing required variable POSTGRES_HOST}"
+          : "${LANE_PGUSER:?Missing required variable POSTGRES_ADMIN_USER}"
+          : "${LANE_BACKUP_DATABASES:?Missing required variable BACKUP_DATABASES}"
+          : "${LANE_STORAGE_ACCOUNT:?Missing required variable BACKUP_STORAGE_ACCOUNT}"
+          : "${LANE_PGPASSWORD:?Missing required secret PGPASSWORD}"
+          : "${LANE_STORAGE_KEY:?Missing required secret BACKUP_STORAGE_KEY}"
+
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure containerapp extension is available
+        run: |
+          az extension add --name containerapp --upgrade --allow-preview true
+
+      - name: Deploy the backup job
+        run: .github/scripts/deploy_backup_job.sh
