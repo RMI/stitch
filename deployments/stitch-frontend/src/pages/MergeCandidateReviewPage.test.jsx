@@ -671,19 +671,6 @@ describe("MergeCandidateReviewPage", () => {
       expect(queueItems()).toHaveLength(3);
     });
 
-    it("shows each status's queue-wide count in the Status filter", async () => {
-      const user = userEvent.setup();
-      renderWithQueryClient(<MergeCandidateReviewPage />);
-
-      await user.click(
-        within(queue()).getByRole("button", { name: /^Status/ }),
-      );
-
-      expect(
-        screen.getByRole("checkbox", { name: /Denied/ }).closest("label"),
-      ).toHaveTextContent(/^Denied\s*1$/);
-    });
-
     it("counts all candidates in the header regardless of the filter", async () => {
       const user = userEvent.setup();
       renderWithQueryClient(<MergeCandidateReviewPage />);

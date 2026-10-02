@@ -99,7 +99,6 @@ function CandidateQueueItem({ candidate, isSelected, onSelect }) {
 
 function QueueControls({
   statuses,
-  statusCounts,
   onStatusesChange,
   sortKey,
   onSortKeyChange,
@@ -107,7 +106,6 @@ function QueueControls({
   const statusOptions = MERGE_STATUSES.map((status) => ({
     value: status,
     label: STATUS_FILTER_LABELS[status],
-    count: statusCounts?.[status],
   }));
 
   return (
@@ -171,7 +169,6 @@ function QueuePanel({
         <h2 className="text-base font-semibold text-ink">Queue</h2>
         <QueueControls
           statuses={viewState.statuses}
-          statusCounts={candidatePage?.status_counts}
           onStatusesChange={viewState.setStatuses}
           sortKey={viewState.sortKey}
           onSortKeyChange={viewState.setSortKey}
