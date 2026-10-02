@@ -5,6 +5,7 @@ import FilterDropdown from "../components/FilterDropdown";
 import MergeSourceComparison from "../components/MergeSourceComparison";
 import MergedResourceView from "../components/MergedResourceView";
 import Pagination from "../components/Pagination";
+import Select from "../components/Select";
 import {
   MERGE_STATUSES,
   QUEUE_SORT_OPTIONS,
@@ -120,18 +121,17 @@ function QueueControls({
       <label className="sr-only" htmlFor="queue-sort">
         Sort candidates
       </label>
-      <select
+      <Select
         id="queue-sort"
         value={sortKey}
         onChange={(event) => onSortKeyChange(event.target.value)}
-        className="min-h-9 rounded-md border border-line bg-panel px-2 py-1.5 text-sm text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
       >
         {QUEUE_SORT_OPTIONS.map((option) => (
           <option key={option.key} value={option.key}>
             {option.label}
           </option>
         ))}
-      </select>
+      </Select>
     </div>
   );
 }
