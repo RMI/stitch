@@ -5,6 +5,7 @@ import {
   MERGE_COMPARISON_OTHER_FIELDS,
 } from "../constants/fieldMeta";
 import { compareEntry, valueEntryForResource } from "../utils/candidateCompare";
+import SourceMixBar from "./SourceMixBar";
 
 // Color is never the only signal: each status pairs its strip color with an
 // icon (aria-hidden) and a text label. "match"/"different" mirror the backend
@@ -115,20 +116,71 @@ function ComparisonSkeletonCell() {
   );
 }
 
+// Which data sources a resource's values come from, under its column heading:
+// the same compact bar the Resource List's "Data source mix" column shows.
+// `sourceDetails` is the caller's query of the resources' detail views, in
+// resourceIds order; without it nothing is shown. While it loads, a grey bar
+// the same height as the loaded one keeps the rows below from shifting.
+function ColumnSourceMix({ sourceDetails, index }) {
+  if (!sourceDetails) return null;
+
+  if (sourceDetails.isError) {
+    return (
+      <p className="mt-1 text-xs leading-4 text-ink-muted">
+        Source mix unavailable
+      </p>
+    );
+  }
+
+  if (sourceDetails.isLoading || !sourceDetails.data) {
+    return (
+      <div
+        data-testid="source-mix-placeholder"
+        aria-hidden="true"
+        className="mt-1"
+      >
+        <div className="h-4 w-full rounded-sm bg-surface-tint ring-1 ring-line" />
+        <div className="mt-1 h-4" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-1">
+      <SourceMixBar provenance={sourceDetails.data[index]?.provenance} />
+    </div>
+  );
+}
+
+// One column heading: the resource id, then its source mix.
+function ColumnHeader({ resourceId, sourceDetails, index }) {
+  return (
+    <div className="min-w-0">
+      <p className="break-words text-sm font-semibold text-ink">
+        Resource #{resourceId}
+      </p>
+      <ColumnSourceMix sourceDetails={sourceDetails} index={index} />
+    </div>
+  );
+}
+
 // The loaded layout with placeholders in the cells. Headers and field labels are
 // real: resourceIds is a prop and FIELD_META is static, so neither changes when
 // the data lands. The trailing bar stands in for the collapsed accordion summary.
-function ComparisonSkeleton({ resourceIds }) {
+// Source mixes are real too once their own query has data -- usually already,
+// since the queue loads it for candidate names -- and the placeholder is the
+// same height, so showing them early causes no layout shift.
+function ComparisonSkeleton({ resourceIds, sourceDetails }) {
   return (
     <div aria-hidden="true" className="space-y-4">
       <div className="grid gap-3" style={gridColumnsStyle(resourceIds.length)}>
-        {resourceIds.map((id) => (
-          <p
+        {resourceIds.map((id, index) => (
+          <ColumnHeader
             key={id}
-            className="min-w-0 break-words text-sm font-semibold text-ink"
-          >
-            Resource #{id}
-          </p>
+            resourceId={id}
+            sourceDetails={sourceDetails}
+            index={index}
+          />
         ))}
       </div>
 
@@ -189,13 +241,15 @@ function OtherAttributesAccordion({ compare, resourceIds }) {
 // rendered from the backend `compare` object on the candidate detail response.
 // Statuses come verbatim from the backend; this component performs no value
 // comparison of its own. Loading and error state belong to the caller's
-// detail query.
+// detail query, and the per-column source mix to the caller's
+// `sourceDetails` query.
 export default function MergeSourceComparison({
   resourceIds,
   compare,
   isLoading,
   isError,
   error,
+  sourceDetails,
 }) {
   const ids = resourceIds ?? [];
   const hasEnoughSources = ids.length >= 2;
@@ -212,7 +266,10 @@ export default function MergeSourceComparison({
         ) : isLoading ? (
           <div aria-busy="true">
             <p className="sr-only">Loading comparison…</p>
-            <ComparisonSkeleton resourceIds={ids} />
+            <ComparisonSkeleton
+              resourceIds={ids}
+              sourceDetails={sourceDetails}
+            />
           </div>
         ) : isError ? (
           <p className="text-sm text-danger">
@@ -221,13 +278,13 @@ export default function MergeSourceComparison({
         ) : compare ? (
           <div className="space-y-4">
             <div className="grid gap-3" style={gridColumnsStyle(ids.length)}>
-              {ids.map((id) => (
-                <p
+              {ids.map((id, index) => (
+                <ColumnHeader
                   key={id}
-                  className="min-w-0 break-words text-sm font-semibold text-ink"
-                >
-                  Resource #{id}
-                </p>
+                  resourceId={id}
+                  sourceDetails={sourceDetails}
+                  index={index}
+                />
               ))}
             </div>
             {MERGE_COMPARISON_CORE_FIELDS.map((fieldKey) => (
