@@ -24,14 +24,13 @@ from stitch.api.entities import (
     MergeCandidateView,
 )
 from stitch.api.observability.context import named_query
-from stitch.ogsi.model import OGFieldSource
+from stitch.ogsi.model import SOURCE_PRIORITY, OGFieldSource
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
 
 from .model import (
     MergeCandidateItemModel,
     MergeCandidateModel,
-    OGFieldSourcePriority,
     ResourceModel,
 )
 from .og_field_resource_actions import apply_resource_merge
@@ -161,15 +160,14 @@ def _build_comparison(
 
 
 async def _default_source_priority(session: AsyncSession) -> dict[str, int]:
-    """Global default source ordering (``source`` key -> priority, lower wins).
+    """Global default source ordering (``source`` key -> rank, lower wins).
 
     A merge resets the merged resource to this default order, so the comparison
-    ranks sources by it rather than by any per-resource override.
+    ranks sources by it rather than by any per-resource curation. Derived from the
+    canonical ``SOURCE_PRIORITY`` (the priority lookup table is gone); ``session``
+    is kept for call-site symmetry.
     """
-    rows = await session.execute(
-        select(OGFieldSourcePriority.source, OGFieldSourcePriority.priority)
-    )
-    return {source: priority for source, priority in rows.all()}
+    return {source: rank for rank, source in enumerate(SOURCE_PRIORITY)}
 
 
 def _candidate_to_detail_view(
@@ -240,8 +238,7 @@ async def get_merge_candidate(
     # `status` compares the resources' coalesced values; `values` lists every
     # contributing source tagged with the resource it's attached to, ranked by
     # the default source order (winner-first).
-    with named_query("merge_candidates.detail.default_priority"):
-        default_priority = await _default_source_priority(session)
+    default_priority = await _default_source_priority(session)
     fallback_priority = max(default_priority.values(), default=0) + 1
     sources_with_priority = [
         (rid, source, default_priority.get(source.source, fallback_priority))
@@ -387,6 +384,33 @@ async def _reroute_pending_candidates(
         candidate.last_updated_by_id = user.id
 
     await session.flush()
+
+
+async def create_merge_candidates_bulk(
+    session: AsyncSession,
+    user: CurrentUser,
+    groups: Sequence[Sequence[int]],
+) -> None:
+    with named_query("merge_candidates.bulk_create"):
+        candidates = [
+            MergeCandidateModel.create(created_by=user, fingerprint=_fingerprint(group))
+            for group in groups
+        ]
+        session.add_all(candidates)
+        await session.flush()
+
+        session.add_all(
+            [
+                MergeCandidateItemModel(
+                    merge_candidate_id=candidate.id,
+                    resource_id=resource_id,
+                    position=position,
+                )
+                for candidate, group in zip(candidates, groups)
+                for position, resource_id in enumerate(group)
+            ]
+        )
+        await session.flush()
 
 
 async def approve_merge_candidate(

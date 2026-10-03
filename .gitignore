@@ -14,7 +14,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# Anchored: unanchored "lib/" matches at any depth and hid scripts/lib/.
+/lib/
 lib64/
 parts/
 sdist/
@@ -152,11 +153,11 @@ activemq-data/
 *.sage.py
 
 # Environments
-.env
+**/.env*
 .envrc
-.venv
-env/
-venv/
+**/.venv
+**/env/
+**/venv/
 ENV/
 env.bak/
 venv.bak/
@@ -229,3 +230,8 @@ __marimo__/
 /PRODUCT.md
 /DESIGN.md
 /.impeccable/
+
+# demo & db backups
+**/*.sql
+**/*.dump
+scripts/data

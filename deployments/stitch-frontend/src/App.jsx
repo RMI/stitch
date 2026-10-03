@@ -23,7 +23,7 @@ const NAV_ITEMS = [
   {
     to: "/entity-linkage",
     label: "Entity linkage",
-    requires: ["service:entity-linkage:run"],
+    requires: ["merge-candidate:create"],
   },
   {
     to: "/merge-candidate-review",

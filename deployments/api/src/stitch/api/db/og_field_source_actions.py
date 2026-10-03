@@ -23,6 +23,8 @@ from .model import (
 from .queries import (
     base_source_query,
 )
+from .priorities import lock_resource, seed_or_refresh_defaults
+from .read_model.state import refresh_resource_state
 from .utils import resource_model_to_entity
 
 
@@ -182,18 +184,48 @@ async def _attach_source_models(
     src_models: Sequence[OilGasFieldSourceModel],
     user: User,
 ) -> None:
-    """Create ACTIVE memberships linking each source model to ``resource``."""
-    memberships = [
-        MembershipModel.create(
-            created_by=user,
-            resource_id=resource.id,
-            source=src.source,
-            source_pk=src.id,
+    """Create ACTIVE memberships linking each source model to ``resource``.
+
+    A source is attached to a resource at most once: sources already attached (or
+    repeated within this batch) are skipped, upholding
+    ``uq_membership_resource_source``.
+    """
+    # Serialize with any concurrent mutation of this resource before we read the
+    # membership snapshot and rebuild its derived priority/state rows below.
+    await lock_resource(session, resource.id)
+    already_attached = set(
+        (
+            await session.scalars(
+                select(MembershipModel.source_pk).where(
+                    MembershipModel.resource_id == resource.id
+                )
+            )
+        ).all()
+    )
+    memberships: list[MembershipModel] = []
+    seen: set[int] = set()
+    for src in src_models:
+        if src.id in already_attached or src.id in seen:
+            continue
+        seen.add(src.id)
+        memberships.append(
+            MembershipModel.create(
+                created_by=user,
+                resource_id=resource.id,
+                source=src.source,
+                source_pk=src.id,
+            )
         )
-        for src in src_models
-    ]
     session.add_all(memberships)
     await session.flush()
+    # Single choke point for membership creation on the attach path
+    # (create/attach/create-and-attach): seed default priority rows, scoped to just
+    # the fields the newly attached sources carry (no churn on unaffected fields),
+    # preserving existing curation; then refresh the read model. Priority rows must
+    # exist before the read model coalesces, and both stay in this transaction.
+    attached_pks = {mem.source_pk for mem in memberships}
+    await seed_or_refresh_defaults(session, user, resource.id, source_pks=attached_pks)
+    await refresh_resource_state(session, resource.id)
 
 
 async def attach_sources_to_resource(
