@@ -35,7 +35,6 @@ truncated so that the name plus the longest Container App suffix (`-api`, `-llm`
 It builds Docker images for:
 
 - `api` (also used for DB migration)
-- `entity-linkage`
 - `stitch-llm`
 - `seed`
 
@@ -44,7 +43,6 @@ It then handles deployments for:
 - the database, assuming an existing Azure PostgreSQL flexible server
 - the API Container App, assuming an existing Container Apps environment
   (see "Log routing" below)
-- the entity-linkage Container App in the same environment
 - the stitch-llm Container App in the same environment
 - the ETL Container App (`etl`) in the same environment, on non-`development`
   lanes only (see below)
@@ -216,9 +214,6 @@ than left to the action's defaults (~0.5 vCPU / 1 GiB). `deploy-container.yml`
 takes optional `cpu` / `memory` inputs and folds them into the same post-deploy
 `az containerapp update` that pins replicas. The `etl` app is unoptimized and
 needs more memory, so it passes `cpu: "2.0"` / `memory: "4.0Gi"`.
-`entity-linkage` used to as well, but is deliberately unpinned now: it is
-I/O-bound waiting on sequential API responses, so the extra CPU bought little
-while giving its batch pass 4x the CPU of the API it calls.
 
 On the default **Consumption** workload profile, CPU and memory are not
 independent — only fixed pairs are valid, with memory (Gi) = 2× vCPU. So **4.0Gi
@@ -241,7 +236,7 @@ exposes it as the `always-on` output:
 | `staging` lane PRs (into `production`, or from `demo/*`) | *(empty)* | cost |
 | `development` lane PRs | *(empty)* | throwaway preview, one per PR |
 
-The three long-running services — `api`, `entity-linkage`, `stitch-llm` — pass it
+The two long-running services — `api` and `stitch-llm` — pass it
 straight through:
 
 ```yaml
@@ -282,9 +277,9 @@ have to widen to cover it:
 - the environment banner says the server is waking up once a request has been in
   flight for more than a couple of seconds.
 
-entity-linkage and stitch-llm are deliberately left out. Waking them the same way
-was tried and set aside: the API is the one every session needs, and better
-options for the other two are still being explored.
+stitch-llm is deliberately left out. Waking it the same way was tried and set
+aside: the API is the one every session needs, and better options for
+stitch-llm are still being explored.
 
 This only affects the Container Apps. The frontend is an Azure Static Web App
 (always served, no hibernation), and the PostgreSQL flexible server's
@@ -536,8 +531,8 @@ named:
 - `ETL_IMAGE_TAG` (example: `main`) — optional; consolidated ETL image tag to
   deploy, defaults to `main`. Only used on `staging` / `production`.
 
-The two frontend URLs together define the single CORS origin the API,
-entity-linkage, and stitch-llm services will accept for a given deployment, so
+The two frontend URLs together define the single CORS origin the API and
+stitch-llm services will accept for a given deployment, so
 they have to match where the frontend actually lands:
 
 - A **pull request** always deploys to a Static Web App preview environment named

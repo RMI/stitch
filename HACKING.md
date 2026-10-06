@@ -171,3 +171,23 @@ make reboot-docker
 ```
 
 That sequence catches most local issues caused by stale caches, stale frontend installs, or stale Docker volumes.
+
+## Scripts
+
+All scripts can be called with `uv run --script path/to/<script>.py`. Use `--help` to see usage.
+
+- **`bearer_tokens.py`** — Mint and inspect the two downstream bearer tokens.
+  `bearer_tokens.py {mint,check} ...`
+- **`create_merge_candidate.py`** — Create merge candidates, one per reviewed group.
+  `create_merge_candidate.py [--from-file [FROM_FILE]] [--dry-run] [--limit LIMIT] [--checkpoint-every CHECKPOINT_EVERY] [resource_ids ...]`
+- **`decide_candidates.py`** — Fill in "decision" on every undecided group down to the --confidence tier.
+  `decide_candidates.py [--file FILE] [--confidence {high,medium,low}] [--decision {merge,skip}] [--reason REASON] [--limit LIMIT] [--dry-run]`
+- **`fetch_resources.py`** — Snapshot the resource list to scripts/data/resources.jsonl for the matcher.
+  `fetch_resources.py [--db-url DB_URL] [--db-host DB_HOST] [--db-port DB_PORT] [--db-name DB_NAME] [--db-user DB_USER]`
+- **`find_candidates.py`** — Propose undecided fuzzy duplicate groups: uv run --with rapidfuzz --with numpy.
+  `find_candidates.py [--fuzzy-threshold FUZZY_THRESHOLD] [--geo-km GEO_KM] [--geo-name-threshold GEO_NAME_THRESHOLD] [--max-group-size MAX_GROUP_SIZE] [--max-key-frequency MAX_KEY_FREQUENCY] [--location-min-count LOCATION_MIN_COUNT] [--min-confidence {high,medium,low}] [--in IN_PATH] [--out OUT_PATH]`
+- **`pg_dump.py`** — Dump or restore a database via the postgres Docker image; target from lib.settings.
+  `pg_dump.py [--smoke] [-r] [-c] [-C] [--db-url DB_URL] [--db-host DB_HOST] [--db-port DB_PORT] [-d DB_NAME] [--db-user DB_USER] [file]`
+- **`review_merge_candidates.py`** — List, approve or deny merge candidates; approving mints a resource and cannot be undone.
+  `review_merge_candidates.py [--file FILE] {list,approve,deny} ...`
+- **`sql_to_mermaid.py`** — Dump a CREATE TABLE script as a Mermaid ER diagram: <script>.sql > <out>.md.

@@ -1,14 +1,25 @@
-"""Integration tests for the merge-candidate detail endpoint (real SQLite)."""
+"""Integration tests for the merge-candidate endpoints (real SQLite)."""
 
 from collections.abc import Sequence
+from unittest.mock import patch
 
 from httpx import AsyncClient
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from stitch.auth import TokenClaims
+from stitch.auth.permissions import MERGE_CANDIDATE_CREATE, SOURCE_READ_GEM
+
 from tests.factories import ResourceCreateFactory
-from stitch.api.db.model import MembershipModel, OGFieldResourceSourcePriority
+from stitch.api.auth import get_token_claims
+from stitch.api.db import link_actions
+from stitch.api.db.config import UnitOfWork
+from stitch.api.db.model import MembershipModel, OGFieldResourceAttributePriority
+from stitch.api.db.priorities import set_curated
+from stitch.api.entities import User
+from stitch.api.main import app
 from stitch.ogsi.model import OGFieldResource, OGFieldSource
 
 
@@ -162,17 +173,7 @@ class TestMergeCandidateDetailIntegration:
                     MembershipModel.source == "gem",
                 )
             )
-            session.add(
-                OGFieldResourceSourcePriority(
-                    resource_id=id_a,
-                    source="gem",
-                    source_pk=gem_pk,
-                    colname="name",
-                    priority=0,
-                    created_by_id=1,
-                    last_updated_by_id=1,
-                )
-            )
+            await set_curated(session, User(id=1, sub="test"), id_a, "name", [gem_pk])
             await session.commit()
 
         # A's coalesced value reflects the override: its name resolves to GEM's.
@@ -200,7 +201,7 @@ class TestMergeCandidateDetailIntegration:
         }
         assert {("rmi", "RMI-name"), ("gem", "GEM-name")} <= a_values
 
-        # Approving materializes the reset: the merged resource has no override
+        # Approving materializes the reset: the merged resource has no curated
         # rows and resolves `name` in default order (RMI), dropping the override.
         approve = await integration_client.post(
             f"/oil-gas-fields/merge-candidates/{candidate_id}/approve",
@@ -214,14 +215,15 @@ class TestMergeCandidateDetailIntegration:
         assert merged.json()["data"]["name"] == "RMI-name"
 
         async with integration_session_factory() as session:
-            overrides = (
+            curated = (
                 await session.execute(
-                    select(OGFieldResourceSourcePriority).where(
-                        OGFieldResourceSourcePriority.resource_id == merged_id
+                    select(OGFieldResourceAttributePriority).where(
+                        OGFieldResourceAttributePriority.resource_id == merged_id,
+                        OGFieldResourceAttributePriority.is_curated.is_(True),
                     )
                 )
             ).all()
-        assert overrides == []
+        assert curated == []
 
     @pytest.mark.anyio
     async def test_overlapping_approval_reroutes_pending_candidate(
@@ -534,3 +536,114 @@ class TestMergeCandidateDetailIntegration:
             (id_a, "gem", "Bar"),
             (id_b, "rmi", "Foo"),
         }
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("prior_candidates", "apply_merges", "expected_created", "expected_skipped"),
+    [
+        ((), False, 0, 0),
+        ((), True, 2, 0),
+        ((0,), True, 1, 1),
+        ((0,), False, 0, 1),
+        ((0, 1), True, 0, 2),
+        ((2,), True, 2, 0),
+    ],
+    ids=[
+        "dry-run-writes-nothing",
+        "real-run-creates-one-per-group",
+        "real-run-skips-the-group-that-already-has-a-candidate",
+        "dry-run-skips-match-the-real-run",
+        "repeat-real-run-creates-nothing",
+        "a-candidate-outside-the-matched-groups-is-ignored",
+    ],
+)
+async def test_link_all_counts_and_writes(
+    integration_client: AsyncClient,
+    og_create_res_fact: ResourceCreateFactory,
+    prior_candidates: tuple[int, ...],
+    apply_merges: bool,
+    expected_created: int,
+    expected_skipped: int,
+):
+    ids = [
+        await _create_resource(integration_client, og_create_res_fact, f"Field {n}")
+        for n in range(6)
+    ]
+    pairs = [(ids[0], ids[1]), (ids[2], ids[3]), (ids[4], ids[5])]
+    groups = pairs[:2]
+    for index in prior_candidates:
+        await _create_candidate(integration_client, list(pairs[index]))
+
+    with patch.object(link_actions, "match", autospec=True) as match:
+        match.return_value = groups
+        resp = await integration_client.post(
+            "/oil-gas-fields/merge-candidates/link-all",
+            params={"apply_merges": apply_merges},
+        )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {
+        "apply_merges": apply_merges,
+        "match_groups": [list(group) for group in groups],
+        "merge_candidates_created": expected_created,
+        "merge_candidates_skipped": expected_skipped,
+    }
+
+    expected_persisted = {frozenset(pairs[i]) for i in prior_candidates}
+    if apply_merges:
+        expected_persisted |= {frozenset(group) for group in groups}
+
+    listed = await integration_client.get("/oil-gas-fields/merge-candidates")
+    assert listed.status_code == 200, listed.text
+    assert {
+        frozenset(candidate["resource_ids"]) for candidate in listed.json()
+    } == expected_persisted
+
+
+@pytest.mark.anyio
+async def test_link_all_reports_a_failed_commit_instead_of_success(
+    integration_client: AsyncClient,
+    og_create_res_fact: ResourceCreateFactory,
+):
+    """A commit that fails must not surface as a 200 describing writes that rolled back."""
+    id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
+    id_b = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
+
+    async def failing_commit(self):
+        raise OperationalError("COMMIT", {}, Exception("connection lost"))
+
+    with (
+        patch.object(link_actions, "match", autospec=True) as match,
+        patch.object(UnitOfWork, "commit", failing_commit),
+    ):
+        match.return_value = [(id_a, id_b)]
+        resp = await integration_client.post(
+            "/oil-gas-fields/merge-candidates/link-all?apply_merges=true"
+        )
+
+    assert resp.status_code == 503, resp.text
+    assert resp.json() == {"detail": "Database unavailable."}
+
+    listed = await integration_client.get("/oil-gas-fields/merge-candidates")
+    assert listed.status_code == 200, listed.text
+    assert listed.json() == []
+
+
+@pytest.mark.anyio
+async def test_link_all_matches_only_the_callers_licensed_sources(
+    integration_client: AsyncClient,
+):
+    app.dependency_overrides[get_token_claims] = lambda: TokenClaims(
+        sub="test|user-1",
+        permissions=frozenset({SOURCE_READ_GEM, MERGE_CANDIDATE_CREATE}),
+    )
+
+    with patch.object(link_actions, "match", autospec=True) as match:
+        match.return_value = []
+        resp = await integration_client.post(
+            "/oil-gas-fields/merge-candidates/link-all"
+        )
+
+    assert resp.status_code == 200, resp.text
+    assert match.call_args.kwargs["licensed_sources"] == frozenset({"gem"})
