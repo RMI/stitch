@@ -324,3 +324,63 @@ class TestGetResourceFilterOptionsUnit:
         assert call_kwargs["licensed_sources"] == frozenset(
             {"rmi", "gem", "wm", "ccr", "alb", "bc", "nor", "llm"}
         )
+
+    @pytest.mark.anyio
+    async def test_passes_filter_params(self, async_client, mock_uow):
+        """The current selections reach the action, so options can cascade."""
+
+        async def override_get_uow():
+            yield mock_uow
+
+        app.dependency_overrides[get_uow] = override_get_uow
+
+        with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
+            mock_repo.filter_options = AsyncMock(
+                return_value=dict(
+                    basin=[],
+                    country=[],
+                    field_status=[],
+                    primary_hydrocarbon_group=[],
+                    region=[],
+                    state_province=[],
+                )
+            )
+
+            response = await async_client.get(
+                "/oil-gas-fields/filter-options"
+                "?country=NOR&country=SAU&state_province=Alberta&q=ghawar"
+            )
+
+        assert response.status_code == 200
+        params = mock_repo.filter_options.call_args.kwargs["params"]
+        assert params.country == ["NOR", "SAU"]
+        assert params.state_province == ["Alberta"]
+        assert params.q == "ghawar"
+
+    @pytest.mark.anyio
+    async def test_no_query_string_still_works(self, async_client, mock_uow):
+        """Every param is optional: callers that send none are unaffected."""
+
+        async def override_get_uow():
+            yield mock_uow
+
+        app.dependency_overrides[get_uow] = override_get_uow
+
+        with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
+            mock_repo.filter_options = AsyncMock(
+                return_value=dict(
+                    basin=[],
+                    country=[],
+                    field_status=[],
+                    primary_hydrocarbon_group=[],
+                    region=[],
+                    state_province=[],
+                )
+            )
+
+            response = await async_client.get("/oil-gas-fields/filter-options")
+
+        assert response.status_code == 200
+        params = mock_repo.filter_options.call_args.kwargs["params"]
+        assert params.country is None
+        assert params.q is None

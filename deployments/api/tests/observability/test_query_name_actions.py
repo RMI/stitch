@@ -28,6 +28,7 @@ from stitch.api.db.model.oil_gas_field_source_value import ATTRIBUTE_NAMES
 from stitch.api.entities import (
     MergeCandidateCreateRequest,
     MergeCandidateReviewRequest,
+    OGFieldFilterParams,
     OGFieldQueryParams,
     User,
 )
@@ -172,7 +173,7 @@ class TestActionCallSiteLabels:
         )
 
         captured_query_events.clear()
-        await resource_actions.filter_options(session)
+        await resource_actions.filter_options(session, OGFieldFilterParams())
         _assert_labels(captured_query_events, {"resources.filter_options"})
 
         captured_query_events.clear()

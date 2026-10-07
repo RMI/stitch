@@ -18,14 +18,17 @@ from typing import Any, Final, Literal
 from sqlalchemy import (
     CTE,
     ColumnElement,
+    CompoundSelect,
     Select,
     and_,
     asc,
     case,
     desc,
     func,
+    literal,
     or_,
     select,
+    union_all,
 )
 
 from stitch.api.db.model import (
@@ -38,7 +41,11 @@ from stitch.api.db.model import (
     ResourceModel,
 )
 from stitch.api.db.model.oil_gas_field_source_value import value_attr_for
-from stitch.api.entities import FILTER_OPTION_FIELDS, OGFieldQueryParams
+from stitch.api.entities import (
+    FILTER_OPTION_FIELDS,
+    OGFieldFilterParams,
+    OGFieldQueryParams,
+)
 from stitch.ogsi.model.types import OGSISrcKey
 
 # Single source of truth for the source-list field metadata. This is a shared
@@ -66,7 +73,7 @@ EXACT_MATCH_FIELDS: Final[tuple[str, ...]] = (
 _HEADER_SORT_FIELDS: Final[frozenset[str]] = frozenset({"id", "source", "resource_id"})
 
 
-def _filter_values(params: OGFieldQueryParams, field_name: str) -> list[Any]:
+def _filter_values(params: OGFieldFilterParams, field_name: str) -> list[Any]:
     """The values an exact-match filter is set to, as a list.
 
     Multi-select fields arrive as lists; the rest are scalars, returned as a
@@ -264,44 +271,35 @@ def coalesced_winner_rows(
 
 
 def filter_option_rows(
+    params: OGFieldFilterParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
-) -> Select[tuple[str, str]]:
-    """Distinct winning ``(colname, value)`` pairs for every filterable field."""
-    m = MembershipModel
-    v = OilGasFieldSourceValueModel
-    p = OGFieldSourcePriority
-    o = OGFieldResourceSourcePriority
+) -> CompoundSelect:
+    """Distinct ``(colname, value)`` pairs still reachable under ``params``.
 
-    base = (
-        select(
-            m.resource_id.label("resource_id"),
-            m.source.label("source"),
-            m.source_pk.label("source_pk"),
-            o.priority.label("override_priority"),
-            p.priority.label("default_priority"),
-            v.colname.label("colname"),
-            v.value_text,
-        )
-        .select_from(m)
-        .join(v, v.source_pk == m.source_pk)
-        .join(p, p.source == m.source)
-        .outerjoin(o, _override_join(m.resource_id))
-        .where(
-            m.status == MembershipStatus.ACTIVE,
-            v.colname.in_(FILTER_OPTION_FIELDS),
-        )
-    )
-    if licensed_sources is not None:
-        base = base.where(m.source.in_(list(dict.fromkeys(licensed_sources))))
+    One branch per filterable field over the shared pivoted base, unioned into a
+    single statement so the endpoint stays one round trip. Each branch applies
+    every filter *except* the branch field's own, so a field is never narrowed by
+    its own selection: after ticking one country the country list still offers
+    the rest. Clearing the field on a copy of ``params`` is what expresses that,
+    which keeps ``q``, multi-select, and the non-faceted exact filters working
+    here exactly as they do on the list query.
 
-    ranked = add_ranking(base.cte("filter_option_base")).cte("filter_option_ranked")
-    c = ranked.c
-    return (
-        select(c.colname, c.value_text)
-        .where(c.value_text.is_not(None))  # rn == 1 already applied by add_ranking
-        .distinct()
-        .order_by(c.colname, c.value_text)
-    )
+    Unordered on purpose: SQLite and Postgres disagree on string collation, so
+    the caller sorts in Python.
+    """
+    base = _pivoted_resource_base(EXACT_MATCH_FIELDS, licensed_sources)
+    branches: list[Select[tuple[str, str]]] = []
+    for field_name in FILTER_OPTION_FIELDS:
+        column = _require_column(base, field_name)
+        branch = select(
+            literal(field_name).label("colname"), column.label("value")
+        ).where(column.is_not(None))
+        for cond in _build_field_conditions(
+            base, params.model_copy(update={field_name: None})
+        ):
+            branch = branch.where(cond)
+        branches.append(branch.distinct())
+    return union_all(*branches)
 
 
 def field_source_candidates(
@@ -404,40 +402,50 @@ def _resource_universe() -> Select[tuple[int]]:
     )
 
 
+def _pivoted_resource_base(
+    involved: Collection[str],
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> CTE:
+    """One row per listable resource, with ``involved`` pivoted to wide columns.
+
+    The coalesced winner per ``(resource, colname)`` pivoted into one named
+    column per field, LEFT JOINed onto the membership universe so a resource
+    with no licensed values keeps its row (null-shell) and is dropped only by an
+    actual field filter. Shared by the list query and the filter-option query so
+    both see the same rows under the same filters.
+    """
+    universe = _resource_universe().cte("resource_universe")
+    base_cte = construct_base_query_statement(licensed_sources)
+    ranked = add_ranking(base_cte).cte("ranked")
+    pivot = _add_pivot_columns(
+        select(ranked.c.resource_id.label("resource_id")),
+        involved,
+        ranked.c.colname,
+        lambda field_name: getattr(ranked.c, value_attr_for(field_name)),
+    )
+    pivot_cte = pivot.group_by(ranked.c.resource_id).cte("resource_pivot")
+
+    resource_base = select(universe.c.resource_id)
+    for field_name in involved:
+        resource_base = resource_base.add_columns(pivot_cte.c[field_name])
+    return resource_base.select_from(
+        universe.outerjoin(pivot_cte, pivot_cte.c.resource_id == universe.c.resource_id)
+    ).cte("resource_base")
+
+
 def base_resource_query(
     params: OGFieldQueryParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> Select[tuple[int]]:
     involved = _participating_columns(params)
-    universe = _resource_universe().cte("resource_universe")
 
     if not involved:
         # No value field filtered or sorted -> the universe alone (every active
         # resource); only the id filter below can narrow it.
-        base = universe
+        base = _resource_universe().cte("resource_universe")
         conditions: list[ColumnElement[bool]] = []
     else:
-        base_cte = construct_base_query_statement(licensed_sources)
-        ranked = add_ranking(base_cte).cte("ranked")
-        pivot = _add_pivot_columns(
-            select(ranked.c.resource_id.label("resource_id")),
-            involved,
-            ranked.c.colname,
-            lambda field_name: getattr(ranked.c, value_attr_for(field_name)),
-        )
-        pivot_cte = pivot.group_by(ranked.c.resource_id).cte("resource_pivot")
-
-        # LEFT JOIN the licensed/coalesced pivot onto the membership universe: a
-        # resource with no licensed values keeps its row (null-shell) but is
-        # dropped by any field filter below.
-        resource_base = select(universe.c.resource_id)
-        for field_name in involved:
-            resource_base = resource_base.add_columns(pivot_cte.c[field_name])
-        base = resource_base.select_from(
-            universe.outerjoin(
-                pivot_cte, pivot_cte.c.resource_id == universe.c.resource_id
-            )
-        ).cte("resource_base")
+        base = _pivoted_resource_base(involved, licensed_sources)
         conditions = _build_field_conditions(base, params)
 
     stmt = select(base.c.resource_id)
@@ -489,7 +497,7 @@ def _require_column(cte: CTE | Select, field_name: str) -> ColumnElement[Any]:
 
 def _build_field_conditions(
     cte: CTE | Select,
-    params: OGFieldQueryParams,
+    params: OGFieldFilterParams,
 ) -> list[ColumnElement[bool]]:
     """Path-agnostic q-ILIKE + exact-match filters over the pivoted columns.
 
