@@ -431,8 +431,15 @@ The job runs at 03:00 UTC. An init container runs `pg_dump -Fc` for every
 database named in `BACKUP_DATABASES` and writes each dump to a scratch volume.
 The main container then uploads each dump to the `backups` blob container
 at `production/<database>/<timestamp>.dump`. All dumps from one run share one
-timestamp. Both container commands run under `set -e`, so one failed dump fails
-the whole execution. A run has 30 minutes to finish and does not retry.
+timestamp.
+
+One failed database does not stop the others. If a dump fails, the init
+container records the database name in `/scratch/FAILED` and carries on. The
+upload container still uploads every dump that succeeded, then exits non-zero if
+any dump or upload failed, so a partial backup shows up as a failed execution.
+Check the execution logs for `pg_dump failed for <database>` or
+`upload failed for <database>`. A run has 30 minutes to finish and does not
+retry.
 
 #### Deploying the job
 

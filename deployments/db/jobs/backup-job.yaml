@@ -33,7 +33,16 @@ properties:
           - { name: PGPASSWORD, secretRef: pgpassword }
         command: ["/bin/sh", "-c"]
         args:
-          - 'set -e; for db in $BACKUP_DATABASES; do pg_dump -Fc -d "$db" -f "/scratch/$db.dump"; done'
+          # A failed dump must not stop the other databases. Record the failure in
+          # /scratch/FAILED and exit 0; the upload container reports it at the end.
+          - |
+            for db in $BACKUP_DATABASES; do
+              if ! pg_dump -Fc -d "$db" -f "/scratch/$db.dump"; then
+                echo "pg_dump failed for $db" >&2
+                rm -f "/scratch/$db.dump"
+                echo "$db" >> /scratch/FAILED
+              fi
+            done
     containers:
       - name: upload
         image: mcr.microsoft.com/azure-cli
@@ -47,4 +56,20 @@ properties:
           - { name: KEY, secretRef: storagekey }
         command: ["/bin/sh", "-c"]
         args:
-          - 'set -e; ts=$(date -u +%Y%m%dT%H%M%SZ); for db in $BACKUP_DATABASES; do az storage blob upload --account-name "$ACCOUNT" --account-key "$KEY" -c backups -n "$BACKUP_ENV/$db/$ts.dump" -f "/scratch/$db.dump" -o none; done'
+          # Upload every dump that exists, then fail the execution if any dump or
+          # upload failed so a partial backup still shows up as a failed run.
+          - |
+            ts=$(date -u +%Y%m%dT%H%M%SZ)
+            failed=0
+            for db in $BACKUP_DATABASES; do
+              [ -f "/scratch/$db.dump" ] || continue
+              if ! az storage blob upload --account-name "$ACCOUNT" --account-key "$KEY" -c backups -n "$BACKUP_ENV/$db/$ts.dump" -f "/scratch/$db.dump" -o none; then
+                echo "upload failed for $db" >&2
+                failed=1
+              fi
+            done
+            if [ -s /scratch/FAILED ]; then
+              echo "dump failed for: $(tr '\n' ' ' </scratch/FAILED)" >&2
+              failed=1
+            fi
+            exit "$failed"
