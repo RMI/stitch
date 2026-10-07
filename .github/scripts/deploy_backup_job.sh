@@ -13,13 +13,15 @@ az storage container create \
   --name backups \
   --output none
 
-IFS=$'\t' read -r LANE_ENVIRONMENT_ID LANE_LOCATION <<<"$(
+environment_json="$(
   az containerapp env show \
     --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$AZURE_CONTAINER_APP_ENVIRONMENT" \
-    --query "[id,location]" \
-    --output tsv
+    --query "{id: id, location: location}" \
+    --output json
 )"
+LANE_ENVIRONMENT_ID="$(jq -r '.id // empty' <<<"$environment_json")"
+LANE_LOCATION="$(jq -r '.location // empty' <<<"$environment_json")"
 if [ -z "$LANE_ENVIRONMENT_ID" ] || [ -z "$LANE_LOCATION" ]; then
   echo "::error::Could not resolve the id and location of Container Apps environment '$AZURE_CONTAINER_APP_ENVIRONMENT' in '$AZURE_RESOURCE_GROUP'" >&2
   exit 1
