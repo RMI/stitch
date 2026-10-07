@@ -439,13 +439,25 @@ The workflow `deploy-backup-job.yml` deploys the job. It does not take the
 backup. It runs on manual dispatch (`workflow_dispatch`), or on a push to `main`
 that changes the workflow, the deploy script, or the job spec.
 
-The workflow validates the lane's config, logs in to Azure, then runs
-`.github/scripts/deploy_backup_job.sh`. That script JSON-encodes the database
-password, then renders `deployments/db/jobs/backup-job.yaml` with the lane's
-config. A JSON string is valid YAML, so a password that contains a quote or a
-backslash renders correctly. The script then creates the job, or updates it when
-it already exists. If the `backups` blob container does not exist, the script
-creates it. A deploy is idempotent, so you can run the workflow again at any time.
+The workflow logs in to Azure, then runs `scripts/deploy_backup_job.sh deploy
+<lane>`. That script looks up the lane's Container Apps environment and backup
+identity, JSON-encodes the database password, then renders
+`deployments/db/jobs/backup-job.yaml` with the lane's config. A JSON string is
+valid YAML, so a password that contains a quote or a backslash renders
+correctly. The script then creates the job, or updates it when it already
+exists. A deploy is idempotent, so you can run it again at any time.
+
+You can run the same command yourself to update a lane's job without waiting for
+a workflow run. It is the same script the workflow runs, so there is no second
+code path to keep in step:
+
+```sh
+scripts/deploy_backup_job.sh deploy staging
+```
+
+Set the lane's variables in your shell first, and make sure `az` is logged in to
+the right subscription. The script needs `jq` and `envsubst`; `envsubst` comes
+from gettext, which is not installed on macOS by default.
 
 The job writes its dumps using a managed identity rather than a storage account
 key, so nothing in the pipeline holds account-wide access to storage. See
@@ -459,44 +471,42 @@ Set these in each of the `staging` and `production` GitHub Environments:
   space-separated database names to dump
 - variable `BACKUP_STORAGE_ACCOUNT` (example: `stitchstaging`) — storage account
   that holds the `backups` blob container
-- variable `BACKUP_IDENTITY_ID` — full resource ID of the user-assigned managed
-  identity the job uploads with
-- variable `BACKUP_IDENTITY_CLIENT_ID` — client ID of that same identity
 
 The job also uses the lane's existing `AZURE_RESOURCE_GROUP`,
 `AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `POSTGRES_ADMIN_USER`, and
 `PGPASSWORD`.
 
+The deploy finds the backup identity by name, so there is nothing to record
+about it in GitHub.
+
 #### Backup identity
 
 The job uploads with a user-assigned managed identity instead of a storage
 account key, so no part of the pipeline holds account-wide access to storage.
-The identity is a standalone resource that outlives any single deploy, so create
-it and grant it access once per lane, before the first deploy:
+The identity is a standalone resource that outlives any single deploy, and
+creating it needs permissions CI deliberately does not have. So a person creates
+it once per lane, before the first deploy:
 
 ```sh
-az identity create -g "$RG" -n stitch-backup-identity
-
-PRINCIPAL="$(az identity show -g "$RG" -n stitch-backup-identity \
-  --query principalId -o tsv)"
-ACCOUNT="$(az storage account show -n "$BACKUP_STORAGE_ACCOUNT" --query id -o tsv)"
-
-az role assignment create \
-  --role "Storage Blob Data Contributor" \
-  --assignee-object-id "$PRINCIPAL" \
-  --assignee-principal-type ServicePrincipal \
-  --scope "$ACCOUNT/blobServices/default/containers/backups"
+scripts/deploy_backup_job.sh setup staging
 ```
 
-Scope the grant to the `backups` container, not the storage account. That is the
-whole point of the change: a compromised job can write its own backups and
-nothing else.
+This creates the `stitch-backup-identity` managed identity in the lane's
+resource group, creates the `backups` blob container, and grants the identity
+**Storage Blob Data Contributor** on that container. It is safe to run again: it
+reports what is already in place rather than failing.
 
-Then set `BACKUP_IDENTITY_ID` and `BACKUP_IDENTITY_CLIENT_ID` from
-`az identity show -g "$RG" -n stitch-backup-identity --query "[id,clientId]"`.
+The grant is scoped to the `backups` container, not to the storage account.
+That is the whole point: a compromised job can write its own backups and nothing
+else.
 
-`GHActions-stitch-cicd` also needs **Managed Identity Operator** on that identity
-to attach it to the job. Without it the deploy fails with an authorization error.
+Run `setup` from a developer account with permission to create a managed
+identity and a role assignment. `GHActions-stitch-cicd` has neither, and does
+not need them, because it only ever runs `deploy`. It does need **Managed
+Identity Operator** on the identity to attach it to the job. Without that, the
+deploy fails with an authorization error.
+
+If `deploy` runs before `setup`, it stops and tells you to run `setup` first.
 
 #### Retention
 
@@ -624,9 +634,8 @@ named:
   on `staging` / `production` (see "Backups" above).
 - `BACKUP_STORAGE_ACCOUNT` (example: `stitchstaging`) — storage account that
   holds the `backups` blob container. Only needed on `staging` / `production`.
-- `BACKUP_IDENTITY_ID` and `BACKUP_IDENTITY_CLIENT_ID` — the managed identity the
-  backup job uploads with. Only needed on `staging` / `production` (see "Backup
-  identity" above).
+The managed identity the backup job uploads with is found by name, so it needs no
+variable here. See "Backup identity" above for the one-time setup.
 
 The two frontend URLs together define the single CORS origin the API,
 entity-linkage, and stitch-llm services will accept for a given deployment, so
@@ -675,8 +684,8 @@ Current validation behavior:
 - frontend deploy validates `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
 - backup job deploy validates `AZURE_RESOURCE_GROUP`,
   `AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `POSTGRES_ADMIN_USER`,
-  `BACKUP_DATABASES`, `BACKUP_STORAGE_ACCOUNT`, `PGPASSWORD`,
-  `BACKUP_IDENTITY_ID`, and `BACKUP_IDENTITY_CLIENT_ID`
+  `BACKUP_DATABASES`, `BACKUP_STORAGE_ACCOUNT`, and `PGPASSWORD`, and stops with
+  a pointer to `setup` when the backup identity is missing
 - container deploy validates that, when `registry-server` is set, both
   `registry-username` (variable) and `registry-password` (secret) are present —
   so a missing ETL pull credential fails fast instead of surfacing as an opaque

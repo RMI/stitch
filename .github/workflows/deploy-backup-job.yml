@@ -7,7 +7,7 @@ on:
     branches: [main]
     paths:
       - deployments/db/jobs/backup-job.yaml
-      - .github/scripts/deploy_backup_job.sh
+      - scripts/deploy_backup_job.sh
       - .github/workflows/deploy-backup-job.yml
 
 jobs:
@@ -24,34 +24,16 @@ jobs:
       id-token: write
       contents: read
     env:
-      JOB_NAME: stitch-backup-${{ matrix.lane }}
       AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       AZURE_CONTAINER_APP_ENVIRONMENT: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
       LANE_PGHOST: ${{ vars.POSTGRES_HOST }}
       LANE_PGUSER: ${{ vars.POSTGRES_ADMIN_USER || 'postgres' }}
-      LANE_BACKUP_ENV: ${{ matrix.lane }}
       LANE_BACKUP_DATABASES: ${{ vars.BACKUP_DATABASES }}
       LANE_STORAGE_ACCOUNT: ${{ vars.BACKUP_STORAGE_ACCOUNT }}
       LANE_PGPASSWORD: ${{ secrets.PGPASSWORD }}
-      LANE_BACKUP_IDENTITY_ID: ${{ vars.BACKUP_IDENTITY_ID }}
-      LANE_BACKUP_IDENTITY_CLIENT_ID: ${{ vars.BACKUP_IDENTITY_CLIENT_ID }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
-
-      - name: Validate lane config
-        shell: bash
-        run: |
-          set -euo pipefail
-          : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
-          : "${AZURE_CONTAINER_APP_ENVIRONMENT:?Missing required variable AZURE_CONTAINER_APP_ENVIRONMENT}"
-          : "${LANE_PGHOST:?Missing required variable POSTGRES_HOST}"
-          : "${LANE_PGUSER:?Missing required variable POSTGRES_ADMIN_USER}"
-          : "${LANE_BACKUP_DATABASES:?Missing required variable BACKUP_DATABASES}"
-          : "${LANE_STORAGE_ACCOUNT:?Missing required variable BACKUP_STORAGE_ACCOUNT}"
-          : "${LANE_PGPASSWORD:?Missing required secret PGPASSWORD}"
-          : "${LANE_BACKUP_IDENTITY_ID:?Missing required variable BACKUP_IDENTITY_ID}"
-          : "${LANE_BACKUP_IDENTITY_CLIENT_ID:?Missing required variable BACKUP_IDENTITY_CLIENT_ID}"
 
       - name: Azure login
         uses: azure/login@v3
@@ -65,4 +47,4 @@ jobs:
           az extension add --name containerapp --upgrade --allow-preview true
 
       - name: Deploy the backup job
-        run: .github/scripts/deploy_backup_job.sh
+        run: scripts/deploy_backup_job.sh deploy ${{ matrix.lane }}
