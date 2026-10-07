@@ -2,8 +2,20 @@ import FilterDropdown from "./FilterDropdown";
 import { FILTER_FIELDS, EMPTY_FILTERS } from "../config/filters";
 import { useResourceFilterOptions } from "../hooks/useResources";
 
-export default function FilterBar({ endpoint, filters, onFiltersChange }) {
-  const { data: filterOptions } = useResourceFilterOptions(endpoint);
+export default function FilterBar({
+  endpoint,
+  filters,
+  onFiltersChange,
+  optionParams,
+}) {
+  // `filters` drives the ticked boxes and updates on every click. The options
+  // request runs on `optionParams`, which the caller debounces alongside the
+  // list request, so a settled change costs one options request, not one per
+  // click.
+  const { data: filterOptions } = useResourceFilterOptions(
+    endpoint,
+    optionParams,
+  );
 
   // Flatten active filters into chips: [{ field, label, value, displayValue }, ...]
   // `value` is the stored/API value; `displayValue` is what the user sees.
