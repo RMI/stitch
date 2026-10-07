@@ -28,9 +28,10 @@ const keys = {
   all: (endpoint = "resources") => [endpoint],
   lists: (endpoint = "resources") => [...keys.all(endpoint), "list"],
   list: (endpoint = "resources", filters) => [...keys.lists(endpoint), filters],
-  filterOptions: (endpoint = "resources") => [
+  filterOptions: (endpoint = "resources", params) => [
     ...keys.all(endpoint),
     "filter-options",
+    params,
   ],
   details: (endpoint = "resources") => [...keys.all(endpoint), "detail"],
   detail: (endpoint = "resources", id) => [...keys.details(endpoint), id],
@@ -92,10 +93,13 @@ export const resourceQueries = {
       placeholderData: keepPreviousData,
     }),
 
-  filterOptions: (config, endpoint = "resources") =>
+  // The options are per-selection, so the selections belong in the key, in
+  // the same shape the list key uses.
+  filterOptions: (config, endpoint = "resources", filters = {}, q) =>
     queryOptions({
-      queryKey: keys.filterOptions(endpoint),
-      queryFn: (fetcher) => getResourceFilterOptions(config, fetcher, endpoint),
+      queryKey: keys.filterOptions(endpoint, { ...filters, q }),
+      queryFn: (fetcher) =>
+        getResourceFilterOptions(config, fetcher, endpoint, { filters, q }),
       staleTime: DEFAULT_STALE_TIME,
     }),
 

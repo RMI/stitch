@@ -1,16 +1,27 @@
-export async function getResources(
-  config,
-  fetcher,
-  endpoint = "resources",
-  { page = 1, page_size = 50, filters = {}, q, sort_by, sort_order } = {},
-) {
-  const params = new URLSearchParams({ page, page_size });
+// The list query and the filter-options query must serialize the current
+// selections identically: the options a dropdown offers are the values still
+// reachable under exactly the filters the list is about to apply.
+function appendFilterParams(params, filters = {}, q) {
   for (const [key, values] of Object.entries(filters)) {
     for (const v of values) {
       params.append(key, v);
     }
   }
   if (q) params.set("q", q);
+  return params;
+}
+
+export async function getResources(
+  config,
+  fetcher,
+  endpoint = "resources",
+  { page = 1, page_size = 50, filters = {}, q, sort_by, sort_order } = {},
+) {
+  const params = appendFilterParams(
+    new URLSearchParams({ page, page_size }),
+    filters,
+    q,
+  );
   if (sort_by) params.set("sort_by", sort_by);
   if (sort_order) params.set("sort_order", sort_order);
   const url = `${config.apiBaseUrl}/${endpoint}/?${params}`;
@@ -27,8 +38,16 @@ export async function getResourceFilterOptions(
   config,
   fetcher,
   endpoint = "resources",
+  { filters = {}, q } = {},
 ) {
-  const url = `${config.apiBaseUrl}/${endpoint}/filter-options`;
+  const query = appendFilterParams(
+    new URLSearchParams(),
+    filters,
+    q,
+  ).toString();
+  const url = `${config.apiBaseUrl}/${endpoint}/filter-options${
+    query ? `?${query}` : ""
+  }`;
   const response = await fetcher(url);
   if (!response.ok) {
     const error = new Error(`HTTP error! status: ${response.status}`);

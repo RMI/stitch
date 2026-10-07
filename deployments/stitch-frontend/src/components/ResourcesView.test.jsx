@@ -555,7 +555,27 @@ describe("ResourcesView", () => {
       renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
 
       expect(useResourceFilterOptions).toHaveBeenCalledTimes(1);
-      expect(useResourceFilterOptions).toHaveBeenCalledWith(ENDPOINT);
+      expect(useResourceFilterOptions).toHaveBeenCalledWith(
+        ENDPOINT,
+        expect.objectContaining({ filters: expect.any(Object) }),
+      );
+    });
+
+    it("sends the active filters and search to the options query", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: mockResourceData,
+      });
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />, {
+        initialEntries: ["/?country=NOR&q=ghawar"],
+      });
+
+      expect(useResourceFilterOptions).toHaveBeenCalledTimes(1);
+      expect(useResourceFilterOptions).toHaveBeenLastCalledWith(ENDPOINT, {
+        filters: expect.objectContaining({ country: ["NOR"] }),
+        q: "ghawar",
+      });
     });
 
     it("shows country options as conventional names but filters by the code", () => {

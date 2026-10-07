@@ -55,10 +55,13 @@ function useResourcesReal(
   });
 }
 
-function useResourceFilterOptionsReal(endpoint = "resources", enabled = true) {
+function useResourceFilterOptionsReal(
+  endpoint = "resources",
+  { filters = {}, q, enabled = true } = {},
+) {
   const config = useConfig();
   return useAuthenticatedQuery({
-    ...resourceQueries.filterOptions(config, endpoint),
+    ...resourceQueries.filterOptions(config, endpoint, filters, q),
     enabled,
   });
 }
@@ -214,15 +217,19 @@ function getMockResourcePage({
   };
 }
 
-function getMockFilterOptions() {
+function getMockFilterOptions({ filters = {}, q } = {}) {
+  const searched = applyMockSearch(MOCK_RESOURCE_ITEMS, q);
+
   return Object.fromEntries(
     FILTER_FIELDS.map(({ key: field }) => [
       field,
       Array.from(
         new Set(
-          MOCK_RESOURCE_ITEMS.map((resource) =>
-            getResourceField(resource, field),
-          )
+          // Leave-one-out, matching the backend: a field's options are the
+          // values reachable under every *other* filter, so ticking one value
+          // never hides that field's remaining values.
+          applyMockFilters(searched, { ...filters, [field]: [] })
+            .map((resource) => getResourceField(resource, field))
             .filter((value) => value != null && value !== "")
             .map(String),
         ),
@@ -269,10 +276,13 @@ function useResourcesMock(
   });
 }
 
-function useResourceFilterOptionsMock(endpoint = "resources", enabled = true) {
+function useResourceFilterOptionsMock(
+  endpoint = "resources",
+  { filters = {}, q, enabled = true } = {},
+) {
   return useQuery({
-    ...resourceQueries.filterOptions(UNUSED_MOCK_CONFIG, endpoint),
-    queryFn: () => Promise.resolve(getMockFilterOptions()),
+    ...resourceQueries.filterOptions(UNUSED_MOCK_CONFIG, endpoint, filters, q),
+    queryFn: () => Promise.resolve(getMockFilterOptions({ filters, q })),
     enabled,
   });
 }

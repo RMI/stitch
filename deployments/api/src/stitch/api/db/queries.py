@@ -18,14 +18,17 @@ from typing import Any, Final, Literal
 from sqlalchemy import (
     CTE,
     ColumnElement,
+    CompoundSelect,
     Select,
     and_,
     asc,
     case,
     desc,
     func,
+    literal,
     or_,
     select,
+    union_all,
 )
 
 from stitch.api.db.model import (
@@ -38,7 +41,11 @@ from stitch.api.db.model import (
     ResourceModel,
 )
 from stitch.api.db.model.oil_gas_field_source_value import value_attr_for
-from stitch.api.entities import FILTER_OPTION_FIELDS, OGFieldQueryParams
+from stitch.api.entities import (
+    FILTER_OPTION_FIELDS,
+    OGFieldFilterParams,
+    OGFieldQueryParams,
+)
 from stitch.ogsi.model.types import OGSISrcKey
 
 # Single source of truth for the source-list field metadata. This is a shared
@@ -66,7 +73,7 @@ EXACT_MATCH_FIELDS: Final[tuple[str, ...]] = (
 _HEADER_SORT_FIELDS: Final[frozenset[str]] = frozenset({"id", "source", "resource_id"})
 
 
-def _filter_values(params: OGFieldQueryParams, field_name: str) -> list[Any]:
+def _filter_values(params: OGFieldFilterParams, field_name: str) -> list[Any]:
     """The values an exact-match filter is set to, as a list.
 
     Multi-select fields arrive as lists; the rest are scalars, returned as a
@@ -264,13 +271,38 @@ def coalesced_winner_rows(
 
 
 def filter_option_rows(
+    params: OGFieldFilterParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
-) -> Select[tuple[str, str]]:
-    """Distinct winning ``(colname, value)`` pairs for every filterable field."""
+) -> CompoundSelect:
+    """Distinct ``(colname, value)`` pairs still reachable under ``params``.
+
+    One branch per filterable field, unioned into a single statement so the
+    endpoint stays one round trip. Each branch applies every filter *except* the
+    branch field's own, so a field is never narrowed by its own selection: after
+    ticking one country the country list still offers the rest. Clearing the
+    field on a copy of ``params`` is what expresses that, which keeps ``q``,
+    multi-select, and the non-faceted exact filters working here exactly as they
+    do on the list query.
+
+    Unordered on purpose: SQLite and Postgres disagree on string collation, so
+    the caller sorts in Python.
+    """
     m = MembershipModel
     v = OilGasFieldSourceValueModel
+    r = ResourceModel
     p = OGFieldSourcePriority
     o = OGFieldResourceSourcePriority
+
+    # The faceted fields are always needed, since each one is a branch target.
+    # The rest are needed only when a filter or the search term actually reads
+    # them, so ranking and pivoting stay as narrow as the current params allow.
+    involved = list(FILTER_OPTION_FIELDS)
+    for field_name in EXACT_MATCH_FIELDS:
+        if _filter_values(params, field_name):
+            involved.append(field_name)
+    if params.q:
+        involved += Q_FIELDS
+    involved = list(dict.fromkeys(involved))
 
     base = (
         select(
@@ -283,25 +315,45 @@ def filter_option_rows(
             v.value_text,
         )
         .select_from(m)
+        .join(r, r.id == m.resource_id)
         .join(v, v.source_pk == m.source_pk)
         .join(p, p.source == m.source)
         .outerjoin(o, _override_join(m.resource_id))
         .where(
+            # A merged-away resource matches no list row, so its values must not
+            # be offered as options either.
+            r.repointed_id.is_(None),
             m.status == MembershipStatus.ACTIVE,
-            v.colname.in_(FILTER_OPTION_FIELDS),
+            v.colname.in_(involved),
         )
     )
     if licensed_sources is not None:
         base = base.where(m.source.in_(list(dict.fromkeys(licensed_sources))))
 
     ranked = add_ranking(base.cte("filter_option_base")).cte("filter_option_ranked")
-    c = ranked.c
-    return (
-        select(c.colname, c.value_text)
-        .where(c.value_text.is_not(None))  # rn == 1 already applied by add_ranking
-        .distinct()
-        .order_by(c.colname, c.value_text)
+
+    # Pivot the winning values to one row per resource: a branch listing one
+    # field's values has to filter on the *other* fields of the same resource.
+    pivot = _add_pivot_columns(
+        select(ranked.c.resource_id.label("resource_id")),
+        involved,
+        ranked.c.colname,
+        lambda field_name: getattr(ranked.c, value_attr_for(field_name)),
     )
+    pivot_cte = pivot.group_by(ranked.c.resource_id).cte("filter_option_pivot")
+
+    branches: list[Select[tuple[str, str]]] = []
+    for field_name in FILTER_OPTION_FIELDS:
+        column = _require_column(pivot_cte, field_name)
+        branch = select(
+            literal(field_name).label("colname"), column.label("value")
+        ).where(column.is_not(None))
+        for cond in _build_field_conditions(
+            pivot_cte, params.model_copy(update={field_name: None})
+        ):
+            branch = branch.where(cond)
+        branches.append(branch.distinct())
+    return union_all(*branches)
 
 
 def field_source_candidates(
@@ -489,7 +541,7 @@ def _require_column(cte: CTE | Select, field_name: str) -> ColumnElement[Any]:
 
 def _build_field_conditions(
     cte: CTE | Select,
-    params: OGFieldQueryParams,
+    params: OGFieldFilterParams,
 ) -> list[ColumnElement[bool]]:
     """Path-agnostic q-ILIKE + exact-match filters over the pivoted columns.
 
