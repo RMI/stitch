@@ -1,0 +1,93 @@
+---
+name: Run DB backup
+
+# Backs up one or more databases to the lane's `backups` blob container by running
+# the stitch-db-backup image as a throwaway Container Apps job (see
+# .github/scripts/run_backup_job.sh). The job runs as a user-assigned managed
+# identity that can write to that container; see "Backups" in
+# deployments/CI_DEPLOYMENTS.md for the one-time setup.
+
+on:
+  workflow_call:
+    inputs:
+      deployment-lane:
+        description: "Deployment lane and GitHub Environment name"
+        required: true
+        type: string
+      full-image-name:
+        description: "Backup image to run (a tag or a digest), e.g. ghcr.io/rmi/stitch-db-backup:production"
+        required: true
+        type: string
+      backup-kind:
+        description: "What triggered this backup (used in the blob path), e.g. pre-migration or nightly"
+        required: true
+        type: string
+      databases:
+        description: "Space-separated database names to back up. Defaults to the lane's BACKUP_DATABASES variable."
+        required: false
+        default: ""
+        type: string
+    secrets:
+      azure-client-id:
+        required: true
+      azure-tenant-id:
+        required: true
+      azure-subscription-id:
+        required: true
+      pgpassword:
+        required: true
+
+jobs:
+  run-db-backup:
+    name: Run DB backup (${{ inputs.backup-kind }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.deployment-lane }}
+    permissions:
+      id-token: write
+      contents: read
+    timeout-minutes: 50
+    env:
+      # Unique per run so concurrent runs never share a job. Azure limits job
+      # names to 31 characters.
+      JOB_NAME: bk-${{ inputs.deployment-lane }}-${{ github.run_id }}-${{ github.run_attempt }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_CONTAINER_APP_ENVIRONMENT: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
+      LANE_BACKUP_IMAGE: ${{ inputs.full-image-name }}
+      LANE_BACKUP_ENV: ${{ inputs.deployment-lane }}
+      LANE_BACKUP_KIND: ${{ inputs.backup-kind }}
+      LANE_BACKUP_DATABASES: ${{ inputs.databases || vars.BACKUP_DATABASES }}
+      LANE_STORAGE_ACCOUNT: ${{ vars.BACKUP_STORAGE_ACCOUNT }}
+      LANE_BACKUP_IDENTITY_NAME: ${{ vars.BACKUP_IDENTITY_NAME || 'stitch-backup' }}
+      LANE_PGHOST: ${{ vars.POSTGRES_HOST }}
+      LANE_PGUSER: ${{ vars.POSTGRES_ADMIN_USER || 'postgres' }}
+      LANE_PGPASSWORD: ${{ secrets.pgpassword }}
+    steps:
+      - name: Validate lane config
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${LANE_BACKUP_IMAGE:?Missing the backup image to run}"
+          : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
+          : "${AZURE_CONTAINER_APP_ENVIRONMENT:?Missing required variable AZURE_CONTAINER_APP_ENVIRONMENT}"
+          : "${LANE_PGHOST:?Missing required variable POSTGRES_HOST}"
+          : "${LANE_PGUSER:?Missing required variable POSTGRES_ADMIN_USER}"
+          : "${LANE_BACKUP_DATABASES:?No databases to back up: pass the databases input or set variable BACKUP_DATABASES}"
+          : "${LANE_STORAGE_ACCOUNT:?Missing required variable BACKUP_STORAGE_ACCOUNT}"
+          : "${LANE_PGPASSWORD:?Missing required secret PGPASSWORD}"
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.azure-client-id }}
+          tenant-id: ${{ secrets.azure-tenant-id }}
+          subscription-id: ${{ secrets.azure-subscription-id }}
+
+      - name: Ensure containerapp extension is available
+        run: |
+          az extension add --name containerapp --upgrade --allow-preview true
+
+      - name: Run the backup job
+        run: .github/scripts/run_backup_job.sh

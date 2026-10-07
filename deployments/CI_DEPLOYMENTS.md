@@ -423,39 +423,71 @@ then redeploy the lane so the backend containers pick up the new origin.
 
 ### Backups
 
-Nightly database backups run as an Azure Container Apps job. Only the
-`production` lane is backed up, by one job named `stitch-backup-production`.
-Take a `staging` backup by hand when you need one.
+A backup runs `pg_dump` on a database and writes the dump to the `backups` blob
+container in the lane's storage account. There are two triggers and one
+mechanism:
 
-Everything lives in `deployments/db-backup/`: the `Dockerfile`, the `backup.sh`
-script the image runs, and the job spec (`job.yaml`). The image is
-`ghcr.io/rmi/stitch-db-backup` and contains `pg_dump` and `azcopy`.
+- **Before migrations.** In the `staging` and `production` lanes, the CD pipeline
+  backs up the deployment's database after `deploy-db` and before
+  `run-db-migrations`. If the backup fails, the migration and the rest of the
+  deploy do not run. The `development` lane is skipped, because those databases
+  are dropped or throwaway, and so is a database that was created in this run,
+  because it is empty.
+- **Nightly.** `nightly-db-backup.yml` backs up every database in the
+  `production` lane's `BACKUP_DATABASES` variable at 03:00 UTC.
 
-The job runs at 03:00 UTC in a single container. For each database named in
-`BACKUP_DATABASES`, `backup.sh` runs `pg_dump -Fc`, uploads the dump to the
-`backups` blob container at `production/<database>/<timestamp>.dump`, and deletes
-the local file before starting the next database. Local disk only ever holds one
-dump. All dumps from one run share one timestamp.
+Both call the reusable workflow `run-db-backup.yml`, which runs
+`.github/scripts/run_backup_job.sh`. The script creates a throwaway Azure
+Container Apps job named `bk-<lane>-<run id>-<attempt>` from
+`deployments/db-backup/job.yaml`, starts it, waits for the execution to finish,
+prints the container logs (best effort), and deletes the job. Every run gets its
+own job, so concurrent runs never share state. If a run is killed hard (for
+example the runner is lost), the job can be left behind; delete any stray `bk-*`
+jobs by hand.
 
-`azcopy` signs in as a user-assigned managed identity (`stitch-backup-prod` by
-default), so there is no storage key anywhere. That identity has
-`Storage Blob Data Contributor` on the `backups` container only.
+Everything for the job lives in `deployments/db-backup/`: the `Dockerfile`, the
+`backup.sh` script the image runs, and the job spec (`job.yaml`). The image is
+`ghcr.io/rmi/stitch-db-backup` and contains `pg_dump` and `azcopy`. The CD
+pipeline builds it on every run, in every lane, so a broken Dockerfile fails in
+the pull request. The pre-migration backup runs the digest the pipeline just
+built. The nightly backup runs the `production` tag, and the `image-tag` input
+of a manual run changes that. The `production` tag exists only after the first
+production release, so the nightly backup fails until then.
+
+For each database, `backup.sh` runs `pg_dump -Fc`, uploads the dump, and deletes
+the local file before starting the next database, so local disk only ever holds
+one dump. `azcopy` signs in as a user-assigned managed identity that has
+`Storage Blob Data Contributor` on the `backups` container only, so no storage
+key is stored anywhere.
+
+Blobs are named `<lane>/<kind>/<database>/<timestamp>.dump`, where `<kind>` is
+`pre-migration` or `nightly`. All dumps from one run share one timestamp. The
+kind comes before the database name so a lifecycle rule can target one kind by
+prefix.
 
 One failed database does not stop the others. The script finishes every
 database, then exits non-zero if any dump or upload failed, so a partial backup
-shows up as a failed execution. Check the execution logs for
-`pg_dump failed for <database>` or `upload failed for <database>`. A run has 30
-minutes to finish and does not retry.
+shows up as a failed run. An execution has 30 minutes and does not retry. The
+workflow waits up to 40 minutes. Look for `pg_dump failed for <database>` or
+`upload failed for <database>` in the logs.
+
+The nightly workflow runs on a schedule, and GitHub only runs scheduled
+workflows from the default branch, so the schedule starts once the file is on
+`main`. GitHub can delay scheduled runs, and disables them after 60 days without
+repository activity. A failed nightly backup is a failed workflow run, so watch
+for failure notifications.
 
 #### One-time setup
 
-Do this once, as someone who can create identities and write role assignments,
-before the first deploy. The deploy workflow does not create any of it.
+Do this once per lane that is backed up, as someone who can create identities
+and write role assignments. The workflows do not create any of it. The example
+is for `production`. For `staging`, use `STITCH-DEV-RG` and the staging storage
+account.
 
 ```bash
 RG=STITCH-PROD-RG
 ACCOUNT=rmistitchprod
-IDENTITY=stitch-backup-prod
+IDENTITY=stitch-backup
 
 # The identity the backup job runs as
 az identity create --resource-group "$RG" --name "$IDENTITY"
@@ -471,63 +503,51 @@ az role assignment create \
   --role "Storage Blob Data Contributor" \
   --scope "$(az storage account show -g "$RG" -n "$ACCOUNT" --query id -o tsv)/blobServices/default/containers/backups"
 
-# Let the CI identity attach that identity to the job
+# Let the CI identity attach that identity to the backup job
 az role assignment create \
   --assignee "<client id of GHActions-stitch-cicd>" \
   --role "Managed Identity Operator" \
   --scope "$(az identity show -g "$RG" -n "$IDENTITY" --query id -o tsv)"
 ```
 
+The CI identity also needs `Container Apps Jobs Contributor` on the lane's
+resource group (see "Azure Permissions").
+
 Role assignments can take up to 10 minutes to take effect, and Azure caches
-managed identity tokens per resource for a long time. Make the assignments before
-the job's first run, and wait before the first manual run. Consider enabling blob
-soft delete on the storage account: `Storage Blob Data Contributor` can delete
-blobs, and soft delete lets you recover from a bad delete.
+managed identity tokens per resource for a long time. Make the assignments
+before the first backup runs. Protect the container as well: `Storage Blob Data
+Contributor` can delete blobs, so enable blob soft delete on the storage
+account, or a time-based immutability policy on the container.
 
-#### Deploying the job
-
-The workflow `deploy-backup-job.yml` builds the image and deploys the job. It
-does not take the backup. It runs on manual dispatch (`workflow_dispatch`), or on
-a push to `main` that changes anything in `deployments/db-backup/`, the deploy
-script, or the workflow. On a pull request that touches those paths it only
-builds and publishes the image (tagged `pr-<number>`), so a broken Dockerfile
-shows up before merge. It does not deploy.
-
-The deploy job validates the `production` config, logs in to Azure, then runs
-`.github/scripts/deploy_backup_job.sh`. That script looks up the Container Apps
-environment and the backup identity, JSON-encodes the database password, then
-renders `deployments/db-backup/job.yaml` with that config and the digest-pinned
-image from the build. A JSON string is valid YAML, so a password that contains a
-quote or a backslash renders correctly. The script then creates the job, or
-updates it when it already exists. A deploy is idempotent, so you can run the
-workflow again at any time. Re-run it after changing `BACKUP_DATABASES` or
-rotating `PGPASSWORD`, because both are baked into the job when it is deployed.
-
-The first build creates the `stitch-db-backup` package in GHCR, and new packages
-start private. The job pulls the image without credentials, like the other Stitch
-images, so an organization admin must set the package to public after the first
-build and before the first scheduled run. The image contains no secrets.
+The first pipeline build creates the `stitch-db-backup` package in GHCR, and new
+packages start private. The job pulls the image without credentials, like the
+other Stitch images, so an organization admin must set the package to public
+after the first build and before the first backup runs. The image contains no
+secrets.
 
 #### Lane config
 
-Set these in the `production` GitHub Environment:
+Set these in the GitHub Environment of each lane that is backed up:
 
-- variable `BACKUP_DATABASES` (example: `production`) — space-separated database
-  names to dump
 - variable `BACKUP_STORAGE_ACCOUNT` (example: `rmistitchprod`) — storage account
   that holds the `backups` blob container
-- variable `BACKUP_IDENTITY_NAME` (optional, default: `stitch-backup-prod`) —
-  name of the user-assigned managed identity the job runs as. It must be in
+- variable `BACKUP_IDENTITY_NAME` (optional, default: `stitch-backup`) — name of
+  the user-assigned managed identity the job runs as. It must be in
   `AZURE_RESOURCE_GROUP`.
+- variable `BACKUP_DATABASES` (example: `production`) — space-separated
+  database names for the nightly backup. Only the `production` lane needs it,
+  because the pre-migration backup takes the database name from the pipeline.
 
-The job also uses the `production` lane's existing `AZURE_RESOURCE_GROUP`,
+The job also uses the lane's existing `AZURE_RESOURCE_GROUP`,
 `AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `POSTGRES_ADMIN_USER`, and
 `PGPASSWORD`.
 
 #### Retention
 
 Nothing deletes old dumps. The `backups` container grows without limit until a
-blob lifecycle management policy is added.
+blob lifecycle management policy is added. Because the blob path starts with
+`<lane>/<kind>/`, a rule can keep `production/pre-migration/` dumps for a
+different time than `production/nightly/` dumps.
 
 ## Azure Permissions
 
@@ -579,12 +599,13 @@ Container Apps environment):
 - `Reader` on `stitch-dev` (Container Apps Environment)
 - `Reader` on `STITCH-DEV-RG` (Resource Group)
 - `Container Apps Contributor` on `STITCH-DEV-RG` (Resource Group)
+- `Container Apps Jobs Contributor` on `STITCH-DEV-RG` (Resource Group)
 - `Reader` on `stitch-prod` (Container Apps Environment)
 - `Reader` on `STITCH-PROD-RG` (Resource Group)
 - `Container Apps Contributor` on `STITCH-PROD-RG` (Resource Group)
 - `Container Apps Jobs Contributor` on `STITCH-PROD-RG` (Resource Group)
-- `Managed Identity Operator` on `stitch-backup-prod` (user-assigned managed
-  identity), so deploys can attach it to the backup job (see "Backups" above)
+- `Managed Identity Operator` on each lane's `stitch-backup` user-assigned managed
+  identity, so backup runs can attach it to the backup job (see "Backups" above)
 
 > **Reminder — when adding a new lane:** the federated-credential subject above
 > only lets the identity authenticate; it still needs these role assignments on
@@ -647,13 +668,13 @@ named:
 - `ETL_IMAGE_TAG` (example: `main`) — optional; consolidated ETL image tag to
   deploy, defaults to `main`. Only used on `staging` / `production`.
 - `BACKUP_DATABASES` (example: `production`) — space-separated database names
-  that the nightly backup job dumps. Only needed on `production` (see "Backups"
+  that the nightly backup dumps. Only needed on `production` (see "Backups"
   above).
 - `BACKUP_STORAGE_ACCOUNT` (example: `rmistitchprod`) — storage account that
-  holds the `backups` blob container. Only needed on `production`.
-- `BACKUP_IDENTITY_NAME` (default: `stitch-backup-prod`) — optional; name of the
+  holds the `backups` blob container. Needed on `staging` / `production`.
+- `BACKUP_IDENTITY_NAME` (default: `stitch-backup`) — optional; name of the
   user-assigned managed identity the backup job runs as. Only used on
-  `production` (see "Backups" above).
+  `staging` / `production` (see "Backups" above).
 
 The two frontend URLs together define the single CORS origin the API,
 entity-linkage, and stitch-llm services will accept for a given deployment, so
@@ -700,9 +721,10 @@ Current validation behavior:
   - If any of `STITCH_LLM_AZURE_OPENAI_BASE_URL`, `STITCH_LLM_AZURE_OPENAI_MODEL`, or `STITCH_LLM_AZURE_OPENAI_API_KEY` are set, all three must be set
 - DB migrations validate `STITCH_MIGRATOR_PASSWORD`
 - frontend deploy validates `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
-- backup job deploy validates `AZURE_RESOURCE_GROUP`,
+- database backups validate `AZURE_RESOURCE_GROUP`,
   `AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `POSTGRES_ADMIN_USER`,
-  `BACKUP_DATABASES`, `BACKUP_STORAGE_ACCOUNT`, and `PGPASSWORD`
+  `BACKUP_STORAGE_ACCOUNT`, `PGPASSWORD`, and a database list (the pipeline's
+  database, or `BACKUP_DATABASES` for the nightly run)
 - container deploy validates that, when `registry-server` is set, both
   `registry-username` (variable) and `registry-password` (secret) are present —
   so a missing ETL pull credential fails fast instead of surfacing as an opaque

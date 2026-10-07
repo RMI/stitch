@@ -7,11 +7,12 @@ identity:
 properties:
   environmentId: "${LANE_ENVIRONMENT_ID}"
   configuration:
-    triggerType: Schedule
+    # Created for a single backup run by .github/scripts/run_backup_job.sh,
+    # started once, then deleted. Scheduling is done by GitHub Actions.
+    triggerType: Manual
     replicaTimeout: 1800
     replicaRetryLimit: 0
-    scheduleTriggerConfig:
-      cronExpression: "0 3 * * *"
+    manualTriggerConfig:
       parallelism: 1
       replicaCompletionCount: 1
     secrets:
@@ -30,6 +31,7 @@ properties:
           - { name: PGPASSWORD, secretRef: pgpassword }
           - { name: BACKUP_DATABASES, value: "${LANE_BACKUP_DATABASES}" }
           - { name: BACKUP_ENV, value: "${LANE_BACKUP_ENV}" }
+          - { name: BACKUP_KIND, value: "${LANE_BACKUP_KIND}" }
           - { name: BACKUP_STORAGE_ACCOUNT, value: "${LANE_STORAGE_ACCOUNT}" }
           # azcopy signs in as the job's user-assigned managed identity (Storage
           # Blob Data Contributor on the backups container only).

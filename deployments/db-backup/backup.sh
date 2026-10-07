@@ -6,9 +6,13 @@
 # the others; the script exits non-zero at the end if any database failed, so a
 # partial backup still shows up as a failed job execution.
 #
+# Blobs are named <BACKUP_ENV>/<BACKUP_KIND>/<database>/<timestamp>.dump, with the
+# kind before the database so a lifecycle rule can target one kind by prefix.
+#
 # Expected environment:
 #   BACKUP_DATABASES      space-separated database names
-#   BACKUP_ENV            prefix for blob names (e.g. production)
+#   BACKUP_ENV            lane the databases belong to (e.g. production)
+#   BACKUP_KIND           what triggered the backup (e.g. nightly, pre-migration)
 #   BACKUP_STORAGE_ACCOUNT  storage account that holds the backups container
 #   PGHOST, PGUSER, PGPASSWORD (and optionally PGSSLMODE)  libpq connection settings
 #   AZCOPY_AUTO_LOGIN_TYPE=MSI and AZCOPY_MSI_CLIENT_ID  azcopy managed identity sign-in
@@ -16,6 +20,7 @@ set -uo pipefail
 
 : "${BACKUP_DATABASES:?Missing BACKUP_DATABASES}"
 : "${BACKUP_ENV:?Missing BACKUP_ENV}"
+: "${BACKUP_KIND:?Missing BACKUP_KIND}"
 : "${BACKUP_STORAGE_ACCOUNT:?Missing BACKUP_STORAGE_ACCOUNT}"
 
 scratch="$(mktemp -d)"
@@ -37,7 +42,7 @@ for db in $BACKUP_DATABASES; do
     continue
   fi
 
-  if ! azcopy cp "$dump" "$container_url/$BACKUP_ENV/$db/$timestamp.dump" --overwrite=false; then
+  if ! azcopy cp "$dump" "$container_url/$BACKUP_ENV/$BACKUP_KIND/$db/$timestamp.dump" --overwrite=false; then
     echo "upload failed for $db" >&2
     failed=1
   fi

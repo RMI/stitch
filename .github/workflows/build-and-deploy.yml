@@ -276,6 +276,21 @@ jobs:
       image-name: ${{ github.event.repository.name }}-seed
       image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
 
+  # Built on every run, in every lane, so a broken Dockerfile fails in the PR. It is
+  # only run (see backup-db) in lanes whose databases persist between deploys.
+  build-db-backup-docker-image:
+    name: "Build and publish DB backup"
+    needs: [resolve-context]
+    uses: ./.github/workflows/build-and-push-Docker-image.yml
+    secrets: inherit
+    permissions:
+      packages: write
+      contents: read
+    with:
+      dockerfile: deployments/db-backup/Dockerfile
+      image-name: ${{ github.event.repository.name }}-db-backup
+      image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
+
   deploy-db:
     name: "Create DB"
     needs: [resolve-context]
@@ -288,9 +303,39 @@ jobs:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       deployment-name: ${{ needs.resolve-context.outputs.deployment-name }}
 
+  # Snapshot the database to blob storage before migrating it. Development
+  # databases are throwaway, and a database created in this run is empty, so
+  # neither is backed up.
+  backup-db:
+    name: "Back up DB"
+    if: >-
+      ${{ contains(fromJSON('["staging", "production"]'), needs.resolve-context.outputs.deployment-lane)
+      && needs.deploy-db.outputs.database-created != 'true' }}
+    needs: [resolve-context, build-db-backup-docker-image, deploy-db]
+    uses: ./.github/workflows/run-db-backup.yml
+    secrets:
+      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      pgpassword: ${{ secrets.PGPASSWORD }}
+    with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
+      full-image-name: ${{ needs.build-db-backup-docker-image.outputs.digest-image-name }}
+      backup-kind: pre-migration
+      databases: ${{ needs.deploy-db.outputs.postgres-db }}
+
   run-db-migrations:
     name: "Run DB Migrations"
-    needs: [resolve-context, build-api-docker-image, deploy-db]
+    needs: [resolve-context, build-api-docker-image, deploy-db, backup-db]
+    # backup-db is skipped in lanes that are not backed up, and a skipped
+    # dependency would normally skip this job too. Require every other dependency
+    # to have succeeded, and accept backup-db being skipped but not failed.
+    if: >-
+      ${{ !cancelled()
+      && needs.resolve-context.result == 'success'
+      && needs.build-api-docker-image.result == 'success'
+      && needs.deploy-db.result == 'success'
+      && contains(fromJSON('["success", "skipped"]'), needs.backup-db.result) }}
     uses: ./.github/workflows/run-alembic.yml
     secrets:
       stitch-migrator-password: ${{ secrets.STITCH_MIGRATOR_PASSWORD }}
@@ -517,4 +562,4 @@ jobs:
       && !contains(github.event.pull_request.labels.*.name, 'no-deploy') }}
     uses: ./.github/workflows/comment-pr-summary.yml
     secrets: inherit
-    needs: [resolve-context, build-api-docker-image, build-entity-linkage-docker-image, build-stitch-llm-docker-image, build-seed-docker-image, deploy-db, run-db-migrations, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl, run-seed, deploy-frontend]
+    needs: [resolve-context, build-api-docker-image, build-entity-linkage-docker-image, build-stitch-llm-docker-image, build-seed-docker-image, build-db-backup-docker-image, deploy-db, run-db-migrations, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl, run-seed, deploy-frontend]
