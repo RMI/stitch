@@ -427,25 +427,25 @@ Nightly database backups run as an Azure Container Apps job. Only the
 `production` lane is backed up, by one job named `stitch-backup-production`.
 Take a `staging` backup by hand when you need one.
 
-The job runs at 03:00 UTC. An init container runs `pg_dump -Fc` for every
-database named in `BACKUP_DATABASES` and writes each dump to a scratch volume.
-The main container then uploads each dump to the `backups` blob container
-at `production/<database>/<timestamp>.dump`. All dumps from one run share one
-timestamp.
+Everything lives in `deployments/db-backup/`: the `Dockerfile`, the `backup.sh`
+script the image runs, and the job spec (`job.yaml`). The image is
+`ghcr.io/rmi/stitch-db-backup` and contains `pg_dump` and `azcopy`.
 
-The upload container signs in as a user-assigned managed identity
-(`stitch-backup-prod` by default), so there is no storage key anywhere. That
-identity has `Storage Blob Data Contributor` on the `backups` container only.
-Managed identity is only available to main containers, so the upload cannot move
-into the init container.
+The job runs at 03:00 UTC in a single container. For each database named in
+`BACKUP_DATABASES`, `backup.sh` runs `pg_dump -Fc`, uploads the dump to the
+`backups` blob container at `production/<database>/<timestamp>.dump`, and deletes
+the local file before starting the next database. Local disk only ever holds one
+dump. All dumps from one run share one timestamp.
 
-One failed database does not stop the others. If a dump fails, the init
-container records the database name in `/scratch/FAILED` and carries on. The
-upload container still uploads every dump that succeeded, then exits non-zero if
-any dump or upload failed, so a partial backup shows up as a failed execution.
-Check the execution logs for `pg_dump failed for <database>` or
-`upload failed for <database>`. A run has 30 minutes to finish and does not
-retry.
+`azcopy` signs in as a user-assigned managed identity (`stitch-backup-prod` by
+default), so there is no storage key anywhere. That identity has
+`Storage Blob Data Contributor` on the `backups` container only.
+
+One failed database does not stop the others. The script finishes every
+database, then exits non-zero if any dump or upload failed, so a partial backup
+shows up as a failed execution. Check the execution logs for
+`pg_dump failed for <database>` or `upload failed for <database>`. A run has 30
+minutes to finish and does not retry.
 
 #### One-time setup
 
@@ -486,19 +486,27 @@ blobs, and soft delete lets you recover from a bad delete.
 
 #### Deploying the job
 
-The workflow `deploy-backup-job.yml` deploys the job. It does not take the
-backup. It runs on manual dispatch (`workflow_dispatch`), or on a push to `main`
-that changes the workflow, the deploy script, or the job spec.
+The workflow `deploy-backup-job.yml` builds the image and deploys the job. It
+does not take the backup. It runs on manual dispatch (`workflow_dispatch`), or on
+a push to `main` that changes anything in `deployments/db-backup/`, the deploy
+script, or the workflow. On a pull request that touches those paths it only
+builds and publishes the image (tagged `pr-<number>`), so a broken Dockerfile
+shows up before merge. It does not deploy.
 
-The workflow validates the `production` config, logs in to Azure, then runs
+The deploy job validates the `production` config, logs in to Azure, then runs
 `.github/scripts/deploy_backup_job.sh`. That script looks up the Container Apps
 environment and the backup identity, JSON-encodes the database password, then
-renders `deployments/db/jobs/backup-job.yaml` with that config. A JSON string is
-valid YAML, so a password that contains a quote or a backslash renders correctly.
-The script then creates the job, or updates it when it already exists. A deploy
-is idempotent, so you can run the workflow again at any time. Re-run it after
-changing `BACKUP_DATABASES` or rotating `PGPASSWORD`, because both are baked into
-the job when it is deployed.
+renders `deployments/db-backup/job.yaml` with that config and the digest-pinned
+image from the build. A JSON string is valid YAML, so a password that contains a
+quote or a backslash renders correctly. The script then creates the job, or
+updates it when it already exists. A deploy is idempotent, so you can run the
+workflow again at any time. Re-run it after changing `BACKUP_DATABASES` or
+rotating `PGPASSWORD`, because both are baked into the job when it is deployed.
+
+The first build creates the `stitch-db-backup` package in GHCR, and new packages
+start private. The job pulls the image without credentials, like the other Stitch
+images, so an organization admin must set the package to public after the first
+build and before the first scheduled run. The image contains no secrets.
 
 #### Lane config
 

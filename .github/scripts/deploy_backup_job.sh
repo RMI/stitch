@@ -2,7 +2,9 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
-spec_template="$repo_root/deployments/db/jobs/backup-job.yaml"
+spec_template="$repo_root/deployments/db-backup/job.yaml"
+
+: "${LANE_BACKUP_IMAGE:?Missing LANE_BACKUP_IMAGE (the digest-pinned backup image)}"
 
 spec="$(mktemp)"
 trap 'rm -f "$spec"' EXIT
@@ -42,7 +44,7 @@ echo "Backup job will run as managed identity $LANE_BACKUP_IDENTITY_NAME"
 LANE_PGPASSWORD_JSON="$(printf '%s' "$LANE_PGPASSWORD" | jq -Rs .)"
 export LANE_PGPASSWORD_JSON
 
-envsubst '${LANE_LOCATION} ${LANE_ENVIRONMENT_ID} ${LANE_BACKUP_IDENTITY_ID} ${LANE_BACKUP_IDENTITY_CLIENT_ID} ${LANE_PGHOST} ${LANE_PGUSER} ${LANE_BACKUP_ENV} ${LANE_BACKUP_DATABASES} ${LANE_STORAGE_ACCOUNT} ${LANE_PGPASSWORD_JSON}' \
+envsubst '${LANE_LOCATION} ${LANE_ENVIRONMENT_ID} ${LANE_BACKUP_IMAGE} ${LANE_BACKUP_IDENTITY_ID} ${LANE_BACKUP_IDENTITY_CLIENT_ID} ${LANE_PGHOST} ${LANE_PGUSER} ${LANE_BACKUP_ENV} ${LANE_BACKUP_DATABASES} ${LANE_STORAGE_ACCOUNT} ${LANE_PGPASSWORD_JSON}' \
   <"$spec_template" \
   >"$spec"
 
