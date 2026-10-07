@@ -2,16 +2,19 @@
 
 The CD pipeline is managed by the GitHub workflow `build-and-deploy.yml`.
 
-It uses three explicit workflow concepts, all resolved in
+It uses four explicit workflow concepts, all resolved in
 `resolve-deployment-context.yml`:
 
 - `deployment_lane`: deploy class / GitHub Environment name
 - `deployment_name`: concrete runtime target name used for DB and app naming
 - `always_on`: whether this deployment keeps a warm Container App replica
+- `backup_enabled`: whether this deployment backs up an existing database before
+  migrations
 
 In Actions expressions these are the workflow's hyphenated outputs —
 `needs.resolve-context.outputs.deployment-lane`, `…deployment-name`,
-`…always-on`. The snake_case spellings below name the concept, not the key.
+`…always-on`, `…backup-enabled`. The snake_case spellings below name the concept,
+not the key.
 
 Branch behavior is:
 
@@ -427,12 +430,15 @@ A backup runs `pg_dump` on a database and writes the dump to the `backups` blob
 container in the lane's storage account. There are two triggers and one
 mechanism:
 
-- **Before migrations.** In the `staging` and `production` lanes, the CD pipeline
-  backs up the deployment's database after `deploy-db` and before
-  `run-db-migrations`. If the backup fails, the migration and the rest of the
-  deploy do not run. The `development` lane is skipped, because those databases
-  are dropped or throwaway, and so is a database that was created in this run,
-  because it is empty.
+- **Before migrations.** The first step resolves `backup-enabled` as
+  `(is PR and has the backup-db label) or (branch is production)`. This enables
+  backups for production releases and labeled PRs in either `development` or
+  `staging`. Unlabeled PRs and pushes to `main` skip backups. The `no-deploy`
+  label still skips the whole deployment. When enabled, the CD pipeline backs
+  up the deployment's database after `deploy-db` and before `run-db-migrations`.
+  A database created in this run is skipped because it is empty. For an existing
+  database, migrations require a successful backup: a failed backup or a failed
+  backup-image build blocks migrations.
 - **Nightly.** `nightly-db-backup.yml` backs up every database in the
   `production` lane's `BACKUP_DATABASES` variable at 03:00 UTC.
 
@@ -481,8 +487,8 @@ for failure notifications.
 
 Do this once per lane that is backed up, as someone who can create identities
 and write role assignments. The workflows do not create any of it. The example
-is for `production`. For `staging`, use `STITCH-DEV-RG` and the staging storage
-account.
+is for `production`. For `staging` or `development`, use `STITCH-DEV-RG` and the
+lane's storage account.
 
 ```bash
 RG=STITCH-PROD-RG
@@ -527,7 +533,8 @@ secrets.
 
 #### Lane config
 
-Set these in the GitHub Environment of each lane that is backed up:
+Set these in the GitHub Environment of each lane that is backed up, including
+`development` when using the `backup-db` label on development PRs:
 
 - variable `BACKUP_STORAGE_ACCOUNT` (example: `rmistitchprod`) — storage account
   that holds the `backups` blob container
@@ -671,10 +678,11 @@ named:
   that the nightly backup dumps. Only needed on `production` (see "Backups"
   above).
 - `BACKUP_STORAGE_ACCOUNT` (example: `rmistitchprod`) — storage account that
-  holds the `backups` blob container. Needed on `staging` / `production`.
+  holds the `backups` blob container. Needed on `production` and any lane with
+  PRs labeled `backup-db`.
 - `BACKUP_IDENTITY_NAME` (default: `stitch-backup`) — optional; name of the
-  user-assigned managed identity the backup job runs as. Only used on
-  `staging` / `production` (see "Backups" above).
+  user-assigned managed identity the backup job runs as. Used on `production`
+  and any lane with PRs labeled `backup-db` (see "Backups" above).
 
 The two frontend URLs together define the single CORS origin the API,
 entity-linkage, and stitch-llm services will accept for a given deployment, so

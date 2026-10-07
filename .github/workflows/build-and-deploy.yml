@@ -2,9 +2,9 @@ name: CD Pipeline
 
 on:
   pull_request:
-    # labeled/unlabeled are included so toggling the 'no-deploy' label (see the
-    # resolve-context guard) takes effect immediately instead of waiting for the
-    # next push. The default types must be listed explicitly once any are named.
+    # labeled/unlabeled are included so toggling 'no-deploy' or 'backup-db'
+    # triggers a run with the updated policy instead of waiting for the next
+    # push. The default types must be listed explicitly once any are named.
     types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main, production]
@@ -277,7 +277,7 @@ jobs:
       image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
 
   # Built on every run, in every lane, so a broken Dockerfile fails in the PR. It is
-  # only run (see backup-db) in lanes whose databases persist between deploys.
+  # only run (see backup-db) when backups are enabled and the database exists.
   build-db-backup-docker-image:
     name: "Build and publish DB backup"
     needs: [resolve-context]
@@ -303,13 +303,13 @@ jobs:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       deployment-name: ${{ needs.resolve-context.outputs.deployment-name }}
 
-  # Snapshot the database to blob storage before migrating it. Development
-  # databases are throwaway, and a database created in this run is empty, so
-  # neither is backed up.
+  # Snapshot existing databases when the resolved policy enables backups:
+  # production releases and PRs labeled 'backup-db', in any lane. A database
+  # created in this run is empty, so it does not need a backup.
   backup-db:
     name: "Back up DB"
     if: >-
-      ${{ contains(fromJSON('["staging", "production"]'), needs.resolve-context.outputs.deployment-lane)
+      ${{ needs.resolve-context.outputs.backup-enabled == 'true'
       && needs.deploy-db.outputs.database-created != 'true' }}
     needs: [resolve-context, build-db-backup-docker-image, deploy-db]
     uses: ./.github/workflows/run-db-backup.yml
@@ -327,15 +327,17 @@ jobs:
   run-db-migrations:
     name: "Run DB Migrations"
     needs: [resolve-context, build-api-docker-image, deploy-db, backup-db]
-    # backup-db is skipped in lanes that are not backed up, and a skipped
-    # dependency would normally skip this job too. Require every other dependency
-    # to have succeeded, and accept backup-db being skipped but not failed.
+    # Allow an intentional skip when backups are disabled or the database is new.
+    # Otherwise require backup success, including when a failed image build
+    # causes backup-db to be skipped.
     if: >-
       ${{ !cancelled()
       && needs.resolve-context.result == 'success'
       && needs.build-api-docker-image.result == 'success'
       && needs.deploy-db.result == 'success'
-      && contains(fromJSON('["success", "skipped"]'), needs.backup-db.result) }}
+      && (needs.resolve-context.outputs.backup-enabled == 'false'
+      || needs.deploy-db.outputs.database-created == 'true'
+      || needs.backup-db.result == 'success') }}
     uses: ./.github/workflows/run-alembic.yml
     secrets:
       stitch-migrator-password: ${{ secrets.STITCH_MIGRATOR_PASSWORD }}
