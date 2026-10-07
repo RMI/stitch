@@ -24,3 +24,18 @@ export function pickCandidateName(details) {
 
   return winner?.name ?? null;
 }
+
+// The name the Merge Review queue shows for a candidate. Post-merge the source
+// resources are null shells, so the merged resource's name wins; otherwise the
+// source-priority pick above; otherwise the candidate id. Shared by the queue
+// items and the queue's name sort, so the two can never disagree.
+export function candidateDisplayName(
+  candidateId,
+  { sourceDetails, mergedResource },
+) {
+  const mergedName = isEmptyValue(mergedResource?.data?.name)
+    ? null
+    : mergedResource.data.name;
+  const sourceName = sourceDetails ? pickCandidateName(sourceDetails) : null;
+  return mergedName ?? sourceName ?? `Candidate #${candidateId}`;
+}
