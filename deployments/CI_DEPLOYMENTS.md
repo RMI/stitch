@@ -539,8 +539,8 @@ Set these in the GitHub Environment of each lane that is backed up:
   because the pre-migration backup takes the database name from the pipeline.
 
 The job also uses the lane's existing `AZURE_RESOURCE_GROUP`,
-`AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `POSTGRES_ADMIN_USER`, and
-`PGPASSWORD`.
+`AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `POSTGRES_PORT` (default:
+`5432`), `POSTGRES_ADMIN_USER`, and `PGPASSWORD`.
 
 #### Retention
 
@@ -722,9 +722,9 @@ Current validation behavior:
 - DB migrations validate `STITCH_MIGRATOR_PASSWORD`
 - frontend deploy validates `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
 - database backups validate `AZURE_RESOURCE_GROUP`,
-  `AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `POSTGRES_ADMIN_USER`,
-  `BACKUP_STORAGE_ACCOUNT`, `PGPASSWORD`, and a database list (the pipeline's
-  database, or `BACKUP_DATABASES` for the nightly run)
+  `AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `POSTGRES_PORT`,
+  `POSTGRES_ADMIN_USER`, `BACKUP_STORAGE_ACCOUNT`, `PGPASSWORD`, and a database
+  list (the pipeline's database, or `BACKUP_DATABASES` for the nightly run)
 - container deploy validates that, when `registry-server` is set, both
   `registry-username` (variable) and `registry-password` (secret) are present —
   so a missing ETL pull credential fails fast instead of surfacing as an opaque

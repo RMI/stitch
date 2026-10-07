@@ -26,6 +26,7 @@ properties:
         resources: { cpu: 0.5, memory: 1.0Gi }
         env:
           - { name: PGHOST, value: "${LANE_PGHOST}" }
+          - { name: PGPORT, value: "${LANE_PGPORT}" }
           - { name: PGUSER, value: "${LANE_PGUSER}" }
           - { name: PGSSLMODE, value: require }
           - { name: PGPASSWORD, secretRef: pgpassword }

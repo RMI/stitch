@@ -59,6 +59,7 @@ jobs:
       LANE_STORAGE_ACCOUNT: ${{ vars.BACKUP_STORAGE_ACCOUNT }}
       LANE_BACKUP_IDENTITY_NAME: ${{ vars.BACKUP_IDENTITY_NAME || 'stitch-backup' }}
       LANE_PGHOST: ${{ vars.POSTGRES_HOST }}
+      LANE_PGPORT: ${{ vars.POSTGRES_PORT || '5432' }}
       LANE_PGUSER: ${{ vars.POSTGRES_ADMIN_USER || 'postgres' }}
       LANE_PGPASSWORD: ${{ secrets.pgpassword }}
     steps:
@@ -70,6 +71,7 @@ jobs:
           : "${AZURE_RESOURCE_GROUP:?Missing required variable AZURE_RESOURCE_GROUP}"
           : "${AZURE_CONTAINER_APP_ENVIRONMENT:?Missing required variable AZURE_CONTAINER_APP_ENVIRONMENT}"
           : "${LANE_PGHOST:?Missing required variable POSTGRES_HOST}"
+          : "${LANE_PGPORT:?Missing required variable POSTGRES_PORT}"
           : "${LANE_PGUSER:?Missing required variable POSTGRES_ADMIN_USER}"
           : "${LANE_BACKUP_DATABASES:?No databases to back up: pass the databases input or set variable BACKUP_DATABASES}"
           : "${LANE_STORAGE_ACCOUNT:?Missing required variable BACKUP_STORAGE_ACCOUNT}"
