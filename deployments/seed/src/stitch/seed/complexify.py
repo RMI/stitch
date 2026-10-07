@@ -12,6 +12,16 @@ add the two remaining kinds of complexity the coalescing layer cares about:
 Everything is driven by a caller-supplied seeded RNG so the resulting dataset is
 reproducible across branches. All knobs default to off in ``config`` — this pass
 is a no-op unless ``override_prob``/``merge_prob`` are set.
+
+Notes:
+* An override only lands on a resource with >=2 sources for the chosen field, so
+  the *realized* override count is conditioned on the multi-source fraction of the
+  dataset — it is not simply ``override_prob * len(resource_ids)``. The summary
+  log below reports selected/eligible/applied so a thin result can be spotted.
+* These three write flows (field-sources GET, priority PUT, merge approve) are not
+  on the public ``AsyncStitchClient`` surface, so we call ``client._request_json``
+  directly. That couples this seed-only tool to a client internal; if it changes,
+  prefer adding public client helpers over widening this coupling.
 """
 
 from __future__ import annotations
@@ -49,8 +59,8 @@ async def _field_source_pks(
             operation=f"GET /oil-gas-fields/{resource_id}/fields/{field}/sources",
         )
     except Exception:
-        logger.debug(
-            "field-sources lookup failed for resource=%s field=%s",
+        logger.warning(
+            "Complexify: field-sources lookup failed for resource=%s field=%s",
             resource_id,
             field,
             exc_info=True,
@@ -72,10 +82,14 @@ async def _apply_overrides(
     rng: random.Random,
     override_prob: float,
 ) -> int:
-    applied = 0
+    # selected = drawn by the probability gate; eligible = had a field with >=2
+    # candidates (a single-source resource legitimately has none); applied = PUT
+    # succeeded; failed = PUT raised. Only `failed` is an error worth surfacing.
+    selected = eligible = applied = failed = 0
     for resource_id in resource_ids:
         if rng.random() >= override_prob:
             continue
+        selected += 1
         # Try fields in a shuffled order; take the first with >=2 candidates.
         fields = list(_OVERRIDE_FIELDS)
         rng.shuffle(fields)
@@ -83,6 +97,7 @@ async def _apply_overrides(
             pks = await _field_source_pks(client, resource_id, field)
             if len(pks) < 2:
                 continue
+            eligible += 1
             new_order = pks[:]
             rng.shuffle(new_order)
             if new_order == pks:
@@ -98,14 +113,31 @@ async def _apply_overrides(
                 )
                 applied += 1
             except Exception:
-                logger.debug(
-                    "override failed for resource=%s field=%s",
+                failed += 1
+                logger.warning(
+                    "Complexify: override PUT failed for resource=%s field=%s",
                     resource_id,
                     field,
                     exc_info=True,
                 )
             break
-    logger.info("Complexify: applied %d field-priority override(s)", applied)
+    logger.info(
+        "Complexify: applied %d field-priority override(s) "
+        "[selected=%d eligible=%d failed=%d]",
+        applied,
+        selected,
+        eligible,
+        failed,
+    )
+    if failed:
+        logger.warning("Complexify: %d override PUT(s) failed (see warnings)", failed)
+    elif selected and eligible == 0:
+        logger.warning(
+            "Complexify: override_prob selected %d resource(s) but none had a "
+            "multi-source field to re-rank — enable SEED_MULTI_SOURCE_PROB for "
+            "overrides to take effect",
+            selected,
+        )
     return applied
 
 
@@ -117,13 +149,18 @@ async def _apply_merges(
     merge_prob: float,
 ) -> int:
     eligible = [rid for rid in resource_ids if rng.random() < merge_prob]
-    merged = 0
+    pairs = len(eligible) // 2
+    merged = failed = 0
     for i in range(0, len(eligible) - 1, 2):
         pair = [eligible[i], eligible[i + 1]]
         try:
             candidate: dict[str, Any] = await client.create_merge_candidate(pair)
             candidate_id = candidate.get("id")
             if not isinstance(candidate_id, int):
+                failed += 1
+                logger.warning(
+                    "Complexify: merge candidate for pair=%s returned no id", pair
+                )
                 continue
             await client._request_json(
                 method="POST",
@@ -135,8 +172,16 @@ async def _apply_merges(
             )
             merged += 1
         except Exception:
-            logger.debug("merge failed for pair=%s", pair, exc_info=True)
-    logger.info("Complexify: approved %d merge(s)", merged)
+            failed += 1
+            logger.warning("Complexify: merge failed for pair=%s", pair, exc_info=True)
+    logger.info(
+        "Complexify: approved %d merge(s) [pairs_attempted=%d failed=%d]",
+        merged,
+        pairs,
+        failed,
+    )
+    if failed:
+        logger.warning("Complexify: %d merge(s) failed (see warnings)", failed)
     return merged
 
 
