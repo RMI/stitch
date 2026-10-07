@@ -276,26 +276,80 @@ def filter_option_rows(
 ) -> CompoundSelect:
     """Distinct ``(colname, value)`` pairs still reachable under ``params``.
 
-    One branch per filterable field over the shared pivoted base, unioned into a
-    single statement so the endpoint stays one round trip. Each branch applies
-    every filter *except* the branch field's own, so a field is never narrowed by
-    its own selection: after ticking one country the country list still offers
-    the rest. Clearing the field on a copy of ``params`` is what expresses that,
-    which keeps ``q``, multi-select, and the non-faceted exact filters working
-    here exactly as they do on the list query.
+    One branch per filterable field, unioned into a single statement so the
+    endpoint stays one round trip. Each branch applies every filter *except* the
+    branch field's own, so a field is never narrowed by its own selection: after
+    ticking one country the country list still offers the rest. Clearing the
+    field on a copy of ``params`` is what expresses that, which keeps ``q``,
+    multi-select, and the non-faceted exact filters working here exactly as they
+    do on the list query.
 
     Unordered on purpose: SQLite and Postgres disagree on string collation, so
     the caller sorts in Python.
     """
-    base = _pivoted_resource_base(EXACT_MATCH_FIELDS, licensed_sources)
+    m = MembershipModel
+    v = OilGasFieldSourceValueModel
+    r = ResourceModel
+    p = OGFieldSourcePriority
+    o = OGFieldResourceSourcePriority
+
+    # The faceted fields are always needed, since each one is a branch target.
+    # The rest are needed only when a filter or the search term actually reads
+    # them, so ranking and pivoting stay as narrow as the current params allow.
+    involved = list(FILTER_OPTION_FIELDS)
+    for field_name in EXACT_MATCH_FIELDS:
+        if _filter_values(params, field_name):
+            involved.append(field_name)
+    if params.q:
+        involved += Q_FIELDS
+    involved = list(dict.fromkeys(involved))
+
+    base = (
+        select(
+            m.resource_id.label("resource_id"),
+            m.source.label("source"),
+            m.source_pk.label("source_pk"),
+            o.priority.label("override_priority"),
+            p.priority.label("default_priority"),
+            v.colname.label("colname"),
+            v.value_text,
+        )
+        .select_from(m)
+        .join(r, r.id == m.resource_id)
+        .join(v, v.source_pk == m.source_pk)
+        .join(p, p.source == m.source)
+        .outerjoin(o, _override_join(m.resource_id))
+        .where(
+            # A merged-away resource matches no list row, so its values must not
+            # be offered as options either.
+            r.repointed_id.is_(None),
+            m.status == MembershipStatus.ACTIVE,
+            v.colname.in_(involved),
+        )
+    )
+    if licensed_sources is not None:
+        base = base.where(m.source.in_(list(dict.fromkeys(licensed_sources))))
+
+    ranked = add_ranking(base.cte("filter_option_base")).cte("filter_option_ranked")
+
+    # Pivot the winning values to one row per resource: a branch listing one
+    # field's values has to filter on the *other* fields of the same resource.
+    pivot = _add_pivot_columns(
+        select(ranked.c.resource_id.label("resource_id")),
+        involved,
+        ranked.c.colname,
+        lambda field_name: getattr(ranked.c, value_attr_for(field_name)),
+    )
+    pivot_cte = pivot.group_by(ranked.c.resource_id).cte("filter_option_pivot")
+
     branches: list[Select[tuple[str, str]]] = []
     for field_name in FILTER_OPTION_FIELDS:
-        column = _require_column(base, field_name)
+        column = _require_column(pivot_cte, field_name)
         branch = select(
             literal(field_name).label("colname"), column.label("value")
         ).where(column.is_not(None))
         for cond in _build_field_conditions(
-            base, params.model_copy(update={field_name: None})
+            pivot_cte, params.model_copy(update={field_name: None})
         ):
             branch = branch.where(cond)
         branches.append(branch.distinct())
@@ -402,50 +456,40 @@ def _resource_universe() -> Select[tuple[int]]:
     )
 
 
-def _pivoted_resource_base(
-    involved: Collection[str],
-    licensed_sources: Collection[OGSISrcKey] | None = None,
-) -> CTE:
-    """One row per listable resource, with ``involved`` pivoted to wide columns.
-
-    The coalesced winner per ``(resource, colname)`` pivoted into one named
-    column per field, LEFT JOINed onto the membership universe so a resource
-    with no licensed values keeps its row (null-shell) and is dropped only by an
-    actual field filter. Shared by the list query and the filter-option query so
-    both see the same rows under the same filters.
-    """
-    universe = _resource_universe().cte("resource_universe")
-    base_cte = construct_base_query_statement(licensed_sources)
-    ranked = add_ranking(base_cte).cte("ranked")
-    pivot = _add_pivot_columns(
-        select(ranked.c.resource_id.label("resource_id")),
-        involved,
-        ranked.c.colname,
-        lambda field_name: getattr(ranked.c, value_attr_for(field_name)),
-    )
-    pivot_cte = pivot.group_by(ranked.c.resource_id).cte("resource_pivot")
-
-    resource_base = select(universe.c.resource_id)
-    for field_name in involved:
-        resource_base = resource_base.add_columns(pivot_cte.c[field_name])
-    return resource_base.select_from(
-        universe.outerjoin(pivot_cte, pivot_cte.c.resource_id == universe.c.resource_id)
-    ).cte("resource_base")
-
-
 def base_resource_query(
     params: OGFieldQueryParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> Select[tuple[int]]:
     involved = _participating_columns(params)
+    universe = _resource_universe().cte("resource_universe")
 
     if not involved:
         # No value field filtered or sorted -> the universe alone (every active
         # resource); only the id filter below can narrow it.
-        base = _resource_universe().cte("resource_universe")
+        base = universe
         conditions: list[ColumnElement[bool]] = []
     else:
-        base = _pivoted_resource_base(involved, licensed_sources)
+        base_cte = construct_base_query_statement(licensed_sources)
+        ranked = add_ranking(base_cte).cte("ranked")
+        pivot = _add_pivot_columns(
+            select(ranked.c.resource_id.label("resource_id")),
+            involved,
+            ranked.c.colname,
+            lambda field_name: getattr(ranked.c, value_attr_for(field_name)),
+        )
+        pivot_cte = pivot.group_by(ranked.c.resource_id).cte("resource_pivot")
+
+        # LEFT JOIN the licensed/coalesced pivot onto the membership universe: a
+        # resource with no licensed values keeps its row (null-shell) but is
+        # dropped by any field filter below.
+        resource_base = select(universe.c.resource_id)
+        for field_name in involved:
+            resource_base = resource_base.add_columns(pivot_cte.c[field_name])
+        base = resource_base.select_from(
+            universe.outerjoin(
+                pivot_cte, pivot_cte.c.resource_id == universe.c.resource_id
+            )
+        ).cte("resource_base")
         conditions = _build_field_conditions(base, params)
 
     stmt = select(base.c.resource_id)
