@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuth0 } from "@auth0/auth0-react";
 import { setConfigForTests } from "../config/env";
@@ -475,5 +475,246 @@ describe("ColophonPanel", () => {
     });
 
     expect(clipboardSpy).toHaveBeenCalledWith("test-access-token");
+  });
+
+  it("refreshes the token without using the cache and reloads diagnostics", async () => {
+    const { default: ColophonPanel } = await import("./ColophonPanel");
+
+    const { queryClient } = renderWithQueryClient(
+      <ColophonPanel diagnosticsOpen />,
+    );
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    await waitFor(() => {
+      expect(screen.getByText("stitch-api")).toBeInTheDocument();
+    });
+
+    const authMeUrl = "http://localhost:8000/api/v1/auth/me";
+    const authMeCallsBefore = fetchMock.mock.calls.filter(
+      ([url]) => url === authMeUrl,
+    ).length;
+    getAccessTokenSilently.mockResolvedValue("refreshed-access-token");
+
+    fireEvent.click(screen.getByRole("button", { name: "More token actions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh token" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Token refreshed!" }),
+      ).toBeInTheDocument();
+    });
+
+    expect(getAccessTokenSilently).toHaveBeenCalledWith({
+      authorizationParams: { audience: "https://stitch-api.local" },
+      cacheMode: "off",
+    });
+    expect(screen.getByText("refreshed-access-token")).toBeInTheDocument();
+    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.filter(([url]) => url === authMeUrl).length,
+      ).toBeGreaterThan(authMeCallsBefore);
+    });
+  });
+
+  it("shows a failure and keeps the current token when refresh fails", async () => {
+    const { default: ColophonPanel } = await import("./ColophonPanel");
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    renderWithQueryClient(<ColophonPanel diagnosticsOpen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("test-access-token")).toBeInTheDocument();
+    });
+
+    getAccessTokenSilently.mockRejectedValueOnce(new Error("login_required"));
+
+    fireEvent.click(screen.getByRole("button", { name: "More token actions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh token" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Refresh failed" }),
+      ).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("test-access-token")).toBeInTheDocument();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "Failed to refresh access token:",
+      expect.any(Error),
+    );
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("opens the token menu from the arrow and closes it on Escape or an outside click", async () => {
+    const { default: ColophonPanel } = await import("./ColophonPanel");
+
+    renderWithQueryClient(<ColophonPanel diagnosticsOpen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("stitch-api")).toBeInTheDocument();
+    });
+
+    const menuButton = screen.getByRole("button", {
+      name: "More token actions",
+    });
+    expect(menuButton).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("button", { name: "Refresh token" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(menuButton);
+    expect(menuButton).toHaveAttribute("aria-expanded", "true");
+    const refreshItem = screen.getByRole("button", { name: "Refresh token" });
+
+    fireEvent.keyDown(refreshItem, { key: "Escape" });
+    expect(
+      screen.queryByRole("button", { name: "Refresh token" }),
+    ).not.toBeInTheDocument();
+    expect(menuButton).toHaveFocus();
+
+    fireEvent.click(menuButton);
+    fireEvent.mouseDown(document.body);
+    expect(
+      screen.queryByRole("button", { name: "Refresh token" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("disables copying while a refresh is in progress", async () => {
+    const { default: ColophonPanel } = await import("./ColophonPanel");
+
+    renderWithQueryClient(<ColophonPanel diagnosticsOpen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("test-access-token")).toBeInTheDocument();
+    });
+
+    let finishRefresh;
+    getAccessTokenSilently.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishRefresh = resolve;
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "More token actions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh token" }));
+
+    expect(
+      screen.getByRole("button", { name: "Refreshing..." }),
+    ).toBeDisabled();
+
+    finishRefresh("refreshed-access-token");
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Token refreshed!" }),
+      ).toBeEnabled();
+    });
+  });
+
+  it("shows copy feedback when copying right after a refresh", async () => {
+    const { default: ColophonPanel } = await import("./ColophonPanel");
+
+    renderWithQueryClient(<ColophonPanel diagnosticsOpen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("test-access-token")).toBeInTheDocument();
+    });
+
+    getAccessTokenSilently.mockResolvedValue("refreshed-access-token");
+
+    fireEvent.click(screen.getByRole("button", { name: "More token actions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh token" }));
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Token refreshed!" }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Token copied!" }),
+      ).toBeInTheDocument();
+    });
+    expect(clipboardSpy).toHaveBeenCalledWith("refreshed-access-token");
+  });
+
+  it("moves focus back to the arrow after choosing Refresh token", async () => {
+    const { default: ColophonPanel } = await import("./ColophonPanel");
+
+    renderWithQueryClient(<ColophonPanel diagnosticsOpen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("test-access-token")).toBeInTheDocument();
+    });
+
+    const menuButton = screen.getByRole("button", {
+      name: "More token actions",
+    });
+    fireEvent.click(menuButton);
+    const refreshItem = screen.getByRole("button", { name: "Refresh token" });
+    refreshItem.focus();
+    fireEvent.click(refreshItem);
+
+    expect(menuButton).toHaveFocus();
+    await screen.findByRole("button", { name: "Token refreshed!" });
+    expect(menuButton).toHaveFocus();
+  });
+
+  it("does not let an earlier refresh's label reset end a retry early", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    try {
+      const { default: ColophonPanel } = await import("./ColophonPanel");
+
+      renderWithQueryClient(<ColophonPanel diagnosticsOpen />);
+
+      await waitFor(() => {
+        expect(screen.getByText("test-access-token")).toBeInTheDocument();
+      });
+
+      const menuButton = screen.getByRole("button", {
+        name: "More token actions",
+      });
+
+      getAccessTokenSilently.mockRejectedValueOnce(new Error("login_required"));
+      fireEvent.click(menuButton);
+      fireEvent.click(screen.getByRole("button", { name: "Refresh token" }));
+      await screen.findByRole("button", { name: "Refresh failed" });
+
+      let finishRetry;
+      getAccessTokenSilently.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishRetry = resolve;
+        }),
+      );
+      fireEvent.click(menuButton);
+      fireEvent.click(screen.getByRole("button", { name: "Refresh token" }));
+
+      // Past the first refresh's 2s reset, while the retry is still running.
+      await act(async () => {
+        vi.advanceTimersByTime(2500);
+      });
+
+      expect(
+        screen.getByRole("button", { name: "Refreshing..." }),
+      ).toBeDisabled();
+
+      await act(async () => {
+        finishRetry("refreshed-access-token");
+      });
+      expect(
+        screen.getByRole("button", { name: "Token refreshed!" }),
+      ).toBeEnabled();
+    } finally {
+      consoleErrorSpy.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });
