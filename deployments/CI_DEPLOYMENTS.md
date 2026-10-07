@@ -423,13 +423,14 @@ then redeploy the lane so the backend containers pick up the new origin.
 
 ### Backups
 
-Nightly database backups run as an Azure Container Apps job. The `staging` and
-`production` lanes each have one job, named `stitch-backup-<lane>`.
+Nightly database backups run as an Azure Container Apps job. Only the
+`production` lane is backed up, by one job named `stitch-backup-production`.
+Take a `staging` backup by hand when you need one.
 
 The job runs at 03:00 UTC. An init container runs `pg_dump -Fc` for every
 database named in `BACKUP_DATABASES` and writes each dump to a scratch volume.
-The main container then uploads each dump to the lane's `backups` blob container
-at `<lane>/<database>/<timestamp>.dump`. All dumps from one run share one
+The main container then uploads each dump to the `backups` blob container
+at `production/<database>/<timestamp>.dump`. All dumps from one run share one
 timestamp. Both container commands run under `set -e`, so one failed dump fails
 the whole execution. A run has 30 minutes to finish and does not retry.
 
@@ -439,9 +440,9 @@ The workflow `deploy-backup-job.yml` deploys the job. It does not take the
 backup. It runs on manual dispatch (`workflow_dispatch`), or on a push to `main`
 that changes the workflow, the deploy script, or the job spec.
 
-The workflow validates the lane's config, logs in to Azure, then runs
+The workflow validates the `production` config, logs in to Azure, then runs
 `.github/scripts/deploy_backup_job.sh`. That script JSON-encodes the two secrets,
-then renders `deployments/db/jobs/backup-job.yaml` with the lane's config. A JSON
+then renders `deployments/db/jobs/backup-job.yaml` with that config. A JSON
 string is valid YAML, so a secret value that contains a quote or a backslash
 renders correctly. The script then creates the job, or updates it when it already
 exists. If the `backups` blob container does not exist, the script creates it. A
@@ -449,15 +450,15 @@ deploy is idempotent, so you can run the workflow again at any time.
 
 #### Lane config
 
-Set these in each of the `staging` and `production` GitHub Environments:
+Set these in the `production` GitHub Environment:
 
-- variable `BACKUP_DATABASES` (example: `dress_rehearsal pr_0295_demo_integrate_6dbf`) —
-  space-separated database names to dump
-- variable `BACKUP_STORAGE_ACCOUNT` (example: `stitchstaging`) — storage account
+- variable `BACKUP_DATABASES` (example: `production`) — space-separated database
+  names to dump
+- variable `BACKUP_STORAGE_ACCOUNT` (example: `rmistitchprod`) — storage account
   that holds the `backups` blob container
 - secret `BACKUP_STORAGE_KEY` — access key for that storage account
 
-The job also uses the lane's existing `AZURE_RESOURCE_GROUP`,
+The job also uses the `production` lane's existing `AZURE_RESOURCE_GROUP`,
 `AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `POSTGRES_ADMIN_USER`, and
 `PGPASSWORD`.
 
@@ -519,7 +520,6 @@ Container Apps environment):
 - `Reader` on `stitch-prod` (Container Apps Environment)
 - `Reader` on `STITCH-PROD-RG` (Resource Group)
 - `Container Apps Contributor` on `STITCH-PROD-RG` (Resource Group)
-- `Container Apps Jobs Contributor` on `STITCH-DEV-RG` (Resource Group)
 - `Container Apps Jobs Contributor` on `STITCH-PROD-RG` (Resource Group)
 
 > **Reminder — when adding a new lane:** the federated-credential subject above
@@ -582,11 +582,11 @@ named:
   storage above).
 - `ETL_IMAGE_TAG` (example: `main`) — optional; consolidated ETL image tag to
   deploy, defaults to `main`. Only used on `staging` / `production`.
-- `BACKUP_DATABASES` (example: `dress_rehearsal pr_0295_demo_integrate_6dbf`) —
-  space-separated database names that the nightly backup job dumps. Only needed
-  on `staging` / `production` (see "Backups" above).
-- `BACKUP_STORAGE_ACCOUNT` (example: `stitchstaging`) — storage account that
-  holds the `backups` blob container. Only needed on `staging` / `production`.
+- `BACKUP_DATABASES` (example: `production`) — space-separated database names
+  that the nightly backup job dumps. Only needed on `production` (see "Backups"
+  above).
+- `BACKUP_STORAGE_ACCOUNT` (example: `rmistitchprod`) — storage account that
+  holds the `backups` blob container. Only needed on `production`.
 
 The two frontend URLs together define the single CORS origin the API,
 entity-linkage, and stitch-llm services will accept for a given deployment, so
@@ -617,7 +617,7 @@ they have to match where the frontend actually lands:
   image from the `stitch-etl-poc` GHCR. Only needed on `staging` /
   `production`.
 - `BACKUP_STORAGE_KEY` — access key for `BACKUP_STORAGE_ACCOUNT`. The nightly
-  backup job uses it to upload dumps. Only needed on `staging` / `production`.
+  backup job uses it to upload dumps. Only needed on `production`.
 
 Current validation behavior:
 
