@@ -1,0 +1,37 @@
+---
+name: Nightly DB backup
+
+# Backs up every database in the production lane's BACKUP_DATABASES variable.
+# Scheduled workflows only run from the default branch, so this schedule takes
+# effect once the file is on main.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      image-tag:
+        description: "Tag of ghcr.io/rmi/stitch-db-backup to run"
+        required: false
+        default: production
+        type: string
+
+# Never run two nightly backups at once, and let a running one finish.
+concurrency:
+  group: nightly-db-backup
+  cancel-in-progress: false
+
+jobs:
+  nightly-backup:
+    name: Nightly backup (production)
+    uses: ./.github/workflows/run-db-backup.yml
+    secrets:
+      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      pgpassword: ${{ secrets.PGPASSWORD }}
+    with:
+      deployment-lane: production
+      # Scheduled runs have no inputs, so fall back to the production image.
+      full-image-name: ghcr.io/rmi/stitch-db-backup:${{ inputs.image-tag || 'production' }}
+      backup-kind: nightly

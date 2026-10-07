@@ -14,6 +14,10 @@ on:
           Container App min-replicas for this deployment: "1" to keep one warm
           replica, empty to leave the default scale-to-zero.
         value: ${{ jobs.resolve-context.outputs.always-on }}
+      backup-enabled:
+        description: >-
+          Whether this deployment backs up an existing database before migrations
+        value: ${{ jobs.resolve-context.outputs.backup-enabled }}
 
 jobs:
   resolve-context:
@@ -22,6 +26,7 @@ jobs:
       deployment-lane: ${{ steps.resolve.outputs.deployment-lane }}
       deployment-name: ${{ steps.resolve.outputs.deployment-name }}
       always-on: ${{ steps.resolve.outputs.always-on }}
+      backup-enabled: ${{ steps.resolve.outputs.backup-enabled }}
     steps:
       - name: Resolve lane and deployment name
         id: resolve
@@ -32,6 +37,10 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           HEAD_REF: ${{ github.head_ref }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          BACKUP_ENABLED: >-
+            ${{ (github.event_name == 'pull_request'
+            && contains(github.event.pull_request.labels.*.name, 'backup-db'))
+            || github.ref_name == 'production' }}
         run: |
           set -euo pipefail
 
@@ -105,4 +114,5 @@ jobs:
             echo "deployment-lane=$deployment_lane"
             echo "deployment-name=$deployment_name"
             echo "always-on=$always_on"
+            echo "backup-enabled=$BACKUP_ENABLED"
           } >> "$GITHUB_OUTPUT"

@@ -1,0 +1,40 @@
+---
+location: "${LANE_LOCATION}"
+identity:
+  type: UserAssigned
+  userAssignedIdentities:
+    "${LANE_BACKUP_IDENTITY_ID}": {}
+properties:
+  environmentId: "${LANE_ENVIRONMENT_ID}"
+  configuration:
+    # Created for a single backup run by .github/scripts/run_backup_job.sh,
+    # started once, then deleted. Scheduling is done by GitHub Actions.
+    triggerType: Manual
+    replicaTimeout: 1800
+    replicaRetryLimit: 0
+    manualTriggerConfig:
+      parallelism: 1
+      replicaCompletionCount: 1
+    secrets:
+      - name: pgpassword
+        value: ${LANE_PGPASSWORD_JSON}
+  template:
+    containers:
+      - name: backup
+        # Built from deployments/db-backup/Dockerfile; the entrypoint is backup.sh.
+        image: "${LANE_BACKUP_IMAGE}"
+        resources: { cpu: 0.5, memory: 1.0Gi }
+        env:
+          - { name: PGHOST, value: "${LANE_PGHOST}" }
+          - { name: PGPORT, value: "${LANE_PGPORT}" }
+          - { name: PGUSER, value: "${LANE_PGUSER}" }
+          - { name: PGSSLMODE, value: require }
+          - { name: PGPASSWORD, secretRef: pgpassword }
+          - { name: BACKUP_DATABASES, value: "${LANE_BACKUP_DATABASES}" }
+          - { name: BACKUP_ENV, value: "${LANE_BACKUP_ENV}" }
+          - { name: BACKUP_KIND, value: "${LANE_BACKUP_KIND}" }
+          - { name: BACKUP_STORAGE_ACCOUNT, value: "${LANE_STORAGE_ACCOUNT}" }
+          # azcopy signs in as the job's user-assigned managed identity (Storage
+          # Blob Data Contributor on the backups container only).
+          - { name: AZCOPY_AUTO_LOGIN_TYPE, value: MSI }
+          - { name: AZCOPY_MSI_CLIENT_ID, value: "${LANE_BACKUP_IDENTITY_CLIENT_ID}" }
