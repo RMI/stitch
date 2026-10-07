@@ -191,6 +191,10 @@ export default function ResourcesView({ className = "", endpoint }) {
             endpoint={endpoint}
             filters={filters}
             onFiltersChange={handleFiltersChange}
+            optionParams={{
+              filters: settledListParams.filters,
+              q: settledListParams.q,
+            }}
           />
         </div>
       </div>
