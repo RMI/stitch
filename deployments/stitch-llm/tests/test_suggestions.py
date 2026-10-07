@@ -4,10 +4,9 @@ import json
 
 import pytest
 
-from stitch.llm.errors import FieldAlreadyPopulatedError, ModelOutputError
+from stitch.llm.errors import ModelOutputError
 from stitch.llm.suggestions import (
     build_field_suggestion_input,
-    ensure_field_is_missing,
     parse_field_suggestion_response,
     sanitize_and_validate_suggested_value,
 )
@@ -35,19 +34,6 @@ def make_detail_view(**data) -> OGFieldDetailView:
             ),
         ],
     )
-
-
-def test_ensure_field_is_missing_rejects_populated_field() -> None:
-    detail_view = make_detail_view(basin="Permian Basin")
-
-    with pytest.raises(FieldAlreadyPopulatedError):
-        ensure_field_is_missing(detail_view, "basin")
-
-
-def test_ensure_field_is_missing_accepts_blank_string() -> None:
-    detail_view = make_detail_view(basin="  ")
-
-    ensure_field_is_missing(detail_view, "basin")
 
 
 def test_parse_field_suggestion_response_parses_value_and_rationale() -> None:
