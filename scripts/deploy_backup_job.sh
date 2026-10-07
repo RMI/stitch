@@ -5,80 +5,82 @@ IDENTITY_NAME=stitch-backup-identity
 BLOB_CONTAINER=backups
 ROLE="Storage Blob Data Contributor"
 
-repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-spec_template="$repo_root/deployments/db/jobs/backup-job.yaml"
+spec_template="$(cd "$(dirname "$0")/.." && pwd)/deployments/db/jobs/backup-job.yaml"
+spec=
+
+cleanup() {
+  [ -z "$spec" ] || rm -f "$spec"
+}
+trap cleanup EXIT
+
+error_prefix="Error: "
+[ -z "${GITHUB_ACTIONS:-}" ] || error_prefix="::error::"
 
 usage() {
-  echo "usage: $(basename "$0") {setup|deploy} <lane>" >&2
+  echo "usage: $(basename "$0") {setup|deploy} {staging|production}" >&2
   exit 2
 }
 
 fail() {
-  if [ -n "${GITHUB_ACTIONS:-}" ]; then
-    echo "::error::$1" >&2
-  else
-    echo "Error: $1" >&2
-  fi
+  echo "$error_prefix$1" >&2
   exit 1
+}
+
+check_lane() {
+  case "$1" in
+    staging | production) ;;
+    *) fail "Unknown lane '$1'. Expected staging or production." ;;
+  esac
+}
+
+github_name() {
+  case "$1" in
+    LANE_PGHOST) echo POSTGRES_HOST ;;
+    LANE_PGUSER) echo POSTGRES_ADMIN_USER ;;
+    LANE_PGPASSWORD) echo "PGPASSWORD (secret)" ;;
+    LANE_BACKUP_DATABASES) echo BACKUP_DATABASES ;;
+    LANE_STORAGE_ACCOUNT) echo BACKUP_STORAGE_ACCOUNT ;;
+    *) echo "$1" ;;
+  esac
 }
 
 require() {
   local name
   for name in "$@"; do
-    if [ -z "${!name:-}" ]; then
-      fail "Missing required variable $name"
-    fi
+    [ -n "${!name:-}" ] || fail "Missing required variable $(github_name "$name")"
   done
 }
 
 container_scope() {
   local account_id
-  account_id="$(az storage account show \
-    --name "$LANE_STORAGE_ACCOUNT" \
-    --query id \
-    --output tsv)"
-  printf '%s/blobServices/default/containers/%s' "$account_id" "$BLOB_CONTAINER"
+  account_id="$(az storage account show --name "$LANE_STORAGE_ACCOUNT" --query id --output tsv)"
+  echo "$account_id/blobServices/default/containers/$BLOB_CONTAINER"
+}
+
+role_count() {
+  az role assignment list --scope "$1" --output tsv \
+    --query "[?principalId=='$2' && roleDefinitionName=='$ROLE'] | length(@)"
 }
 
 setup() {
-  local lane="$1"
+  local lane="$1" principal scope
+  check_lane "$lane"
   require AZURE_RESOURCE_GROUP LANE_STORAGE_ACCOUNT
 
-  echo "Preparing backup prerequisites for lane $lane"
+  echo "Lane $lane: resource group $AZURE_RESOURCE_GROUP, storage account $LANE_STORAGE_ACCOUNT"
 
-  az identity create \
-    --resource-group "$AZURE_RESOURCE_GROUP" \
-    --name "$IDENTITY_NAME" \
-    --output none
-
-  local principal
-  principal="$(az identity show \
-    --resource-group "$AZURE_RESOURCE_GROUP" \
-    --name "$IDENTITY_NAME" \
-    --query principalId \
-    --output tsv)"
+  principal="$(az identity create --resource-group "$AZURE_RESOURCE_GROUP" \
+    --name "$IDENTITY_NAME" --query principalId --output tsv)"
   echo "Identity $IDENTITY_NAME ready in $AZURE_RESOURCE_GROUP"
 
-  az storage container create \
-    --account-name "$LANE_STORAGE_ACCOUNT" \
-    --auth-mode login \
-    --name "$BLOB_CONTAINER" \
-    --output none
+  az storage container create --account-name "$LANE_STORAGE_ACCOUNT" --auth-mode login \
+    --name "$BLOB_CONTAINER" --output none
   echo "Container $BLOB_CONTAINER ready on $LANE_STORAGE_ACCOUNT"
 
-  local scope granted
   scope="$(container_scope)"
-  granted="$(az role assignment list \
-    --scope "$scope" \
-    --query "[?principalId=='$principal' && roleDefinitionName=='$ROLE'] | length(@)" \
-    --output tsv)"
-  if [ "$granted" -eq 0 ]; then
-    az role assignment create \
-      --role "$ROLE" \
-      --assignee-object-id "$principal" \
-      --assignee-principal-type ServicePrincipal \
-      --scope "$scope" \
-      --output none
+  if [ "$(role_count "$scope" "$principal")" -eq 0 ]; then
+    az role assignment create --role "$ROLE" --assignee-object-id "$principal" \
+      --assignee-principal-type ServicePrincipal --scope "$scope" --output none
     echo "Granted $ROLE on $BLOB_CONTAINER; allow a minute for it to take effect"
   else
     echo "Already holds $ROLE on $BLOB_CONTAINER"
@@ -86,32 +88,30 @@ setup() {
 }
 
 deploy() {
-  local lane="$1"
+  local lane="$1" identity principal scope job_name action
+  check_lane "$lane"
   require AZURE_RESOURCE_GROUP AZURE_CONTAINER_APP_ENVIRONMENT LANE_PGHOST \
     LANE_PGUSER LANE_PGPASSWORD LANE_BACKUP_DATABASES LANE_STORAGE_ACCOUNT
 
-  if ! LANE_BACKUP_IDENTITY_ID="$(az identity show \
-    --resource-group "$AZURE_RESOURCE_GROUP" \
-    --name "$IDENTITY_NAME" \
-    --query id \
-    --output tsv 2>/dev/null)"; then
+  identity="$(az identity list --resource-group "$AZURE_RESOURCE_GROUP" \
+    --query "[?name=='$IDENTITY_NAME'] | [0]" --output json |
+    jq -r 'if . == null then "" else [.id, .clientId, .principalId] | @tsv end')"
+  [ -n "$identity" ] ||
     fail "No managed identity '$IDENTITY_NAME' in '$AZURE_RESOURCE_GROUP'. Run '$(basename "$0") setup $lane' first."
-  fi
+  IFS=$'\t' read -r LANE_BACKUP_IDENTITY_ID LANE_BACKUP_IDENTITY_CLIENT_ID principal <<<"$identity"
 
-  LANE_BACKUP_IDENTITY_CLIENT_ID="$(az identity show \
-    --resource-group "$AZURE_RESOURCE_GROUP" \
-    --name "$IDENTITY_NAME" \
-    --query clientId \
-    --output tsv)"
+  [ "$(az storage container exists --account-name "$LANE_STORAGE_ACCOUNT" --auth-mode login \
+    --name "$BLOB_CONTAINER" --query exists --output tsv)" = true ] ||
+    fail "No container '$BLOB_CONTAINER' on '$LANE_STORAGE_ACCOUNT'. Run '$(basename "$0") setup $lane' first."
 
-  LANE_ENVIRONMENT_ID="$(az containerapp env show \
-    --resource-group "$AZURE_RESOURCE_GROUP" \
-    --name "$AZURE_CONTAINER_APP_ENVIRONMENT" \
-    --query id \
-    --output tsv)"
-  if [ -z "$LANE_ENVIRONMENT_ID" ]; then
+  scope="$(container_scope)"
+  [ "$(role_count "$scope" "$principal")" -ne 0 ] ||
+    fail "Identity '$IDENTITY_NAME' does not hold $ROLE on '$BLOB_CONTAINER'. Run '$(basename "$0") setup $lane' first."
+
+  LANE_ENVIRONMENT_ID="$(az containerapp env show --resource-group "$AZURE_RESOURCE_GROUP" \
+    --name "$AZURE_CONTAINER_APP_ENVIRONMENT" --query id --output tsv)"
+  [ -n "$LANE_ENVIRONMENT_ID" ] ||
     fail "Could not resolve Container Apps environment '$AZURE_CONTAINER_APP_ENVIRONMENT' in '$AZURE_RESOURCE_GROUP'"
-  fi
   echo "Environment $AZURE_CONTAINER_APP_ENVIRONMENT resolved; the job inherits its location"
 
   LANE_BACKUP_ENV="$lane"
@@ -119,37 +119,26 @@ deploy() {
   export LANE_BACKUP_IDENTITY_ID LANE_BACKUP_IDENTITY_CLIENT_ID \
     LANE_ENVIRONMENT_ID LANE_BACKUP_ENV LANE_PGPASSWORD_JSON
 
-  local job_name spec
   job_name="stitch-backup-$lane"
   spec="$(mktemp)"
-  trap 'rm -f "$spec"' EXIT
 
   envsubst '${LANE_ENVIRONMENT_ID} ${LANE_PGHOST} ${LANE_PGUSER} ${LANE_BACKUP_ENV} ${LANE_BACKUP_DATABASES} ${LANE_STORAGE_ACCOUNT} ${LANE_PGPASSWORD_JSON} ${LANE_BACKUP_IDENTITY_ID} ${LANE_BACKUP_IDENTITY_CLIENT_ID}' \
     <"$spec_template" \
     >"$spec"
 
-  if az containerapp job show \
-    --resource-group "$AZURE_RESOURCE_GROUP" \
-    --name "$job_name" \
-    --output none 2>/dev/null; then
-    echo "Updating existing job $job_name"
-    az containerapp job update \
-      --resource-group "$AZURE_RESOURCE_GROUP" \
-      --name "$job_name" \
-      --yaml "$spec" \
-      --output none
-  else
+  if [ "$(az containerapp job list --resource-group "$AZURE_RESOURCE_GROUP" \
+    --query "[?name=='$job_name'] | length(@)" --output tsv)" -eq 0 ]; then
+    action=create
     echo "Creating job $job_name"
-    az containerapp job create \
-      --resource-group "$AZURE_RESOURCE_GROUP" \
-      --name "$job_name" \
-      --yaml "$spec" \
-      --output none
+  else
+    action=update
+    echo "Updating existing job $job_name"
   fi
 
-  az containerapp job show \
-    --resource-group "$AZURE_RESOURCE_GROUP" \
-    --name "$job_name" \
+  az containerapp job "$action" --resource-group "$AZURE_RESOURCE_GROUP" \
+    --name "$job_name" --yaml "$spec" --output none
+
+  az containerapp job show --resource-group "$AZURE_RESOURCE_GROUP" --name "$job_name" \
     --query "properties.configuration.{triggerType:triggerType,cron:scheduleTriggerConfig.cronExpression}" \
     --output table
 }

@@ -500,13 +500,31 @@ The grant is scoped to the `backups` container, not to the storage account.
 That is the whole point: a compromised job can write its own backups and nothing
 else.
 
-Run `setup` from a developer account with permission to create a managed
-identity and a role assignment. `GHActions-stitch-cicd` has neither, and does
-not need them, because it only ever runs `deploy`. It does need **Managed
-Identity Operator** on the identity to attach it to the job. Without that, the
-deploy fails with an authorization error.
+Run `setup` from a developer account that holds all three of: permission to
+create a managed identity, permission to create a role assignment, and a blob
+data role such as **Storage Blob Data Contributor** on the storage account.
+That last one surprises people: creating a container with `--auth-mode login` is
+a data-plane operation, so being Owner of the resource group is not enough on
+its own. Without it, `setup` creates the identity and then fails at the
+container step. Rerunning after granting yourself the role picks up where it
+left off.
 
-If `deploy` runs before `setup`, it stops and tells you to run `setup` first.
+`GHActions-stitch-cicd` needs none of those three, because it only ever runs
+`deploy`. It does need **Managed Identity Operator** on the identity to attach
+it to the job. Without that, the deploy fails with an authorization error.
+
+`deploy` checks all three things `setup` creates — the identity, the container,
+and the container-scoped grant — and stops with a pointer to `setup` if any is
+missing. All three are reads, so this costs CI no extra permission. The point is
+that a deleted container or a revoked grant fails the deploy immediately, rather
+than succeeding and then failing at 03:00 when the upload is denied.
+
+Both subcommands reject a lane name other than `staging` or `production`, so a
+typo cannot quietly create a job named after it.
+
+Right after `setup` grants the role for the first time, the assignment can take
+a minute or two to take effect. A job run started immediately may still fail on
+upload. Nothing enforces the wait; if that happens, run the job again.
 
 #### Retention
 
