@@ -433,6 +433,12 @@ The main container then uploads each dump to the `backups` blob container
 at `production/<database>/<timestamp>.dump`. All dumps from one run share one
 timestamp.
 
+The upload container signs in as a user-assigned managed identity
+(`stitch-backup-prod` by default), so there is no storage key anywhere. That
+identity has `Storage Blob Data Contributor` on the `backups` container only.
+Managed identity is only available to main containers, so the upload cannot move
+into the init container.
+
 One failed database does not stop the others. If a dump fails, the init
 container records the database name in `/scratch/FAILED` and carries on. The
 upload container still uploads every dump that succeeded, then exits non-zero if
@@ -441,6 +447,43 @@ Check the execution logs for `pg_dump failed for <database>` or
 `upload failed for <database>`. A run has 30 minutes to finish and does not
 retry.
 
+#### One-time setup
+
+Do this once, as someone who can create identities and write role assignments,
+before the first deploy. The deploy workflow does not create any of it.
+
+```bash
+RG=STITCH-PROD-RG
+ACCOUNT=rmistitchprod
+IDENTITY=stitch-backup-prod
+
+# The identity the backup job runs as
+az identity create --resource-group "$RG" --name "$IDENTITY"
+
+# The container the dumps go into (control-plane call, needs no data role)
+az storage container-rm create \
+  --storage-account "$ACCOUNT" --resource-group "$RG" --name backups
+
+# Let the job's identity write blobs in that container, and nothing else
+az role assignment create \
+  --assignee-object-id "$(az identity show -g "$RG" -n "$IDENTITY" --query principalId -o tsv)" \
+  --assignee-principal-type ServicePrincipal \
+  --role "Storage Blob Data Contributor" \
+  --scope "$(az storage account show -g "$RG" -n "$ACCOUNT" --query id -o tsv)/blobServices/default/containers/backups"
+
+# Let the CI identity attach that identity to the job
+az role assignment create \
+  --assignee "<client id of GHActions-stitch-cicd>" \
+  --role "Managed Identity Operator" \
+  --scope "$(az identity show -g "$RG" -n "$IDENTITY" --query id -o tsv)"
+```
+
+Role assignments can take up to 10 minutes to take effect, and Azure caches
+managed identity tokens per resource for a long time. Make the assignments before
+the job's first run, and wait before the first manual run. Consider enabling blob
+soft delete on the storage account: `Storage Blob Data Contributor` can delete
+blobs, and soft delete lets you recover from a bad delete.
+
 #### Deploying the job
 
 The workflow `deploy-backup-job.yml` deploys the job. It does not take the
@@ -448,12 +491,14 @@ backup. It runs on manual dispatch (`workflow_dispatch`), or on a push to `main`
 that changes the workflow, the deploy script, or the job spec.
 
 The workflow validates the `production` config, logs in to Azure, then runs
-`.github/scripts/deploy_backup_job.sh`. That script JSON-encodes the two secrets,
-then renders `deployments/db/jobs/backup-job.yaml` with that config. A JSON
-string is valid YAML, so a secret value that contains a quote or a backslash
-renders correctly. The script then creates the job, or updates it when it already
-exists. If the `backups` blob container does not exist, the script creates it. A
-deploy is idempotent, so you can run the workflow again at any time.
+`.github/scripts/deploy_backup_job.sh`. That script looks up the Container Apps
+environment and the backup identity, JSON-encodes the database password, then
+renders `deployments/db/jobs/backup-job.yaml` with that config. A JSON string is
+valid YAML, so a password that contains a quote or a backslash renders correctly.
+The script then creates the job, or updates it when it already exists. A deploy
+is idempotent, so you can run the workflow again at any time. Re-run it after
+changing `BACKUP_DATABASES` or rotating `PGPASSWORD`, because both are baked into
+the job when it is deployed.
 
 #### Lane config
 
@@ -463,7 +508,9 @@ Set these in the `production` GitHub Environment:
   names to dump
 - variable `BACKUP_STORAGE_ACCOUNT` (example: `rmistitchprod`) — storage account
   that holds the `backups` blob container
-- secret `BACKUP_STORAGE_KEY` — access key for that storage account
+- variable `BACKUP_IDENTITY_NAME` (optional, default: `stitch-backup-prod`) —
+  name of the user-assigned managed identity the job runs as. It must be in
+  `AZURE_RESOURCE_GROUP`.
 
 The job also uses the `production` lane's existing `AZURE_RESOURCE_GROUP`,
 `AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `POSTGRES_ADMIN_USER`, and
@@ -528,6 +575,8 @@ Container Apps environment):
 - `Reader` on `STITCH-PROD-RG` (Resource Group)
 - `Container Apps Contributor` on `STITCH-PROD-RG` (Resource Group)
 - `Container Apps Jobs Contributor` on `STITCH-PROD-RG` (Resource Group)
+- `Managed Identity Operator` on `stitch-backup-prod` (user-assigned managed
+  identity), so deploys can attach it to the backup job (see "Backups" above)
 
 > **Reminder — when adding a new lane:** the federated-credential subject above
 > only lets the identity authenticate; it still needs these role assignments on
@@ -594,6 +643,9 @@ named:
   above).
 - `BACKUP_STORAGE_ACCOUNT` (example: `rmistitchprod`) — storage account that
   holds the `backups` blob container. Only needed on `production`.
+- `BACKUP_IDENTITY_NAME` (default: `stitch-backup-prod`) — optional; name of the
+  user-assigned managed identity the backup job runs as. Only used on
+  `production` (see "Backups" above).
 
 The two frontend URLs together define the single CORS origin the API,
 entity-linkage, and stitch-llm services will accept for a given deployment, so
@@ -623,8 +675,6 @@ they have to match where the frontend actually lands:
 - `GHCR_ETL_PULL_TOKEN` — classic PAT with `read:packages` used to pull the ETL
   image from the `stitch-etl-poc` GHCR. Only needed on `staging` /
   `production`.
-- `BACKUP_STORAGE_KEY` — access key for `BACKUP_STORAGE_ACCOUNT`. The nightly
-  backup job uses it to upload dumps. Only needed on `production`.
 
 Current validation behavior:
 
@@ -644,8 +694,7 @@ Current validation behavior:
 - frontend deploy validates `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
 - backup job deploy validates `AZURE_RESOURCE_GROUP`,
   `AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `POSTGRES_ADMIN_USER`,
-  `BACKUP_DATABASES`, `BACKUP_STORAGE_ACCOUNT`, `PGPASSWORD`, and
-  `BACKUP_STORAGE_KEY`
+  `BACKUP_DATABASES`, `BACKUP_STORAGE_ACCOUNT`, and `PGPASSWORD`
 - container deploy validates that, when `registry-server` is set, both
   `registry-username` (variable) and `registry-password` (secret) are present —
   so a missing ETL pull credential fails fast instead of surfacing as an opaque

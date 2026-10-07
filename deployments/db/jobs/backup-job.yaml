@@ -1,5 +1,9 @@
 ---
 location: "${LANE_LOCATION}"
+identity:
+  type: UserAssigned
+  userAssignedIdentities:
+    "${LANE_BACKUP_IDENTITY_ID}": {}
 properties:
   environmentId: "${LANE_ENVIRONMENT_ID}"
   configuration:
@@ -13,8 +17,6 @@ properties:
     secrets:
       - name: pgpassword
         value: ${LANE_PGPASSWORD_JSON}
-      - name: storagekey
-        value: ${LANE_STORAGE_KEY_JSON}
   template:
     volumes:
       - name: scratch
@@ -53,17 +55,26 @@ properties:
           - { name: BACKUP_ENV, value: "${LANE_BACKUP_ENV}" }
           - { name: BACKUP_DATABASES, value: "${LANE_BACKUP_DATABASES}" }
           - { name: ACCOUNT, value: "${LANE_STORAGE_ACCOUNT}" }
-          - { name: KEY, secretRef: storagekey }
+          - { name: BACKUP_IDENTITY_CLIENT_ID, value: "${LANE_BACKUP_IDENTITY_CLIENT_ID}" }
         command: ["/bin/sh", "-c"]
         args:
+          # Sign in as the job's user-assigned managed identity (it holds Storage
+          # Blob Data Contributor on the backups container only). Managed identity
+          # is only available to main containers, so the upload cannot move into
+          # the init container.
+          #
           # Upload every dump that exists, then fail the execution if any dump or
           # upload failed so a partial backup still shows up as a failed run.
           - |
+            if ! az login --identity --client-id "$BACKUP_IDENTITY_CLIENT_ID" --allow-no-subscriptions --output none; then
+              echo "az login with the backup managed identity failed" >&2
+              exit 1
+            fi
             ts=$(date -u +%Y%m%dT%H%M%SZ)
             failed=0
             for db in $BACKUP_DATABASES; do
               [ -f "/scratch/$db.dump" ] || continue
-              if ! az storage blob upload --account-name "$ACCOUNT" --account-key "$KEY" -c backups -n "$BACKUP_ENV/$db/$ts.dump" -f "/scratch/$db.dump" -o none; then
+              if ! az storage blob upload --account-name "$ACCOUNT" --auth-mode login -c backups -n "$BACKUP_ENV/$db/$ts.dump" -f "/scratch/$db.dump" -o none; then
                 echo "upload failed for $db" >&2
                 failed=1
               fi

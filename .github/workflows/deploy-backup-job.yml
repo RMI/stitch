@@ -28,8 +28,8 @@ jobs:
       LANE_BACKUP_ENV: production
       LANE_BACKUP_DATABASES: ${{ vars.BACKUP_DATABASES }}
       LANE_STORAGE_ACCOUNT: ${{ vars.BACKUP_STORAGE_ACCOUNT }}
+      LANE_BACKUP_IDENTITY_NAME: ${{ vars.BACKUP_IDENTITY_NAME || 'stitch-backup-prod' }}
       LANE_PGPASSWORD: ${{ secrets.PGPASSWORD }}
-      LANE_STORAGE_KEY: ${{ secrets.BACKUP_STORAGE_KEY }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -45,7 +45,6 @@ jobs:
           : "${LANE_BACKUP_DATABASES:?Missing required variable BACKUP_DATABASES}"
           : "${LANE_STORAGE_ACCOUNT:?Missing required variable BACKUP_STORAGE_ACCOUNT}"
           : "${LANE_PGPASSWORD:?Missing required secret PGPASSWORD}"
-          : "${LANE_STORAGE_KEY:?Missing required secret BACKUP_STORAGE_KEY}"
 
       - name: Azure login
         uses: azure/login@v3
