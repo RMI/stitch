@@ -133,10 +133,10 @@ account / share / environment-storage name:
 > reads its GEM spreadsheet from the mount. For the `production` lane the env
 > storage name is `etl-prod` on the `stitch-prod` Container Apps environment.
 
-| Lane              | Storage account | File share            | Env storage name (`ETL_STORAGE_NAME`) |
-| ----------------- | --------------- | --------------------- | ------------------------------------- |
-| `staging`         | `stitchstaging` | `etl-staging`         | `etl-staging`                         |
-| `production`      | `rmistitchprod` | `etl-prod`            | `etl-prod`                            |
+| Lane         | Storage account | File share    | Env storage name (`ETL_STORAGE_NAME`) |
+| ------------ | --------------- | ------------- | ------------------------------------- |
+| `staging`    | `stitchstaging` | `etl-staging` | `etl-staging`                         |
+| `production` | `rmistitchprod` | `etl-prod`    | `etl-prod`                            |
 
 Note: the `production` storage account is `rmistitchprod`, which does **not**
 follow the `stitch<lane>` pattern that `stitchstaging` uses — don't assume
@@ -234,12 +234,12 @@ release is currently worth paying to avoid that; everywhere else we accept the
 cold start to hold the bill down. `resolve-context` decides this once and
 exposes it as the `always-on` output:
 
-| Deployment | `always-on` | Why |
-| --- | --- | --- |
-| push to `production` | `1` | the production release; must be responsive on first hit |
-| push to `main` | *(empty)* | cost |
-| `staging` lane PRs (into `production`, or from `demo/*`) | *(empty)* | cost |
-| `development` lane PRs | *(empty)* | throwaway preview, one per PR |
+| Deployment                                               | `always-on` | Why                                                     |
+| -------------------------------------------------------- | ----------- | ------------------------------------------------------- |
+| push to `production`                                     | `1`         | the production release; must be responsive on first hit |
+| push to `main`                                           | _(empty)_   | cost                                                    |
+| `staging` lane PRs (into `production`, or from `demo/*`) | _(empty)_   | cost                                                    |
+| `development` lane PRs                                   | _(empty)_   | throwaway preview, one per PR                           |
 
 The three long-running services — `api`, `entity-linkage`, `stitch-llm` — pass it
 straight through:
@@ -338,10 +338,10 @@ branch. `deploy-frontend` passes that branch to the Azure deploy action as
 `production-branch`, which is what decides whether a deployment lands in the
 site's **production** environment or in a **preview** environment.
 
-| Hostname | Status | Lane | Branch | Static Web App | Default hostname |
-| --- | --- | --- | --- | --- | --- |
-| `stitch-dev.rmi.org` | assigning now | `development` | `main` | `stitch-dev` | `witty-mushroom-017a3dc1e.1.azurestaticapps.net` |
-| `stitch.rmi.org` | planned | `production` | `production` | `stitch-prod` | `salmon-bush-05721e11e.6.azurestaticapps.net` |
+| Hostname             | Status        | Lane          | Branch       | Static Web App | Default hostname                                 |
+| -------------------- | ------------- | ------------- | ------------ | -------------- | ------------------------------------------------ |
+| `stitch-dev.rmi.org` | assigning now | `development` | `main`       | `stitch-dev`   | `witty-mushroom-017a3dc1e.1.azurestaticapps.net` |
+| `stitch.rmi.org`     | planned       | `production`  | `production` | `stitch-prod`  | `salmon-bush-05721e11e.6.azurestaticapps.net`    |
 
 `stitch.rmi.org` is deliberately **not** pointed at the existing `stitch-staging`
 Static Web App. That resource serves the `staging` lane (PR previews into
@@ -440,12 +440,16 @@ backup. It runs on manual dispatch (`workflow_dispatch`), or on a push to `main`
 that changes the workflow, the deploy script, or the job spec.
 
 The workflow validates the lane's config, logs in to Azure, then runs
-`.github/scripts/deploy_backup_job.sh`. That script JSON-encodes the two secrets,
-then renders `deployments/db/jobs/backup-job.yaml` with the lane's config. A JSON
-string is valid YAML, so a secret value that contains a quote or a backslash
-renders correctly. The script then creates the job, or updates it when it already
-exists. If the `backups` blob container does not exist, the script creates it. A
-deploy is idempotent, so you can run the workflow again at any time.
+`.github/scripts/deploy_backup_job.sh`. That script JSON-encodes the database
+password, then renders `deployments/db/jobs/backup-job.yaml` with the lane's
+config. A JSON string is valid YAML, so a password that contains a quote or a
+backslash renders correctly. The script then creates the job, or updates it when
+it already exists. If the `backups` blob container does not exist, the script
+creates it. A deploy is idempotent, so you can run the workflow again at any time.
+
+The job writes its dumps using a managed identity rather than a storage account
+key, so nothing in the pipeline holds account-wide access to storage. See
+"Backup identity" below for the one-time setup that identity needs.
 
 #### Lane config
 
@@ -455,11 +459,44 @@ Set these in each of the `staging` and `production` GitHub Environments:
   space-separated database names to dump
 - variable `BACKUP_STORAGE_ACCOUNT` (example: `stitchstaging`) — storage account
   that holds the `backups` blob container
-- secret `BACKUP_STORAGE_KEY` — access key for that storage account
+- variable `BACKUP_IDENTITY_ID` — full resource ID of the user-assigned managed
+  identity the job uploads with
+- variable `BACKUP_IDENTITY_CLIENT_ID` — client ID of that same identity
 
 The job also uses the lane's existing `AZURE_RESOURCE_GROUP`,
 `AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `POSTGRES_ADMIN_USER`, and
 `PGPASSWORD`.
+
+#### Backup identity
+
+The job uploads with a user-assigned managed identity instead of a storage
+account key, so no part of the pipeline holds account-wide access to storage.
+The identity is a standalone resource that outlives any single deploy, so create
+it and grant it access once per lane, before the first deploy:
+
+```sh
+az identity create -g "$RG" -n stitch-backup-identity
+
+PRINCIPAL="$(az identity show -g "$RG" -n stitch-backup-identity \
+  --query principalId -o tsv)"
+ACCOUNT="$(az storage account show -n "$BACKUP_STORAGE_ACCOUNT" --query id -o tsv)"
+
+az role assignment create \
+  --role "Storage Blob Data Contributor" \
+  --assignee-object-id "$PRINCIPAL" \
+  --assignee-principal-type ServicePrincipal \
+  --scope "$ACCOUNT/blobServices/default/containers/backups"
+```
+
+Scope the grant to the `backups` container, not the storage account. That is the
+whole point of the change: a compromised job can write its own backups and
+nothing else.
+
+Then set `BACKUP_IDENTITY_ID` and `BACKUP_IDENTITY_CLIENT_ID` from
+`az identity show -g "$RG" -n stitch-backup-identity --query "[id,clientId]"`.
+
+`GHActions-stitch-cicd` also needs **Managed Identity Operator** on that identity
+to attach it to the job. Without it the deploy fails with an authorization error.
 
 #### Retention
 
@@ -587,6 +624,9 @@ named:
   on `staging` / `production` (see "Backups" above).
 - `BACKUP_STORAGE_ACCOUNT` (example: `stitchstaging`) — storage account that
   holds the `backups` blob container. Only needed on `staging` / `production`.
+- `BACKUP_IDENTITY_ID` and `BACKUP_IDENTITY_CLIENT_ID` — the managed identity the
+  backup job uploads with. Only needed on `staging` / `production` (see "Backup
+  identity" above).
 
 The two frontend URLs together define the single CORS origin the API,
 entity-linkage, and stitch-llm services will accept for a given deployment, so
@@ -616,8 +656,6 @@ they have to match where the frontend actually lands:
 - `GHCR_ETL_PULL_TOKEN` — classic PAT with `read:packages` used to pull the ETL
   image from the `stitch-etl-poc` GHCR. Only needed on `staging` /
   `production`.
-- `BACKUP_STORAGE_KEY` — access key for `BACKUP_STORAGE_ACCOUNT`. The nightly
-  backup job uses it to upload dumps. Only needed on `staging` / `production`.
 
 Current validation behavior:
 
@@ -637,8 +675,8 @@ Current validation behavior:
 - frontend deploy validates `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
 - backup job deploy validates `AZURE_RESOURCE_GROUP`,
   `AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `POSTGRES_ADMIN_USER`,
-  `BACKUP_DATABASES`, `BACKUP_STORAGE_ACCOUNT`, `PGPASSWORD`, and
-  `BACKUP_STORAGE_KEY`
+  `BACKUP_DATABASES`, `BACKUP_STORAGE_ACCOUNT`, `PGPASSWORD`,
+  `BACKUP_IDENTITY_ID`, and `BACKUP_IDENTITY_CLIENT_ID`
 - container deploy validates that, when `registry-server` is set, both
   `registry-username` (variable) and `registry-password` (secret) are present —
   so a missing ETL pull credential fails fast instead of surfacing as an opaque

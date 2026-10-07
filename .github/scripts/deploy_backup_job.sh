@@ -9,29 +9,28 @@ trap 'rm -f "$spec"' EXIT
 
 az storage container create \
   --account-name "$LANE_STORAGE_ACCOUNT" \
-  --account-key "$LANE_STORAGE_KEY" \
+  --auth-mode login \
   --name backups \
   --output none
 
-IFS=$'\t' read -r LANE_ENVIRONMENT_ID LANE_LOCATION <<<"$(
+LANE_ENVIRONMENT_ID="$(
   az containerapp env show \
     --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$AZURE_CONTAINER_APP_ENVIRONMENT" \
-    --query "[id,location]" \
+    --query id \
     --output tsv
 )"
-if [ -z "$LANE_ENVIRONMENT_ID" ] || [ -z "$LANE_LOCATION" ]; then
-  echo "::error::Could not resolve the id and location of Container Apps environment '$AZURE_CONTAINER_APP_ENVIRONMENT' in '$AZURE_RESOURCE_GROUP'" >&2
+if [ -z "$LANE_ENVIRONMENT_ID" ]; then
+  echo "::error::Could not resolve the id of Container Apps environment '$AZURE_CONTAINER_APP_ENVIRONMENT' in '$AZURE_RESOURCE_GROUP'" >&2
   exit 1
 fi
-export LANE_ENVIRONMENT_ID LANE_LOCATION
-echo "Environment $AZURE_CONTAINER_APP_ENVIRONMENT is in $LANE_LOCATION"
+export LANE_ENVIRONMENT_ID
+echo "Environment $AZURE_CONTAINER_APP_ENVIRONMENT resolved; the job inherits its location"
 
 LANE_PGPASSWORD_JSON="$(printf '%s' "$LANE_PGPASSWORD" | jq -Rs .)"
-LANE_STORAGE_KEY_JSON="$(printf '%s' "$LANE_STORAGE_KEY" | jq -Rs .)"
-export LANE_PGPASSWORD_JSON LANE_STORAGE_KEY_JSON
+export LANE_PGPASSWORD_JSON
 
-envsubst '${LANE_LOCATION} ${LANE_ENVIRONMENT_ID} ${LANE_PGHOST} ${LANE_PGUSER} ${LANE_BACKUP_ENV} ${LANE_BACKUP_DATABASES} ${LANE_STORAGE_ACCOUNT} ${LANE_PGPASSWORD_JSON} ${LANE_STORAGE_KEY_JSON}' \
+envsubst '${LANE_ENVIRONMENT_ID} ${LANE_PGHOST} ${LANE_PGUSER} ${LANE_BACKUP_ENV} ${LANE_BACKUP_DATABASES} ${LANE_STORAGE_ACCOUNT} ${LANE_PGPASSWORD_JSON} ${LANE_BACKUP_IDENTITY_ID} ${LANE_BACKUP_IDENTITY_CLIENT_ID}' \
   <"$spec_template" \
   >"$spec"
 
