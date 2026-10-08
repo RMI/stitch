@@ -423,59 +423,57 @@ then redeploy the lane so the backend containers pick up the new origin.
 
 ### Backups
 
-Nightly database backups run as an Azure Container Apps job. The `staging` and
-`production` lanes each have one job, named `stitch-backup-<lane>`.
+Nightly database backups run as an Azure Container Apps job. Only the
+`production` lane is backed up. Its job is named `stitch-backup-production`.
 
 The job starts at 03:00 UTC. It dumps each database in `BACKUP_DATABASES` with
-`pg_dump -Fc`, then uploads each dump to the `backups` blob container for that
-lane, at `<lane>/<database>/<timestamp>.dump`. One failed dump fails the whole
-run. A run has 30 minutes and does not retry.
+`pg_dump -Fc`, then uploads each dump to the `backups` blob container at
+`production/<database>/<timestamp>.dump`. One failed dump fails the whole run. A
+run has 30 minutes and does not retry.
 
 #### Deploying the job
 
-Run `setup` once for each lane, by hand, before the first deploy. See "Backup
-identity" below. Then deploy the job for one lane:
+Run `setup` once, by hand, before the first deploy. See "Backup identity" below.
+Then deploy the job:
 
 ```sh
-scripts/deploy_backup_job.sh deploy staging
+scripts/deploy_backup_job.sh deploy
 ```
 
-Give the lane as `staging` or `production`. The script rejects other names.
-
-Before you run it, log in to `az` with the correct subscription and export the
-lane variables: `AZURE_RESOURCE_GROUP`, `AZURE_CONTAINER_APP_ENVIRONMENT`,
-`LANE_PGHOST`, `LANE_PGUSER`, `LANE_PGPASSWORD`, `LANE_BACKUP_DATABASES`, and
+Before you run it, log in to `az` with the correct subscription and export
+`AZURE_RESOURCE_GROUP`, `AZURE_CONTAINER_APP_ENVIRONMENT`, `LANE_PGHOST`,
+`LANE_PGUSER`, `LANE_PGPASSWORD`, `LANE_BACKUP_DATABASES`, and
 `LANE_STORAGE_ACCOUNT`. Install `jq` and `envsubst` first. `envsubst` comes from
 gettext, which macOS does not install by default.
 
 If `deploy` stops and points you at `setup`, the identity, the `backups`
-container, or the role assignment is missing. Run `setup` for the lane, then run
-`deploy` again. You can run `deploy` again at any time.
+container, or the role assignment is missing. Run `setup`, then run `deploy`
+again. You can run `deploy` again at any time.
 
-The workflow `deploy-backup-job.yml` runs `deploy` for both lanes. It runs on
+The workflow `deploy-backup-job.yml` runs `deploy` for `production`. It runs on
 manual dispatch, or on a push to `main` that changes the workflow, the script,
 or the job spec. It does not take a backup.
 
 #### Lane config
 
-Set these variables in the `staging` and `production` GitHub Environments:
+Set these variables in the `production` GitHub Environment:
 
 - `BACKUP_DATABASES` (example: `dress_rehearsal pr_0295_demo_integrate_6dbf`) —
   database names to dump, separated by spaces
-- `BACKUP_STORAGE_ACCOUNT` (example: `stitchstaging`) — the storage account that
+- `BACKUP_STORAGE_ACCOUNT` (example: `rmistitchprod`) — the storage account that
   holds the `backups` blob container
 
 The job also uses the existing `AZURE_RESOURCE_GROUP`,
 `AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `POSTGRES_ADMIN_USER`, and
-`PGPASSWORD` of the lane.
+`PGPASSWORD` of that environment.
 
 #### Backup identity
 
-A person creates the identity once for each lane, before the first deploy.
-Export `AZURE_RESOURCE_GROUP` and `LANE_STORAGE_ACCOUNT` for the lane, then run:
+A person creates the identity once, before the first deploy. Export
+`AZURE_RESOURCE_GROUP` and `LANE_STORAGE_ACCOUNT`, then run:
 
 ```sh
-scripts/deploy_backup_job.sh setup staging
+scripts/deploy_backup_job.sh setup
 ```
 
 `setup` needs only those two variables. The longer list above applies to
@@ -562,7 +560,6 @@ Container Apps environment):
 - `Reader` on `stitch-prod` (Container Apps Environment)
 - `Reader` on `STITCH-PROD-RG` (Resource Group)
 - `Container Apps Contributor` on `STITCH-PROD-RG` (Resource Group)
-- `Container Apps Jobs Contributor` on `STITCH-DEV-RG` (Resource Group)
 - `Container Apps Jobs Contributor` on `STITCH-PROD-RG` (Resource Group)
 
 > **Reminder — when adding a new lane:** the federated-credential subject above
@@ -627,11 +624,11 @@ named:
   deploy, defaults to `main`. Only used on `staging` / `production`.
 - `BACKUP_DATABASES` (example: `dress_rehearsal pr_0295_demo_integrate_6dbf`) —
   database names that the nightly backup job dumps, separated by spaces. Only
-  needed on `staging` / `production` (see "Backups" above).
-- `BACKUP_STORAGE_ACCOUNT` (example: `stitchstaging`) — storage account that
-  holds the `backups` blob container. Only needed on `staging` / `production`.
+  needed on `production` (see "Backups" above).
+- `BACKUP_STORAGE_ACCOUNT` (example: `rmistitchprod`) — storage account that
+  holds the `backups` blob container. Only needed on `production`.
 
-Before the first backup deploy on a lane, run the one-time `setup` described in
+Before the first backup deploy, run the one-time `setup` described in
 "Backup identity" above.
 
 The two frontend URLs together define the single CORS origin the API,

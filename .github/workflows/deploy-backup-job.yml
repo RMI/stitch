@@ -12,14 +12,10 @@ on:
 
 jobs:
   deploy-backup-job:
-    name: Deploy backup job (${{ matrix.lane }})
+    name: Deploy backup job (production)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        lane: [production]
-    environment: ${{ matrix.lane }}
+    environment: production
     permissions:
       id-token: write
       contents: read
@@ -46,4 +42,4 @@ jobs:
         run: az extension add --name containerapp --upgrade --allow-preview true
 
       - name: Deploy the backup job
-        run: scripts/deploy_backup_job.sh deploy ${{ matrix.lane }}
+        run: scripts/deploy_backup_job.sh deploy
