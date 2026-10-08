@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from stitch.ogsi.model.types import OGSISrcKey
 
@@ -47,6 +47,10 @@ class MembershipModel(TimestampMixin, UserAuditMixin, Base):
         UniqueConstraint(
             "resource_id", "source_pk", name="uq_membership_resource_source"
         ),
+        # Reads constantly scan a resource's active memberships (the source_data
+        # join and the coalescing universe filter on resource_id + status == ACTIVE);
+        # without this only the PK is indexed, forcing a full-table seq scan.
+        Index("ix_membership_resource_active", "resource_id", "status"),
     )
 
     @classmethod
