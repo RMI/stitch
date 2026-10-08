@@ -17,10 +17,11 @@ from stitch.api.db.errors import (
 from stitch.api.db.model import (
     MembershipModel,
     MembershipStatus,
-    OGFieldResourceSourcePriority,
+    OGFieldResourceAttributePriority,
     OilGasFieldSourceValueModel,
     ResourceModel,
 )
+from stitch.api.db.priorities import seed_or_refresh_defaults, set_curated
 from stitch.api.db.queries import filter_option_rows
 from stitch.api.entities import (
     FILTER_OPTION_FIELDS,
@@ -64,6 +65,9 @@ async def _create_resource_with_sources(
         )
 
     await session.flush()
+    # Direct seeding bypasses the action layer, so seed the per-attribute default
+    # priority rows the coalescing path now requires (the write actions do this).
+    await seed_or_refresh_defaults(session, user, resource.id)
     return resource.id
 
 
@@ -84,6 +88,7 @@ async def _add_source(session, user, rid: int, **attrs) -> int:
         )
     )
     await session.flush()
+    await seed_or_refresh_defaults(session, user, rid)
     return source.id
 
 
@@ -103,19 +108,15 @@ async def _source_pks(session, rid: int, source_key: str) -> list[int]:
 async def _override(
     session, user, rid: int, source_key: str, field: str, priority: int
 ):
-    """Insert one per-field override row for the (single) record of a source."""
+    """Curate the (single) record of a source as the winner for a field.
+
+    The two-table override split is gone; curation now lives in the single
+    per-attribute priority table. This makes ``source_key``'s record the curated
+    top source for ``field`` (others become defaults) via ``set_curated``.
+    """
+    assert priority == 0, "test helper only curates a single top source"
     (pk,) = await _source_pks(session, rid, source_key)
-    session.add(
-        OGFieldResourceSourcePriority.create(
-            created_by=user,
-            resource_id=rid,
-            source=source_key,
-            source_pk=pk,
-            colname=field,
-            priority=priority,
-        )
-    )
-    await session.flush()
+    await set_curated(session, user, rid, field, [pk])
     return pk
 
 
@@ -1587,15 +1588,19 @@ class TestSetFieldSourcePriority:
         (gem_pk,) = await _source_pks(session, rid, "gem")
         (wm_pk,) = await _source_pks(session, rid, "wm")
 
-        # wm, gem is already the default order -> no-op, no rows written.
+        # wm, gem is already the default order -> no-op: nothing is promoted to the
+        # curated tier (rows stay default, so a later-added source still ranks by
+        # global default priority).
         await resource_actions.set_field_source_priority(
             session, test_user, rid, "name", [wm_pk, gem_pk]
         )
 
-        count = await session.scalar(
-            select(func.count()).select_from(OGFieldResourceSourcePriority)
+        curated_count = await session.scalar(
+            select(func.count())
+            .select_from(OGFieldResourceAttributePriority)
+            .where(OGFieldResourceAttributePriority.is_curated.is_(True))
         )
-        assert count == 0
+        assert curated_count == 0
 
     @pytest.mark.anyio
     async def test_duplicate_pks_rejected(
@@ -1999,20 +2004,11 @@ class TestCoalescingEngineParity:
             {"source": "wm", "name": "WM Second", "country": "CAN"},
             {"source": "gem", "name": "GEM Name", "country": "BRA"},
         )
-        # Override: wm becomes top priority for the NAME field, both wm records
-        # curated in source_pk order (WM First < WM Second), so WM First wins.
-        for priority, pk in enumerate(await _source_pks(session, rid, "wm")):
-            session.add(
-                OGFieldResourceSourcePriority.create(
-                    created_by=test_user,
-                    resource_id=rid,
-                    source="wm",
-                    source_pk=pk,
-                    colname="name",
-                    priority=priority,
-                )
-            )
-        await session.flush()
+        # Curate wm to the top for the NAME field, both wm records in source_pk
+        # order (WM First < WM Second), so WM First wins.
+        await set_curated(
+            session, test_user, rid, "name", await _source_pks(session, rid, "wm")
+        )
 
         # rmi unlicensed -> falls through; among licensed sources wm (override)
         # wins, and the lowest source_pk among the duplicate wm records wins.
@@ -2092,3 +2088,170 @@ class TestCoalesceResources:
         res = out[rid]
         assert res.view.name is None
         assert res.provenance["name"] is None
+
+
+class TestPriorityCollapseBehaviour:
+    """Single per-attribute priority store reproduces the old two-tier ranking."""
+
+    @pytest.mark.anyio
+    async def test_source_attached_after_curation_ranks_last(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid = await _create_resource_with_sources(
+            session,
+            test_user,
+            {"source": "gem", "name": "GEM Name"},
+            {"source": "wm", "name": "WM Name"},
+        )
+        # Curate gem to the top for name (gem curated, wm default).
+        await _override(session, test_user, rid, "gem", "name", priority=0)
+
+        # Attach a new rmi source (top global default) for name AFTER curation.
+        await _add_source(session, test_user, rid, source="rmi", name="RMI Name")
+
+        rows = await resource_actions.field_source_values(session, rid, "name")
+        # Curated gem still wins; the newly attached rmi joins the default tier and
+        # ranks by global default order (rmi < wm), never above the curated gem.
+        assert [(r.source, r.is_override) for r in rows] == [
+            ("gem", True),
+            ("rmi", False),
+            ("wm", False),
+        ]
+
+
+class TestMembershipUniqueness:
+    """(resource, source) is unique; merge dedups a source shared across parents."""
+
+    @pytest.mark.anyio
+    async def test_duplicate_membership_rejected(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid = await _create_resource_with_sources(
+            session, test_user, {"source": "gem", "name": "X", "country": "USA"}
+        )
+        (pk,) = await _source_pks(session, rid, "gem")
+        session.add(
+            MembershipModel.create(
+                created_by=test_user, resource_id=rid, source="gem", source_pk=pk
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await session.flush()
+
+    @pytest.mark.anyio
+    async def test_merge_dedups_source_shared_by_parents(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        # One source record, attached to two resources (allowed across resources).
+        rid_a = ResourceModel.create(created_by=test_user)
+        rid_b = ResourceModel.create(created_by=test_user)
+        session.add_all([rid_a, rid_b])
+        await session.flush()
+        source = make_source_model(
+            source="gem", created_by_id=test_user.id, name="Shared", country="USA"
+        )
+        session.add(source)
+        await session.flush()
+        for rid in (rid_a.id, rid_b.id):
+            session.add(
+                MembershipModel.create(
+                    created_by=test_user,
+                    resource_id=rid,
+                    source="gem",
+                    source_pk=source.id,
+                )
+            )
+        await session.flush()
+
+        merged = await resource_actions.apply_resource_merge(
+            session, test_user, [rid_a.id, rid_b.id]
+        )
+
+        # The merged resource has exactly one membership for the shared source
+        # (no uq_membership_resource_source violation).
+        count = await session.scalar(
+            select(func.count())
+            .select_from(MembershipModel)
+            .where(
+                MembershipModel.resource_id == merged.id,
+                MembershipModel.source_pk == source.id,
+            )
+        )
+        assert count == 1
+
+
+class TestPrioritySeeding:
+    """set_curated guards bad ids; attach-time default seeding is field-scoped."""
+
+    @pytest.mark.anyio
+    async def test_set_curated_rejects_source_without_value(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid = await _create_resource_with_sources(
+            session, test_user, {"source": "gem", "name": "N", "country": "USA"}
+        )
+        (gem_pk,) = await _source_pks(session, rid, "gem")
+        # gem has no value for `basin`, so it cannot be curated there -> clean error.
+        with pytest.raises(InvalidActionError):
+            await set_curated(session, test_user, rid, "basin", [gem_pk])
+
+    @pytest.mark.anyio
+    async def test_seed_defaults_scoped_to_given_sources(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        from datetime import datetime
+
+        session = seeded_integration_session
+        rid = await _create_resource_with_sources(
+            session, test_user, {"source": "gem", "name": "N", "basin": "B"}
+        )
+        # Attach an rmi source carrying only `region`, WITHOUT seeding priorities.
+        rmi = make_source_model(source="rmi", created_by_id=test_user.id, region="R")
+        session.add(rmi)
+        await session.flush()
+        session.add(
+            MembershipModel.create(
+                created_by=test_user,
+                resource_id=rid,
+                source="rmi",
+                source_pk=rmi.id,
+                status=MembershipStatus.ACTIVE,
+            )
+        )
+        await session.flush()
+
+        # Stamp the existing (name/basin) rows so any rewrite is detectable.
+        sentinel = datetime(2000, 1, 1)
+        for row in (
+            await session.scalars(
+                select(OGFieldResourceAttributePriority).where(
+                    OGFieldResourceAttributePriority.resource_id == rid
+                )
+            )
+        ).all():
+            row.created = sentinel
+        await session.flush()
+
+        # Scope the seed to the rmi source -> only `region` should be (re)built.
+        await seed_or_refresh_defaults(session, test_user, rid, source_pks=[rmi.id])
+        session.expire_all()
+
+        by_colname: dict[str, list] = {}
+        for row in (
+            await session.scalars(
+                select(OGFieldResourceAttributePriority).where(
+                    OGFieldResourceAttributePriority.resource_id == rid
+                )
+            )
+        ).all():
+            by_colname.setdefault(row.colname, []).append(row)
+
+        # region got a fresh row; name/basin were untouched (sentinel preserved).
+        assert "region" in by_colname
+        assert by_colname["region"][0].created != sentinel
+        assert all(r.created == sentinel for r in by_colname["name"])
+        assert all(r.created == sentinel for r in by_colname["basin"])

@@ -17,7 +17,7 @@ from stitch.ogsi.model.types import OGSISrcKey
 
 from .membership import MembershipModel, MembershipStatus
 from .oil_gas_field_source import OilGasFieldSourceModel
-from .og_field_source_priority import OGFieldSourcePriority
+from ..source_priority import source_priority_case
 
 from stitch.api.entities import User as UserEntity
 from .common import Base
@@ -73,12 +73,12 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
             return by_id
 
         m, r, s = MembershipModel, cls, OilGasFieldSourceModel
-        p = OGFieldSourcePriority
+        # Global default rank now comes from SOURCE_PRIORITY, not a lookup table.
+        priority = source_priority_case(m.source)
         stmt = (
-            select(m.resource_id, s, p.priority.label("priority"))
+            select(m.resource_id, s, priority.label("priority"))
             .select_from(m)
             .join(r, r.id == m.resource_id)
-            .join(p, p.source == m.source)
             # dual-key: membership.source is not FK-tied to the header's source,
             # so matching on source_pk alone could admit a mismatched row.
             .join(s, and_(s.id == m.source_pk, s.source == m.source))
@@ -91,7 +91,7 @@ class ResourceModel(TimestampMixin, UserAuditMixin, Base):
         if licensed_sources is not None:
             stmt = stmt.where(m.source.in_(list(dict.fromkeys(licensed_sources))))
 
-        stmt = stmt.order_by(p.priority, m.source, s.id)
+        stmt = stmt.order_by(priority, m.source, s.id)
 
         for resource_id, src_model, prio in (await session.execute(stmt)).all():
             by_id[resource_id].append((src_model.as_entity(), prio))
