@@ -48,7 +48,7 @@ role_count() {
 }
 
 setup() {
-  local principal scope
+  local principal scope assignments
   require AZURE_RESOURCE_GROUP LANE_STORAGE_ACCOUNT:"variable BACKUP_STORAGE_ACCOUNT"
 
   echo "Resource group $AZURE_RESOURCE_GROUP, storage account $LANE_STORAGE_ACCOUNT"
@@ -62,7 +62,8 @@ setup() {
   echo "Container $BLOB_CONTAINER ready on $LANE_STORAGE_ACCOUNT"
 
   scope="$(storage_account_id)/blobServices/default/containers/$BLOB_CONTAINER"
-  if [ "$(role_count "$scope" "$principal")" -eq 0 ]; then
+  assignments="$(role_count "$scope" "$principal")"
+  if [ "$assignments" -eq 0 ]; then
     az role assignment create --role "$ROLE" --assignee-object-id "$principal" \
       --assignee-principal-type ServicePrincipal --scope "$scope" --output none
     echo "Granted $ROLE on $BLOB_CONTAINER; allow a minute for it to take effect"
@@ -72,7 +73,7 @@ setup() {
 }
 
 deploy() {
-  local identity principal scope action
+  local identity principal scope assignments existing action
   require AZURE_RESOURCE_GROUP AZURE_CONTAINER_APP_ENVIRONMENT \
     LANE_PGHOST:"variable POSTGRES_HOST" \
     LANE_PGUSER:"variable POSTGRES_ADMIN_USER" \
@@ -91,7 +92,8 @@ deploy() {
     fail "No container '$BLOB_CONTAINER' on '$LANE_STORAGE_ACCOUNT'. Run '$(basename "$0") setup' first."
 
   scope="$(storage_account_id)/blobServices/default/containers/$BLOB_CONTAINER"
-  [ "$(role_count "$scope" "$principal")" -ne 0 ] ||
+  assignments="$(role_count "$scope" "$principal")"
+  [ "$assignments" -ne 0 ] ||
     fail "Identity '$IDENTITY_NAME' does not hold $ROLE on '$BLOB_CONTAINER'. Run '$(basename "$0") setup' first."
 
   LANE_ENVIRONMENT_ID="$(az containerapp env show --resource-group "$AZURE_RESOURCE_GROUP" \
@@ -108,8 +110,9 @@ deploy() {
     <"$spec_template" \
     >"$spec"
 
-  if [ "$(az containerapp job list --resource-group "$AZURE_RESOURCE_GROUP" \
-    --query "[?name=='$JOB_NAME'] | length(@)" --output tsv)" -eq 0 ]; then
+  existing="$(az containerapp job list --resource-group "$AZURE_RESOURCE_GROUP" \
+    --query "[?name=='$JOB_NAME'] | length(@)" --output tsv)"
+  if [ "$existing" -eq 0 ]; then
     action=create
     echo "Creating job $JOB_NAME"
   else
