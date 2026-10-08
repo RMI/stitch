@@ -33,28 +33,18 @@ check_lane() {
   esac
 }
 
-github_name() {
-  case "$1" in
-    LANE_PGHOST) echo POSTGRES_HOST ;;
-    LANE_PGUSER) echo POSTGRES_ADMIN_USER ;;
-    LANE_PGPASSWORD) echo "PGPASSWORD (secret)" ;;
-    LANE_BACKUP_DATABASES) echo BACKUP_DATABASES ;;
-    LANE_STORAGE_ACCOUNT) echo BACKUP_STORAGE_ACCOUNT ;;
-    *) echo "$1" ;;
-  esac
-}
-
 require() {
-  local name
-  for name in "$@"; do
-    [ -n "${!name:-}" ] || fail "Missing required variable $(github_name "$name")"
+  local entry name github
+  for entry in "$@"; do
+    name="${entry%%:*}"
+    github=""
+    [ "$entry" = "$name" ] || github=" (GitHub Environment ${entry#*:})"
+    [ -n "${!name:-}" ] || fail "Missing required variable $name$github"
   done
 }
 
-container_scope() {
-  local account_id
-  account_id="$(az storage account show --name "$LANE_STORAGE_ACCOUNT" --query id --output tsv)"
-  echo "$account_id/blobServices/default/containers/$BLOB_CONTAINER"
+storage_account_id() {
+  az storage account show --name "$LANE_STORAGE_ACCOUNT" --query id --output tsv
 }
 
 role_count() {
@@ -65,7 +55,7 @@ role_count() {
 setup() {
   local lane="$1" principal scope
   check_lane "$lane"
-  require AZURE_RESOURCE_GROUP LANE_STORAGE_ACCOUNT
+  require AZURE_RESOURCE_GROUP LANE_STORAGE_ACCOUNT:"variable BACKUP_STORAGE_ACCOUNT"
 
   echo "Lane $lane: resource group $AZURE_RESOURCE_GROUP, storage account $LANE_STORAGE_ACCOUNT"
 
@@ -77,7 +67,7 @@ setup() {
     --name "$BLOB_CONTAINER" --output none
   echo "Container $BLOB_CONTAINER ready on $LANE_STORAGE_ACCOUNT"
 
-  scope="$(container_scope)"
+  scope="$(storage_account_id)/blobServices/default/containers/$BLOB_CONTAINER"
   if [ "$(role_count "$scope" "$principal")" -eq 0 ]; then
     az role assignment create --role "$ROLE" --assignee-object-id "$principal" \
       --assignee-principal-type ServicePrincipal --scope "$scope" --output none
@@ -90,12 +80,15 @@ setup() {
 deploy() {
   local lane="$1" identity principal scope job_name action
   check_lane "$lane"
-  require AZURE_RESOURCE_GROUP AZURE_CONTAINER_APP_ENVIRONMENT LANE_PGHOST \
-    LANE_PGUSER LANE_PGPASSWORD LANE_BACKUP_DATABASES LANE_STORAGE_ACCOUNT
+  require AZURE_RESOURCE_GROUP AZURE_CONTAINER_APP_ENVIRONMENT \
+    LANE_PGHOST:"variable POSTGRES_HOST" \
+    LANE_PGUSER:"variable POSTGRES_ADMIN_USER" \
+    LANE_PGPASSWORD:"secret PGPASSWORD" \
+    LANE_BACKUP_DATABASES:"variable BACKUP_DATABASES" \
+    LANE_STORAGE_ACCOUNT:"variable BACKUP_STORAGE_ACCOUNT"
 
   identity="$(az identity list --resource-group "$AZURE_RESOURCE_GROUP" \
-    --query "[?name=='$IDENTITY_NAME'] | [0]" --output json |
-    jq -r 'if . == null then "" else [.id, .clientId, .principalId] | @tsv end')"
+    --query "[?name=='$IDENTITY_NAME'].[id, clientId, principalId]" --output tsv)"
   [ -n "$identity" ] ||
     fail "No managed identity '$IDENTITY_NAME' in '$AZURE_RESOURCE_GROUP'. Run '$(basename "$0") setup $lane' first."
   IFS=$'\t' read -r LANE_BACKUP_IDENTITY_ID LANE_BACKUP_IDENTITY_CLIENT_ID principal <<<"$identity"
@@ -104,14 +97,12 @@ deploy() {
     --name "$BLOB_CONTAINER" --query exists --output tsv)" = true ] ||
     fail "No container '$BLOB_CONTAINER' on '$LANE_STORAGE_ACCOUNT'. Run '$(basename "$0") setup $lane' first."
 
-  scope="$(container_scope)"
+  scope="$(storage_account_id)/blobServices/default/containers/$BLOB_CONTAINER"
   [ "$(role_count "$scope" "$principal")" -ne 0 ] ||
     fail "Identity '$IDENTITY_NAME' does not hold $ROLE on '$BLOB_CONTAINER'. Run '$(basename "$0") setup $lane' first."
 
   LANE_ENVIRONMENT_ID="$(az containerapp env show --resource-group "$AZURE_RESOURCE_GROUP" \
     --name "$AZURE_CONTAINER_APP_ENVIRONMENT" --query id --output tsv)"
-  [ -n "$LANE_ENVIRONMENT_ID" ] ||
-    fail "Could not resolve Container Apps environment '$AZURE_CONTAINER_APP_ENVIRONMENT' in '$AZURE_RESOURCE_GROUP'"
   echo "Environment $AZURE_CONTAINER_APP_ENVIRONMENT resolved; the job inherits its location"
 
   LANE_BACKUP_ENV="$lane"

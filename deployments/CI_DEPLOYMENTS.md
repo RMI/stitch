@@ -426,110 +426,88 @@ then redeploy the lane so the backend containers pick up the new origin.
 Nightly database backups run as an Azure Container Apps job. The `staging` and
 `production` lanes each have one job, named `stitch-backup-<lane>`.
 
-The job runs at 03:00 UTC. An init container runs `pg_dump -Fc` for every
-database named in `BACKUP_DATABASES` and writes each dump to a scratch volume.
-The main container then uploads each dump to the lane's `backups` blob container
-at `<lane>/<database>/<timestamp>.dump`. All dumps from one run share one
-timestamp. Both container commands run under `set -e`, so one failed dump fails
-the whole execution. A run has 30 minutes to finish and does not retry.
+The job starts at 03:00 UTC. It dumps each database in `BACKUP_DATABASES` with
+`pg_dump -Fc`, then uploads each dump to the `backups` blob container for that
+lane, at `<lane>/<database>/<timestamp>.dump`. One failed dump fails the whole
+run. A run has 30 minutes and does not retry.
 
 #### Deploying the job
 
-The workflow `deploy-backup-job.yml` deploys the job. It does not take the
-backup. It runs on manual dispatch (`workflow_dispatch`), or on a push to `main`
-that changes the workflow, the deploy script, or the job spec.
-
-The workflow logs in to Azure, then runs `scripts/deploy_backup_job.sh deploy
-<lane>`. That script looks up the lane's Container Apps environment and backup
-identity, JSON-encodes the database password, then renders
-`deployments/db/jobs/backup-job.yaml` with the lane's config. A JSON string is
-valid YAML, so a password that contains a quote or a backslash renders
-correctly. The script then creates the job, or updates it when it already
-exists. A deploy is idempotent, so you can run it again at any time.
-
-You can run the same command yourself to update a lane's job without waiting for
-a workflow run. It is the same script the workflow runs, so there is no second
-code path to keep in step:
+Run `setup` once for each lane, by hand, before the first deploy. See "Backup
+identity" below. Then deploy the job for one lane:
 
 ```sh
 scripts/deploy_backup_job.sh deploy staging
 ```
 
-Set the lane's variables in your shell first, and make sure `az` is logged in to
-the right subscription. The script needs `jq` and `envsubst`; `envsubst` comes
-from gettext, which is not installed on macOS by default.
+Give the lane as `staging` or `production`. The script rejects other names.
 
-The job writes its dumps using a managed identity rather than a storage account
-key, so nothing in the pipeline holds account-wide access to storage. See
-"Backup identity" below for the one-time setup that identity needs.
+Before you run it, log in to `az` with the correct subscription and export the
+lane variables: `AZURE_RESOURCE_GROUP`, `AZURE_CONTAINER_APP_ENVIRONMENT`,
+`LANE_PGHOST`, `LANE_PGUSER`, `LANE_PGPASSWORD`, `LANE_BACKUP_DATABASES`, and
+`LANE_STORAGE_ACCOUNT`. Install `jq` and `envsubst` first. `envsubst` comes from
+gettext, which macOS does not install by default.
+
+If `deploy` stops and points you at `setup`, the identity, the `backups`
+container, or the role assignment is missing. Run `setup` for the lane, then run
+`deploy` again. You can run `deploy` again at any time.
+
+The workflow `deploy-backup-job.yml` runs `deploy` for both lanes. It runs on
+manual dispatch, or on a push to `main` that changes the workflow, the script,
+or the job spec. It does not take a backup.
 
 #### Lane config
 
-Set these in each of the `staging` and `production` GitHub Environments:
+Set these variables in the `staging` and `production` GitHub Environments:
 
-- variable `BACKUP_DATABASES` (example: `dress_rehearsal pr_0295_demo_integrate_6dbf`) —
-  space-separated database names to dump
-- variable `BACKUP_STORAGE_ACCOUNT` (example: `stitchstaging`) — storage account
-  that holds the `backups` blob container
+- `BACKUP_DATABASES` (example: `dress_rehearsal pr_0295_demo_integrate_6dbf`) —
+  database names to dump, separated by spaces
+- `BACKUP_STORAGE_ACCOUNT` (example: `stitchstaging`) — the storage account that
+  holds the `backups` blob container
 
-The job also uses the lane's existing `AZURE_RESOURCE_GROUP`,
+The job also uses the existing `AZURE_RESOURCE_GROUP`,
 `AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `POSTGRES_ADMIN_USER`, and
-`PGPASSWORD`.
-
-The deploy finds the backup identity by name, so there is nothing to record
-about it in GitHub.
+`PGPASSWORD` of the lane.
 
 #### Backup identity
 
-The job uploads with a user-assigned managed identity instead of a storage
-account key, so no part of the pipeline holds account-wide access to storage.
-The identity is a standalone resource that outlives any single deploy, and
-creating it needs permissions CI deliberately does not have. So a person creates
-it once per lane, before the first deploy:
+A person creates the identity once for each lane, before the first deploy.
+Export `AZURE_RESOURCE_GROUP` and `LANE_STORAGE_ACCOUNT` for the lane, then run:
 
 ```sh
 scripts/deploy_backup_job.sh setup staging
 ```
 
-This creates the `stitch-backup-identity` managed identity in the lane's
-resource group, creates the `backups` blob container, and grants the identity
-**Storage Blob Data Contributor** on that container. It is safe to run again: it
-reports what is already in place rather than failing.
+`setup` needs only those two variables. The longer list above applies to
+`deploy`.
 
-The grant is scoped to the `backups` container, not to the storage account.
-That is the whole point: a compromised job can write its own backups and nothing
-else.
+Run `setup` from an account that holds all three of these permissions:
 
-Run `setup` from a developer account that holds all three of: permission to
-create a managed identity, permission to create a role assignment, and a blob
-data role such as **Storage Blob Data Contributor** on the storage account.
-That last one surprises people: creating a container with `--auth-mode login` is
-a data-plane operation, so being Owner of the resource group is not enough on
-its own. Without it, `setup` creates the identity and then fails at the
-container step. Rerunning after granting yourself the role picks up where it
-left off.
+- permission to create a managed identity
+- permission to create a role assignment
+- a blob data role on the storage account, such as **Storage Blob Data
+  Contributor**
 
-`GHActions-stitch-cicd` needs none of those three, because it only ever runs
-`deploy`. It does need **Managed Identity Operator** on the identity to attach
-it to the job. Without that, the deploy fails with an authorization error.
+Without the blob data role, `setup` creates the identity and then fails at the
+container step. Grant yourself the role, then run `setup` again. It continues
+from the container step.
 
-`deploy` checks all three things `setup` creates — the identity, the container,
-and the container-scoped grant — and stops with a pointer to `setup` if any is
-missing. All three are reads, so this costs CI no extra permission. The point is
-that a deleted container or a revoked grant fails the deploy immediately, rather
-than succeeding and then failing at 03:00 when the upload is denied.
+`setup` creates the `stitch-backup-identity` managed identity and the `backups`
+blob container, then grants **Storage Blob Data Contributor** to the identity on
+that container. You can run `setup` again at any time.
 
-Both subcommands reject a lane name other than `staging` or `production`, so a
-typo cannot quietly create a job named after it.
+CAUTION: After `setup` creates the role assignment, wait one or two minutes. A
+job run that starts immediately can fail at the upload step. If that occurs, run
+the job again.
 
-Right after `setup` grants the role for the first time, the assignment can take
-a minute or two to take effect. A job run started immediately may still fail on
-upload. Nothing enforces the wait; if that happens, run the job again.
+`GHActions-stitch-cicd` runs only `deploy`, so it needs none of the three
+permissions above. Grant it **Managed Identity Operator** on the identity.
+Without that role, the deploy fails with an authorization error.
 
 #### Retention
 
-Nothing deletes old dumps. The `backups` container grows without limit until a
-blob lifecycle management policy is added.
+Nothing deletes old dumps. To limit the growth of the `backups` container, add a
+blob lifecycle management policy.
 
 ## Azure Permissions
 
@@ -648,12 +626,13 @@ named:
 - `ETL_IMAGE_TAG` (example: `main`) — optional; consolidated ETL image tag to
   deploy, defaults to `main`. Only used on `staging` / `production`.
 - `BACKUP_DATABASES` (example: `dress_rehearsal pr_0295_demo_integrate_6dbf`) —
-  space-separated database names that the nightly backup job dumps. Only needed
-  on `staging` / `production` (see "Backups" above).
+  database names that the nightly backup job dumps, separated by spaces. Only
+  needed on `staging` / `production` (see "Backups" above).
 - `BACKUP_STORAGE_ACCOUNT` (example: `stitchstaging`) — storage account that
   holds the `backups` blob container. Only needed on `staging` / `production`.
-The managed identity the backup job uploads with is found by name, so it needs no
-variable here. See "Backup identity" above for the one-time setup.
+
+Before the first backup deploy on a lane, run the one-time `setup` described in
+"Backup identity" above.
 
 The two frontend URLs together define the single CORS origin the API,
 entity-linkage, and stitch-llm services will accept for a given deployment, so
@@ -701,9 +680,11 @@ Current validation behavior:
 - DB migrations validate `STITCH_MIGRATOR_PASSWORD`
 - frontend deploy validates `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
 - backup job deploy validates `AZURE_RESOURCE_GROUP`,
-  `AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `POSTGRES_ADMIN_USER`,
-  `BACKUP_DATABASES`, `BACKUP_STORAGE_ACCOUNT`, and `PGPASSWORD`, and stops with
-  a pointer to `setup` when the backup identity is missing
+  `AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `BACKUP_DATABASES`,
+  `BACKUP_STORAGE_ACCOUNT`, and `PGPASSWORD`. It also checks the backup
+  identity, the `backups` container, and the role assignment, and points at
+  `setup` when one of the three is missing. The workflow defaults
+  `POSTGRES_ADMIN_USER` to `postgres`, so that one never fails in CI
 - container deploy validates that, when `registry-server` is set, both
   `registry-username` (variable) and `registry-password` (secret) are present —
   so a missing ETL pull credential fails fast instead of surfacing as an opaque

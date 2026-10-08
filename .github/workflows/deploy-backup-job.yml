@@ -43,8 +43,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Ensure containerapp extension is available
-        run: |
-          az extension add --name containerapp --upgrade --allow-preview true
+        run: az extension add --name containerapp --upgrade --allow-preview true
 
       - name: Deploy the backup job
         run: scripts/deploy_backup_job.sh deploy ${{ matrix.lane }}

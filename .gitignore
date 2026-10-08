@@ -155,9 +155,6 @@ activemq-data/
 .env
 .env.*
 .envrc
-
-# Local scratch data for scripts/
-scripts/data/
 .venv
 env/
 venv/
@@ -226,8 +223,9 @@ __marimo__/
 # macOS
 **/.DS_Store
 
-# Local design notes and plans
+# Local, untracked working files
 /docs/
+scripts/data/
 
 # impeccable design skill (local design context and live-mode config)
 /PRODUCT.md
