@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: [staging, production]
+        lane: [production]
     environment: ${{ matrix.lane }}
     permissions:
       id-token: write
