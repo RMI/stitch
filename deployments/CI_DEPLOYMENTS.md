@@ -133,10 +133,10 @@ account / share / environment-storage name:
 > reads its GEM spreadsheet from the mount. For the `production` lane the env
 > storage name is `etl-prod` on the `stitch-prod` Container Apps environment.
 
-| Lane              | Storage account | File share            | Env storage name (`ETL_STORAGE_NAME`) |
-| ----------------- | --------------- | --------------------- | ------------------------------------- |
-| `staging`         | `stitchstaging` | `etl-staging`         | `etl-staging`                         |
-| `production`      | `rmistitchprod` | `etl-prod`            | `etl-prod`                            |
+| Lane         | Storage account | File share    | Env storage name (`ETL_STORAGE_NAME`) |
+| ------------ | --------------- | ------------- | ------------------------------------- |
+| `staging`    | `stitchstaging` | `etl-staging` | `etl-staging`                         |
+| `production` | `rmistitchprod` | `etl-prod`    | `etl-prod`                            |
 
 Note: the `production` storage account is `rmistitchprod`, which does **not**
 follow the `stitch<lane>` pattern that `stitchstaging` uses — don't assume
@@ -234,12 +234,12 @@ release is currently worth paying to avoid that; everywhere else we accept the
 cold start to hold the bill down. `resolve-context` decides this once and
 exposes it as the `always-on` output:
 
-| Deployment | `always-on` | Why |
-| --- | --- | --- |
-| push to `production` | `1` | the production release; must be responsive on first hit |
-| push to `main` | *(empty)* | cost |
-| `staging` lane PRs (into `production`, or from `demo/*`) | *(empty)* | cost |
-| `development` lane PRs | *(empty)* | throwaway preview, one per PR |
+| Deployment                                               | `always-on` | Why                                                     |
+| -------------------------------------------------------- | ----------- | ------------------------------------------------------- |
+| push to `production`                                     | `1`         | the production release; must be responsive on first hit |
+| push to `main`                                           | _(empty)_   | cost                                                    |
+| `staging` lane PRs (into `production`, or from `demo/*`) | _(empty)_   | cost                                                    |
+| `development` lane PRs                                   | _(empty)_   | throwaway preview, one per PR                           |
 
 The three long-running services — `api`, `entity-linkage`, `stitch-llm` — pass it
 straight through:
@@ -338,10 +338,10 @@ branch. `deploy-frontend` passes that branch to the Azure deploy action as
 `production-branch`, which is what decides whether a deployment lands in the
 site's **production** environment or in a **preview** environment.
 
-| Hostname | Status | Lane | Branch | Static Web App | Default hostname |
-| --- | --- | --- | --- | --- | --- |
-| `stitch-dev.rmi.org` | assigning now | `development` | `main` | `stitch-dev` | `witty-mushroom-017a3dc1e.1.azurestaticapps.net` |
-| `stitch.rmi.org` | planned | `production` | `production` | `stitch-prod` | `salmon-bush-05721e11e.6.azurestaticapps.net` |
+| Hostname             | Status        | Lane          | Branch       | Static Web App | Default hostname                                 |
+| -------------------- | ------------- | ------------- | ------------ | -------------- | ------------------------------------------------ |
+| `stitch-dev.rmi.org` | assigning now | `development` | `main`       | `stitch-dev`   | `witty-mushroom-017a3dc1e.1.azurestaticapps.net` |
+| `stitch.rmi.org`     | planned       | `production`  | `production` | `stitch-prod`  | `salmon-bush-05721e11e.6.azurestaticapps.net`    |
 
 `stitch.rmi.org` is deliberately **not** pointed at the existing `stitch-staging`
 Static Web App. That resource serves the `staging` lane (PR previews into
@@ -421,6 +421,92 @@ completing step 3 (**Set default**, so the old hostname 301-redirects and stops
 originating requests) and step 5 (`FRONTEND_PRODUCTION_URL = https://<custom-domain>`),
 then redeploy the lane so the backend containers pick up the new origin.
 
+### Backups
+
+Nightly database backups run as an Azure Container Apps job. Only the
+`production` lane is backed up. Its job is named `stitch-backup-production`.
+
+The job starts at 03:00 UTC. It dumps each database in `BACKUP_DATABASES` with
+`pg_dump -Fc`, then uploads each dump to the `backups` blob container at
+`production/<database>/<timestamp>.dump`. One failed dump fails the whole run. A
+run has 30 minutes and does not retry.
+
+#### Deploying the job
+
+Run `setup` once, by hand, before the first deploy. See "Backup identity" below.
+Then deploy the job:
+
+```sh
+scripts/deploy_backup_job.sh deploy
+```
+
+Before you run it, log in to `az` with the correct subscription and export
+`AZURE_RESOURCE_GROUP`, `AZURE_CONTAINER_APP_ENVIRONMENT`, `LANE_PGHOST`,
+`LANE_PGUSER`, `LANE_PGPASSWORD`, `LANE_BACKUP_DATABASES`, and
+`LANE_STORAGE_ACCOUNT`. Install `jq` and `envsubst` first. `envsubst` comes from
+gettext, which macOS does not install by default.
+
+If `deploy` stops and points you at `setup`, the identity, the `backups`
+container, or the role assignment is missing. Run `setup`, then run `deploy`
+again. You can run `deploy` again at any time.
+
+The workflow `deploy-backup-job.yml` runs `deploy` for `production`. It runs on
+manual dispatch, or on a push to `main` that changes the workflow, the script,
+or the job spec. It does not take a backup.
+
+#### Lane config
+
+Set these variables in the `production` GitHub Environment:
+
+- `BACKUP_DATABASES` (example: `dress_rehearsal pr_0295_demo_integrate_6dbf`) —
+  database names to dump, separated by spaces
+- `BACKUP_STORAGE_ACCOUNT` (example: `rmistitchprod`) — the storage account that
+  holds the `backups` blob container
+
+The job also uses the existing `AZURE_RESOURCE_GROUP`,
+`AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `POSTGRES_ADMIN_USER`, and
+`PGPASSWORD` of that environment.
+
+#### Backup identity
+
+A person creates the identity once, before the first deploy. Export
+`AZURE_RESOURCE_GROUP` and `LANE_STORAGE_ACCOUNT`, then run:
+
+```sh
+scripts/deploy_backup_job.sh setup
+```
+
+`setup` needs only those two variables. The longer list above applies to
+`deploy`.
+
+Run `setup` from an account that holds all three of these permissions:
+
+- permission to create a managed identity
+- permission to create a role assignment
+- a blob data role on the storage account, such as **Storage Blob Data
+  Contributor**
+
+Without the blob data role, `setup` creates the identity and then fails at the
+container step. Grant yourself the role, then run `setup` again. It continues
+from the container step.
+
+`setup` creates the `stitch-backup-identity` managed identity and the `backups`
+blob container, then grants **Storage Blob Data Contributor** to the identity on
+that container. You can run `setup` again at any time.
+
+CAUTION: After `setup` creates the role assignment, wait one or two minutes. A
+job run that starts immediately can fail at the upload step. If that occurs, run
+the job again.
+
+`GHActions-stitch-cicd` runs only `deploy`, so it needs none of the three
+permissions above. Grant it **Managed Identity Operator** on the identity.
+Without that role, the deploy fails with an authorization error.
+
+#### Retention
+
+Nothing deletes old dumps. To limit the growth of the `backups` container, add a
+blob lifecycle management policy.
+
 ## Azure Permissions
 
 Permissions for Azure Resources are handled through a managed identity, which GH
@@ -474,6 +560,7 @@ Container Apps environment):
 - `Reader` on `stitch-prod` (Container Apps Environment)
 - `Reader` on `STITCH-PROD-RG` (Resource Group)
 - `Container Apps Contributor` on `STITCH-PROD-RG` (Resource Group)
+- `Container Apps Jobs Contributor` on `STITCH-PROD-RG` (Resource Group)
 
 > **Reminder — when adding a new lane:** the federated-credential subject above
 > only lets the identity authenticate; it still needs these role assignments on
@@ -535,6 +622,14 @@ named:
   storage above).
 - `ETL_IMAGE_TAG` (example: `main`) — optional; consolidated ETL image tag to
   deploy, defaults to `main`. Only used on `staging` / `production`.
+- `BACKUP_DATABASES` (example: `dress_rehearsal pr_0295_demo_integrate_6dbf`) —
+  database names that the nightly backup job dumps, separated by spaces. Only
+  needed on `production` (see "Backups" above).
+- `BACKUP_STORAGE_ACCOUNT` (example: `rmistitchprod`) — storage account that
+  holds the `backups` blob container. Only needed on `production`.
+
+Before the first backup deploy, run the one-time `setup` described in
+"Backup identity" above.
 
 The two frontend URLs together define the single CORS origin the API,
 entity-linkage, and stitch-llm services will accept for a given deployment, so
@@ -581,6 +676,12 @@ Current validation behavior:
   - If any of `STITCH_LLM_AZURE_OPENAI_BASE_URL`, `STITCH_LLM_AZURE_OPENAI_MODEL`, or `STITCH_LLM_AZURE_OPENAI_API_KEY` are set, all three must be set
 - DB migrations validate `STITCH_MIGRATOR_PASSWORD`
 - frontend deploy validates `AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN`
+- backup job deploy validates `AZURE_RESOURCE_GROUP`,
+  `AZURE_CONTAINER_APP_ENVIRONMENT`, `POSTGRES_HOST`, `BACKUP_DATABASES`,
+  `BACKUP_STORAGE_ACCOUNT`, and `PGPASSWORD`. It also checks the backup
+  identity, the `backups` container, and the role assignment, and points at
+  `setup` when one of the three is missing. The workflow defaults
+  `POSTGRES_ADMIN_USER` to `postgres`, so that one never fails in CI
 - container deploy validates that, when `registry-server` is set, both
   `registry-username` (variable) and `registry-password` (secret) are present —
   so a missing ETL pull credential fails fast instead of surfacing as an opaque
