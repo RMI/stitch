@@ -13,8 +13,10 @@ logger = logging.getLogger(__name__)
 Permission: TypeAlias = str
 
 RESOURCE_READ: Permission = "resource:read"
+RESOURCE_READ_BULK: Permission = "resource:read-bulk"
 RESOURCE_WRITE: Permission = "resource:write"
 
+SOURCE_READ_BULK: Permission = "source:read-bulk"
 SOURCE_READ_PREFIX = "source:read:"
 SOURCE_READ_RMI: Permission = f"{SOURCE_READ_PREFIX}rmi"
 SOURCE_READ_GEM: Permission = f"{SOURCE_READ_PREFIX}gem"
@@ -48,7 +50,9 @@ SERVICE_LLM_SUGGEST: Permission = "service:llm:suggest"
 ALL_PERMISSIONS: frozenset[Permission] = frozenset(
     {
         RESOURCE_READ,
+        RESOURCE_READ_BULK,
         RESOURCE_WRITE,
+        SOURCE_READ_BULK,
         *SOURCE_READ_PERMISSIONS,
         SOURCE_WRITE,
         MERGE_CANDIDATE_READ,

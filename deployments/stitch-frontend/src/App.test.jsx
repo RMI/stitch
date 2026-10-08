@@ -56,7 +56,9 @@ vi.mock("./hooks/usePermissions");
 
 const ALL_PERMISSIONS = [
   "resource:read",
+  "resource:read-bulk",
   "resource:write",
+  "source:read-bulk",
   "source:read:rmi",
   "source:read:gem",
   "source:read:wm",

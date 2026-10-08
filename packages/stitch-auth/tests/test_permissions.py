@@ -6,10 +6,12 @@ from stitch.auth.permissions import (
     ALL_PERMISSIONS,
     MERGE_CANDIDATE_CREATE,
     RESOURCE_READ,
+    RESOURCE_READ_BULK,
     RESOURCE_WRITE,
     SERVICE_LLM_SUGGEST,
     SOURCE_READ_ALB,
     SOURCE_READ_BC,
+    SOURCE_READ_BULK,
     SOURCE_READ_CCR,
     SOURCE_READ_GEM,
     SOURCE_READ_NOR,
@@ -31,12 +33,44 @@ VALID_SOURCES = {"rmi", "gem"}
 def test_all_permissions_contains_defined_route_permissions():
     assert {
         RESOURCE_READ,
+        RESOURCE_READ_BULK,
         RESOURCE_WRITE,
+        SOURCE_READ_BULK,
         SOURCE_WRITE,
         MERGE_CANDIDATE_CREATE,
         SERVICE_LLM_SUGGEST,
         *SOURCE_READ_PERMISSIONS,
     }.issubset(ALL_PERMISSIONS)
+
+
+def test_bulk_read_permissions_are_exported():
+    from stitch.auth import (
+        RESOURCE_READ_BULK as exported_resource_read_bulk,
+        SOURCE_READ_BULK as exported_source_read_bulk,
+    )
+
+    assert exported_resource_read_bulk == RESOURCE_READ_BULK == "resource:read-bulk"
+    assert exported_source_read_bulk == SOURCE_READ_BULK == "source:read-bulk"
+    assert RESOURCE_READ_BULK not in SOURCE_READ_PERMISSIONS
+    assert SOURCE_READ_BULK not in SOURCE_READ_PERMISSIONS
+
+
+@pytest.mark.parametrize("permissions", [[SOURCE_READ_BULK], [RESOURCE_READ_BULK]])
+def test_bulk_read_permissions_do_not_grant_source_licenses(permissions):
+    assert (
+        source_read_sources(
+            permissions,
+            valid_sources={*VALID_SOURCES, "bulk"},
+        )
+        == frozenset()
+    )
+
+
+def test_bulk_read_permission_preserves_existing_source_licenses():
+    assert source_read_sources(
+        [SOURCE_READ_BULK, SOURCE_READ_RMI],
+        valid_sources={*VALID_SOURCES, "bulk"},
+    ) == frozenset({"rmi"})
 
 
 def test_ccr_source_read_permission_is_registered():
