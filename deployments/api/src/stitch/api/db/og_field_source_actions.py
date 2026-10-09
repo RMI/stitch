@@ -23,6 +23,7 @@ from .model import (
 from .queries import (
     base_source_query,
 )
+from .read_model.state import refresh_resource_state
 from .utils import resource_model_to_entity
 
 
@@ -182,7 +183,12 @@ async def _attach_source_models(
     src_models: Sequence[OilGasFieldSourceModel],
     user: User,
 ) -> None:
-    """Create ACTIVE memberships linking each source model to ``resource``."""
+    """Create ACTIVE memberships linking each source model to ``resource``.
+
+    The single place the attach paths (create, attach, create-and-attach) add
+    memberships, so it also refreshes the resource's read-model state in the
+    same transaction.
+    """
     memberships = [
         MembershipModel.create(
             created_by=user,
@@ -194,6 +200,7 @@ async def _attach_source_models(
     ]
     session.add_all(memberships)
     await session.flush()
+    await refresh_resource_state(session, resource.id)
 
 
 async def attach_sources_to_resource(

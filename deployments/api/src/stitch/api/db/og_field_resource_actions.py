@@ -44,6 +44,11 @@ from .queries import (
     field_source_candidates,
     filter_option_rows,
 )
+from .read_model.state import (
+    lock_resources,
+    refresh_resource_state,
+    refresh_resource_states,
+)
 from .utils import (
     coalesce_resources,
     resource_model_to_entity,
@@ -320,6 +325,8 @@ async def set_field_source_priority(
                 )
             )
         await session.flush()
+        # The new order can change this resource's winners.
+        await refresh_resource_state(session, id)
     return await field_source_values(session, id, field, licensed_sources)
 
 
@@ -373,9 +380,18 @@ async def apply_resource_merge(
             f"Merging only possible between multiple ids: received: {unique_ids}"
         )
 
-    stmt = select(ResourceModel).where(ResourceModel.id.in_(unique_ids))
+    # Lock the originals (in id order, so overlapping merges can't deadlock)
+    # before reading them, and re-read their current state rather than any copy
+    # the session already holds: a merge that waited on the lock must see that
+    # a concurrent merge already repointed them.
+    stmt = (
+        select(ResourceModel)
+        .where(ResourceModel.id.in_(unique_ids))
+        .execution_options(populate_existing=True)
+    )
 
     with named_query("resources.merge.load"):
+        await lock_resources(session, unique_ids)
         results = (await session.scalars(stmt)).all()
     missing_ids = set(unique_ids).difference(set([r.id for r in results]))
     if len(missing_ids) > 0:
@@ -409,6 +425,10 @@ async def apply_resource_merge(
             res.repointed_id = new_resource.id
 
         _ = await _repoint_memberships(session, user, new_resource.id, unique_ids)
+
+        # The originals stop being listable (their rows are removed) and the new
+        # resource becomes listable with their combined sources.
+        await refresh_resource_states(session, [*unique_ids, new_resource.id])
 
         # Return the canonical resource entity
         await session.refresh(new_resource, ["memberships"])

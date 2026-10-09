@@ -33,28 +33,14 @@ from stitch.api.db.read_model.state import (
     refresh_resource_states,
 )
 from stitch.api.db.utils import coalesce_resources, resource_to_list_item_view
-from stitch.api.entities import User
 from stitch.ogsi.model import OGFieldListItemView
 from stitch.ogsi.model.og_field import OilGasFieldBase
 
-from .dataset import ALPHA_OWNERS, BETA_OPERATORS, Dataset, dump_state, seed_dataset
+from .dataset import ALPHA_OWNERS, BETA_OPERATORS, Dataset, dump_state
 
 pytestmark = pytest.mark.anyio
 
 type SessionFactory = async_sessionmaker[AsyncSession]
-
-
-@pytest.fixture
-async def dataset(seeded_integration_session: AsyncSession, test_user: User) -> Dataset:
-    return await seed_dataset(seeded_integration_session, test_user)
-
-
-@pytest.fixture
-async def rebuilt(
-    dataset: Dataset, integration_session_factory: SessionFactory
-) -> Dataset:
-    await rebuild_all_resource_state(integration_session_factory)
-    return dataset
 
 
 def _cached_item(resource_id: int, stored: dict[str, Any]) -> OGFieldListItemView:
