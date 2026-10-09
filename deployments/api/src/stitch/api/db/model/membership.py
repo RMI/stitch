@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from stitch.ogsi.model.types import OGSISrcKey
 
@@ -38,6 +38,16 @@ class MembershipModel(TimestampMixin, UserAuditMixin, Base):
     )
     status: Mapped[MembershipStatus] = mapped_column(
         default=MembershipStatus.ACTIVE, nullable=False
+    )
+
+    __table_args__ = (
+        # A source record is attached to a given resource at most once (any
+        # status). Uniqueness is per (resource, source): the same source record may
+        # still belong to several different resources. The attach and merge write
+        # paths dedup to uphold this.
+        UniqueConstraint(
+            "resource_id", "source_pk", name="uq_membership_resource_source"
+        ),
     )
 
     @classmethod

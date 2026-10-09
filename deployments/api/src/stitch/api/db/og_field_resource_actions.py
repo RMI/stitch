@@ -423,8 +423,9 @@ async def _repoint_memberships(
 ) -> Sequence[MembershipModel]:
     """Create new memberships pointing to a different resource.
 
-    Collect all memberships whose `resource_id` is in the `from_resoure_ids` argument. For each of these, create
-    a new membership where `resource_id` = `to_resource_id`.
+    Collect all memberships whose `resource_id` is in the `from_resoure_ids` argument. For each distinct
+    `source_pk` among these, create one new membership where `resource_id` = `to_resource_id`. Every
+    ACTIVE original membership is set INACTIVE.
 
     This all takes place after an approved merge candidate is applied and a new ResourceModel is created.
 
@@ -443,24 +444,31 @@ async def _repoint_memberships(
 
     existing_memberships = (
         await session.scalars(
-            select(MembershipModel).where(MembershipModel.resource_id.in_(from_ids))
+            select(MembershipModel)
+            .where(MembershipModel.resource_id.in_(from_ids))
+            .order_by(MembershipModel.id)
         )
     ).all()
 
-    # create new memberships pointing to the new resource
-    new_memberships: list[MembershipModel] = []
+    # One new membership per source record: the same source may belong to more
+    # than one of the merged resources, and (resource_id, source_pk) is unique.
+    # The new membership is ACTIVE if any contributing membership was; otherwise
+    # it keeps the status of the earliest (lowest id) contributing membership.
+    new_by_source_pk: dict[int, MembershipModel] = {}
     for mem in existing_memberships:
-        # set status on
-        new_memberships.append(
-            MembershipModel.create(
+        new_mem = new_by_source_pk.get(mem.source_pk)
+        if new_mem is None:
+            new_by_source_pk[mem.source_pk] = MembershipModel.create(
                 created_by=user,
                 resource_id=res.id,
                 source=mem.source,
                 source_pk=mem.source_pk,
                 status=mem.status,
             )
-        )
+        elif mem.status == MembershipStatus.ACTIVE:
+            new_mem.status = MembershipStatus.ACTIVE
         if mem.status == MembershipStatus.ACTIVE:
             mem.status = MembershipStatus.INACTIVE
+    new_memberships = list(new_by_source_pk.values())
     session.add_all(new_memberships)
     return new_memberships

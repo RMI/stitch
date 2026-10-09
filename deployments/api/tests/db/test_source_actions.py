@@ -172,3 +172,70 @@ class TestCreateAndAttachSources:
                 sources=[self._gem_source("Alpha", id=123)],
                 resource_id=resource_id,
             )
+
+
+class TestAttachSourcesDedup:
+    """A source is attached to a given resource at most once."""
+
+    @staticmethod
+    async def _membership_count(
+        session: AsyncSession, resource_id: int, source_pk: int
+    ) -> int:
+        memberships = (
+            await session.scalars(
+                select(MembershipModel).where(
+                    MembershipModel.resource_id == resource_id,
+                    MembershipModel.source_pk == source_pk,
+                )
+            )
+        ).all()
+        return len(memberships)
+
+    @pytest.mark.anyio
+    async def test_reattaching_attached_source_keeps_one_membership(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        session = seeded_integration_session
+        resource = ResourceModel.create(created_by=test_user)
+        session.add(resource)
+        await session.flush()
+        [created] = await source_actions.create_and_attach_sources(
+            session=session,
+            user=test_user,
+            sources=[TestCreateAndAttachSources._gem_source("Alpha")],
+            resource_id=resource.id,
+        )
+
+        await source_actions.attach_sources_to_resource(
+            session=session,
+            resource_id=resource.id,
+            source_rows=[created],
+            user=test_user,
+        )
+
+        assert await self._membership_count(session, resource.id, created.id) == 1
+
+    @pytest.mark.anyio
+    async def test_source_repeated_in_one_batch_attaches_once(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        session = seeded_integration_session
+        resource = ResourceModel.create(created_by=test_user)
+        session.add(resource)
+        await session.flush()
+        [created] = await source_actions.get_or_create_sources(
+            session, test_user, [TestCreateAndAttachSources._gem_source("Alpha")]
+        )
+        [src_model] = await source_actions._get_source_models(session, [created.id])
+
+        # The public paths already collapse repeated ids when loading source
+        # models, so exercise the attach helper directly with a repeated model.
+        await source_actions._attach_source_models(
+            session, resource, [src_model, src_model], test_user
+        )
+
+        assert await self._membership_count(session, resource.id, created.id) == 1
