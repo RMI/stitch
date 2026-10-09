@@ -192,3 +192,106 @@ describe("MergeSourceComparison", () => {
     expect(screen.getByText("No comparison available.")).toBeInTheDocument();
   });
 });
+
+describe("source mix per resource column", () => {
+  // Detail views arrive in resourceIds order (one Promise.all), each with the
+  // resource's per-field provenance -- the same data the Resource List's
+  // "Data source mix" column uses.
+  const sourceDetails = {
+    data: [
+      { provenance: { name: "gem", country: "gem", basin: "wm" } },
+      { provenance: { name: "rmi" } },
+    ],
+    isLoading: false,
+    isError: false,
+  };
+
+  function columnMixes() {
+    return screen.getAllByRole("group", { name: /^Data source mix/ });
+  }
+
+  it("shows each resource's own source mix at the top of its column", () => {
+    renderComparison({ sourceDetails });
+
+    const [first, second] = columnMixes();
+    // Sources are listed in the app's fixed source order, as on the Resource
+    // List, not by count.
+    expect(first).toHaveAccessibleName(
+      "Data source mix: Woodmac: 1 field (33%); GEM: 2 fields (67%)",
+    );
+    expect(second).toHaveAccessibleName("Data source mix: RMI: 1 field (100%)");
+  });
+
+  it("puts the source mix under the column heading, before any attribute row", () => {
+    renderComparison({ sourceDetails });
+
+    const heading = screen.getByText("Resource #101");
+    const [firstMix] = columnMixes();
+    const firstRow = screen.getByRole("group", { name: "Name" });
+    expect(
+      heading.compareDocumentPosition(firstMix) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      firstMix.compareDocumentPosition(firstRow) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("shows a same-size placeholder per column while the source details load", () => {
+    renderComparison({
+      sourceDetails: { data: undefined, isLoading: true, isError: false },
+    });
+
+    expect(screen.getAllByTestId("source-mix-placeholder")).toHaveLength(2);
+    expect(
+      screen.queryByRole("group", { name: /^Data source mix/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the placeholder in the comparison's own loading state", () => {
+    renderComparison({
+      compare: undefined,
+      isLoading: true,
+      sourceDetails: { data: undefined, isLoading: true, isError: false },
+    });
+
+    expect(screen.getAllByTestId("source-mix-placeholder")).toHaveLength(2);
+  });
+
+  it("shows cached source mixes even while the comparison itself loads", () => {
+    // The queue loads these details for candidate names, so they are usually
+    // cached before the comparison arrives. Showing them early costs no
+    // layout shift (the placeholder is the same height). The loading layout
+    // is hidden from screen readers, hence { hidden: true }.
+    renderComparison({ compare: undefined, isLoading: true, sourceDetails });
+
+    expect(
+      screen.getAllByRole("group", { name: /^Data source mix/, hidden: true }),
+    ).toHaveLength(2);
+    expect(
+      screen.queryByTestId("source-mix-placeholder"),
+    ).not.toBeInTheDocument();
+  });
+
+  it('says "Source mix unavailable" when the source details fail to load', () => {
+    renderComparison({
+      sourceDetails: { data: undefined, isLoading: false, isError: true },
+    });
+
+    expect(screen.getAllByText("Source mix unavailable")).toHaveLength(2);
+    // Not the misleading "No source data", which means the resource has none.
+    expect(screen.queryByText("No source data")).not.toBeInTheDocument();
+  });
+
+  it("shows nothing extra when no source details are provided", () => {
+    renderComparison();
+
+    expect(
+      screen.queryByRole("group", { name: /^Data source mix/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("source-mix-placeholder"),
+    ).not.toBeInTheDocument();
+  });
+});
