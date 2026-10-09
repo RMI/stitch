@@ -32,6 +32,7 @@ from stitch.api.db.model import (
     MembershipModel,
     MembershipStatus,
     OGFieldResourceSourcePriority,
+    OGFieldResourceState,
     OGFieldSourcePriority,
     OilGasFieldSourceModel,
     OilGasFieldSourceValueModel,
@@ -449,6 +450,41 @@ def base_resource_query(
     if params.id is not None:
         stmt = stmt.where(base.c.resource_id == params.id)
     return stmt.order_by(*_build_sort_clauses(base, params, "resource_id"))
+
+
+def resource_state_query(
+    params: OGFieldQueryParams, permission_mask: int
+) -> Select[tuple[int]]:
+    """``base_resource_query`` served from the precomputed read model.
+
+    Same filters, sort, and id ordering, applied with the shared clause builders
+    to the stored typed columns of one permission profile -- no coalescing
+    window. The table only holds listable resources, so it is the universe.
+    """
+    state = OGFieldResourceState
+    # Only a column source for the shared builders (its columns are the table's
+    # own), so conditions apply straight to the indexed table, not a subquery.
+    profile = select(state.__table__).where(state.permission_mask == permission_mask)
+    stmt = select(state.resource_id).where(state.permission_mask == permission_mask)
+    for cond in _build_field_conditions(profile, params):
+        stmt = stmt.where(cond)
+    if params.id is not None:
+        stmt = stmt.where(state.resource_id == params.id)
+    return stmt.order_by(*_build_sort_clauses(profile, params, "resource_id"))
+
+
+def resource_state_filter_option_query(
+    field_name: str, permission_mask: int
+) -> Select[tuple[str]]:
+    """Distinct non-null stored values of one filterable field for one profile."""
+    state = OGFieldResourceState
+    col = getattr(state, field_name)
+    return (
+        select(col)
+        .where(state.permission_mask == permission_mask, col.is_not(None))
+        .distinct()
+        .order_by(col)
+    )
 
 
 def _add_pivot_columns(

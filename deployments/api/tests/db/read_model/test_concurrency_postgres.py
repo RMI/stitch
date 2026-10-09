@@ -4,92 +4,38 @@ Every write recomputes its resource's read-model rows in its own transaction.
 Without the per-resource row lock, two concurrent writers would each recompute
 from a snapshot missing the other's change, and the second insert would collide
 with the first's rows. SQLite serializes all writers and ignores ``FOR UPDATE``,
-so this can only be exercised on Postgres.
-
-Skipped unless ``STITCH_TEST_POSTGRES_URL`` points at a disposable database::
-
-    STITCH_TEST_POSTGRES_URL=postgresql+psycopg://postgres:pg@127.0.0.1:55432/stitch
-
-Each test creates its own schema, builds the tables there, and drops it after;
-existing tables in that database are not touched.
+so this can only be exercised on Postgres (opt-in, see ``postgres.py``).
 """
 
 from __future__ import annotations
 
 import asyncio
-import os
-import uuid
-from collections.abc import AsyncIterator
 
 import pytest
-from sqlalchemy import insert, select, text
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db import og_field_source_actions as source_actions
 from stitch.api.db.errors import ResourceIntegrityError
-from stitch.api.db.model import (
-    OGFieldSourcePriority,
-    ResourceModel,
-    StitchBase,
-    UserModel,
-)
+from stitch.api.db.model import ResourceModel
 from stitch.api.db.read_model import state
 from stitch.api.db.read_model.state import refresh_resource_states
 from stitch.api.entities import User
-from stitch.ogsi.model import SOURCE_PRIORITY, RMISource, WoodMacSource
+from stitch.ogsi.model import RMISource, WoodMacSource
 
 from tests.utils import make_source_record
 
 from .dataset import attach, dump_state, new_resource
+from .postgres import requires_postgres
 
-_POSTGRES_URL = os.environ.get("STITCH_TEST_POSTGRES_URL")
-
-pytestmark = [
-    pytest.mark.anyio,
-    pytest.mark.skipif(
-        not _POSTGRES_URL, reason="set STITCH_TEST_POSTGRES_URL to run Postgres tests"
-    ),
-]
+pytestmark = [pytest.mark.anyio, requires_postgres]
 
 # How long a writer must stay blocked to count as waiting on the other's lock.
 _BLOCKED_FOR_SECONDS = 0.5
 
 type SessionFactory = async_sessionmaker[AsyncSession]
-
-
-@pytest.fixture
-async def pg_session_factory(
-    test_user_model: UserModel,
-) -> AsyncIterator[SessionFactory]:
-    assert _POSTGRES_URL is not None
-    schema = f"stit766_test_{uuid.uuid4().hex[:8]}"
-    admin = create_async_engine(_POSTGRES_URL)
-    async with admin.begin() as conn:
-        await conn.execute(text(f'CREATE SCHEMA "{schema}"'))
-    engine = create_async_engine(
-        _POSTGRES_URL, connect_args={"options": f"-csearch_path={schema}"}
-    )
-    try:
-        async with engine.begin() as conn:
-            await conn.run_sync(StitchBase.metadata.create_all)
-            await conn.execute(
-                insert(OGFieldSourcePriority),
-                [
-                    {"source": source, "priority": i + 1}
-                    for i, source in enumerate(SOURCE_PRIORITY)
-                ],
-            )
-        factory = async_sessionmaker(engine, expire_on_commit=False)
-        async with factory.begin() as session:
-            session.add(test_user_model)
-        yield factory
-    finally:
-        await engine.dispose()
-        async with admin.begin() as conn:
-            await conn.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
-        await admin.dispose()
 
 
 async def _seed_resources(factory: SessionFactory, user: User, count: int) -> list[int]:

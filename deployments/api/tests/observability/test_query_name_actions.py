@@ -25,6 +25,7 @@ from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db import og_field_source_actions as source_actions
 from stitch.api.db.model import MembershipModel, MembershipStatus, ResourceModel
 from stitch.api.db.model.oil_gas_field_source_value import ATTRIBUTE_NAMES
+from stitch.api.db.read_model.state import rebuild_all_resource_state
 from stitch.api.entities import (
     MergeCandidateCreateRequest,
     MergeCandidateReviewRequest,
@@ -57,6 +58,15 @@ def _assert_labels(events: list[dict], expected: set[str]) -> None:
     """Assert the labeled events are *exactly* ``expected`` (no missing/extra labels)."""
     actual = _labels(events)
     assert actual == expected, f"unexpected labels: {actual ^ expected}"
+
+
+def _labeled_statements_use_read_model(events: list[dict]) -> bool:
+    """Every labeled query read the precomputed table (not live coalescing)."""
+    return all(
+        "og_field_resource_state" in event["statement"]
+        for event in events
+        if "query_name" in event
+    )
 
 
 class TestEndpointQueryLabels:
@@ -96,6 +106,38 @@ class TestEndpointQueryLabels:
         assert response.status_code == 200, response.text
 
         _assert_labels(captured_query_events, {"resources.filter_options"})
+
+    @pytest.mark.anyio
+    async def test_read_model_list_and_filter_options_keep_labels(
+        self,
+        integration_client: AsyncClient,
+        integration_session_factory,
+        og_create_res_fact,
+        captured_query_events: list[dict],
+    ):
+        """Served from the precomputed read model, list and filter-options emit
+        the same labels as the live path (the readiness lookup is unlabeled)."""
+        create = await integration_client.post(
+            "/oil-gas-fields/",
+            json=og_create_res_fact(name="Labeled Resource").model_dump(mode="json"),
+        )
+        assert create.status_code == 200, create.text
+        await rebuild_all_resource_state(integration_session_factory)
+
+        captured_query_events.clear()
+        response = await integration_client.get("/oil-gas-fields/")
+        assert response.status_code == 200, response.text
+        _assert_labels(
+            captured_query_events,
+            {"resources.count", "resources.list_ids", "resources.list_hydrate"},
+        )
+        assert _labeled_statements_use_read_model(captured_query_events)
+
+        captured_query_events.clear()
+        response = await integration_client.get("/oil-gas-fields/filter-options")
+        assert response.status_code == 200, response.text
+        _assert_labels(captured_query_events, {"resources.filter_options"})
+        assert _labeled_statements_use_read_model(captured_query_events)
 
     @pytest.mark.anyio
     async def test_detail_endpoint_labels(
