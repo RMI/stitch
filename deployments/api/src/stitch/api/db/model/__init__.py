@@ -1,6 +1,10 @@
 from .common import Base as StitchBase
 from .og_field_source_priority import OGFieldSourcePriority
 from .og_field_resource_source_priority import OGFieldResourceSourcePriority
+from .og_field_resource_state import (
+    OGFieldResourceState,
+    OGFieldResourceStateStatus,
+)
 from .oil_gas_field_source import OilGasFieldSourceModel
 from .oil_gas_field_source_value import OilGasFieldSourceValueModel
 from .membership import MembershipModel, MembershipStatus
@@ -13,6 +17,8 @@ __all__ = [
     "MembershipStatus",
     "OGFieldSourcePriority",
     "OGFieldResourceSourcePriority",
+    "OGFieldResourceState",
+    "OGFieldResourceStateStatus",
     "OilGasFieldSourceModel",
     "OilGasFieldSourceValueModel",
     "MergeCandidateItemModel",
