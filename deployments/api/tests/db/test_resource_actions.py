@@ -2187,3 +2187,25 @@ class TestMembershipUniqueness:
 
         [target] = await self._memberships(session, merged.id, pk)
         assert target.status == MembershipStatus.ACTIVE
+
+    @pytest.mark.anyio
+    async def test_merge_target_keeps_earliest_status_when_none_active(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid_a, rid_b, pk = await self._resources_sharing_one_source(session, test_user)
+        # No parent membership is ACTIVE: the earlier (lower id) one is INVALID,
+        # the later one INACTIVE.
+        [first] = await self._memberships(session, rid_a, pk)
+        first.status = MembershipStatus.INVALID
+        [second] = await self._memberships(session, rid_b, pk)
+        second.status = MembershipStatus.INACTIVE
+        await session.flush()
+
+        merged = await resource_actions.apply_resource_merge(
+            session, test_user, [rid_a, rid_b]
+        )
+        await session.flush()
+
+        [target] = await self._memberships(session, merged.id, pk)
+        assert target.status == MembershipStatus.INVALID
