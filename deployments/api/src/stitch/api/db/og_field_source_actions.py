@@ -192,7 +192,8 @@ async def _attach_source_models(
         (
             await session.scalars(
                 select(MembershipModel.source_pk).where(
-                    MembershipModel.resource_id == resource.id
+                    MembershipModel.resource_id == resource.id,
+                    MembershipModel.source_pk.in_([src.id for src in src_models]),
                 )
             )
         ).all()
