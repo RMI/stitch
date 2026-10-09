@@ -359,12 +359,11 @@ async def apply_resource_merge(
     user: CurrentUser,
     resource_ids: Sequence[int],
 ) -> OGFieldResource:
-    """
-    Stub "merge" behavior:
-    - Treat ids[0] as the canonical/target resource.
-    - Update all resources in ids[1:] to have repointed_id = ids[0].
+    """Merge ``resource_ids`` into a brand-new resource.
 
-    NOTE: This only updates the resource table repointing field (no membership/source consolidation).
+    - Create a new resource and set every input resource's ``repointed_id`` to it.
+    - Repoint memberships onto the new resource, one per source record (see
+      ``_repoint_memberships``).
     """
     # preserve order but drop duplicates
     unique_ids = list(dict.fromkeys(resource_ids))
@@ -423,9 +422,9 @@ async def _repoint_memberships(
 ) -> Sequence[MembershipModel]:
     """Create new memberships pointing to a different resource.
 
-    Collect all memberships whose `resource_id` is in the `from_resoure_ids` argument. For each distinct
-    `source_pk` among these, create one new membership where `resource_id` = `to_resource_id`. Every
-    ACTIVE original membership is set INACTIVE.
+    Collect all memberships whose `resource_id` is in `from_ids`. For each distinct `source_pk` among
+    these, create one new membership where `resource_id` = `to_id`. Every ACTIVE original membership is
+    set INACTIVE.
 
     This all takes place after an approved merge candidate is applied and a new ResourceModel is created.
 
