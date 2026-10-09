@@ -182,16 +182,34 @@ async def _attach_source_models(
     src_models: Sequence[OilGasFieldSourceModel],
     user: User,
 ) -> None:
-    """Create ACTIVE memberships linking each source model to ``resource``."""
-    memberships = [
-        MembershipModel.create(
-            created_by=user,
-            resource_id=resource.id,
-            source=src.source,
-            source_pk=src.id,
+    """Create ACTIVE memberships linking each source model to ``resource``.
+
+    A source is attached to a resource at most once: sources already attached
+    (in any status) or repeated within ``src_models`` are skipped, upholding
+    ``uq_membership_resource_source``.
+    """
+    already_attached = set(
+        (
+            await session.scalars(
+                select(MembershipModel.source_pk).where(
+                    MembershipModel.resource_id == resource.id
+                )
+            )
+        ).all()
+    )
+    memberships: list[MembershipModel] = []
+    for src in src_models:
+        if src.id in already_attached:
+            continue
+        already_attached.add(src.id)
+        memberships.append(
+            MembershipModel.create(
+                created_by=user,
+                resource_id=resource.id,
+                source=src.source,
+                source_pk=src.id,
+            )
         )
-        for src in src_models
-    ]
     session.add_all(memberships)
     await session.flush()
 
