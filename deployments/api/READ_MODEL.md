@@ -73,7 +73,11 @@ python -m stitch.api.db.read_model.rebuild --ids 123 456
   them.
 - **Two at once:** a second full rebuild started while one is running exits with
   "Another resource-state rebuild is already running."
-- `--ids` never changes readiness; it's safe at any time.
+- `--ids` never changes readiness; it's safe at any time. It reports which ids it
+  recomputed and which aren't listed (merged away, or no active sources — any
+  stored rows for those are removed). If any id doesn't exist it changes nothing
+  and exits with an error, since that's usually a typo.
+- Errors print as a single `ERROR` line and exit with status 1.
 
 ## Verifying
 

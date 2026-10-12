@@ -47,7 +47,7 @@ _REBUILD_LOCK_KEY: Final[int] = 766_001
 
 
 class ResourceStateRebuildError(RuntimeError):
-    """A full rebuild could not run or did not produce complete state."""
+    """A rebuild or repair could not run, or did not produce complete state."""
 
 
 def lock_resources_statement(resource_ids: Collection[int]) -> Select[tuple[int]]:
@@ -120,21 +120,22 @@ async def _compute_state_rows(
 
 async def refresh_resource_states(
     session: AsyncSession, resource_ids: Collection[int]
-) -> None:
+) -> list[int]:
     """Make the given resources' stored state match authoritative data.
 
     Runs in the caller's transaction, so it commits (or rolls back) with the
     write that triggered it. Resources that are no longer listable end up with
-    no rows; ids that don't exist are ignored.
+    no rows; ids that don't exist are ignored. Returns the ids that were
+    recomputed (the listable ones), in ascending order.
     """
     ids = sorted(set(resource_ids))
     if not ids:
-        return
+        return []
     await lock_resources(session, ids)
     await session.execute(
         delete(OGFieldResourceState).where(OGFieldResourceState.resource_id.in_(ids))
     )
-    listable = list(
+    listable = sorted(
         (
             await session.scalars(resource_universe().where(ResourceModel.id.in_(ids)))
         ).all()
@@ -142,8 +143,9 @@ async def refresh_resource_states(
     if listable:
         await session.execute(
             insert(OGFieldResourceState),
-            await _compute_state_rows(session, sorted(listable)),
+            await _compute_state_rows(session, listable),
         )
+    return listable
 
 
 async def refresh_resource_state(session: AsyncSession, resource_id: int) -> None:

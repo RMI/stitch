@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import pytest
@@ -218,11 +219,13 @@ class TestTargetedRefresh:
         self, seeded_integration_session: AsyncSession, dataset: Dataset
     ):
         session = seeded_integration_session
-        await refresh_resource_states(
-            session, [dataset.inactive, dataset.bare, dataset.zeta_a, 999_999]
+        recomputed = await refresh_resource_states(
+            session,
+            [dataset.inactive, dataset.bare, dataset.zeta_a, 999_999, dataset.alpha],
         )
         await session.commit()
-        assert await dump_state(session) == {}
+        assert recomputed == [dataset.alpha]
+        assert {rid for rid, _ in await dump_state(session)} == {dataset.alpha}
 
     async def test_does_not_mark_the_read_model_ready(
         self, seeded_integration_session: AsyncSession, dataset: Dataset
@@ -518,6 +521,19 @@ class TestRebuildCliArgs:
         with pytest.raises(SystemExit):
             rebuild_cli._parse_args(["--batch-size", "0"])
 
+    def test_rebuild_errors_exit_non_zero_with_one_clear_line(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ):
+        async def refuse(*_args: Any) -> None:
+            raise ResourceStateRebuildError("Another rebuild is already running.")
+
+        monkeypatch.setattr(rebuild_cli, "_run", refuse)
+        with pytest.raises(SystemExit) as exited:
+            rebuild_cli.main([])
+
+        assert exited.value.code == 1
+        assert "Another rebuild is already running." in caplog.text
+
 
 class TestRebuildCli:
     @pytest.fixture(autouse=True)
@@ -546,10 +562,53 @@ class TestRebuildCli:
         assert {rid for rid, _ in await dump_state(session)} == dataset.listable
 
     async def test_ids_refresh_only_those_resources(
-        self, seeded_integration_session: AsyncSession, dataset: Dataset
+        self,
+        seeded_integration_session: AsyncSession,
+        dataset: Dataset,
+        caplog: pytest.LogCaptureFixture,
     ):
+        caplog.set_level(logging.INFO)
         await rebuild_cli._run(ids=[dataset.gamma], batch_size=1)
 
         session = seeded_integration_session
         assert {rid for rid, _ in await dump_state(session)} == {dataset.gamma}
         assert not await is_resource_state_ready(session)
+        assert f"Recomputed resource state for ids [{dataset.gamma}]" in caplog.text
+
+    async def test_ids_that_are_not_listed_are_reported_not_recomputed(
+        self,
+        seeded_integration_session: AsyncSession,
+        rebuilt: Dataset,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        caplog.set_level(logging.INFO)
+        # A stale row for a merged-away resource gets removed.
+        await seeded_integration_session.execute(
+            insert(OGFieldResourceState).values(
+                resource_id=rebuilt.zeta_a, permission_mask=0, provenance={}
+            )
+        )
+        await seeded_integration_session.commit()
+
+        await rebuild_cli._run(ids=[rebuilt.alpha, rebuilt.zeta_a], batch_size=1)
+
+        stored = {rid for rid, _ in await dump_state(seeded_integration_session)}
+        assert rebuilt.zeta_a not in stored
+        assert f"Recomputed resource state for ids [{rebuilt.alpha}]" in caplog.text
+        assert f"[{rebuilt.zeta_a}]" in caplog.text
+        assert "not listed" in caplog.text
+
+    async def test_unknown_ids_fail_without_changing_anything(
+        self, seeded_integration_session: AsyncSession, rebuilt: Dataset
+    ):
+        session = seeded_integration_session
+        before = await dump_state(session)
+        await _corrupt(session, rebuilt.alpha)
+        corrupted = await dump_state(session)
+        assert corrupted != before
+
+        with pytest.raises(ResourceStateRebuildError, match="999999"):
+            await rebuild_cli._run(ids=[rebuilt.alpha, 999_999], batch_size=1)
+
+        # The valid id was not repaired either: nothing changed.
+        assert await dump_state(session) == corrupted

@@ -16,9 +16,14 @@ import asyncio
 import logging
 from collections.abc import Sequence
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from ..config import dispose_engine, get_engine, get_session_factory
+from ..model import ResourceModel
 from .state import (
     DEFAULT_BATCH_SIZE,
+    ResourceStateRebuildError,
     rebuild_all_resource_state,
     refresh_resource_states,
 )
@@ -55,6 +60,34 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+async def _repair(
+    session_factory: async_sessionmaker[AsyncSession], ids: list[int]
+) -> None:
+    """Recompute the given resources, refusing unknown ids (likely typos)."""
+    requested = sorted(set(ids))
+    async with session_factory.begin() as session:
+        existing = set(
+            (
+                await session.scalars(
+                    select(ResourceModel.id).where(ResourceModel.id.in_(requested))
+                )
+            ).all()
+        )
+        if missing := [rid for rid in requested if rid not in existing]:
+            raise ResourceStateRebuildError(
+                f"No resource with id(s) {missing}; nothing was changed."
+            )
+        recomputed = await refresh_resource_states(session, requested)
+    if recomputed:
+        logger.info("Recomputed resource state for ids %s.", recomputed)
+    if unlisted := [rid for rid in requested if rid not in recomputed]:
+        logger.info(
+            "Ids %s are not listed (merged away, or no active sources), so they "
+            "have no stored state; any they had was removed.",
+            unlisted,
+        )
+
+
 async def _run(ids: list[int] | None, batch_size: int) -> None:
     # Outside prod the app engine echoes every statement and its parameters; for
     # a batch job over every resource that floods the logs. Progress is logged
@@ -63,9 +96,7 @@ async def _run(ids: list[int] | None, batch_size: int) -> None:
     session_factory = get_session_factory()
     try:
         if ids:
-            async with session_factory.begin() as session:
-                await refresh_resource_states(session, ids)
-            logger.info("Recomputed resource state for ids %s.", sorted(set(ids)))
+            await _repair(session_factory, ids)
         else:
             count = await rebuild_all_resource_state(
                 session_factory, batch_size=batch_size
@@ -81,7 +112,11 @@ async def _run(ids: list[int] | None, batch_size: int) -> None:
 def main(argv: Sequence[str] | None = None) -> None:
     args = _parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    asyncio.run(_run(args.ids, args.batch_size))
+    try:
+        asyncio.run(_run(args.ids, args.batch_size))
+    except ResourceStateRebuildError as exc:
+        logger.error("%s", exc)
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":
