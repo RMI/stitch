@@ -1,9 +1,13 @@
 """Build and maintain ``og_field_resource_state`` from the live coalescer.
 
-Every stored row comes from ``utils.coalesce_resources`` -- the same function the
-live list path hydrates with -- called once per permission profile with that
-profile's exact source set. There is no second ranking implementation, so cached
-state can't drift from live coalescing.
+Every stored row comes from ``queries.coalesced_winner_rows`` -- the same SQL
+ranking the live list path hydrates with (through ``utils.coalesce_resources``)
+-- run once per permission profile with that profile's exact source set. There
+is no second ranking implementation, so cached state can't drift from live
+coalescing. Rows hold the same materialized winning values the live path builds
+its view from; like the live path, they are validated only when a list page is
+built from them, so a stored value today's model rejects can't stop a rebuild
+or a write.
 
 * ``refresh_resource_states`` recomputes the given resources inside the caller's
   transaction: lock their rows, delete their state, and re-insert one row per
@@ -27,13 +31,10 @@ from typing import Any, Final
 from sqlalchemy import Select, delete, distinct, func, insert, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from stitch.ogsi.model import OGFieldResource
-
 from ..model import OGFieldResourceState, OGFieldResourceStateStatus, ResourceModel
 from ..model.og_field_resource_state import RESOURCE_STATE_STATUS_KEY
-from ..model.oil_gas_field_source_value import ATTRIBUTE_NAMES
-from ..queries import resource_universe
-from ..utils import coalesce_resources
+from ..model.oil_gas_field_source_value import ATTRIBUTE_NAMES, materialize_value
+from ..queries import coalesced_winner_rows, resource_universe
 from .permissions import PERMISSION_MASKS, visible_sources_for_mask
 
 logger = logging.getLogger(__name__)
@@ -79,39 +80,41 @@ async def lock_resources(session: AsyncSession, resource_ids: Collection[int]) -
         await session.execute(lock_resources_statement(resource_ids))
 
 
-def _state_row(
-    resource_id: int, mask: int, resource: OGFieldResource
-) -> dict[str, Any]:
-    """One table row from a live-coalesced resource.
-
-    Stores each winner's materialized value -- exactly what the live path passes
-    to ``OilGasFieldBase`` -- and its source key as provenance.
-    """
-    row: dict[str, Any] = {
+def _empty_state_row(resource_id: int, mask: int) -> dict[str, Any]:
+    """A row with every field (and its provenance) unset."""
+    return {
         "resource_id": resource_id,
         "permission_mask": mask,
         **{field: None for field in ATTRIBUTE_NAMES},
+        "provenance": {field: None for field in ATTRIBUTE_NAMES},
     }
-    provenance: dict[str, str | None] = {field: None for field in ATTRIBUTE_NAMES}
-    for field, winner in resource.provenance.items():
-        if winner is not None:
-            value, source, _source_pk = winner
-            row[field] = value
-            provenance[field] = source
-    row["provenance"] = provenance
-    return row
 
 
 async def _compute_state_rows(
     session: AsyncSession, resource_ids: list[int]
 ) -> list[dict[str, Any]]:
-    """Rows for every ``(resource, profile)`` pair: one live coalesce per profile."""
+    """Rows for every ``(resource, profile)`` pair: one winner query per profile.
+
+    Each winner's value is materialized exactly as the live path does before
+    building its view, and its source key recorded as provenance. Fields with no
+    winner stay unset.
+    """
     rows: list[dict[str, Any]] = []
     for mask in PERMISSION_MASKS:
-        coalesced = await coalesce_resources(
-            session, resource_ids, visible_sources_for_mask(mask)
+        by_id = {rid: _empty_state_row(rid, mask) for rid in resource_ids}
+        winners = await session.execute(
+            coalesced_winner_rows(resource_ids, visible_sources_for_mask(mask))
         )
-        rows.extend(_state_row(rid, mask, coalesced[rid]) for rid in resource_ids)
+        for rid, colname, value_text, value_num, value_json, source, _ in winners:
+            row = by_id[rid]
+            row[colname] = materialize_value(
+                colname,
+                value_text=value_text,
+                value_num=value_num,
+                value_json=value_json,
+            )
+            row["provenance"][colname] = source
+        rows.extend(by_id.values())
     return rows
 
 

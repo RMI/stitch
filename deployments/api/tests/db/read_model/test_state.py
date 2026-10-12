@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import delete, insert, select, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -15,12 +16,14 @@ from stitch.api.db.model import (
     OGFieldResourceState,
     OGFieldResourceStateStatus,
 )
+from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db.model.oil_gas_field_source_value import ATTRIBUTE_NAMES
 from stitch.api.db.queries import resource_universe
 from stitch.api.db.read_model import rebuild as rebuild_cli
 from stitch.api.db.read_model import state
 from stitch.api.db.read_model.permissions import (
     PERMISSION_MASKS,
+    PROFILES,
     visible_sources_for_mask,
 )
 from stitch.api.db.read_model.state import (
@@ -33,11 +36,18 @@ from stitch.api.db.read_model.state import (
     refresh_resource_states,
 )
 from stitch.api.db.utils import coalesce_resources, resource_to_list_item_view
-from stitch.api.entities import User
+from stitch.api.entities import OGFieldQueryParams, User
 from stitch.ogsi.model import OGFieldListItemView
 from stitch.ogsi.model.og_field import OilGasFieldBase
 
-from .dataset import ALPHA_OWNERS, BETA_OPERATORS, Dataset, dump_state
+from .dataset import (
+    ALPHA_OWNERS,
+    BETA_OPERATORS,
+    Dataset,
+    attach,
+    dump_state,
+    new_resource,
+)
 from .scenarios import rebuild_with_reads_and_writes_midway
 
 pytestmark = pytest.mark.anyio
@@ -332,18 +342,17 @@ class TestFullRebuild:
         session = seeded_integration_session
         assert await is_resource_state_ready(session)
 
-        real_coalesce = state.coalesce_resources
-        calls = 0
+        real_compute = state._compute_state_rows
+        batches = 0
 
         async def fail_on_second_batch(*args: Any, **kwargs: Any):
-            nonlocal calls
-            calls += 1
-            # One coalesce per profile per batch; fail inside the second batch.
-            if calls > len(PERMISSION_MASKS):
+            nonlocal batches
+            batches += 1
+            if batches == 2:
                 raise RuntimeError("boom")
-            return await real_coalesce(*args, **kwargs)
+            return await real_compute(*args, **kwargs)
 
-        monkeypatch.setattr(state, "coalesce_resources", fail_on_second_batch)
+        monkeypatch.setattr(state, "_compute_state_rows", fail_on_second_batch)
         with pytest.raises(RuntimeError, match="boom"):
             await rebuild_all_resource_state(integration_session_factory, batch_size=1)
 
@@ -370,6 +379,86 @@ class TestFullRebuild:
             await rebuild_all_resource_state(integration_session_factory)
 
         assert not await is_resource_state_ready(seeded_integration_session)
+
+
+class TestValuesTodaysModelRejects:
+    """Stored values can predate today's validation (e.g. a country code that
+    is no longer valid). Building state must not validate them: one such value
+    would otherwise stop every full rebuild from finishing and fail every write
+    to its resource, while the live list only fails on a page that shows it."""
+
+    @pytest.fixture
+    async def good_and_legacy(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ) -> tuple[int, int]:
+        """A valid resource, and one whose winning country is no longer valid."""
+        session = seeded_integration_session
+        good = await new_resource(session, test_user)
+        await attach(session, test_user, good, "gem", name="Good", country="USA")
+        legacy = await new_resource(session, test_user)
+        await attach(
+            session, test_user, legacy, "gem", name="Old GEM", country="Gemland"
+        )
+        await attach(session, test_user, legacy, "rmi", name="Old RMI")
+        await session.commit()
+        return good, legacy
+
+    async def test_full_rebuild_completes(
+        self,
+        seeded_integration_session: AsyncSession,
+        integration_session_factory: SessionFactory,
+        good_and_legacy: tuple[int, int],
+    ):
+        _, legacy = good_and_legacy
+        await rebuild_all_resource_state(integration_session_factory)
+
+        session = seeded_integration_session
+        assert await is_resource_state_ready(session)
+        assert (await dump_state(session))[(legacy, 0)]["country"] == "Gemland"
+
+    async def test_writes_to_the_resource_still_succeed(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+        good_and_legacy: tuple[int, int],
+    ):
+        _, legacy = good_and_legacy
+        session = seeded_integration_session
+        current = await resource_actions.field_source_values(session, legacy, "name")
+        await resource_actions.set_field_source_priority(
+            session,
+            test_user,
+            legacy,
+            "name",
+            [view.source_id for view in reversed(current)],
+        )
+        await session.commit()
+
+        stored = await dump_state(session)
+        assert stored[(legacy, 0)]["name"] == "Old GEM"
+        assert stored[(legacy, 0)]["country"] == "Gemland"
+
+    async def test_list_fails_only_where_live_fails(
+        self,
+        seeded_integration_session: AsyncSession,
+        integration_session_factory: SessionFactory,
+        good_and_legacy: tuple[int, int],
+    ):
+        good, legacy = good_and_legacy
+        await rebuild_all_resource_state(integration_session_factory)
+        session = seeded_integration_session
+        licensed = PROFILES[3]
+
+        good_page = OGFieldQueryParams(id=good)
+        assert await resource_actions.query(
+            session, good_page, licensed
+        ) == await resource_actions._query_live(session, good_page, licensed)
+
+        legacy_page = OGFieldQueryParams(id=legacy)
+        with pytest.raises(ValidationError):
+            await resource_actions._query_live(session, legacy_page, licensed)
+        with pytest.raises(ValidationError):
+            await resource_actions.query(session, legacy_page, licensed)
 
 
 class TestRebuildAlongsideTraffic:
