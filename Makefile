@@ -272,10 +272,6 @@ reboot-docker-heavy: clean-docker
 follow-stack-logs:
 	$(DOCKER_COMPOSE_DEV) --profile full logs -f
 
-# A comment inside a backslash-continued .PHONY line swallows the rest of the
-# logical line, which left this declaration with no prerequisites at all.
-# .PHONY accumulates across lines, so one line per group keeps the grouping.
-
 # Workspace
 .PHONY: check lint test format format-check lock-check
 .PHONY: build-all
