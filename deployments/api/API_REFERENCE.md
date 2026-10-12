@@ -144,7 +144,7 @@
 ### `POST /api/v1/oil-gas-fields/merge-candidates/link-all`
 
 Query every group of duplicate resources and queue each one for review.
-`apply_merges` defaults to false, which makes the call a dry run that reports the
+`apply_merges` defaults to true, passing false makes the call a dry run that reports the
 groups and writes nothing. Groups whose resource-id set already has a candidate are
 skipped, so repeat runs are safe.
 
@@ -167,7 +167,6 @@ skipped, so repeat runs are safe.
 
 **Request Body:** MergeCandidateReviewRequest | null
 
-
 **Response:** `200`
 
 - `id`: integer
@@ -189,7 +188,6 @@ skipped, so repeat runs are safe.
 <!-- description -->
 
 **Request Body:** MergeCandidateReviewRequest | null
-
 
 **Response:** `200`
 
@@ -280,7 +278,6 @@ skipped, so repeat runs are safe.
 
 **Request Body:** GemSource-Input | WoodMacSource-Input | RMISource-Input | LLMSource-Input | CCRSource-Input | ALBSource-Input | BCSource-Input
 
-
 **Response:** `200`
 
 - GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView
@@ -294,7 +291,6 @@ skipped, so repeat runs are safe.
 <!-- description -->
 
 **Request Body:** GemSource-Input | WoodMacSource-Input | RMISource-Input | LLMSource-Input | CCRSource-Input | ALBSource-Input | BCSource-Input
-
 
 **Response:** `200`
 

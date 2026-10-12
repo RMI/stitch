@@ -181,7 +181,7 @@ async def link_all_merge_candidates(
     uow: UnitOfWorkDep,
     user: CurrentUser,
     claims: Claims,
-    apply_merges: bool = False,
+    apply_merges: bool = True,
 ) -> LinkAllResponse:
     """Queue every group of duplicate resources for review."""
     groups = await link_actions.match(
