@@ -28,7 +28,7 @@ options:
   -h, --host             Postgres host
   -d, --database         database to back up
   -u, --user             Postgres user (default: postgres)
-  -n, --name             job name (default: stitch-backup-<database>)
+  -n, --name             job name (default: the database name, hyphenated)
 
 setup prepares one storage account: it creates the backup identity and the
 backups container, and lets that identity write there. Run it once per account.
@@ -60,7 +60,7 @@ setup() {
 deploy() {
   local action
   : "${PGPASSWORD:?the password for --user on --host}"
-  [ -n "$name" ] || name="stitch-backup-${database//_/-}"
+  [ -n "$name" ] || name="${database//_/-}"
 
   IFS=$'\t' read -r JOB_IDENTITY_ID JOB_IDENTITY_CLIENT_ID < <(
     az identity show --resource-group "$resource_group" --name "$IDENTITY_NAME" \

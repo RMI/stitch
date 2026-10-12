@@ -1,4 +1,6 @@
 ---
+tags:
+  purpose: backup
 identity:
   type: UserAssigned
   userAssignedIdentities:
