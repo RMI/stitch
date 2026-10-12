@@ -31,7 +31,7 @@ export default function FilterBar({ endpoint, filters, onFiltersChange }) {
     <div className="space-y-2" data-testid="filter-bar">
       {/* Dropdowns row */}
       <div className="flex flex-wrap gap-2">
-        {FILTER_FIELDS.map(({ key, label, formatValue }) => {
+        {FILTER_FIELDS.map(({ key, label, formatValue, searchable }) => {
           const options = (filterOptions?.[key] ?? [])
             .map((value) => ({
               value,
@@ -46,6 +46,7 @@ export default function FilterBar({ endpoint, filters, onFiltersChange }) {
               options={options}
               selected={filters[key] ?? []}
               onChange={(values) => handleDropdownChange(key, values)}
+              searchable={searchable}
             />
           );
         })}

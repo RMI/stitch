@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useAuth0 } from "@auth0/auth0-react";
-import { screen } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { auth0TestDefaults, renderWithQueryClient } from "../test/utils";
 import ResourceDetailPage from "./ResourceDetailPage";
@@ -11,6 +11,7 @@ import {
 } from "../hooks/useResources";
 import { usePermissions } from "../hooks/usePermissions";
 import * as apiModule from "../queries/api";
+import { AI_SUGGESTION_FIELDS } from "../constants/fieldMeta";
 
 // Mock only the read hooks; the attach path exercises the real
 // useCreateSourceForResource mutation against a spied API module.
@@ -187,7 +188,7 @@ describe("ResourceDetailPage", () => {
     });
 
     renderWithQueryClient(<ResourceDetailPage />);
-    expect(screen.getByText("Local Name")).toBeInTheDocument();
+    expect(screen.getAllByText("Local Name").length).toBeGreaterThan(0);
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 
@@ -891,6 +892,259 @@ describe("ResourceDetailPage", () => {
     expect(
       await screen.findByRole("button", { name: /added to resource/i }),
     ).toBeDisabled();
+  });
+
+  it("fans out an AbortSignal-scoped request to every AI suggestion field on Enrich", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    const suggestionSpy = vi
+      .spyOn(apiModule, "createLLMSuggestion")
+      .mockImplementation(async (_config, _id, field) => ({
+        resource_id: 1,
+        field,
+        value: `value-${field}`,
+        citations: [],
+        query_succeeded: true,
+        model: "test-model",
+        rationale: "Supported.",
+        observed_at: "2026-05-13T12:00:00Z",
+        foundry_request: {},
+        foundry_response: {},
+      }));
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(
+      screen.getByRole("button", { name: /enrich this resource/i }),
+    );
+
+    await screen.findByText("value-name");
+    expect(suggestionSpy).toHaveBeenCalledTimes(AI_SUGGESTION_FIELDS.length);
+    for (const field of AI_SUGGESTION_FIELDS) {
+      expect(suggestionSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        1,
+        field,
+        expect.any(Function),
+        "oil-gas-fields",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    }
+  });
+
+  it("renders per-field results as each Enrich request resolves", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    const deferreds = {};
+    vi.spyOn(apiModule, "createLLMSuggestion").mockImplementation(
+      (_config, _id, field) =>
+        new Promise((resolve) => {
+          deferreds[field] = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(
+      screen.getByRole("button", { name: /enrich this resource/i }),
+    );
+
+    // With every request pending, every field's card shows a generating hint.
+    await waitFor(() =>
+      expect(screen.getAllByText(/generating suggestion…/i).length).toBe(
+        AI_SUGGESTION_FIELDS.length,
+      ),
+    );
+
+    // Resolve just one field; its card renders while the rest still say
+    // "Generating…", proving results stream in independently.
+    await act(async () => {
+      deferreds.name({
+        resource_id: 1,
+        field: "name",
+        value: "Burgan A",
+        citations: [],
+        query_succeeded: true,
+        model: "test-model",
+        rationale: "Supported.",
+        observed_at: "2026-05-13T12:00:00Z",
+        foundry_request: {},
+        foundry_response: {},
+      });
+    });
+    expect(await screen.findByText("Burgan A")).toBeInTheDocument();
+    expect(screen.getAllByText(/generating suggestion…/i).length).toBe(
+      AI_SUGGESTION_FIELDS.length - 1,
+    );
+  });
+
+  it("keeps Enrich disabled while any bulk request is still pending, not only when >1 remain", async () => {
+    // Regression test for the earlier isBulkInFlight > 1 derivation: once
+    // exactly one bulk request remains, the panel used to flip out of bulk
+    // mode and re-enable the controls.
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    const deferreds = {};
+    vi.spyOn(apiModule, "createLLMSuggestion").mockImplementation(
+      (_config, _id, field) =>
+        new Promise((resolve) => {
+          deferreds[field] = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(
+      screen.getByRole("button", { name: /enrich this resource/i }),
+    );
+
+    const holdOut = AI_SUGGESTION_FIELDS[AI_SUGGESTION_FIELDS.length - 1];
+    await act(async () => {
+      for (const field of AI_SUGGESTION_FIELDS) {
+        if (field === holdOut) continue;
+        deferreds[field]({
+          resource_id: 1,
+          field,
+          value: `value-${field}`,
+          citations: [],
+          query_succeeded: true,
+          model: "test-model",
+          rationale: "Supported.",
+          observed_at: "2026-05-13T12:00:00Z",
+          foundry_request: {},
+          foundry_response: {},
+        });
+      }
+    });
+
+    expect(screen.getByRole("button", { name: /enriching…/i })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /^cancel$/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("cancels an in-flight bulk run and does not surface aborted requests as errors", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    const capturedSignals = [];
+    vi.spyOn(apiModule, "createLLMSuggestion").mockImplementation(
+      (_config, _id, _field, _fetcher, _endpoint, options) => {
+        capturedSignals.push(options?.signal);
+        return new Promise((resolve, reject) => {
+          options?.signal?.addEventListener("abort", () => {
+            const err = new Error("aborted");
+            err.name = "AbortError";
+            reject(err);
+          });
+        });
+      },
+    );
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(
+      screen.getByRole("button", { name: /enrich this resource/i }),
+    );
+    await user.click(await screen.findByRole("button", { name: /^cancel$/i }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: /^cancel$/i }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(capturedSignals.length).toBe(AI_SUGGESTION_FIELDS.length);
+    for (const signal of capturedSignals) {
+      expect(signal.aborted).toBe(true);
+    }
+    // Cancellation shouldn't render as a per-field failure.
+    expect(
+      screen.queryByText(/failed to generate suggestion/i),
+    ).not.toBeInTheDocument();
+    // Enrich returns to its idle label and is clickable again.
+    expect(
+      screen.getByRole("button", { name: /enrich this resource/i }),
+    ).toBeEnabled();
+  });
+
+  it("tracks Add to resource loading state per field so concurrent attaches don't clobber each other", async () => {
+    vi.mocked(useResourceDetail).mockReturnValue({
+      ...defaultHookReturn,
+      data: mockDetailView,
+    });
+    vi.spyOn(apiModule, "createLLMSuggestion").mockImplementation(
+      async (_config, _id, field) => ({
+        resource_id: 1,
+        field,
+        value: `value-${field}`,
+        citations: [],
+        query_succeeded: true,
+        model: "test-model",
+        rationale: "Supported.",
+        observed_at: "2026-05-13T12:00:00Z",
+        foundry_request: {},
+        foundry_response: {},
+      }),
+    );
+    // Two deferred creates so we can hold one open while another completes.
+    const createDeferreds = [];
+    vi.spyOn(apiModule, "createSourceForResource").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          createDeferreds.push(resolve);
+        }),
+    );
+    const user = userEvent.setup();
+
+    renderWithQueryClient(<ResourceDetailPage />);
+    await user.click(
+      screen.getByRole("button", { name: /enrich this resource/i }),
+    );
+
+    // Wait for the bulk run to settle so every "Add to resource" is present.
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole("button", { name: /add to resource/i }).length,
+      ).toBe(AI_SUGGESTION_FIELDS.length),
+    );
+
+    const attachButtons = screen.getAllByRole("button", {
+      name: /add to resource/i,
+    });
+    await user.click(attachButtons[0]);
+    await user.click(attachButtons[1]);
+
+    // Both requests are in flight and each field's own button reflects that.
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: /^adding…$/i }).length).toBe(
+        2,
+      ),
+    );
+
+    // Resolve only the first attach; the second field must stay in "Adding…"
+    // until its own promise resolves — the bug we're guarding against would
+    // clear that indicator here.
+    await act(async () => {
+      createDeferreds[0]({ id: 101, source: "llm" });
+    });
+    await screen.findByText("Source added to resource.");
+    expect(screen.getAllByRole("button", { name: /^adding…$/i }).length).toBe(
+      1,
+    );
+
+    await act(async () => {
+      createDeferreds[1]({ id: 102, source: "llm" });
+    });
+    await waitFor(() =>
+      expect(screen.getAllByText("Source added to resource.").length).toBe(2),
+    );
   });
 
   it("redirects to the merged-into resource when the returned id differs from the URL", () => {

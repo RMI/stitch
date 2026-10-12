@@ -290,19 +290,47 @@ def test_get_suggestion_returns_validated_value(
     assert azure_client.calls[0]["field"] == "basin"
 
 
-def test_get_suggestion_returns_409_when_field_populated(
+def test_get_suggestion_runs_when_field_already_populated(
     test_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    enable_foundry_mode(monkeypatch)
     stitch_client = FakeStitchApiClient(
         detail_view=make_detail_view(basin="Permian Basin")
     )
-    azure_client = install_fakes(monkeypatch, stitch_client=stitch_client)
+    azure_client = install_fakes(
+        monkeypatch,
+        stitch_client=stitch_client,
+        azure_client=FakeAzureResponsesClient(
+            output_text="VALUE: Delaware Basin\nRATIONALE: Public sources identify the basin.",
+            response_payload={
+                "id": "resp_test",
+                "model": "test-model",
+                "output_text": "VALUE: Delaware Basin\nRATIONALE: Public sources identify the basin.",
+                "output": [
+                    {
+                        "content": [
+                            {
+                                "annotations": [
+                                    {
+                                        "type": "url_citation",
+                                        "url": "https://example.com/article",
+                                        "title": "Example Article",
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ],
+            },
+        ),
+    )
 
     response = test_client.get("/api/v1/oil-gas-fields/42?field=basin")
 
-    assert response.status_code == 409
-    assert azure_client.calls == []
+    assert response.status_code == 200
+    assert response.json()["value"] == "Delaware Basin"
+    assert azure_client.calls[0]["field"] == "basin"
 
 
 def test_get_suggestion_maps_stitch_404(

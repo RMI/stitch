@@ -558,5 +558,124 @@ describe("ResourceFieldCard", () => {
         screen.getByRole("button", { name: /^save$/i }),
       ).not.toBeDisabled();
     });
+
+    it("keeps a free-text box for fields without a fixed set of values", async () => {
+      const user = userEvent.setup();
+      grantWritePermissions();
+      renderCard();
+      await user.click(screen.getByRole("button"));
+      await user.click(screen.getByRole("button", { name: /^edit$/i }));
+      await user.click(screen.getByRole("button", { name: /add value/i }));
+
+      expect(
+        screen.getByRole("textbox", { name: "New value" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("combobox", { name: "New value" }),
+      ).not.toBeInTheDocument();
+    });
+
+    describe("fields with a fixed set of values", () => {
+      // Written out rather than imported from fieldMeta, so this also checks
+      // the frontend lists against the backend's Literal types in
+      // packages/stitch-ogsi/src/stitch/ogsi/model/types.py.
+      const FIXED_VALUE_FIELDS = {
+        production_conventionality: [
+          "Conventional",
+          "Unconventional",
+          "Mixed",
+          "Unknown",
+        ],
+        location_type: ["Onshore", "Offshore", "Unknown"],
+        field_status: ["Producing", "Non-Producing", "Abandoned", "Planned"],
+        primary_hydrocarbon_group: [
+          "Ultra-Light Oil",
+          "Light Oil",
+          "Medium Oil",
+          "Heavy Oil",
+          "Extra-Heavy Oil",
+          "Dry Gas",
+          "Wet Gas",
+          "Acid Gas",
+          "Condensate",
+          "Mixed",
+          "Unknown",
+        ],
+      };
+
+      async function openValueForm(fieldKey) {
+        const user = userEvent.setup();
+        grantWritePermissions();
+        renderCard({ fieldKey, label: fieldKey, value: "Current value" });
+        await user.click(screen.getByRole("button", { name: /Current value/ }));
+        await user.click(screen.getByRole("button", { name: /^edit$/i }));
+        await user.click(screen.getByRole("button", { name: /add value/i }));
+        return user;
+      }
+
+      // The choosable options, excluding the "Select a value" placeholder.
+      function choosableOptions(select) {
+        return within(select)
+          .getAllByRole("option")
+          .filter((option) => !option.disabled)
+          .map((option) => option.value);
+      }
+
+      it.each(Object.entries(FIXED_VALUE_FIELDS))(
+        "offers only the allowed values for %s, with no free-text box",
+        async (fieldKey, allowedValues) => {
+          await openValueForm(fieldKey);
+
+          const select = screen.getByRole("combobox", { name: "New value" });
+          expect(choosableOptions(select)).toEqual(allowedValues);
+          expect(
+            screen.queryByRole("textbox", { name: "New value" }),
+          ).not.toBeInTheDocument();
+        },
+      );
+
+      it("starts on a placeholder and keeps Save disabled until a value is chosen", async () => {
+        const user = await openValueForm("production_conventionality");
+
+        const select = screen.getByRole("combobox", { name: "New value" });
+        expect(select).toHaveValue("");
+        expect(
+          within(select).getByRole("option", { name: "Select a value" }),
+        ).toBeDisabled();
+        expect(screen.getByRole("button", { name: /^save$/i })).toBeDisabled();
+
+        await user.selectOptions(select, "Mixed");
+        expect(
+          screen.getByRole("button", { name: /^save$/i }),
+        ).not.toBeDisabled();
+      });
+
+      it("saves the chosen value", async () => {
+        createSourceForResource.mockResolvedValue({ id: 101, source: "rmi" });
+        const user = await openValueForm("production_conventionality");
+
+        await user.selectOptions(
+          screen.getByRole("combobox", { name: "New value" }),
+          "Mixed",
+        );
+        await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+        expect(createSourceForResource).toHaveBeenCalledWith(
+          expect.anything(),
+          42,
+          expect.objectContaining({
+            production_conventionality: "Mixed",
+            source_record: expect.objectContaining({
+              payload: expect.objectContaining({
+                field: "production_conventionality",
+                value: "Mixed",
+              }),
+            }),
+          }),
+          expect.any(Function),
+          "oil-gas-fields",
+        );
+      });
+    });
   });
 });

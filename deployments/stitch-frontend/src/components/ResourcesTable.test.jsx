@@ -123,6 +123,22 @@ describe("ResourcesTable", () => {
     expect(screen.getByText(/updating resources/i)).toBeInTheDocument();
   });
 
+  it("keeps the spinner outside the horizontally scrolling area", () => {
+    // On narrow screens the table scrolls sideways. A spinner inside that
+    // scroll box scrolls away with the columns, so it must sit beside it.
+    // (Its vertical stickiness needs a real layout engine; jsdom has none.)
+    renderTable({
+      resources: mockResources,
+      sortConfig,
+      onSort,
+      isFetching: true,
+    });
+
+    const scrollArea = screen.getByRole("table").closest(".overflow-x-auto");
+    expect(scrollArea).not.toBeNull();
+    expect(scrollArea).not.toContainElement(screen.getByRole("status"));
+  });
+
   describe("row links (STIT-737)", () => {
     it("points each row's name link at its own resource", () => {
       renderTable({

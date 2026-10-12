@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useAuth0 } from "@auth0/auth0-react";
@@ -21,10 +21,17 @@ vi.mock("../queries/api", () => ({
 }));
 
 vi.mock("../components/MergeSourceComparison", () => ({
-  default: ({ resourceIds, compare, isLoading }) => (
+  default: ({ resourceIds, compare, isLoading, sourceDetails }) => (
     <div>
       Source comparison for {resourceIds.join(", ")}
       {compare ? " (compare loaded)" : isLoading ? " (loading)" : ""}
+      {sourceDetails?.data ? (
+        <span>
+          {" "}
+          (name sources:{" "}
+          {sourceDetails.data.map((d) => d?.provenance?.name).join(", ")})
+        </span>
+      ) : null}
     </div>
   ),
 }));
@@ -144,6 +151,116 @@ describe("MergeCandidateReviewPage", () => {
     expect(screen.getByText("Total")).toBeInTheDocument();
   });
 
+  it("puts the candidate panel before the queue in reading order", () => {
+    // On one-column screens the panel is shown first. Keeping that order in
+    // the DOM (not just visually) means screen readers and keyboard focus
+    // meet the candidate before the queue, matching what is on screen.
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    const panel = screen.getByRole("article");
+    const queue = screen
+      .getByRole("heading", { name: "Queue" })
+      .closest("aside");
+
+    expect(
+      panel.compareDocumentPosition(queue) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  describe("selecting a candidate", () => {
+    // jsdom has neither matchMedia nor scrollIntoView, so each test stubs the
+    // layout it needs: two columns (md and up) or one.
+    let scrollIntoView;
+
+    function useLayout({ twoColumns }) {
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn((query) => ({ matches: twoColumns, media: query })),
+      );
+    }
+
+    async function selectCandidate13() {
+      const user = userEvent.setup();
+      vi.mocked(useMergeCandidates).mockReturnValue({
+        ...defaultHookReturn,
+        data: [pendingCandidate, nextPendingCandidate],
+      });
+      vi.mocked(useMergeCandidate).mockImplementation((_endpoint, id) => ({
+        ...defaultHookReturn,
+        data:
+          id === nextPendingCandidate.id ? nextPendingCandidate : pendingDetail,
+      }));
+
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      const queue = screen
+        .getByRole("heading", { name: "Queue" })
+        .closest("aside");
+      await user.click(
+        within(queue).getByRole("button", { name: /Candidate #13/ }),
+      );
+      return user;
+    }
+
+    beforeEach(() => {
+      scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      delete Element.prototype.scrollIntoView;
+    });
+
+    it("moves focus to the candidate panel", async () => {
+      // The panel precedes the queue in the DOM, so without this, Tab from the
+      // chosen queue item would move away from its decision controls.
+      useLayout({ twoColumns: true });
+      const user = await selectCandidate13();
+
+      const panel = screen.getByRole("region", { name: "Selected candidate" });
+      expect(panel).toHaveFocus();
+
+      // The next Tab lands inside the panel, on the way to Deny/Approve.
+      await user.tab();
+      expect(panel).toContainElement(document.activeElement);
+    });
+
+    it("does not scroll the page in the two-column layout", async () => {
+      // The panel is beside the queue, so scrolling would only make the page
+      // jump under the reviewer's pointer.
+      useLayout({ twoColumns: true });
+      await selectCandidate13();
+
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    });
+
+    it("scrolls the panel into view in the one-column layout", async () => {
+      // The panel sits above the queue, so without this the change happens
+      // off-screen.
+      useLayout({ twoColumns: false });
+      await selectCandidate13();
+
+      expect(
+        screen.getByRole("region", { name: "Selected candidate" }),
+      ).toHaveFocus();
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(scrollIntoView.mock.contexts[0]).toBe(
+        screen.getByRole("region", { name: "Selected candidate" }),
+      );
+    });
+
+    it("does not move focus or scroll on first load", () => {
+      useLayout({ twoColumns: false });
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      expect(
+        screen.getByRole("region", { name: "Selected candidate" }),
+      ).not.toHaveFocus();
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    });
+  });
+
   it("shows the resolved candidate name in the queue, hiding raw resource ids", async () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
@@ -220,6 +337,16 @@ describe("MergeCandidateReviewPage", () => {
       "href",
       "/oil-gas-fields/102",
     );
+  });
+
+  it("gives the source comparison each resource's source details", async () => {
+    // The per-column source mix reads the same cached detail views the queue
+    // already loads for candidate names, so no extra requests are made.
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(
+      await screen.findByText(/\(name sources: gem, wm\)/),
+    ).toBeInTheDocument();
   });
 
   it("shows the source comparison instead of the merged preview", () => {
@@ -598,6 +725,209 @@ describe("MergeCandidateReviewPage", () => {
       expect(
         screen.queryByText("No merge candidates to review."),
       ).not.toBeInTheDocument();
+    });
+  });
+
+  describe("sorting the queue", () => {
+    // Two pending candidates. The API lists 11 first (newest). Their names
+    // resolve from the mocked resource details: 11 -> "Bergan" (wm outranks
+    // gem), 13 -> "Arabian Merged" (resource 301).
+    beforeEach(() => {
+      vi.mocked(useMergeCandidates).mockReturnValue({
+        ...defaultHookReturn,
+        data: [pendingCandidate, nextPendingCandidate],
+      });
+    });
+
+    afterEach(() => {
+      window.sessionStorage.clear();
+    });
+
+    function queue() {
+      return screen.getByRole("heading", { name: "Queue" }).closest("aside");
+    }
+
+    function queueOrder() {
+      return within(queue())
+        .getAllByRole("button")
+        .map((item) => item.textContent.replace("CANDIDATE", "").trim());
+    }
+
+    it("offers a Sort control that starts on Newest first", () => {
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      const sort = within(queue()).getByRole("combobox", { name: "Sort" });
+      expect(sort).toHaveValue("newest");
+      expect(
+        within(sort)
+          .getAllByRole("option")
+          .map((option) => option.textContent),
+      ).toEqual([
+        "Newest first",
+        "Oldest first",
+        "Name A–Z",
+        "Name Z–A",
+        "Status",
+      ]);
+    });
+
+    it("orders the queue by name once the names have loaded", async () => {
+      const user = userEvent.setup();
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+      await within(queue()).findByText("Arabian Merged");
+      expect(queueOrder()).toEqual(["Bergan", "Arabian Merged"]);
+
+      await user.selectOptions(
+        within(queue()).getByRole("combobox", { name: "Sort" }),
+        "name-asc",
+      );
+      expect(queueOrder()).toEqual(["Arabian Merged", "Bergan"]);
+
+      await user.selectOptions(
+        within(queue()).getByRole("combobox", { name: "Sort" }),
+        "name-desc",
+      );
+      expect(queueOrder()).toEqual(["Bergan", "Arabian Merged"]);
+    });
+
+    it("orders the queue oldest first", async () => {
+      const user = userEvent.setup();
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+      await within(queue()).findByText("Arabian Merged");
+
+      await user.selectOptions(
+        within(queue()).getByRole("combobox", { name: "Sort" }),
+        "oldest",
+      );
+      expect(queueOrder()).toEqual(["Arabian Merged", "Bergan"]);
+    });
+
+    it("orders the queue by status: candidates first, then denied, then approved", async () => {
+      const deniedCandidate = {
+        id: 15,
+        status: "DENIED",
+        resource_ids: [501, 502],
+        merged_resource_id: null,
+      };
+      vi.mocked(useMergeCandidates).mockReturnValue({
+        ...defaultHookReturn,
+        // API order (newest first): approved, denied, pending.
+        data: [candidates[1], deniedCandidate, pendingCandidate],
+      });
+      const user = userEvent.setup();
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+      await user.click(screen.getByLabelText("Show approved merges"));
+
+      await user.selectOptions(
+        within(queue()).getByRole("combobox", { name: "Sort" }),
+        "status",
+      );
+
+      const statuses = within(queue())
+        .getAllByRole("button")
+        .map((item) => item.textContent.match(/CANDIDATE|DENIED|APPROVED/)[0]);
+      expect(statuses).toEqual(["CANDIDATE", "DENIED", "APPROVED"]);
+      // Status needs no names, so there is nothing to wait for.
+      expect(
+        within(queue()).queryByText(/Loading names/),
+      ).not.toBeInTheDocument();
+    });
+
+    it("says the name order is not final while names are still loading", async () => {
+      // Resource details never arrive, so no names resolve.
+      vi.mocked(getResourceDetail).mockImplementation(
+        () => new Promise(() => {}),
+      );
+      const user = userEvent.setup();
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      await user.selectOptions(
+        within(queue()).getByRole("combobox", { name: "Sort" }),
+        "name-asc",
+      );
+
+      expect(
+        within(queue()).getByText("Loading names… 0 of 2. Order will update."),
+      ).toBeInTheDocument();
+    });
+
+    it("drops the loading note once every name has loaded", async () => {
+      const user = userEvent.setup();
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+      await user.selectOptions(
+        within(queue()).getByRole("combobox", { name: "Sort" }),
+        "name-asc",
+      );
+
+      await waitFor(() => {
+        expect(
+          within(queue()).queryByText(/Loading names/),
+        ).not.toBeInTheDocument();
+      });
+    });
+
+    it("never shows the loading note for the date sorts", () => {
+      vi.mocked(getResourceDetail).mockImplementation(
+        () => new Promise(() => {}),
+      );
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      expect(
+        within(queue()).queryByText(/Loading names/),
+      ).not.toBeInTheDocument();
+    });
+
+    it("moves on to the next pending candidate in the displayed order after a review", async () => {
+      // API order (newest first) is 11, 13, 14; "Oldest first" shows 14, 13,
+      // 11 and selects 14. After approving it, the next one shown is 13 --
+      // not 11, the first pending candidate in the API's order.
+      const thirdPendingCandidate = {
+        id: 14,
+        status: "PENDING",
+        resource_ids: [401, 402],
+        merged_resource_id: null,
+      };
+      vi.mocked(useMergeCandidates).mockReturnValue({
+        ...defaultHookReturn,
+        data: [pendingCandidate, nextPendingCandidate, thirdPendingCandidate],
+      });
+      vi.mocked(useMergeCandidate).mockImplementation((_endpoint, id) => ({
+        ...defaultHookReturn,
+        data:
+          id === pendingCandidate.id
+            ? pendingDetail
+            : id === nextPendingCandidate.id
+              ? nextPendingCandidate
+              : thirdPendingCandidate,
+      }));
+      window.sessionStorage.setItem("stitch.mergeReview.sort", "oldest");
+      const user = userEvent.setup();
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+      expect(
+        screen.getByRole("heading", { name: "Candidate #14" }),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Approve merge" }));
+
+      expect(
+        await screen.findByRole("heading", { name: "Candidate #13" }),
+      ).toBeInTheDocument();
+    });
+
+    it("remembers the chosen sort when the page is opened again", async () => {
+      const user = userEvent.setup();
+      const { unmount } = renderWithQueryClient(<MergeCandidateReviewPage />);
+      await user.selectOptions(
+        within(queue()).getByRole("combobox", { name: "Sort" }),
+        "name-desc",
+      );
+      unmount();
+
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      expect(
+        within(queue()).getByRole("combobox", { name: "Sort" }),
+      ).toHaveValue("name-desc");
     });
   });
 });

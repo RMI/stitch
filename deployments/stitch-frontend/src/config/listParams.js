@@ -27,6 +27,15 @@
  *   primary_hydrocarbon_group) the API rejects it with a 422, so a
  *   hand-edited URL can surface an error rather than an empty list.
  * - Params we do not own are ignored on read and dropped on the next write.
+ * - Page size alone has a second fallback: the size the user chose earlier in
+ *   the session (config/pageSizePreference.js), passed in as
+ *   `fallbackPageSize`. It applies only when the URL has no valid
+ *   `page_size`, so a URL always wins. Because a URL without `page_size`
+ *   therefore opens at the *viewer's* remembered size, `page_size` is written
+ *   into every URL that carries any other state (a page, search, sort or
+ *   filter) -- page=3 at 50 per page is different rows from page=3 at 10.
+ *   It is omitted only from an otherwise bare URL whose size matches the
+ *   fallback, so a bare "/" means "the list at my page size".
  */
 import { FILTER_FIELDS } from "./filters";
 import { SORTABLE_COLUMN_KEYS } from "./listColumns";
@@ -47,9 +56,9 @@ function parsePage(raw) {
     : DEFAULT_PAGE;
 }
 
-function parsePageSize(raw) {
+function parsePageSize(raw, fallbackPageSize) {
   const value = Number(raw);
-  return PAGE_SIZE_OPTIONS.includes(value) ? value : DEFAULT_PAGE_SIZE;
+  return PAGE_SIZE_OPTIONS.includes(value) ? value : fallbackPageSize;
 }
 
 // sort_by and sort_order are a unit: a lone order has no meaning, and an
@@ -66,7 +75,10 @@ function parseSort(rawSortBy, rawSortOrder) {
   };
 }
 
-export function parseListParams(searchParams) {
+export function parseListParams(
+  searchParams,
+  { fallbackPageSize = DEFAULT_PAGE_SIZE } = {},
+) {
   const filters = {};
   for (const key of FILTER_KEYS) {
     filters[key] = searchParams.getAll(key).filter((value) => value !== "");
@@ -74,29 +86,38 @@ export function parseListParams(searchParams) {
 
   return {
     page: parsePage(searchParams.get("page")),
-    pageSize: parsePageSize(searchParams.get("page_size")),
+    pageSize: parsePageSize(searchParams.get("page_size"), fallbackPageSize),
     q: (searchParams.get("q") ?? "").trim(),
     ...parseSort(searchParams.get("sort_by"), searchParams.get("sort_order")),
     filters,
   };
 }
 
-export function toListParams({
-  page,
-  pageSize,
-  q,
-  sortBy,
-  sortOrder,
-  filters,
-}) {
+export function toListParams(
+  { page, pageSize, q, sortBy, sortOrder, filters },
+  { fallbackPageSize = DEFAULT_PAGE_SIZE } = {},
+) {
   const params = new URLSearchParams();
+  const trimmedSearch = (q ?? "").trim();
+  const hasFilters = FILTER_KEYS.some((key) =>
+    (filters?.[key] ?? []).some((value) => value !== ""),
+  );
+  const hasOtherState =
+    page > DEFAULT_PAGE ||
+    Boolean(trimmedSearch) ||
+    Boolean(sortBy) ||
+    hasFilters;
 
   if (page > DEFAULT_PAGE) params.set("page", String(page));
-  if (pageSize && pageSize !== DEFAULT_PAGE_SIZE) {
+  if (
+    pageSize &&
+    (hasOtherState ||
+      pageSize !== DEFAULT_PAGE_SIZE ||
+      pageSize !== fallbackPageSize)
+  ) {
     params.set("page_size", String(pageSize));
   }
 
-  const trimmedSearch = (q ?? "").trim();
   if (trimmedSearch) params.set("q", trimmedSearch);
 
   if (sortBy) {

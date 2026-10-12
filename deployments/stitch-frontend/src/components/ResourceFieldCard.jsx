@@ -23,6 +23,7 @@ import {
   UNKNOWN_SOURCE_LABEL,
   DEFAULT_FIELD_COLOR,
 } from "../constants/sourceMeta";
+import { FIELD_META } from "../constants/fieldMeta";
 
 const RESOURCE_WRITE = "resource:write";
 // Reordering rewrites the whole per-field override set, so the API requires read
@@ -124,9 +125,12 @@ function MoveButtons({ onMoveUp, onMoveDown, canMoveUp, canMoveDown, label }) {
 
 // The value entry form, revealed after the curator clicks "+". Lets them enter a
 // new "RMI" value (with an optional note) for this field; on Save it
-// creates and attaches an rmi source to the resource.
+// creates and attaches an rmi source to the resource. Fields the API limits to
+// a fixed set of values get a dropdown of exactly those values instead of free
+// text, so a save can't be rejected for an unknown value.
 function AddSourceForm({ endpoint, resourceId, fieldKey, onSaved }) {
   const createSource = useCreateSourceForResource(endpoint);
+  const allowedValues = FIELD_META[fieldKey]?.options;
 
   const [value, setValue] = useState("");
   const [note, setNote] = useState("");
@@ -159,13 +163,31 @@ function AddSourceForm({ endpoint, resourceId, fieldKey, onSaved }) {
 
   return (
     <div className="space-y-2 rounded-md border border-line bg-surface p-2">
-      <Input
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        placeholder="New value"
-        aria-label="New value"
-        className="w-full"
-      />
+      {allowedValues ? (
+        <select
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          aria-label="New value"
+          className="min-h-9 w-full rounded-md border border-line bg-panel px-3 py-2 text-sm text-ink transition-colors hover:border-line-strong focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+        >
+          <option value="" disabled>
+            Select a value
+          </option>
+          {allowedValues.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <Input
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder="New value"
+          aria-label="New value"
+          className="w-full"
+        />
+      )}
       <Input
         value={note}
         onChange={(event) => setNote(event.target.value)}
@@ -309,7 +331,9 @@ function FieldSourcesPanel({
 
   return (
     <div className="mt-2 space-y-2 rounded-md border border-line bg-panel p-3">
-      <div className="flex items-center justify-between gap-2">
+      {/* Wraps so the actions drop below the label in narrow cards (the
+          four-column grid) instead of pushing Save past the card's edge. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
           All sources
         </p>
@@ -319,7 +343,7 @@ function FieldSourcesPanel({
           </Button>
         )}
         {isEditing && (
-          <div className="flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2">
             <Button
               variant="ghost"
               className="px-2 py-1"
