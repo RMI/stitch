@@ -114,7 +114,7 @@ export default function EntityLinkagePage() {
   const { getAccessTokenSilently } = useAuth0();
   const baseUrl = config.apiBaseUrl;
 
-  const [applyMerges, setApplyMerges] = useState(false);
+  const [applyMerges, setApplyMerges] = useState(true);
   const [starting, setStarting] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);

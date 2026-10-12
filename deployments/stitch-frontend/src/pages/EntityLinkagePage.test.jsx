@@ -54,7 +54,7 @@ describe("EntityLinkagePage", () => {
       authorizationParams: { audience: "https://stitch-api.local" },
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      `${LINK_ALL_URL}?apply_merges=false`,
+      `${LINK_ALL_URL}?apply_merges=true`,
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
@@ -64,16 +64,13 @@ describe("EntityLinkagePage", () => {
     );
   });
 
-  // apply_merges is a query parameter, so a body would be silently ignored and
-  // every run would quietly be a dry run.
-  it("sends apply_merges as a query parameter when the box is checked", async () => {
+  it("sends apply_merges=true as a query parameter by default", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(jsonResponse(200, LINK_ALL_RESPONSE));
 
     renderWithQueryClient(<EntityLinkagePage />);
 
-    await userEvent.click(screen.getByLabelText("Initiate merges"));
     await userEvent.click(screen.getByRole("button", { name: "Start run" }));
 
     await waitFor(() => {
