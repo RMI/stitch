@@ -150,7 +150,7 @@ skipped, so repeat runs are safe.
 
 **Query Parameters:**
 
-- `apply_merges`: boolean (default `false`)
+- `apply_merges`: boolean (default `true`)
 
 **Response:** `200` — `LinkAllResponse`
 
