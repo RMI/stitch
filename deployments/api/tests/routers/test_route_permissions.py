@@ -72,6 +72,13 @@ def _source_payload() -> dict:
         ),
         (
             "post",
+            "/oil-gas-fields/merge-candidates/link-all",
+            (MERGE_CANDIDATE_READ,),
+            MERGE_CANDIDATE_CREATE,
+            None,
+        ),
+        (
+            "post",
             "/oil-gas-fields/merge-candidates/1/approve",
             (MERGE_CANDIDATE_READ,),
             MERGE_CANDIDATE_REVIEW,
