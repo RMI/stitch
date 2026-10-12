@@ -96,6 +96,18 @@ Depending on which entrypoint you use, these are the main local endpoints:
 * API docs: `http://localhost:8000/docs`
 * Adminer: `http://localhost:8081`
 
+## Fast list reads locally
+
+The list and filter-options endpoints read from a precomputed table, but only
+after a full rebuild has marked it ready; until then they use the slower live
+path, with the same results. To use the fast path against your local stack:
+
+```bash
+POSTGRES_HOST=127.0.0.1 POSTGRES_USER=stitch_app uv run --env-file .env -- python -m stitch.api.db.read_model.rebuild
+```
+
+See [`deployments/api/READ_MODEL.md`](deployments/api/READ_MODEL.md) for details.
+
 ## Other useful targets
 
 You do not need to memorize the whole Makefile, but these are worth knowing.

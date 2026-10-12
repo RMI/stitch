@@ -16,7 +16,7 @@ import asyncio
 import logging
 from collections.abc import Sequence
 
-from ..config import dispose_engine, get_session_factory
+from ..config import dispose_engine, get_engine, get_session_factory
 from .state import (
     DEFAULT_BATCH_SIZE,
     rebuild_all_resource_state,
@@ -56,6 +56,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 
 async def _run(ids: list[int] | None, batch_size: int) -> None:
+    # Outside prod the app engine echoes every statement and its parameters; for
+    # a batch job over every resource that floods the logs. Progress is logged
+    # per batch instead.
+    get_engine().echo = False
     session_factory = get_session_factory()
     try:
         if ids:

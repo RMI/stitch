@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from sqlalchemy import delete, insert, select, update
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from stitch.api.db.model import (
     MembershipModel,
@@ -419,6 +419,7 @@ class TestRebuildCli:
     def _use_test_database(
         self,
         monkeypatch: pytest.MonkeyPatch,
+        integration_engine: AsyncEngine,
         integration_session_factory: SessionFactory,
     ):
         async def _no_dispose() -> None:
@@ -428,6 +429,7 @@ class TestRebuildCli:
             rebuild_cli, "get_session_factory", lambda: integration_session_factory
         )
         monkeypatch.setattr(rebuild_cli, "dispose_engine", _no_dispose)
+        monkeypatch.setattr(rebuild_cli, "get_engine", lambda: integration_engine)
 
     async def test_full_rebuild(
         self, seeded_integration_session: AsyncSession, dataset: Dataset

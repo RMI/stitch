@@ -107,7 +107,9 @@ async def _query_read_model(
 ) -> tuple[list[OGFieldListItemView], int]:
     """List page read from stored, already-coalesced rows for one profile."""
     ids_stmt = resource_state_query(params, mask)
-    count_stmt = select(func.count()).select_from(ids_stmt.subquery())
+    # Count without the ORDER BY: Postgres would otherwise sort every matching
+    # row just to count them (~40ms at 50K resources for a non-indexed sort).
+    count_stmt = select(func.count()).select_from(ids_stmt.order_by(None).subquery())
     with named_query("resources.count"):
         total = (await session.scalar(count_stmt)) or 0
     ids_stmt = ids_stmt.limit(params.limit).offset(params.offset)
