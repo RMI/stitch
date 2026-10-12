@@ -33,10 +33,12 @@ from stitch.api.db.read_model.state import (
     refresh_resource_states,
 )
 from stitch.api.db.utils import coalesce_resources, resource_to_list_item_view
+from stitch.api.entities import User
 from stitch.ogsi.model import OGFieldListItemView
 from stitch.ogsi.model.og_field import OilGasFieldBase
 
 from .dataset import ALPHA_OWNERS, BETA_OPERATORS, Dataset, dump_state
+from .scenarios import rebuild_with_reads_and_writes_midway
 
 pytestmark = pytest.mark.anyio
 
@@ -346,8 +348,9 @@ class TestFullRebuild:
             await rebuild_all_resource_state(integration_session_factory, batch_size=1)
 
         assert not await is_resource_state_ready(session)
-        # Only the first batch committed; the partial rows are not served.
-        assert len({rid for rid, _ in await dump_state(session)}) == 1
+        # The table was never emptied: every resource still has rows (rebuilt
+        # or from before), but none are served until a rebuild succeeds.
+        assert {rid for rid, _ in await dump_state(session)} == rebuilt.listable
 
     async def test_incomplete_result_fails_integrity_check(
         self,
@@ -367,6 +370,19 @@ class TestFullRebuild:
             await rebuild_all_resource_state(integration_session_factory)
 
         assert not await is_resource_state_ready(seeded_integration_session)
+
+
+class TestRebuildAlongsideTraffic:
+    async def test_reads_and_writes_midway_through_a_rebuild(
+        self,
+        seeded_integration_session: AsyncSession,
+        integration_session_factory: SessionFactory,
+        test_user: User,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        await rebuild_with_reads_and_writes_midway(
+            integration_session_factory, test_user, monkeypatch
+        )
 
 
 class TestIntegrityCheck:

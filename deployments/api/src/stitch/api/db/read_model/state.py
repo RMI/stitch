@@ -10,7 +10,9 @@ state can't drift from live coalescing.
   profile for those still listable. A resource that stopped being listable (e.g.
   merged away) is left with no rows.
 * ``rebuild_all_resource_state`` rebuilds everything in committed batches behind
-  the readiness flag, so readers stay on the live path until it fully succeeds.
+  the readiness flag, so new readers stay on the live path until it fully
+  succeeds. It never empties the table, so a reader already past the readiness
+  check sees each resource's old or new rows, never a missing one.
 * ``is_resource_state_ready`` is the flag readers check before using the table.
 """
 
@@ -166,6 +168,16 @@ async def _set_ready(session: AsyncSession, ready: bool) -> None:
         status.rebuilt_at = datetime.now(UTC)
 
 
+async def _delete_unlistable_state(session: AsyncSession) -> None:
+    """Drop rows of resources that are no longer listable (e.g. merged away)."""
+    universe = resource_universe().subquery()
+    await session.execute(
+        delete(OGFieldResourceState).where(
+            OGFieldResourceState.resource_id.not_in(select(universe.c.resource_id))
+        )
+    )
+
+
 async def _integrity_problems(session: AsyncSession) -> list[str]:
     """Ways the stored state fails to cover exactly the listable resources."""
     state = OGFieldResourceState
@@ -239,11 +251,14 @@ async def rebuild_all_resource_state(
     """Rebuild every listable resource's state; return how many were rebuilt.
 
     Each step commits on its own, so the table is never locked for the whole
-    run. Readers stay on the live path throughout: readiness is cleared first and
-    set again only after every batch commits and the integrity check passes. A
-    failure leaves it cleared; leftover rows are invisible and overwritten by
-    the next run. Write-path refreshes may run concurrently -- both sides lock a
-    resource before recomputing it.
+    run. Readiness is cleared first, so new readers use the live path; it is set
+    again only after every batch commits, rows of no-longer-listable resources
+    are removed, and the integrity check passes. The table is never emptied: a
+    reader that passed the readiness check just before the rebuild started still
+    finds a row for every resource. A failure leaves readiness cleared; whatever
+    rows remain are not served, and the next run replaces them. Write-path
+    refreshes may run concurrently -- both sides lock a resource before
+    recomputing it.
     """
     if batch_size < 1:
         raise ValueError(f"batch_size must be at least 1, got {batch_size}")
@@ -251,8 +266,6 @@ async def rebuild_all_resource_state(
     async with _exclusive_rebuild(session_factory):
         async with session_factory.begin() as session:
             await _set_ready(session, False)
-        async with session_factory.begin() as session:
-            await session.execute(delete(OGFieldResourceState))
         async with session_factory() as session:
             ids = list(
                 (
@@ -272,6 +285,7 @@ async def rebuild_all_resource_state(
             )
 
         async with session_factory.begin() as session:
+            await _delete_unlistable_state(session)
             if problems := await _integrity_problems(session):
                 raise ResourceStateRebuildError(
                     "Resource-state rebuild failed its integrity check: "

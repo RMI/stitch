@@ -62,11 +62,15 @@ python -m stitch.api.db.read_model.rebuild --ids 123 456
 
 - **What happens:** readiness is cleared first, so reads switch to live for the
   duration. Resources are rebuilt in committed batches (`--batch-size`, default
-  500), the result is checked (every listable resource has all four rows, nothing
-  else has any), and only then is readiness set. At ~50K resources it takes about
-  1.5 minutes.
+  500), each batch replacing its resources' rows; rows for resources that are no
+  longer listable are removed; the result is checked (every listable resource
+  has all four rows, nothing else has any), and only then is readiness set. The
+  table is never emptied along the way, so a request already in progress when
+  the rebuild starts still gets a complete answer. At ~50K resources it takes
+  about 1.5 minutes.
 - **If it fails:** readiness stays cleared and reads stay live; just run it again.
-  Leftover rows from a failed run are never served and get overwritten.
+  Whatever rows a failed run leaves are never served, and the next run replaces
+  them.
 - **Two at once:** a second full rebuild started while one is running exits with
   "Another resource-state rebuild is already running."
 - `--ids` never changes readiness; it's safe at any time.
