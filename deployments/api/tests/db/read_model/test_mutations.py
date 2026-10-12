@@ -305,6 +305,7 @@ class TestLockBeforeRecompute:
 
         spy(state)
         spy(resource_actions)
+        spy(source_actions)
         yield recorded
         event.remove(
             integration_engine.sync_engine, "before_cursor_execute", on_execute
@@ -343,7 +344,7 @@ class TestLockBeforeRecompute:
         assert set(locks[0][1]) < set(locks[1][1])
 
     @pytest.mark.parametrize("action", ["attach", "reprioritize"])
-    async def test_write_actions_refresh_under_the_lock(
+    async def test_write_actions_lock_the_resource_before_anything_else(
         self,
         seeded_integration_session: AsyncSession,
         rebuilt: Dataset,
@@ -377,11 +378,11 @@ class TestLockBeforeRecompute:
             )
             resource_id = rebuilt.alpha
 
-        lock_at = events.index(("LOCK", [resource_id]))
+        # Locking first -- before the action's own reads and inserts, whose
+        # foreign keys take a weaker lock on the resource row -- is what keeps
+        # concurrent writers queueing instead of deadlocking at the refresh.
+        assert events[0] == ("LOCK", [resource_id])
         state_writes = [
-            i
-            for i, e in enumerate(events)
-            if isinstance(e, str) and "og_field_resource_state" in e
+            e for e in events if isinstance(e, str) and "og_field_resource_state" in e
         ]
         assert state_writes, "the action did not touch the read model"
-        assert all(i > lock_at for i in state_writes)

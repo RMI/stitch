@@ -361,8 +361,12 @@ async def set_field_source_priority(
             status_code=422,
             detail=f"field={field} is not a known resource field.",
         )
+    # Lock before reading or writing anything, so concurrent writes to this
+    # resource queue here rather than deadlocking at the read-model refresh; then
+    # re-read it in case it was merged while we waited.
     with named_query("resources.set_field_source_priority.load"):
-        resource = await session.get(ResourceModel, id)
+        await lock_resources(session, [id])
+        resource = await session.get(ResourceModel, id, populate_existing=True)
     if resource is None:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND, detail=f"No Resource with id `{id}` found."

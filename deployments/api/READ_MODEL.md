@@ -121,10 +121,12 @@ op.execute("UPDATE og_field_resource_state_status SET ready = false")
 ## Changing the code safely
 
 - **New write path** that can change a list answer (a source value, membership,
-  priority, or merge state): call `refresh_resource_state(s)` from
-  `db/read_model/state.py` in the same transaction, and add a case to
+  priority, or merge state): first call `lock_resources` from
+  `db/read_model/state.py` for the affected resources, before reading or
+  writing anything (locking later lets concurrent writers deadlock); then call
+  `refresh_resource_state(s)` in the same transaction; and add a case to
   `tests/db/read_model/test_mutations.py`. Editing a source's values in place
-  affects *every* resource it is attached to — refresh all of them.
+  affects *every* resource it is attached to — lock and refresh all of them.
 - **New field** on `OilGasFieldBase`: add the column to `OGFieldResourceState`
   (an import-time check fails until you do) plus a migration, then rebuild.
 - **New source key:** decide whether it's public or restricted in

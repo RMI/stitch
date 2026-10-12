@@ -23,7 +23,7 @@ from .model import (
 from .queries import (
     base_source_query,
 )
-from .read_model.state import refresh_resource_state
+from .read_model.state import lock_resources, refresh_resource_state
 from .utils import resource_model_to_entity
 
 
@@ -46,14 +46,21 @@ async def create_source(
 async def _get_attachable_resource(
     session: AsyncSession, resource_id: int
 ) -> ResourceModel:
-    """Fetch a resource that is a valid attachment target.
+    """Lock and fetch a resource that is a valid attachment target.
+
+    The row lock is taken before anything is written for the attach, and held to
+    the end of the transaction: concurrent writes to the resource then queue
+    here instead of deadlocking when each later locks it to refresh its
+    read-model state. The resource is re-read after locking, so a merge that
+    committed while we waited is seen.
 
     Raises:
         ResourceNotFoundError: if no resource exists for ``resource_id``.
         ResourceIntegrityError: if the resource has been merged (repointed);
             memberships on it would never surface in coalescing/queries.
     """
-    resource = await session.get(ResourceModel, resource_id)
+    await lock_resources(session, [resource_id])
+    resource = await session.get(ResourceModel, resource_id, populate_existing=True)
     if resource is None:
         raise ResourceNotFoundError(f"No resource found for id: {resource_id}")
     if resource.repointed_id is not None:

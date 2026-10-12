@@ -64,10 +64,14 @@ def lock_resources_statement(resource_ids: Collection[int]) -> Select[tuple[int]
 async def lock_resources(session: AsyncSession, resource_ids: Collection[int]) -> None:
     """Lock the resource rows until the caller's transaction ends.
 
-    Taken *before* reading anything to recompute, so concurrent writers to the
-    same resource serialize: the second waits, then reads the first's committed
-    changes, and neither overwrites the other with a stale recompute. SQLite has
-    no row locks (it already serializes writers), so this is a no-op there.
+    Write actions take it at their start, before their own reads and inserts:
+    those inserts' foreign keys take a weaker lock on the same row, and two
+    writers that each hold that and then wait to upgrade it deadlock. Locked
+    first, concurrent writers to a resource queue instead -- the second waits,
+    then reads the first's committed changes, so neither overwrites the other
+    with a stale recompute. ``refresh_resource_states`` locks again (a no-op
+    when already held) to protect callers like the full rebuild. SQLite has no
+    row locks (it already serializes writers), so this is a no-op there.
     """
     if resource_ids:
         await session.execute(lock_resources_statement(resource_ids))

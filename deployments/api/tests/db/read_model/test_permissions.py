@@ -77,4 +77,4 @@ def test_restricted_only_grant_uses_live(restricted: set[str]):
 
 @pytest.mark.parametrize("mask", PERMISSION_MASKS)
 def test_unknown_extra_key_uses_live(mask: int):
-    assert read_model_mask(PROFILES[mask] | {"not-a-source"}) is None  # type: ignore[operator]
+    assert read_model_mask(PROFILES[mask] | {"not-a-source"}) is None
