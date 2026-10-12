@@ -93,6 +93,18 @@ jobs:
           "
           psql -X -v ON_ERROR_STOP=1 -c "DROP DATABASE \"${DB_NAME}\";"
 
+  delete-api-container-app:
+    name: Delete API container app
+    needs: [resolve-context]
+    uses: ./.github/workflows/delete-container-app.yml
+    secrets:
+      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+    with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
+      container-app-name: ${{ format('{0}-api', needs.resolve-context.outputs.deployment-name) }}
+
   delete-stitch-llm-container-app:
     name: Delete stitch-llm container app
     needs: [resolve-context]
