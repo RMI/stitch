@@ -17,7 +17,6 @@ from stitch.api.entities import MergeCandidateStatus
 
 
 def _root(parent: dict[int, int], resource_id: int) -> int:
-    """traverse the `parent` dictionary until"""
     while parent[resource_id] != resource_id:
         parent[resource_id] = parent[parent[resource_id]]
         resource_id = parent[resource_id]
@@ -50,9 +49,9 @@ async def match(
     parent: dict[int, int] = {}
     seed: dict[tuple[str, str], int] = {}
     for resource_id, name, country in rows:
-        if name is None or country is None:
-            continue
         key = (name.strip().casefold(), country.strip().upper())
+        if not key[0] or not key[1]:
+            continue
         parent.setdefault(resource_id, resource_id)
         parent[_root(parent, resource_id)] = _root(
             parent, seed.setdefault(key, resource_id)
