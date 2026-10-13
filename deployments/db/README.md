@@ -192,7 +192,7 @@ run the script, authenticate `az` against the correct subscription.
 
    This creates the job, or updates it when the job exists.
 
-Both commands are safe to run again. For all options, run
+Every command is safe to run again. For all options, run
 `scripts/deploy_backup_job.sh --help`.
 
 To run `setup`, your account needs these permissions:
@@ -212,8 +212,11 @@ time to apply the role assignment. Until then, the upload step fails.
 Deleting a database does not delete its job. To delete a job, run:
 
 ```bash
-az containerapp job delete -g <resource-group> -n <job-name>
+scripts/deploy_backup_job.sh delete -g <resource-group> -d <database>
 ```
+
+This leaves the identity, the `backups` container, and the dumps in place. It
+does nothing when the job is already gone.
 
 ---
 

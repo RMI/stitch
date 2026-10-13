@@ -20,6 +20,7 @@ usage() {
 usage:
   deploy_backup_job.sh setup  -g RG -s ACCOUNT
   deploy_backup_job.sh deploy -g RG -s ACCOUNT -e ENV -H HOST -d DB [-u USER] [-n JOB]
+  deploy_backup_job.sh delete -g RG {-d DB | -n JOB}
 
 options:
   -g, --resource-group   resource group of the identity, storage account and environment
@@ -37,6 +38,9 @@ backups container, and lets that identity write there. Run it once per account.
 deploy creates or updates the nightly job for a single database, reading the
 password from PGPASSWORD. One job backs up one database, so run deploy once per
 database you want backed up.
+
+delete removes the job for one database. It leaves the identity, the container
+and the dumps alone, and does nothing when the job is already gone.
 EOF
   exit 2
 }
@@ -94,6 +98,22 @@ deploy() {
   echo "Job $name backs up $database nightly to $storage_account/$BLOB_CONTAINER/$database"
 }
 
+delete() {
+  [ -n "$name" ] || name="${database//_/-}"
+  [ -n "$name" ] || usage
+
+  if ! az containerapp job show --resource-group "$resource_group" --name "$name" \
+    --output none 2>/dev/null; then
+    echo "No job named $name in $resource_group"
+    return
+  fi
+
+  az containerapp job delete --resource-group "$resource_group" --name "$name" \
+    --yes --output none
+
+  echo "Deleted job $name. Its dumps in $BLOB_CONTAINER are untouched."
+}
+
 command="${1:-}"
 shift || usage
 
@@ -116,5 +136,6 @@ done
 case "$command" in
   setup) setup ;;
   deploy) deploy ;;
+  delete) delete ;;
   *) usage ;;
 esac
