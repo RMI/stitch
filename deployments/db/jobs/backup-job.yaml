@@ -1,0 +1,51 @@
+---
+tags:
+  purpose: backup
+identity:
+  type: UserAssigned
+  userAssignedIdentities:
+    "${JOB_IDENTITY_ID}": {}
+properties:
+  environmentId: "${JOB_ENVIRONMENT_ID}"
+  configuration:
+    triggerType: Schedule
+    replicaTimeout: 1800
+    replicaRetryLimit: 0
+    scheduleTriggerConfig:
+      cronExpression: "0 3 * * *"
+      parallelism: 1
+      replicaCompletionCount: 1
+    secrets:
+      - name: pgpassword
+        value: ${JOB_PGPASSWORD_JSON}
+  template:
+    volumes:
+      - name: scratch
+        storageType: EmptyDir
+    initContainers:
+      - name: dump
+        image: postgres:17-alpine
+        resources: { cpu: 0.5, memory: 1.0Gi }
+        volumeMounts:
+          - { volumeName: scratch, mountPath: /scratch }
+        env:
+          - { name: PGHOST, value: "${JOB_PGHOST}" }
+          - { name: PGUSER, value: "${JOB_PGUSER}" }
+          - { name: PGDATABASE, value: "${JOB_DATABASE}" }
+          - { name: PGSSLMODE, value: require }
+          - { name: PGPASSWORD, secretRef: pgpassword }
+        command: ["pg_dump"]
+        args: ["-Fc", "-f", "/scratch/dump"]
+    containers:
+      - name: upload
+        image: mcr.microsoft.com/azure-cli
+        resources: { cpu: 0.5, memory: 1.0Gi }
+        volumeMounts:
+          - { volumeName: scratch, mountPath: /scratch }
+        env:
+          - { name: DATABASE, value: "${JOB_DATABASE}" }
+          - { name: ACCOUNT, value: "${JOB_STORAGE_ACCOUNT}" }
+          - { name: CLIENT_ID, value: "${JOB_IDENTITY_CLIENT_ID}" }
+        command: ["/bin/sh", "-c"]
+        args:
+          - 'set -e; az login --identity --client-id "$CLIENT_ID" -o none; az storage blob upload --account-name "$ACCOUNT" --auth-mode login -c backups -n "$DATABASE/$(date -u +%Y%m%dT%H%M%SZ).dump" -f /scratch/dump -o none'
