@@ -160,8 +160,9 @@ Ordinary API writes keep the table current. Beyond that:
 ## Tests
 
 The normal suite runs on SQLite. A few tests need real Postgres (row locks under
-concurrency, JSONB output) and are skipped unless pointed at a disposable
-database; they create and drop their own schema:
+concurrency, separate statements seeing different moments, JSONB output). CI
+runs them on every PR against a throwaway Postgres; locally they're skipped
+unless pointed at a disposable database. They create and drop their own schema:
 
 ```bash
 STITCH_TEST_POSTGRES_URL=postgresql+psycopg://postgres:pg@127.0.0.1:55432/stitch uv run --package stitch-api pytest deployments/api/tests/db/read_model -q
