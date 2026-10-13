@@ -138,6 +138,9 @@ jobs:
       id-token: write
       contents: read
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
       - name: Azure login
         uses: azure/login@v3
         with:
@@ -149,24 +152,16 @@ jobs:
         run: |
           az extension add --name containerapp --upgrade --allow-preview true
 
-      - name: Delete backup job if it exists
+      - name: Delete the backup job
         shell: bash
         env:
           JOB_NAME: ${{ needs.resolve-context.outputs.deployment-name }}
           AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
         run: |
           set -euo pipefail
-          EXISTS="$(
-            az containerapp job show \
-              --name "$JOB_NAME" \
-              --resource-group "$AZURE_RESOURCE_GROUP" \
-              --query "name" \
-              --output tsv 2>/dev/null || true
-          )"
-          if [ -z "$EXISTS" ]; then
-            exit 0
-          fi
-          az containerapp job delete --name "$JOB_NAME" --resource-group "$AZURE_RESOURCE_GROUP" --yes
+          scripts/deploy_backup_job.sh delete \
+            -g "$AZURE_RESOURCE_GROUP" \
+            -n "$JOB_NAME"
 
   close-static-web-app-preview:
     needs: [resolve-context]
