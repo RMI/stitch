@@ -275,6 +275,21 @@ jobs:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       deployment-name: ${{ needs.resolve-context.outputs.deployment-name }}
 
+  deploy-backup-job:
+    name: "Deploy Backup Job"
+    needs: [resolve-context, deploy-db]
+    if: contains(vars.BACKUP_LANES, needs.resolve-context.outputs.deployment-lane)
+    uses: ./.github/workflows/deploy-backup-job.yml
+    secrets:
+      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      pgpassword: ${{ secrets.PGPASSWORD }}
+    with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
+      postgres-host: ${{ needs.deploy-db.outputs.postgres-host }}
+      postgres-db: ${{ needs.deploy-db.outputs.postgres-db }}
+
   run-db-migrations:
     name: "Run DB Migrations"
     needs: [resolve-context, build-api-docker-image, deploy-db]
