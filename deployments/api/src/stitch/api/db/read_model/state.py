@@ -31,6 +31,8 @@ from typing import Any, Final
 from sqlalchemy import Select, delete, distinct, func, insert, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from stitch.api.observability.context import named_query
+
 from ..model import OGFieldResourceState, OGFieldResourceStateStatus, ResourceModel
 from ..model.og_field_resource_state import RESOURCE_STATE_STATUS_KEY
 from ..model.oil_gas_field_source_value import ATTRIBUTE_NAMES, materialize_value
@@ -127,24 +129,33 @@ async def refresh_resource_states(
     write that triggered it. Resources that are no longer listable end up with
     no rows; ids that don't exist are ignored. Returns the ids that were
     recomputed (the listable ones), in ascending order.
+
+    Its queries are labeled ``read_model.refresh`` (rather than the calling
+    write's label), so the cost the read model adds to writes and rebuilds can
+    be seen on its own.
     """
     ids = sorted(set(resource_ids))
     if not ids:
         return []
-    await lock_resources(session, ids)
-    await session.execute(
-        delete(OGFieldResourceState).where(OGFieldResourceState.resource_id.in_(ids))
-    )
-    listable = sorted(
-        (
-            await session.scalars(resource_universe().where(ResourceModel.id.in_(ids)))
-        ).all()
-    )
-    if listable:
+    with named_query("read_model.refresh"):
+        await lock_resources(session, ids)
         await session.execute(
-            insert(OGFieldResourceState),
-            await _compute_state_rows(session, listable),
+            delete(OGFieldResourceState).where(
+                OGFieldResourceState.resource_id.in_(ids)
+            )
         )
+        listable = sorted(
+            (
+                await session.scalars(
+                    resource_universe().where(ResourceModel.id.in_(ids))
+                )
+            ).all()
+        )
+        if listable:
+            await session.execute(
+                insert(OGFieldResourceState),
+                await _compute_state_rows(session, listable),
+            )
     return listable
 
 

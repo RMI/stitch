@@ -103,7 +103,8 @@ Then smoke-test the list and filter-options pages, and check the query timings
 (see `deployments/PERFORMANCE.md`). Served from the read model, a list request
 runs `resources.count` and `resources.list_page`; served live it runs
 `resources.count`, `resources.list_ids` and `resources.list_hydrate`.
-Filter-options is `resources.filter_options` either way.
+Filter-options is `resources.filter_options` either way. The cost the read
+model adds to writes (and to rebuild batches) is labeled `read_model.refresh`.
 
 **To switch the fast path off** without deleting anything:
 
