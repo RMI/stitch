@@ -160,11 +160,11 @@ A scheduled Azure Container Apps job backs up one database. The job runs
 `pg_dump -Fc` at 03:00 UTC. Then it uploads the dump to the `backups` blob
 container as `<database>/<timestamp>.dump`.
 
-One job backs up one database. Each database needs its own job.
+Each database needs its own job. The job name is the database name, with
+hyphens in place of underscores.
 
 A run stops after 30 minutes. A failed run does not retry. Nothing deletes old
-dumps. A blob lifecycle management policy on the `backups` container limits its
-growth.
+dumps. A lifecycle policy on the `backups` container limits its size.
 
 ### Deploying the job
 
@@ -206,6 +206,14 @@ To run `setup`, your account needs these permissions:
 
 CAUTION: Wait two minutes after `setup` before you start the job. Azure needs
 time to apply the role assignment. Until then, the upload step fails.
+
+### Deleting a job
+
+Nothing deletes a job when its database goes away. To delete one, run:
+
+```bash
+az containerapp job delete -g <resource-group> -n <job-name>
+```
 
 ---
 
