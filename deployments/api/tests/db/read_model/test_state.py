@@ -666,19 +666,20 @@ class TestRebuildCli:
         self,
         seeded_integration_session: AsyncSession,
         rebuilt: Dataset,
-        monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ):
         caplog.set_level(logging.INFO)
+        session = seeded_integration_session
+        built_at = await session.scalar(select(OGFieldResourceStateStatus.rebuilt_at))
 
-        async def must_not_rebuild(*_args: Any, **_kwargs: Any) -> int:
-            raise AssertionError("rebuilt a read model that was already current")
-
-        monkeypatch.setattr(rebuild_cli, "rebuild_all_resource_state", must_not_rebuild)
         await rebuild_cli._run(ids=None, batch_size=2, if_stale=True)
 
         assert "already built by this code" in caplog.text
-        assert await is_resource_state_ready(seeded_integration_session)
+        assert (
+            await session.scalar(select(OGFieldResourceStateStatus.rebuilt_at))
+            == built_at
+        )
+        assert await is_resource_state_ready(session)
 
     @pytest.mark.parametrize("previously", ["never built", "built by other code"])
     async def test_if_stale_rebuilds_when_not_current(

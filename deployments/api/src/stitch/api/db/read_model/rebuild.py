@@ -27,8 +27,8 @@ from .state import (
     DEFAULT_BATCH_SIZE,
     ResourceStateRebuildError,
     current_code_version,
-    is_resource_state_ready,
     rebuild_all_resource_state,
+    rebuild_resource_state_if_stale,
     refresh_resource_states,
 )
 
@@ -59,7 +59,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--if-stale",
         action="store_true",
         help="Do a full rebuild only if the read model isn't already built by "
-        "this code (the post-deploy step).",
+        "this code (the post-deploy step). Waits for a rebuild already running, "
+        "then checks again.",
     )
     parser.add_argument(
         "--batch-size",
@@ -99,11 +100,6 @@ async def _repair(
         )
 
 
-async def _is_current(session_factory: async_sessionmaker[AsyncSession]) -> bool:
-    async with session_factory() as session:
-        return await is_resource_state_ready(session)
-
-
 async def _run(ids: list[int] | None, batch_size: int, if_stale: bool = False) -> None:
     # Outside prod the app engine echoes every statement and its parameters; for
     # a batch job over every resource that floods the logs. Progress is logged
@@ -113,15 +109,21 @@ async def _run(ids: list[int] | None, batch_size: int, if_stale: bool = False) -
     try:
         if ids:
             await _repair(session_factory, ids)
-        elif if_stale and await _is_current(session_factory):
-            logger.info(
-                "The read model is already built by this code (%s); nothing to do.",
-                current_code_version(),
+            return
+        if if_stale:
+            count = await rebuild_resource_state_if_stale(
+                session_factory, batch_size=batch_size
             )
         else:
             count = await rebuild_all_resource_state(
                 session_factory, batch_size=batch_size
             )
+        if count is None:
+            logger.info(
+                "The read model is already built by this code (%s); nothing to do.",
+                current_code_version(),
+            )
+        else:
             logger.info(
                 "Rebuilt resource state for %d resources with code %s; the read "
                 "model is ready.",

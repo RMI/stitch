@@ -90,8 +90,22 @@ python -m stitch.api.db.read_model.rebuild --ids 123 456
 - **If it fails:** readiness stays cleared and reads stay live; just run it again.
   Whatever rows a failed run leaves are never served, and the next run replaces
   them.
-- **Two at once:** a second full rebuild started while one is running exits with
-  "Another resource-state rebuild is already running."
+- **Two at once:** a full rebuild started by hand while another is running
+  exits with "Another resource-state rebuild is already running." `--if-stale`
+  (the deploy step) instead waits up to 10 minutes for it to finish, then checks
+  again and does nothing if that rebuild already made the read model current.
+- **A rebuild that dies mid-run** (e.g. a cancelled CI job) releases its lock
+  within about a minute: the lock's connection asks Postgres to drop vanished
+  clients quickly. If a lock still seems stuck, find the session holding it and,
+  once you're sure no rebuild is running, end it:
+
+  ```sql
+  SELECT l.pid, a.state, a.backend_start, a.client_addr
+  FROM pg_locks l JOIN pg_stat_activity a USING (pid)
+  WHERE l.locktype = 'advisory' AND l.objid = 766001 AND l.granted;
+
+  SELECT pg_terminate_backend(<pid>);
+  ```
 - `--ids` never changes readiness; it's safe at any time. It reports which ids it
   recomputed and which aren't listed (merged away, or no active sources — any
   stored rows for those are removed). If any id doesn't exist it changes nothing
