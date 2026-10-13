@@ -440,6 +440,9 @@ the next deploy of that database.
 To stop backups for a database, remove its name from `BACKUP_DATABASES`. The
 existing job stays until you delete it.
 
+When a pull request closes, the teardown deletes that deployment's backup job
+along with its database. The `production` and `main` jobs are not torn down.
+
 ## Azure Permissions
 
 Permissions for Azure Resources are handled through a managed identity, which GH
