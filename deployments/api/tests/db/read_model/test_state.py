@@ -614,6 +614,14 @@ class TestRebuildCliArgs:
         with pytest.raises(SystemExit):
             rebuild_cli._parse_args(["--batch-size", "0"])
 
+    def test_if_stale_is_off_by_default(self):
+        assert rebuild_cli._parse_args([]).if_stale is False
+        assert rebuild_cli._parse_args(["--if-stale"]).if_stale is True
+
+    def test_if_stale_cannot_be_combined_with_ids(self):
+        with pytest.raises(SystemExit):
+            rebuild_cli._parse_args(["--if-stale", "--ids", "1"])
+
     def test_rebuild_errors_exit_non_zero_with_one_clear_line(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ):
@@ -653,6 +661,47 @@ class TestRebuildCli:
         session = seeded_integration_session
         assert await is_resource_state_ready(session)
         assert {rid for rid, _ in await dump_state(session)} == dataset.listable
+
+    async def test_if_stale_does_nothing_when_built_by_this_code(
+        self,
+        seeded_integration_session: AsyncSession,
+        rebuilt: Dataset,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        caplog.set_level(logging.INFO)
+
+        async def must_not_rebuild(*_args: Any, **_kwargs: Any) -> int:
+            raise AssertionError("rebuilt a read model that was already current")
+
+        monkeypatch.setattr(rebuild_cli, "rebuild_all_resource_state", must_not_rebuild)
+        await rebuild_cli._run(ids=None, batch_size=2, if_stale=True)
+
+        assert "already built by this code" in caplog.text
+        assert await is_resource_state_ready(seeded_integration_session)
+
+    @pytest.mark.parametrize("previously", ["never built", "built by other code"])
+    async def test_if_stale_rebuilds_when_not_current(
+        self,
+        seeded_integration_session: AsyncSession,
+        dataset: Dataset,
+        integration_session_factory: SessionFactory,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        previously: str,
+    ):
+        caplog.set_level(logging.INFO)
+        if previously == "built by other code":
+            _deploy(monkeypatch, "previous-commit")
+            await rebuild_all_resource_state(integration_session_factory)
+        _deploy(monkeypatch, "this-commit")
+
+        await rebuild_cli._run(ids=None, batch_size=2, if_stale=True)
+
+        session = seeded_integration_session
+        assert await is_resource_state_ready(session)
+        assert {rid for rid, _ in await dump_state(session)} == dataset.listable
+        assert "this-commit" in caplog.text
 
     async def test_ids_refresh_only_those_resources(
         self,

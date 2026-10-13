@@ -1,0 +1,86 @@
+---
+# Post-deploy step: rebuild the resource-state read model if it isn't already
+# built by this commit. The API only serves list/filter-options from the read
+# model when a full rebuild by its own commit (GIT_SHA, baked into the image)
+# has completed; until then it answers live (correct, just slower). Running the
+# deployed image here records the same commit the API runs.
+#
+# See deployments/api/READ_MODEL.md.
+on:
+  workflow_call:
+    inputs:
+      deployment-lane:
+        description: "Deployment lane and GitHub Environment name"
+        required: true
+        type: string
+      full-image-name:
+        description: "Full pushed API image name including host/registry, name, and digest"
+        required: true
+        type: string
+      postgres-host:
+        required: true
+        type: string
+      postgres-port:
+        required: false
+        default: "5432"
+        type: string
+      postgres-db:
+        required: true
+        type: string
+      postgres-sslmode:
+        required: false
+        default: "require"
+        type: string
+    secrets:
+      stitch-app-password:
+        required: true
+
+name: Rebuild Read Model
+
+jobs:
+  rebuild-read-model:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.deployment-lane }}
+    permissions:
+      contents: read
+      packages: read
+    timeout-minutes: 30
+
+    steps:
+      - name: Validate lane secrets
+        shell: bash
+        env:
+          STITCH_APP_PASSWORD: ${{ secrets.stitch-app-password }}
+        run: |
+          set -euo pipefail
+          : "${STITCH_APP_PASSWORD:?Missing required secret STITCH_APP_PASSWORD}"
+
+      - name: Log in to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Pull API image
+        run: docker pull "${{ inputs.full-image-name }}"
+
+      - name: Rebuild read model if stale
+        env:
+          POSTGRES_HOST: ${{ inputs.postgres-host }}
+          POSTGRES_PORT: ${{ inputs.postgres-port }}
+          POSTGRES_DB: ${{ inputs.postgres-db }}
+          # Reads and rewrites rows only, so the app's own role is enough.
+          POSTGRES_USER: stitch_app
+          POSTGRES_PASSWORD: ${{ secrets.stitch-app-password }}
+          PGSSLMODE: ${{ inputs.postgres-sslmode }}
+          # A batch job: don't instrument every query for tracing.
+          OTEL_TRACES_EXPORTER: none
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -e POSTGRES_HOST \
+            -e POSTGRES_PORT \
+            -e POSTGRES_DB \
+            -e POSTGRES_USER \
+            -e POSTGRES_PASSWORD \
+            -e PGSSLMODE \
+            -e OTEL_TRACES_EXPORTER \
+            "${{ inputs.full-image-name }}" \
+            python -m stitch.api.db.read_model.rebuild --if-stale

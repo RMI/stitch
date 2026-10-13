@@ -329,7 +329,12 @@ deployments, `pr-*`, `main` deploy to the same PostgreSQL instance, with
 separate logical DBs)
 
 It also handles running `db-migrations` (via Alembic in the `api` image) and
-`seed`, both directly from GH Actions (rather than starting on Azure).
+`seed`, both directly from GH Actions (rather than starting on Azure). After
+migrations, `rebuild-read-model` runs the API's resource-state read-model
+rebuild from the same `api` image (a no-op when it's already current for this
+commit), alongside the API deploy; nothing waits on it, so a failure leaves list
+reads on the slower live path without blocking the deploy. See
+[`api/READ_MODEL.md`](./api/READ_MODEL.md).
 
 ### Custom domains (RMI hostnames)
 

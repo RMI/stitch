@@ -33,11 +33,16 @@ answers the slower way ("live"), with the same results.
 
 ## Rolling it out
 
-1. **Deploy as usual.** CI runs the migrations and deploys the API. Reads use
-   live — correct, just slower.
-2. **Run a full rebuild** against the deployed database, from the deployed image
-   (below). Until it succeeds, the fast path stays off. This is needed after
-   *every* deploy of new code, since each commit only trusts rows it built.
+Every deploy of new code needs a full rebuild by that code before the fast path
+comes back (each commit only trusts rows it built). CI does this automatically:
+
+1. **Deploy as usual.** CI runs the migrations, then the **Rebuild Read Model**
+   job (`.github/workflows/rebuild-read-model.yml`) runs
+   `python -m stitch.api.db.read_model.rebuild --if-stale` from the same API
+   image, alongside the API deploy. Reads use live until it finishes (~1.5–2
+   minutes at 50K resources) — correct, just slower.
+2. **If that job fails,** the deploy still goes out and lists stay on live.
+   Re-run the job, or run the rebuild by hand from the deployed image (below).
 3. **Verify** (below). If anything looks wrong, clear readiness (below) and reads
    go back to live immediately.
 
@@ -46,6 +51,9 @@ answers the slower way ("live"), with the same results.
 ```bash
 # Full rebuild (all resources). Safe while the API is serving traffic.
 python -m stitch.api.db.read_model.rebuild
+
+# Full rebuild only if it isn't already built by this code (what CI runs).
+python -m stitch.api.db.read_model.rebuild --if-stale
 
 # Recompute specific resources only (e.g. after fixing data by hand).
 python -m stitch.api.db.read_model.rebuild --ids 123 456
@@ -127,8 +135,9 @@ UPDATE og_field_resource_state_status SET ready = false;
 Ordinary API writes keep the table current. Beyond that:
 
 - **Every deploy of new code** needs a rebuild before the fast path comes back
-  (see readiness above). This covers changes to how answers are computed and
-  migrations alike — nothing else needs to clear readiness.
+  (see readiness above); CI's Rebuild Read Model job runs it. This covers changes
+  to how answers are computed and migrations alike — nothing else needs to clear
+  readiness.
 - **A database restore, or manual SQL edits** to sources, memberships, or
   priorities, change answers without the code or the writes noticing: run a
   full rebuild (or `--ids` for the affected resources).

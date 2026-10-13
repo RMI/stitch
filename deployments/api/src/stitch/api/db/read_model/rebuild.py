@@ -1,12 +1,14 @@
 """Rebuild or repair the resource-state read model.
 
     python -m stitch.api.db.read_model.rebuild             # full rebuild
+    python -m stitch.api.db.read_model.rebuild --if-stale  # only if not current
     python -m stitch.api.db.read_model.rebuild --ids 12 34 # repair these resources
 
-A full rebuild is a required step after deploying the migration that creates the
-read model (and after a coalescing-logic change or data restore). Until it
-completes, list reads use live coalescing. ``--ids`` recomputes only the given
-resources and is safe to run while the read model is serving reads.
+The API uses the read model only when a full rebuild by the same commit has
+completed, so a full rebuild is needed after every deploy of new code (and after
+a data restore). ``--if-stale`` is the deploy step: it rebuilds only when the
+read model isn't already current for this code. ``--ids`` recomputes only the
+given resources and is safe to run while the read model is serving reads.
 """
 
 from __future__ import annotations
@@ -24,6 +26,8 @@ from ..model import ResourceModel
 from .state import (
     DEFAULT_BATCH_SIZE,
     ResourceStateRebuildError,
+    current_code_version,
+    is_resource_state_ready,
     rebuild_all_resource_state,
     refresh_resource_states,
 )
@@ -43,12 +47,19 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         description="Rebuild the resource-state read model, or repair specific "
         "resources."
     )
-    parser.add_argument(
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument(
         "--ids",
         nargs="+",
         type=int,
         metavar="RESOURCE_ID",
         help="Only recompute these resource ids (safe while serving reads).",
+    )
+    scope.add_argument(
+        "--if-stale",
+        action="store_true",
+        help="Do a full rebuild only if the read model isn't already built by "
+        "this code (the post-deploy step).",
     )
     parser.add_argument(
         "--batch-size",
@@ -88,7 +99,12 @@ async def _repair(
         )
 
 
-async def _run(ids: list[int] | None, batch_size: int) -> None:
+async def _is_current(session_factory: async_sessionmaker[AsyncSession]) -> bool:
+    async with session_factory() as session:
+        return await is_resource_state_ready(session)
+
+
+async def _run(ids: list[int] | None, batch_size: int, if_stale: bool = False) -> None:
     # Outside prod the app engine echoes every statement and its parameters; for
     # a batch job over every resource that floods the logs. Progress is logged
     # per batch instead.
@@ -97,13 +113,20 @@ async def _run(ids: list[int] | None, batch_size: int) -> None:
     try:
         if ids:
             await _repair(session_factory, ids)
+        elif if_stale and await _is_current(session_factory):
+            logger.info(
+                "The read model is already built by this code (%s); nothing to do.",
+                current_code_version(),
+            )
         else:
             count = await rebuild_all_resource_state(
                 session_factory, batch_size=batch_size
             )
             logger.info(
-                "Rebuilt resource state for %d resources; the read model is ready.",
+                "Rebuilt resource state for %d resources with code %s; the read "
+                "model is ready.",
                 count,
+                current_code_version(),
             )
     finally:
         await dispose_engine()
@@ -113,7 +136,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = _parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     try:
-        asyncio.run(_run(args.ids, args.batch_size))
+        asyncio.run(_run(args.ids, args.batch_size, args.if_stale))
     except ResourceStateRebuildError as exc:
         logger.error("%s", exc)
         raise SystemExit(1) from exc
