@@ -19,6 +19,7 @@ from stitch.api.entities import (
     MergeCandidateDetailView,
     MergeCandidateReviewRequest,
     MergeCandidateView,
+    OGFieldFilterParams,
     OGFieldQueryParams,
     PaginatedResponse,
     SetFieldPriorityRequest,
@@ -93,9 +94,11 @@ async def get_resource_filter_options(
     uow: UnitOfWorkDep,
     _user: CurrentUser,
     claims: Claims,
+    params: Annotated[OGFieldFilterParams, Query()],
 ) -> OGFieldFilterOptionsResponse:
     opts = await resource_actions.filter_options(
         session=uow.session,
+        params=params,
         licensed_sources=licensed_sources(claims),
     )
     return OGFieldFilterOptionsResponse(**opts)
