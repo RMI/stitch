@@ -36,11 +36,13 @@ answers the slower way ("live"), with the same results.
 Every deploy of new code needs a full rebuild by that code before the fast path
 comes back (each commit only trusts rows it built). CI does this automatically:
 
-1. **Deploy as usual.** CI runs the migrations, then the **Rebuild Read Model**
-   job (`.github/workflows/rebuild-read-model.yml`) runs
+1. **Deploy as usual.** CI runs the migrations and deploys the API, then the
+   **Rebuild Read Model** job (`.github/workflows/rebuild-read-model.yml`) runs
    `python -m stitch.api.db.read_model.rebuild --if-stale` from the same API
-   image, alongside the API deploy. Reads use live until it finishes (~1.5–2
-   minutes at 50K resources) — correct, just slower.
+   image. It waits for the API deploy so the previous revision, whose writes
+   would refresh rows with the old code's rules, is gone first. Reads use live
+   from the deploy until the rebuild finishes (~1.5–2 minutes at 50K resources
+   after the deploy) — correct, just slower.
 2. **If that job fails,** the deploy still goes out and lists stay on live.
    Re-run the job, or run the rebuild by hand from the deployed image (below).
 3. **Verify** (below). If anything looks wrong, clear readiness (below) and reads
