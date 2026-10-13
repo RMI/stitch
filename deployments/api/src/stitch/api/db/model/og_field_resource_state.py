@@ -12,9 +12,11 @@ emptying the table loses nothing. ``permission_mask`` identifies one of four exa
 permission profiles (see ``db.read_model.permissions``).
 
 ``og_field_resource_state_status`` is a single-row readiness record. Readers use
-the state table only while ``ready`` is true; a missing row means not ready. A
-partial, failed, or in-progress rebuild leaves it false, so incomplete state is
-never served.
+the state table only while ``ready`` is true and ``code_version`` names the
+commit they are running; a missing row means not ready. A partial, failed, or
+in-progress rebuild leaves ``ready`` false, so incomplete state is never served,
+and deploying new code makes the existing rows unusable until that code
+rebuilds them.
 """
 
 from __future__ import annotations
@@ -118,7 +120,8 @@ class OGFieldResourceStateStatus(Base):
     """Readiness of ``og_field_resource_state`` (operational metadata, not domain data).
 
     The migration creates the single row (``key = RESOURCE_STATE_STATUS_KEY``)
-    with ``ready = false``. Only a complete full rebuild sets it true.
+    with ``ready = false``. Only a complete full rebuild sets it true, recording
+    in ``code_version`` the commit of the code that built the rows.
     """
 
     __tablename__ = "og_field_resource_state_status"
@@ -128,3 +131,4 @@ class OGFieldResourceStateStatus(Base):
     rebuilt_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    code_version: Mapped[str | None] = mapped_column(String, nullable=True)

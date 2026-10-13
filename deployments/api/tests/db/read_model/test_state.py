@@ -29,6 +29,7 @@ from stitch.api.db.read_model.permissions import (
 )
 from stitch.api.db.read_model.state import (
     ResourceStateRebuildError,
+    current_code_version,
     _integrity_problems,
     is_resource_state_ready,
     lock_resources_statement,
@@ -38,6 +39,7 @@ from stitch.api.db.read_model.state import (
 )
 from stitch.api.db.utils import coalesce_resources, resource_to_list_item_view
 from stitch.api.entities import OGFieldQueryParams, User
+from stitch.api.settings import get_settings
 from stitch.ogsi.model import OGFieldListItemView
 from stitch.ogsi.model.og_field import OilGasFieldBase
 
@@ -251,6 +253,97 @@ class TestLocking:
         assert "FROM og_field_resources" in sql
         assert "IN (10, 20, 30)" in sql
         assert sql.rstrip().endswith("ORDER BY og_field_resources.id FOR UPDATE"), sql
+
+
+def _deploy(monkeypatch: pytest.MonkeyPatch, git_sha: str | None) -> None:
+    """Run the rest of the test as code built from ``git_sha`` (None: no SHA)."""
+    if git_sha is None:
+        monkeypatch.delenv("GIT_SHA", raising=False)
+    else:
+        monkeypatch.setenv("GIT_SHA", git_sha)
+    get_settings.cache_clear()
+
+
+class TestCodeVersion:
+    """The read model is used only by the commit whose rebuild produced it."""
+
+    def test_code_version_is_the_builds_git_sha(self, monkeypatch: pytest.MonkeyPatch):
+        _deploy(monkeypatch, "abc123")
+        assert current_code_version() == "abc123"
+
+    def test_code_version_without_a_git_sha_is_unknown(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        _deploy(monkeypatch, None)
+        assert current_code_version() == "unknown"
+
+    async def test_rebuild_records_the_commit_that_built_it(
+        self,
+        seeded_integration_session: AsyncSession,
+        dataset: Dataset,
+        integration_session_factory: SessionFactory,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        _deploy(monkeypatch, "commit-a")
+        await rebuild_all_resource_state(integration_session_factory)
+
+        session = seeded_integration_session
+        status = (
+            await session.execute(select(OGFieldResourceStateStatus.__table__))
+        ).one()
+        assert status.code_version == "commit-a"
+        assert await is_resource_state_ready(session)
+
+    async def test_deploying_other_code_turns_the_read_model_off_until_it_rebuilds(
+        self,
+        seeded_integration_session: AsyncSession,
+        dataset: Dataset,
+        integration_session_factory: SessionFactory,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        session = seeded_integration_session
+        _deploy(monkeypatch, "commit-a")
+        await rebuild_all_resource_state(integration_session_factory)
+
+        _deploy(monkeypatch, "commit-b")
+        assert not await is_resource_state_ready(session)
+
+        await rebuild_all_resource_state(integration_session_factory)
+        assert await is_resource_state_ready(session)
+
+        # Code from the previous deploy, still running during cutover, doesn't
+        # trust rows built by the new commit.
+        _deploy(monkeypatch, "commit-a")
+        assert not await is_resource_state_ready(session)
+
+    async def test_ready_row_from_before_versioning_is_not_ready(
+        self, seeded_integration_session: AsyncSession
+    ):
+        """The migration leaves the existing row without a code version."""
+        session = seeded_integration_session
+        session.add(
+            OGFieldResourceStateStatus(
+                key="resource_state", ready=True, code_version=None
+            )
+        )
+        await session.commit()
+        assert not await is_resource_state_ready(session)
+
+    async def test_targeted_refresh_does_not_change_the_code_version(
+        self,
+        seeded_integration_session: AsyncSession,
+        dataset: Dataset,
+        integration_session_factory: SessionFactory,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        session = seeded_integration_session
+        _deploy(monkeypatch, "commit-a")
+        await rebuild_all_resource_state(integration_session_factory)
+
+        _deploy(monkeypatch, "commit-b")
+        await refresh_resource_states(session, [dataset.alpha])
+        await session.commit()
+        assert not await is_resource_state_ready(session)
 
 
 class TestFullRebuild:

@@ -19,7 +19,12 @@ answers the slower way ("live"), with the same results.
   of the four profiles, while the table is marked **ready**. Everyone else
   (partial or unusual grants, internal unscoped calls) gets the live answer.
 - **Readiness:** a single row in `og_field_resource_state_status`. Only a complete
-  full rebuild sets `ready = true`; a missing row or `false` means "use live".
+  full rebuild sets `ready = true`, and it records the commit of the code that
+  ran it (`code_version`, from the image's `GIT_SHA`). The API uses the table
+  only when it is ready **and** was built by the same commit the API is running;
+  otherwise it answers live. So every deploy of new code switches reads to live
+  until that code rebuilds the table — a change to how answers are computed can
+  never be served from rows built by older code.
 - **Staying current:** every write that can change a list answer (creating or
   attaching sources, re-ordering a field's sources, merging) recomputes the
   affected resources' rows in the same transaction, so they commit together.
@@ -28,11 +33,11 @@ answers the slower way ("live"), with the same results.
 
 ## Rolling it out
 
-1. **Deploy as usual.** CI runs the migrations (`76427dd73cbc` creates the table
-   with `ready = false`) and deploys the API. Reads keep using live — nothing
-   changes for users yet.
-2. **Run a full rebuild** against the deployed database (below). This is a
-   required step: until it succeeds, the fast path stays off.
+1. **Deploy as usual.** CI runs the migrations and deploys the API. Reads use
+   live — correct, just slower.
+2. **Run a full rebuild** against the deployed database, from the deployed image
+   (below). Until it succeeds, the fast path stays off. This is needed after
+   *every* deploy of new code, since each commit only trusts rows it built.
 3. **Verify** (below). If anything looks wrong, clear readiness (below) and reads
    go back to live immediately.
 
@@ -46,15 +51,19 @@ python -m stitch.api.db.read_model.rebuild
 python -m stitch.api.db.read_model.rebuild --ids 123 456
 ```
 
-- **Where to run it:** anywhere with the API's code and database settings. For a
-  deployed lane, the same way CI runs migrations — the `api` image with the
-  lane's `POSTGRES_*` variables, as `stitch_app` or `stitch_migrator`:
+- **Where to run it:** with the *same code* the API is running, because the
+  rebuild records its commit and the API only trusts rows built by its own
+  commit. For a deployed lane, run the deployed `api` image (it carries the
+  commit as `GIT_SHA`) the same way CI runs migrations, with the lane's
+  `POSTGRES_*` variables, as `stitch_app` or `stitch_migrator`. A rebuild run
+  from a laptop records `unknown` and leaves the deployed API on live.
 
   ```bash
   docker run --rm -e POSTGRES_HOST -e POSTGRES_PORT -e POSTGRES_DB -e POSTGRES_USER -e POSTGRES_PASSWORD -e PGSSLMODE <api-image> python -m stitch.api.db.read_model.rebuild
   ```
 
-  Locally, against the docker-compose database:
+  Locally, see `HACKING.md`: run it inside the `api` container if the API runs
+  in Docker, or on your machine if the API does:
 
   ```bash
   POSTGRES_HOST=127.0.0.1 POSTGRES_USER=stitch_app uv run --env-file .env -- python -m stitch.api.db.read_model.rebuild
@@ -82,8 +91,9 @@ python -m stitch.api.db.read_model.rebuild --ids 123 456
 ## Verifying
 
 ```sql
--- Ready, and when it was last rebuilt
-SELECT ready, rebuilt_at FROM og_field_resource_state_status;
+-- Ready, when it was last rebuilt, and by which commit (compare with
+-- build.git_sha from the API's health endpoint)
+SELECT ready, rebuilt_at, code_version FROM og_field_resource_state_status;
 
 -- Exactly 4 rows per listable resource
 SELECT count(*) AS state_rows, count(DISTINCT resource_id) AS resources
@@ -114,20 +124,14 @@ UPDATE og_field_resource_state_status SET ready = false;
 
 ## When a full rebuild is needed again
 
-Ordinary API writes keep the table current. Run a full rebuild after anything
-that changes answers *without* going through those writes:
+Ordinary API writes keep the table current. Beyond that:
 
-- a change to how winners are chosen (coalescing logic);
-- a migration that changes default source priority (`og_field_source_priority`);
-- a database restore, or manual SQL edits to sources, memberships, or priorities;
-- adding a field to `OilGasFieldBase`, or a new source key.
-
-A migration that changes answers should also clear readiness, so reads go live
-until the rebuild runs:
-
-```python
-op.execute("UPDATE og_field_resource_state_status SET ready = false")
-```
+- **Every deploy of new code** needs a rebuild before the fast path comes back
+  (see readiness above). This covers changes to how answers are computed and
+  migrations alike — nothing else needs to clear readiness.
+- **A database restore, or manual SQL edits** to sources, memberships, or
+  priorities, change answers without the code or the writes noticing: run a
+  full rebuild (or `--ids` for the affected resources).
 
 ## Changing the code safely
 

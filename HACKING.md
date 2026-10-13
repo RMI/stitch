@@ -99,12 +99,23 @@ Depending on which entrypoint you use, these are the main local endpoints:
 ## Fast list reads locally
 
 The list and filter-options endpoints read from a precomputed table, but only
-after a full rebuild has marked it ready; until then they use the slower live
-path, with the same results. To use the fast path against your local stack:
+after a full rebuild *by the same code* has marked it ready; until then they use
+the slower live path, with the same results. Run the rebuild where the API runs:
 
-```bash
-POSTGRES_HOST=127.0.0.1 POSTGRES_USER=stitch_app uv run --env-file .env -- python -m stitch.api.db.read_model.rebuild
-```
+- API in Docker (`make frontend-dev`, `make dev-docker`): the image records your
+  commit, so rebuild inside it, and again after rebuilding the image:
+
+  ```bash
+  docker compose exec api python -m stitch.api.db.read_model.rebuild
+  ```
+
+- API on your machine (`make api-dev`): the code version is `unknown`, so a
+  rebuild stays valid until you rebuild again (do so after changing how answers
+  are computed):
+
+  ```bash
+  POSTGRES_HOST=127.0.0.1 POSTGRES_USER=stitch_app uv run --env-file .env -- python -m stitch.api.db.read_model.rebuild
+  ```
 
 See [`deployments/api/READ_MODEL.md`](deployments/api/READ_MODEL.md) for details.
 

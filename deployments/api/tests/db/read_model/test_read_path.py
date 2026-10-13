@@ -18,6 +18,7 @@ from stitch.api.db.read_model.state import (
     refresh_resource_states,
 )
 from stitch.api.entities import OGFieldQueryParams, SortableField, User
+from stitch.api.settings import get_settings
 
 from .dataset import Dataset, seed_dataset
 
@@ -208,6 +209,18 @@ class TestFallback:
         await session.execute(update(OGFieldResourceStateStatus).values(ready=False))
         await session.commit()
         await self._assert_live_answer(session, PROFILES[3])
+
+    async def test_read_model_built_by_other_code(
+        self,
+        seeded_integration_session: AsyncSession,
+        rebuilt: Dataset,
+        read_model_forbidden: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """After a deploy, rows built by the previous commit are not used."""
+        monkeypatch.setenv("GIT_SHA", "a-newer-commit")
+        get_settings.cache_clear()
+        await self._assert_live_answer(seeded_integration_session, PROFILES[3])
 
     @pytest.mark.parametrize(
         "licensed",

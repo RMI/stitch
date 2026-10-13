@@ -17,7 +17,10 @@ or a write.
   the readiness flag, so new readers stay on the live path until it fully
   succeeds. It never empties the table, so a reader already past the readiness
   check sees each resource's old or new rows, never a missing one.
-* ``is_resource_state_ready`` is the flag readers check before using the table.
+* ``is_resource_state_ready`` is the check readers make before using the table:
+  a completed full rebuild, by the same commit as the running code. Any change
+  to how rows are computed ships in a new commit, so deploying it switches reads
+  to live until that code rebuilds the table.
 """
 
 from __future__ import annotations
@@ -32,6 +35,7 @@ from sqlalchemy import Select, delete, distinct, func, insert, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from stitch.api.observability.context import named_query
+from stitch.api.settings import get_settings
 
 from ..model import OGFieldResourceState, OGFieldResourceStateStatus, ResourceModel
 from ..model.og_field_resource_state import RESOURCE_STATE_STATUS_KEY
@@ -42,6 +46,11 @@ from .permissions import PERMISSION_MASKS, visible_sources_for_mask
 logger = logging.getLogger(__name__)
 
 DEFAULT_BATCH_SIZE: Final[int] = 500
+
+# Code version when the build sets no GIT_SHA (e.g. running the API directly on
+# a developer machine). Deliberately not the local git HEAD: that would switch a
+# local read model off on every commit.
+UNKNOWN_CODE_VERSION: Final[str] = "unknown"
 
 # Postgres advisory-lock key held for the duration of a full rebuild, so two
 # rebuilds can't interleave. Arbitrary; only needs to be unique within the app.
@@ -164,14 +173,30 @@ async def refresh_resource_state(session: AsyncSession, resource_id: int) -> Non
     await refresh_resource_states(session, [resource_id])
 
 
+def current_code_version() -> str:
+    """The commit the running code was built from (``GIT_SHA``)."""
+    return get_settings().git_sha or UNKNOWN_CODE_VERSION
+
+
 async def is_resource_state_ready(session: AsyncSession) -> bool:
-    """True only when the last full rebuild completed; a missing row is not ready."""
-    ready = await session.scalar(
-        select(OGFieldResourceStateStatus.ready).where(
-            OGFieldResourceStateStatus.key == RESOURCE_STATE_STATUS_KEY
+    """True only when a full rebuild by this same commit completed.
+
+    A missing status row, a cleared flag, or rows built by other code (an older
+    or newer deploy) all mean not ready.
+    """
+    status = (
+        await session.execute(
+            select(
+                OGFieldResourceStateStatus.ready,
+                OGFieldResourceStateStatus.code_version,
+            ).where(OGFieldResourceStateStatus.key == RESOURCE_STATE_STATUS_KEY)
         )
+    ).one_or_none()
+    return (
+        status is not None
+        and status.ready is True
+        and status.code_version == current_code_version()
     )
-    return ready is True
 
 
 async def _set_ready(session: AsyncSession, ready: bool) -> None:
@@ -182,6 +207,7 @@ async def _set_ready(session: AsyncSession, ready: bool) -> None:
     status.ready = ready
     if ready:
         status.rebuilt_at = datetime.now(UTC)
+        status.code_version = current_code_version()
 
 
 async def _delete_unlistable_state(session: AsyncSession) -> None:
