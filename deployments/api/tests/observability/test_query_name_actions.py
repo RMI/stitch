@@ -108,15 +108,17 @@ class TestEndpointQueryLabels:
         _assert_labels(captured_query_events, {"resources.filter_options"})
 
     @pytest.mark.anyio
-    async def test_read_model_list_and_filter_options_keep_labels(
+    async def test_read_model_list_and_filter_options_labels(
         self,
         integration_client: AsyncClient,
         integration_session_factory,
         og_create_res_fact,
         captured_query_events: list[dict],
     ):
-        """Served from the precomputed read model, list and filter-options emit
-        the same labels as the live path (the readiness lookup is unlabeled)."""
+        """Served from the precomputed read model, the list reads its page's rows
+        in the same statement that picks them (``resources.list_page``, in place
+        of the live path's ``list_ids`` + ``list_hydrate``); filter-options keeps
+        its label. The readiness lookup is unlabeled."""
         create = await integration_client.post(
             "/oil-gas-fields/",
             json=og_create_res_fact(name="Labeled Resource").model_dump(mode="json"),
@@ -128,8 +130,7 @@ class TestEndpointQueryLabels:
         response = await integration_client.get("/oil-gas-fields/")
         assert response.status_code == 200, response.text
         _assert_labels(
-            captured_query_events,
-            {"resources.count", "resources.list_ids", "resources.list_hydrate"},
+            captured_query_events, {"resources.count", "resources.list_page"}
         )
         assert _labeled_statements_use_read_model(captured_query_events)
 

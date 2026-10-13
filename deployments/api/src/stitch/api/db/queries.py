@@ -462,15 +462,46 @@ def resource_state_query(
     window. The table only holds listable resources, so it is the universe.
     """
     state = OGFieldResourceState
-    # Only a column source for the shared builders (its columns are the table's
-    # own), so conditions apply straight to the indexed table, not a subquery.
-    profile = select(state.__table__).where(state.permission_mask == permission_mask)
+    profile = _resource_state_profile(permission_mask)
     stmt = select(state.resource_id).where(state.permission_mask == permission_mask)
     for cond in _build_field_conditions(profile, params):
         stmt = stmt.where(cond)
     if params.id is not None:
         stmt = stmt.where(state.resource_id == params.id)
     return stmt.order_by(*_build_sort_clauses(profile, params, "resource_id"))
+
+
+def resource_state_page_query(
+    params: OGFieldQueryParams, permission_mask: int
+) -> Select[Any]:
+    """One page of stored rows, chosen and read in a single statement.
+
+    The inner query picks the page's ids (``resource_state_query`` with the
+    page's limit/offset), which indexes can answer without touching skipped
+    rows; the outer query then reads just those rows, in the same order. Being
+    one statement, the page is chosen and read from one snapshot.
+    """
+    state = OGFieldResourceState
+    page = (
+        resource_state_query(params, permission_mask)
+        .limit(params.limit)
+        .offset(params.offset)
+        .subquery("page")
+    )
+    profile = _resource_state_profile(permission_mask)
+    return profile.join(page, page.c.resource_id == state.resource_id).order_by(
+        *_build_sort_clauses(profile, params, "resource_id")
+    )
+
+
+def _resource_state_profile(permission_mask: int) -> Select[Any]:
+    """Every stored row for one profile.
+
+    Also the column source for the shared clause builders: its columns are the
+    table's own, so conditions and sorts apply straight to the indexed table.
+    """
+    state = OGFieldResourceState
+    return select(state.__table__).where(state.permission_mask == permission_mask)
 
 
 def resource_state_filter_option_query(

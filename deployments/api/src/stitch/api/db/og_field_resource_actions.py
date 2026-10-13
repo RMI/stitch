@@ -34,7 +34,6 @@ from .model import (
     MembershipModel,
     MembershipStatus,
     OGFieldResourceSourcePriority,
-    OGFieldResourceState,
     ResourceModel,
 )
 from .model.oil_gas_field_source_value import (
@@ -46,6 +45,7 @@ from .queries import (
     field_source_candidates,
     filter_option_rows,
     resource_state_filter_option_query,
+    resource_state_page_query,
     resource_state_query,
 )
 from .read_model.permissions import read_model_mask
@@ -105,31 +105,22 @@ async def _ready_read_model_mask(
 async def _query_read_model(
     session: AsyncSession, params: OGFieldQueryParams, mask: int
 ) -> tuple[list[OGFieldListItemView], int]:
-    """List page read from stored, already-coalesced rows for one profile."""
-    ids_stmt = resource_state_query(params, mask)
+    """List page read from stored, already-coalesced rows for one profile.
+
+    The page's rows are read by the same statement that picks them, so a write
+    that lands mid-request (e.g. a merge removing a resource's rows) can't
+    remove a row between choosing the page and loading it.
+    """
     # Count without the ORDER BY: Postgres would otherwise sort every matching
     # row just to count them (~40ms at 50K resources for a non-indexed sort).
-    count_stmt = select(func.count()).select_from(ids_stmt.order_by(None).subquery())
+    count_stmt = select(func.count()).select_from(
+        resource_state_query(params, mask).order_by(None).subquery()
+    )
     with named_query("resources.count"):
         total = (await session.scalar(count_stmt)) or 0
-    ids_stmt = ids_stmt.limit(params.limit).offset(params.offset)
-    with named_query("resources.list_ids"):
-        ids = list((await session.scalars(ids_stmt)).all())
-
-    if not ids:
-        return [], total
-
-    state = OGFieldResourceState
-    with named_query("resources.list_hydrate"):
-        rows = (
-            await session.execute(
-                select(state.__table__).where(
-                    state.permission_mask == mask, state.resource_id.in_(ids)
-                )
-            )
-        ).all()
-    by_id = {row.resource_id: row for row in rows}
-    return [_state_row_to_list_item_view(by_id[rid]) for rid in ids], total
+    with named_query("resources.list_page"):
+        rows = (await session.execute(resource_state_page_query(params, mask))).all()
+    return [_state_row_to_list_item_view(row) for row in rows], total
 
 
 def _state_row_to_list_item_view(row: Any) -> OGFieldListItemView:

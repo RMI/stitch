@@ -99,9 +99,11 @@ JOIN og_field_resources r ON r.id = s.resource_id
 WHERE r.repointed_id IS NOT NULL;
 ```
 
-Then smoke-test the list and filter-options pages, and check the
-`resources.count` / `resources.list_ids` / `resources.list_hydrate` /
-`resources.filter_options` query timings (see `deployments/PERFORMANCE.md`).
+Then smoke-test the list and filter-options pages, and check the query timings
+(see `deployments/PERFORMANCE.md`). Served from the read model, a list request
+runs `resources.count` and `resources.list_page`; served live it runs
+`resources.count`, `resources.list_ids` and `resources.list_hydrate`.
+Filter-options is `resources.filter_options` either way.
 
 **To switch the fast path off** without deleting anything:
 
