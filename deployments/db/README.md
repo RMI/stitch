@@ -209,7 +209,7 @@ time to apply the role assignment. Until then, the upload step fails.
 
 ### Deleting a job
 
-Nothing deletes a job when its database goes away. To delete one, run:
+Deleting a database does not delete its job. To delete a job, run:
 
 ```bash
 az containerapp job delete -g <resource-group> -n <job-name>
