@@ -176,10 +176,12 @@ Full rebuild: ~97 s, ~160 MB peak memory; the table is ~195 MB including indexes
 
 - **Incremental `--since` repair** is not implemented: no timestamp can reliably
   catch every kind of change (STIT-809).
-- **Write overhead:** each write's refresh takes ~85 ms at 50K, almost all of it
-  finding the resource's memberships without an index. With a
-  `(resource_id, status)` index on `og_field_memberships` (being added in the
-  separate DB-cleanup work) it drops to ~16 ms.
+- **Write overhead:** each write's refresh (query label `read_model.refresh`)
+  takes ~85 ms at 50K, almost all of it finding the resource's memberships,
+  because `og_field_memberships` has no index on `resource_id`. The unique
+  `(resource_id, source_pk)` constraint from the separate DB-cleanup work (#322)
+  provides one; with it the refresh drops to ~16 ms per resource (~24 ms for a
+  three-resource merge).
 - **Sorting by fields other than `name`** has no index (30–100 ms). Add
   per-direction indexes only if usage shows those sorts matter.
 - **`q=` text search** scans the profile's rows (50–150 ms); a btree index can't
