@@ -418,29 +418,27 @@ then redeploy the lane so the backend containers pick up the new origin.
 
 ### Backups
 
-The pipeline gives each database it deploys a nightly backup job. `deploy-db`
+The pipeline deploys a nightly backup job for selected databases. `deploy-db`
 creates the database. Then `deploy-backup-job` runs
-`scripts/deploy_backup_job.sh` against it, with the lane's existing Azure and
-Postgres configuration. For the job itself and the one-time storage account
-setup, see [`db/README.md`](./db/README.md).
+`scripts/deploy_backup_job.sh` against it. See [`db/README.md`](./db/README.md)
+for the job, the one-time `setup`, and how to delete a job.
 
-`BACKUP_LANES` lists the lanes that get backup jobs. An unset value means no
-lane gets them.
+`BACKUP_DATABASES` lists the databases that get a job. An unset value means none
+do. Use the names the pipeline creates: `production`, `main`, or
+`pr_<number>_<branch>_<hash>` for a per-pull-request database.
 
-To add a lane:
+To add a database:
 
 1. Run the one-time `setup` described in [`db/README.md`](./db/README.md).
-2. Set `BACKUP_STORAGE_ACCOUNT` on that GitHub Environment.
-3. Add the lane name to `BACKUP_LANES`.
+2. Set `BACKUP_STORAGE_ACCOUNT` on the GitHub Environment of that lane.
+3. Add the database name to `BACKUP_DATABASES`.
+4. Deploy that database again.
 
-To stop backups for a lane, remove its name from `BACKUP_LANES`.
+Step 4 is necessary. The deploy creates the job, so a new name takes effect on
+the next deploy of that database.
 
-A database gets its job on the next deploy of its lane. A later deploy updates
-the same job, so repeated deploys do not add more jobs. The job takes its name
-from the database, with hyphens in place of underscores.
-
-Nothing deletes a job when its database goes away. To remove one, run
-`az containerapp job delete`.
+To stop backups for a database, remove its name from `BACKUP_DATABASES`. The
+existing job stays until you delete it.
 
 ## Azure Permissions
 
@@ -496,7 +494,7 @@ Container Apps environment):
 - `Reader` on `STITCH-PROD-RG` (Resource Group)
 - `Container Apps Contributor` on `STITCH-PROD-RG` (Resource Group)
 
-Lanes listed in `BACKUP_LANES` need two more grants, because
+A lane with a database in `BACKUP_DATABASES` needs two more grants, because
 `Container Apps Contributor` carries no `Microsoft.App/jobs` actions:
 
 - `Container Apps Jobs Contributor` on that lane's resource group
@@ -527,8 +525,8 @@ named:
 
 ### Repo-level variables
 
-- `BACKUP_LANES` (example: `production`) — space-separated lanes whose databases
-  get a nightly backup job. Unset means no lane does. See "Backups" above.
+- `BACKUP_DATABASES` (example: `production`) — space-separated databases that get
+  a nightly backup job. Unset means none do. See "Backups" above.
 
 ### Environment variables
 
@@ -569,7 +567,8 @@ named:
 - `ETL_IMAGE_TAG` (example: `main`) — optional; consolidated ETL image tag to
   deploy, defaults to `main`. Only used on `staging` / `production`.
 - `BACKUP_STORAGE_ACCOUNT` (example: `rmistitchprod`) — storage account holding
-  the `backups` container. Only needed on lanes listed in `BACKUP_LANES`.
+  the `backups` container. Only needed on a lane with a database in
+  `BACKUP_DATABASES`.
 
 The two frontend URLs together define the single CORS origin the API and
 stitch-llm services will accept for a given deployment, so
