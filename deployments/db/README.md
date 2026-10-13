@@ -154,6 +154,61 @@ You should now see seeded dev data.
 
 ---
 
+## Backups
+
+A scheduled Azure Container Apps job backs up one database. The job runs
+`pg_dump -Fc` at 03:00 UTC. Then it uploads the dump to the `backups` blob
+container as `<database>/<timestamp>.dump`.
+
+One job backs up one database. Each database needs its own job.
+
+A run stops after 30 minutes. A failed run does not retry. Nothing deletes old
+dumps. A blob lifecycle management policy on the `backups` container limits its
+growth.
+
+### Deploying the job
+
+`scripts/deploy_backup_job.sh` needs `az`, `jq`, and `envsubst`. The gettext
+package provides `envsubst`, which macOS does not install by default. Before you
+run the script, authenticate `az` against the correct subscription.
+
+1. Run `setup` one time for each storage account:
+
+   ```bash
+   scripts/deploy_backup_job.sh setup -g <resource-group> -s <storage-account>
+   ```
+
+   This creates the `stitch-backup-identity` managed identity and the `backups`
+   container. Then it grants **Storage Blob Data Contributor** to that identity
+   on the container.
+
+2. Run `deploy` one time for each database:
+
+   ```bash
+   PGPASSWORD=<password> scripts/deploy_backup_job.sh deploy \
+     -g <resource-group> -s <storage-account> -e <environment> \
+     -H <postgres-host> -d <database>
+   ```
+
+   This creates the job, or updates it when the job exists.
+
+Both commands are safe to run again. For all options, run
+`scripts/deploy_backup_job.sh --help`.
+
+To run `setup`, your account needs these permissions:
+
+- create a managed identity
+- create a role assignment
+- a blob data role on the storage account, such as **Storage Blob Data
+  Contributor**
+
+`deploy` needs none of these permissions.
+
+CAUTION: Wait two minutes after `setup` before you start the job. Azure needs
+time to apply the role assignment. Until then, the upload step fails.
+
+---
+
 ## Updating Database
 
 ⚠ DBA-ONLY WORKFLOW
