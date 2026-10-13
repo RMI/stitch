@@ -48,6 +48,11 @@ jobs:
         run: |
           az extension add --name containerapp --upgrade --allow-preview true
 
+      - name: Install envsubst
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gettext-base
+
       - name: Deploy the backup job
         shell: bash
         env:
