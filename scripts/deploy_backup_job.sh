@@ -4,7 +4,7 @@ set -euo pipefail
 IDENTITY_NAME=stitch-backup-identity
 BLOB_CONTAINER=backups
 ROLE="Storage Blob Data Contributor"
-SPEC="$(cd "$(dirname "$0")/.." && pwd)/deployments/db/jobs/backup-job.yaml"
+SPEC="$(cd "$(dirname "$0")" && pwd)/templates/db-backup-job-config.yml"
 
 resource_group=
 storage_account=
