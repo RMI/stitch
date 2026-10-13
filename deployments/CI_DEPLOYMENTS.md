@@ -416,6 +416,32 @@ completing step 3 (**Set default**, so the old hostname 301-redirects and stops
 originating requests) and step 5 (`FRONTEND_PRODUCTION_URL = https://<custom-domain>`),
 then redeploy the lane so the backend containers pick up the new origin.
 
+### Backups
+
+The pipeline gives each database it deploys a nightly backup job. `deploy-db`
+creates the database. Then `deploy-backup-job` runs
+`scripts/deploy_backup_job.sh` against it, with the lane's existing Azure and
+Postgres configuration. For the job itself and the one-time storage account
+setup, see [`db/README.md`](./db/README.md).
+
+`BACKUP_LANES` lists the lanes that get backup jobs. An unset value means no
+lane gets them.
+
+To add a lane:
+
+1. Run the one-time `setup` described in [`db/README.md`](./db/README.md).
+2. Set `BACKUP_STORAGE_ACCOUNT` on that GitHub Environment.
+3. Add the lane name to `BACKUP_LANES`.
+
+To stop backups for a lane, remove its name from `BACKUP_LANES`.
+
+A database gets its job on the next deploy of its lane. A later deploy updates
+the same job, so repeated deploys do not add more jobs. The job takes its name
+from the database, with hyphens in place of underscores.
+
+Nothing deletes a job when its database goes away. To remove one, run
+`az containerapp job delete`.
+
 ## Azure Permissions
 
 Permissions for Azure Resources are handled through a managed identity, which GH
@@ -470,6 +496,13 @@ Container Apps environment):
 - `Reader` on `STITCH-PROD-RG` (Resource Group)
 - `Container Apps Contributor` on `STITCH-PROD-RG` (Resource Group)
 
+Lanes listed in `BACKUP_LANES` need two more grants, because
+`Container Apps Contributor` carries no `Microsoft.App/jobs` actions:
+
+- `Container Apps Jobs Contributor` on that lane's resource group
+- `Managed Identity Operator` on `stitch-backup-identity`, so the deploy can
+  attach that identity to the job
+
 > **Reminder — when adding a new lane:** the federated-credential subject above
 > only lets the identity authenticate; it still needs these role assignments on
 > the new lane's resource group and Container Apps environment, or deploys fail
@@ -491,6 +524,11 @@ named:
 - `AZURE_CLIENT_ID`: Client ID for `GHActions-stitch-cicd`
 - `AZURE_SUBSCRIPTION_ID`: Subscription for the target Azure resources
 - `AZURE_TENANT_ID`: Tenant for `GHActions-stitch-cicd`
+
+### Repo-level variables
+
+- `BACKUP_LANES` (example: `production`) — space-separated lanes whose databases
+  get a nightly backup job. Unset means no lane does. See "Backups" above.
 
 ### Environment variables
 
@@ -530,6 +568,8 @@ named:
   storage above).
 - `ETL_IMAGE_TAG` (example: `main`) — optional; consolidated ETL image tag to
   deploy, defaults to `main`. Only used on `staging` / `production`.
+- `BACKUP_STORAGE_ACCOUNT` (example: `rmistitchprod`) — storage account holding
+  the `backups` container. Only needed on lanes listed in `BACKUP_LANES`.
 
 The two frontend URLs together define the single CORS origin the API and
 stitch-llm services will accept for a given deployment, so
