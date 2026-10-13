@@ -278,7 +278,7 @@ jobs:
   deploy-backup-job:
     name: "Deploy Backup Job"
     needs: [resolve-context, deploy-db]
-    if: contains(vars.BACKUP_LANES, needs.resolve-context.outputs.deployment-lane)
+    if: contains(vars.BACKUP_DATABASES, needs.deploy-db.outputs.postgres-db)
     uses: ./.github/workflows/deploy-backup-job.yml
     secrets:
       azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
