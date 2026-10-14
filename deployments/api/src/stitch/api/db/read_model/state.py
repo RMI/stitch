@@ -65,6 +65,11 @@ READINESS_CACHE_SECONDS: Final[float] = 5.0
 # rebuilds can't interleave. Arbitrary; only needs to be unique within the app.
 _REBUILD_LOCK_KEY: Final[int] = 766_001
 
+# A rebuild repeats passes over resources whose rows are missing or were computed
+# by other code until none are left; this many passes without settling means
+# something keeps writing with other code (e.g. an older API still serving).
+_MAX_REBUILD_PASSES: Final[int] = 5
+
 # How long a deploy's rebuild (``rebuild_resource_state_if_stale``) waits for a
 # rebuild already holding the lock, and how often it checks.
 DEFAULT_LOCK_WAIT: Final[timedelta] = timedelta(minutes=10)
@@ -115,13 +120,15 @@ async def lock_resources(session: AsyncSession, resource_ids: Collection[int]) -
         await session.execute(lock_resources_statement(resource_ids))
 
 
-def _empty_state_row(resource_id: int, mask: int) -> dict[str, Any]:
-    """A row with every field (and its provenance) unset."""
+def _empty_state_row(resource_id: int, mask: int, code_version: str) -> dict[str, Any]:
+    """A row with every field (and its provenance) unset, stamped with the
+    code computing it."""
     return {
         "resource_id": resource_id,
         "permission_mask": mask,
         **{field: None for field in ATTRIBUTE_NAMES},
         "provenance": {field: None for field in ATTRIBUTE_NAMES},
+        "code_version": code_version,
     }
 
 
@@ -132,11 +139,12 @@ async def _compute_state_rows(
 
     Each winner's value is materialized exactly as the live path does before
     building its view, and its source key recorded as provenance. Fields with no
-    winner stay unset.
+    winner stay unset. Every row records the commit computing it.
     """
+    code_version = current_code_version()
     rows: list[dict[str, Any]] = []
     for mask in PERMISSION_MASKS:
-        by_id = {rid: _empty_state_row(rid, mask) for rid in resource_ids}
+        by_id = {rid: _empty_state_row(rid, mask, code_version) for rid in resource_ids}
         winners = await session.execute(
             coalesced_winner_rows(resource_ids, visible_sources_for_mask(mask))
         )
@@ -307,14 +315,59 @@ async def _integrity_problems(session: AsyncSession) -> list[str]:
             state.resource_id.not_in(select(universe.c.resource_id))
         )
     )
+    other_code = await session.scalar(
+        select(func.count(distinct(state.resource_id))).where(
+            state.resource_id.in_(select(universe.c.resource_id)),
+            or_(
+                state.code_version.is_(None),
+                state.code_version != current_code_version(),
+            ),
+        )
+    )
     problems: list[str] = []
     if incomplete:
         problems.append(
             f"{incomplete} listable resource(s) lack a row for every permission profile"
         )
+    if other_code:
+        problems.append(
+            f"{other_code} listable resource(s) have rows computed by other code"
+        )
     if unlistable:
         problems.append(f"{unlistable} non-listable resource(s) have stored state")
     return problems
+
+
+async def _resources_needing_rebuild(session: AsyncSession) -> list[int]:
+    """Listable resources lacking a row per profile computed by this code."""
+    state = OGFieldResourceState
+    universe = resource_universe().subquery()
+    current_rows = (
+        select(state.resource_id, func.count().label("n"))
+        .where(state.code_version == current_code_version())
+        .group_by(state.resource_id)
+        .subquery()
+    )
+    return list(
+        (
+            await session.scalars(
+                select(universe.c.resource_id)
+                .select_from(
+                    universe.outerjoin(
+                        current_rows,
+                        current_rows.c.resource_id == universe.c.resource_id,
+                    )
+                )
+                .where(
+                    or_(
+                        current_rows.c.n.is_(None),
+                        current_rows.c.n != len(PERMISSION_MASKS),
+                    )
+                )
+                .order_by(universe.c.resource_id)
+            )
+        ).all()
+    )
 
 
 async def _drop_vanished_clients_quickly(conn: AsyncConnection) -> None:
@@ -390,7 +443,9 @@ async def rebuild_all_resource_state(
     """
     _check_batch_size(batch_size)
     async with _exclusive_rebuild(session_factory):
-        return await _rebuild_while_locked(session_factory, batch_size)
+        return await _rebuild_while_locked(
+            session_factory, batch_size, recompute_everything=True
+        )
 
 
 async def rebuild_resource_state_if_stale(
@@ -411,7 +466,9 @@ async def rebuild_resource_state_if_stale(
         async with session_factory() as session:
             if await is_resource_state_ready(session):
                 return None
-        return await _rebuild_while_locked(session_factory, batch_size)
+        return await _rebuild_while_locked(
+            session_factory, batch_size, recompute_everything=False
+        )
 
 
 def _check_batch_size(batch_size: int) -> None:
@@ -420,31 +477,71 @@ def _check_batch_size(batch_size: int) -> None:
 
 
 async def _rebuild_while_locked(
-    session_factory: async_sessionmaker[AsyncSession], batch_size: int
+    session_factory: async_sessionmaker[AsyncSession],
+    batch_size: int,
+    *,
+    recompute_everything: bool,
 ) -> int:
-    """The full rebuild itself; the caller holds the rebuild lock.
+    """The rebuild itself; the caller holds the rebuild lock. Returns how many
+    resource recomputes it did.
 
-    Forgets this process's cached readiness after each change commits, so reads
-    here switch immediately (other processes switch within the cache window).
+    Clears readiness, then works in passes. The first pass recomputes every
+    listable resource (``recompute_everything``, e.g. after a restore) or only
+    those not already computed by this code (resuming a rebuild that stopped).
+    Each later pass recomputes resources whose rows were since rewritten by
+    other code -- an older API revision still serving writes -- until none are
+    left. Only then are stray rows removed, the result checked, and readiness
+    set. Forgets this process's cached readiness after each change commits, so
+    reads here switch immediately (other processes switch within the cache
+    window).
     """
     async with session_factory.begin() as session:
         await _set_ready(session, False)
     forget_cached_readiness()
-    async with session_factory() as session:
-        ids = list(
-            (
-                await session.scalars(resource_universe().order_by(ResourceModel.id))
-            ).all()
-        )
 
-    for start in range(0, len(ids), batch_size):
-        async with session_factory.begin() as session:
-            await refresh_resource_states(session, ids[start : start + batch_size])
-        logger.info(
-            "Rebuilt resource state for %d of %d resources.",
-            min(start + batch_size, len(ids)),
-            len(ids),
-        )
+    async with session_factory() as session:
+        if recompute_everything:
+            pending = list(
+                (
+                    await session.scalars(
+                        resource_universe().order_by(ResourceModel.id)
+                    )
+                ).all()
+            )
+        else:
+            pending = await _resources_needing_rebuild(session)
+
+    recomputed = 0
+    passes = 0
+    while pending:
+        passes += 1
+        if passes > _MAX_REBUILD_PASSES:
+            raise ResourceStateRebuildError(
+                f"After {_MAX_REBUILD_PASSES} passes, {len(pending)} resource(s) "
+                "still lack a row per profile computed by this code: rows are "
+                "missing, or keep being rewritten by other code (is an older API "
+                "version still serving writes?). The read model was left not ready."
+            )
+        if passes > 1:
+            logger.info(
+                "Pass %d: %d resource(s) were rewritten by other code during the "
+                "rebuild; recomputing them.",
+                passes,
+                len(pending),
+            )
+        for start in range(0, len(pending), batch_size):
+            async with session_factory.begin() as session:
+                await refresh_resource_states(
+                    session, pending[start : start + batch_size]
+                )
+            logger.info(
+                "Rebuilt resource state for %d of %d resources.",
+                min(start + batch_size, len(pending)),
+                len(pending),
+            )
+        recomputed += len(pending)
+        async with session_factory() as session:
+            pending = await _resources_needing_rebuild(session)
 
     async with session_factory.begin() as session:
         await _delete_unlistable_state(session)
@@ -455,4 +552,4 @@ async def _rebuild_while_locked(
             )
         await _set_ready(session, True)
     forget_cached_readiness()
-    return len(ids)
+    return recomputed

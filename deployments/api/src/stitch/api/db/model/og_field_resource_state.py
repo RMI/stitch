@@ -84,6 +84,11 @@ class OGFieldResourceState(Base):
     # filtered or sorted on.
     provenance: Mapped[dict[str, Any]] = mapped_column(PORTABLE_JSON, nullable=False)
 
+    # The commit (GIT_SHA) of the code that computed this row. A full rebuild
+    # redoes rows computed by other code -- e.g. an older API revision still
+    # writing during a deploy -- before marking the table ready.
+    code_version: Mapped[str | None] = mapped_column(String, nullable=True)
+
     __table_args__ = (
         CheckConstraint(
             "permission_mask BETWEEN 0 AND 3",
@@ -108,6 +113,7 @@ _VALUE_COLUMNS = frozenset(OGFieldResourceState.__table__.columns.keys()) - {
     "resource_id",
     "permission_mask",
     "provenance",
+    "code_version",
 }
 if _VALUE_COLUMNS != frozenset(ATTRIBUTE_NAMES):
     raise RuntimeError(

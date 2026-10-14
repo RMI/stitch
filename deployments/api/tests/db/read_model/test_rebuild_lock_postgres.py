@@ -13,6 +13,7 @@ import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from typing import Any
 
 import pytest
 from sqlalchemy import select, text
@@ -164,7 +165,9 @@ async def test_lock_connection_asks_postgres_to_drop_vanished_clients_quickly(
     lock_holders: list[int] = []
     real_rebuild = state._rebuild_while_locked
 
-    async def record_lock_holder(factory: SessionFactory, batch_size: int) -> int:
+    async def record_lock_holder(
+        factory: SessionFactory, batch_size: int, **kwargs: Any
+    ) -> int:
         async with factory() as session:
             lock_holders.append(
                 await session.scalar(
@@ -175,7 +178,7 @@ async def test_lock_connection_asks_postgres_to_drop_vanished_clients_quickly(
                     {"key": state._REBUILD_LOCK_KEY},
                 )
             )
-        return await real_rebuild(factory, batch_size)
+        return await real_rebuild(factory, batch_size, **kwargs)
 
     monkeypatch.setattr(state, "_drop_vanished_clients_quickly", spy_configure)
     monkeypatch.setattr(state, "_rebuild_while_locked", record_lock_holder)

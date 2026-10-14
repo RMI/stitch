@@ -14,7 +14,7 @@ from stitch.api.db.model.oil_gas_field_source_value import (
 from stitch.api.entities import FILTER_OPTION_FIELDS, User
 
 _STATE_TABLE = OGFieldResourceState.__table__
-_NON_VALUE_COLUMNS = {"resource_id", "permission_mask", "provenance"}
+_NON_VALUE_COLUMNS = {"resource_id", "permission_mask", "provenance", "code_version"}
 
 _EXPECTED_TYPE: dict[ValueKind, type] = {
     ValueKind.TEXT: String,

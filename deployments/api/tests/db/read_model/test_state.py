@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Collection
 from typing import Any
 
 import pytest
@@ -30,6 +31,7 @@ from stitch.api.db.read_model.permissions import (
 from stitch.api.db.read_model.state import (
     ResourceStateRebuildError,
     current_code_version,
+    rebuild_resource_state_if_stale,
     _integrity_problems,
     is_resource_state_ready,
     lock_resources_statement,
@@ -346,6 +348,157 @@ class TestCodeVersion:
         assert not await is_resource_state_ready(session)
 
 
+async def _row_versions(session: AsyncSession) -> dict[int, set[str | None]]:
+    """Each resource's set of row code versions."""
+    rows = await session.execute(
+        select(OGFieldResourceState.resource_id, OGFieldResourceState.code_version)
+    )
+    versions: dict[int, set[str | None]] = {}
+    for rid, version in rows:
+        versions.setdefault(rid, set()).add(version)
+    return versions
+
+
+class TestRowCodeVersions:
+    """Each row records the commit that computed it; a rebuild redoes any row
+    computed by other code, so an older API still writing during a cutover
+    can't leave its rows in a table marked ready for the new commit."""
+
+    async def test_rows_carry_the_code_that_computed_them(
+        self,
+        seeded_integration_session: AsyncSession,
+        dataset: Dataset,
+        integration_session_factory: SessionFactory,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        session = seeded_integration_session
+        _deploy(monkeypatch, "commit-a")
+        await rebuild_all_resource_state(integration_session_factory)
+        assert set().union(*(await _row_versions(session)).values()) == {"commit-a"}
+
+        _deploy(monkeypatch, "commit-b")
+        await refresh_resource_states(session, [dataset.alpha])
+        await session.commit()
+        versions = await _row_versions(session)
+        assert versions[dataset.alpha] == {"commit-b"}
+        assert versions[dataset.beta] == {"commit-a"}
+
+    async def test_rebuild_redoes_rows_other_code_rewrote_during_it(
+        self,
+        seeded_integration_session: AsyncSession,
+        dataset: Dataset,
+        integration_session_factory: SessionFactory,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """GPT's cutover scenario: the new commit's rebuild has done a resource,
+        then the old revision (still serving) writes it with the old rules."""
+        session = seeded_integration_session
+        _deploy(monkeypatch, "commit-b")
+        first = min(dataset.listable)
+        real_refresh = state.refresh_resource_states
+        batches = 0
+
+        async def old_code_writes_after_the_first_batch(
+            batch_session: AsyncSession, resource_ids: Collection[int]
+        ) -> list[int]:
+            nonlocal batches
+            batches += 1
+            if batches == 2:
+                with monkeypatch.context() as old_code:
+                    old_code.setattr(state, "current_code_version", lambda: "commit-a")
+                    async with integration_session_factory.begin() as other:
+                        await real_refresh(other, [first])
+            return await real_refresh(batch_session, resource_ids)
+
+        monkeypatch.setattr(
+            state, "refresh_resource_states", old_code_writes_after_the_first_batch
+        )
+        await rebuild_all_resource_state(integration_session_factory, batch_size=1)
+
+        assert await is_resource_state_ready(session)
+        versions = await _row_versions(session)
+        assert versions[first] == {"commit-b"}
+        assert set().union(*versions.values()) == {"commit-b"}
+
+    async def test_rebuild_gives_up_if_other_code_keeps_writing(
+        self,
+        seeded_integration_session: AsyncSession,
+        dataset: Dataset,
+        integration_session_factory: SessionFactory,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        session = seeded_integration_session
+        _deploy(monkeypatch, "commit-b")
+        real_refresh = state.refresh_resource_states
+
+        async def other_code_rewrites_a_row_every_time(
+            batch_session: AsyncSession, resource_ids: Collection[int]
+        ) -> list[int]:
+            recomputed = await real_refresh(batch_session, resource_ids)
+            await batch_session.execute(
+                update(OGFieldResourceState)
+                .where(OGFieldResourceState.resource_id == min(dataset.listable))
+                .values(code_version="commit-a")
+            )
+            return recomputed
+
+        monkeypatch.setattr(
+            state, "refresh_resource_states", other_code_rewrites_a_row_every_time
+        )
+        with pytest.raises(ResourceStateRebuildError, match="other code"):
+            await rebuild_all_resource_state(integration_session_factory)
+        assert not await is_resource_state_ready(session)
+
+    async def test_if_stale_picks_up_where_a_failed_run_stopped(
+        self,
+        seeded_integration_session: AsyncSession,
+        dataset: Dataset,
+        integration_session_factory: SessionFactory,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        _deploy(monkeypatch, "commit-b")
+        real_compute = state._compute_state_rows
+        computed: list[int] = []
+        fail_on_batch: int | None = 2
+
+        async def recording_compute(session: AsyncSession, ids: list[int]):
+            if fail_on_batch is not None and len(computed) // 2 + 1 == fail_on_batch:
+                raise RuntimeError("boom")
+            computed.extend(ids)
+            return await real_compute(session, ids)
+
+        monkeypatch.setattr(state, "_compute_state_rows", recording_compute)
+        with pytest.raises(RuntimeError, match="boom"):
+            await rebuild_resource_state_if_stale(
+                integration_session_factory, batch_size=2
+            )
+        done_first_time = list(computed)
+        assert len(done_first_time) == 2
+
+        computed.clear()
+        fail_on_batch = None
+        rebuilt_count = await rebuild_resource_state_if_stale(
+            integration_session_factory, batch_size=2
+        )
+
+        assert sorted(computed) == sorted(dataset.listable - set(done_first_time))
+        assert rebuilt_count == len(dataset.listable) - 2
+        assert await is_resource_state_ready(seeded_integration_session)
+
+    async def test_full_rebuild_recomputes_rows_already_from_this_code(
+        self,
+        seeded_integration_session: AsyncSession,
+        rebuilt: Dataset,
+        integration_session_factory: SessionFactory,
+    ):
+        """A plain full rebuild is what you run after a restore or manual SQL:
+        rows stamped with this commit can still be wrong then."""
+        session = seeded_integration_session
+        await _corrupt(session, rebuilt.alpha)
+        await rebuild_all_resource_state(integration_session_factory)
+        assert (await dump_state(session))[(rebuilt.alpha, 0)]["name"] == "Alpha RMI"
+
+
 class TestFullRebuild:
     async def test_missing_status_row_is_not_ready(
         self, seeded_integration_session: AsyncSession
@@ -588,6 +741,19 @@ class TestIntegrityCheck:
         )
         assert await _integrity_problems(session) == [
             "1 listable resource(s) lack a row for every permission profile"
+        ]
+
+    async def test_reports_rows_computed_by_other_code(
+        self, seeded_integration_session: AsyncSession, rebuilt: Dataset
+    ):
+        session = seeded_integration_session
+        await session.execute(
+            update(OGFieldResourceState)
+            .where(OGFieldResourceState.resource_id == rebuilt.alpha)
+            .values(code_version="some-other-commit")
+        )
+        assert await _integrity_problems(session) == [
+            "1 listable resource(s) have rows computed by other code"
         ]
 
     async def test_reports_rows_for_merged_away_resources(

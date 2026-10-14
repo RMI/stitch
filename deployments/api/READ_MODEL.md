@@ -29,6 +29,9 @@ answers the slower way ("live"), with the same results.
 - **Staying current:** every write that can change a list answer (creating or
   attaching sources, re-ordering a field's sources, merging) recomputes the
   affected resources' rows in the same transaction, so they commit together.
+  Each row also records the commit that computed it (its own `code_version`), so
+  rows written by an older API revision still serving during a deploy can be
+  found and redone.
 - **Unchanged:** the detail endpoint (`GET /oil-gas-fields/{id}`) and per-field
   source listings always compute live.
 
@@ -83,15 +86,23 @@ python -m stitch.api.db.read_model.rebuild --ids 123 456
 
 - **What happens:** readiness is cleared first, so reads switch to live for the
   duration. Resources are rebuilt in committed batches (`--batch-size`, default
-  500), each batch replacing its resources' rows; rows for resources that are no
-  longer listable are removed; the result is checked (every listable resource
-  has all four rows, nothing else has any), and only then is readiness set. The
-  table is never emptied along the way, so a request already in progress when
-  the rebuild starts still gets a complete answer. At ~50K resources it takes
-  about 1.5 minutes.
+  500), each batch replacing its resources' rows. Then it checks for resources
+  whose rows were since rewritten by other code (an older API revision still
+  serving writes) and redoes those, repeating until none are left; rows for
+  resources that are no longer listable are removed; the result is checked
+  (every listable resource has all four rows, all computed by this code, and
+  nothing else has any), and only then is readiness set. The table is never
+  emptied along the way, so a request already in progress when the rebuild
+  starts still gets a complete answer. At ~50K resources it takes about 1.5
+  minutes.
+- **Full rebuild vs `--if-stale`:** a plain full rebuild recomputes every
+  resource. `--if-stale` only recomputes resources not already computed by this
+  code, so re-running it after a failed or cancelled run picks up where that run
+  stopped.
 - **If it fails:** readiness stays cleared and reads stay live; just run it again.
   Whatever rows a failed run leaves are never served, and the next run replaces
-  them.
+  or reuses them. If other code keeps rewriting rows, it stops after 5 passes
+  with an error asking whether an older API version is still serving writes.
 - **Two at once:** a full rebuild started by hand while another is running
   exits with "Another resource-state rebuild is already running." `--if-stale`
   (the deploy step) instead waits up to 10 minutes for it to finish, then checks
@@ -135,6 +146,10 @@ WHERE r.repointed_id IS NULL AND m.status = 'ACTIVE';
 SELECT count(*) FROM og_field_resource_state s
 JOIN og_field_resources r ON r.id = s.resource_id
 WHERE r.repointed_id IS NOT NULL;
+
+-- Every row computed by the serving commit (expect 0)
+SELECT count(*) FROM og_field_resource_state s, og_field_resource_state_status st
+WHERE s.code_version IS DISTINCT FROM st.code_version;
 ```
 
 Then smoke-test the list and filter-options pages, and check the query timings
@@ -161,7 +176,9 @@ Ordinary API writes keep the table current. Beyond that:
   readiness.
 - **A database restore, or manual SQL edits** to sources, memberships, or
   priorities, change answers without the code or the writes noticing: run a
-  full rebuild (or `--ids` for the affected resources).
+  plain full rebuild (or `--ids` for the affected resources). Not `--if-stale`:
+  rows already computed by this code would be skipped, even though the data
+  under them changed.
 
 ## Changing the code safely
 
