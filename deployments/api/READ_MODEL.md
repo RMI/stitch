@@ -43,10 +43,13 @@ comes back (each commit only trusts rows it built). CI does this automatically:
 1. **Deploy as usual.** CI runs the migrations and deploys the API, then the
    **Rebuild Read Model** job (`.github/workflows/rebuild-read-model.yml`) runs
    `python -m stitch.api.db.read_model.rebuild --if-stale` from the same API
-   image. It waits for the API deploy so the previous revision, whose writes
-   would refresh rows with the old code's rules, is gone first. Reads use live
-   from the deploy until the rebuild finishes (~1.5–2 minutes at 50K resources
-   after the deploy) — correct, just slower.
+   image. The API deploy doesn't finish until the previous revision has stopped
+   serving (only revisions running the new image are active, plus 45 s for
+   in-flight requests), so the old code's writes, which refresh rows with the
+   old rules, can't land after the rebuild marks the table ready. Any that land
+   *during* the rebuild are caught by each row's `code_version` and redone.
+   Reads use live from the deploy until the rebuild finishes (~1.5–2 minutes at
+   50K resources after the deploy) — correct, just slower.
 2. **If that job fails,** the deploy still goes out and lists stay on live. On
    a PR, the deploy summary comment shows a warning saying so. Re-run the job,
    or run the rebuild by hand from the deployed image (below).

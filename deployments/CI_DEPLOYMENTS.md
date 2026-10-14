@@ -324,8 +324,11 @@ deployments, `pr-*`, `main` deploy to the same PostgreSQL instance, with
 separate logical DBs)
 
 It also handles running `db-migrations` (via Alembic in the `api` image) and
-`seed`, both directly from GH Actions (rather than starting on Azure). After
-the API deploy, `rebuild-read-model` runs the API's resource-state read-model
+`seed`, both directly from GH Actions (rather than starting on Azure). The API
+deploy waits until its new revision has fully replaced the previous one
+(`wait-for-cutover` in `deploy-container.yml`; it fails the deploy if the new
+revision fails to provision or doesn't take over within 10 minutes). After the
+API deploy, `rebuild-read-model` runs the API's resource-state read-model
 rebuild from the same `api` image (a no-op when it's already current for this
 commit); nothing waits on it, so a failure leaves list reads on the slower live
 path without blocking the deploy. See

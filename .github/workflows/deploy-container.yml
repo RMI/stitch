@@ -68,6 +68,11 @@ on:
         required: false
         default: ""
         type: string
+      wait-for-cutover:
+        description: "Optional. After deploying, wait until every active revision runs this image (the previous revision no longer receives requests), plus time for its in-flight requests to finish. Use when something run after this deploy must not overlap the previous version's writes (e.g. the API's read-model rebuild). Fails the deploy if the new revision fails to provision or doesn't take over within 10 minutes."
+        required: false
+        default: false
+        type: boolean
     secrets:
       azure-client-id:
         required: true
@@ -344,6 +349,66 @@ jobs:
             --name "${{ inputs.container-app-name }}" \
             --resource-group "${AZURE_RESOURCE_GROUP}" \
             --yaml /tmp/app-cooldown.yaml
+
+      - name: Wait for the new revision to replace the previous one
+        # The deploy action can return while the new revision is still
+        # provisioning, with the previous revision still serving requests (see
+        # the cooldown step above). Callers that set wait-for-cutover need the
+        # previous version to have stopped handling requests -- the API's
+        # read-model rebuild must not overlap the old code's writes (see
+        # deployments/api/READ_MODEL.md). Done when no active revision runs
+        # another image and one running this image has finished provisioning;
+        # then wait for the old revision's in-flight requests (deactivated
+        # replicas get a 30 s termination grace period by default).
+        if: ${{ inputs.wait-for-cutover }}
+        shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          APP_NAME: ${{ inputs.container-app-name }}
+          IMAGE: ${{ inputs.full-image-name }}
+          TIMEOUT_SECONDS: "600"
+          POLL_SECONDS: "10"
+          DRAIN_SECONDS: "45"
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + TIMEOUT_SECONDS ))
+          while true; do
+            # Lists the app's active revisions.
+            revisions="$(
+              az containerapp revision list \
+                --name "$APP_NAME" \
+                --resource-group "$AZURE_RESOURCE_GROUP" \
+                --output json
+            )"
+            state="$(
+              jq -r --arg image "$IMAGE" '
+                [.[] | select(.properties.active)] as $active
+                | [$active[] | select(any(.properties.template.containers[]; .image == $image))] as $new
+                | [$active[] | select(all(.properties.template.containers[]; .image != $image))] as $old
+                | if any($new[]; .properties.provisioningState == "Failed") then "failed"
+                  elif ($old | length) == 0 and any($new[]; .properties.provisioningState == "Provisioned") then "done"
+                  else "waiting: \($old | length) active revision(s) on another image; \($new | length) on this image (\([$new[].properties.provisioningState] | join(", ")))"
+                  end
+              ' <<< "$revisions"
+            )"
+            case "$state" in
+              done)
+                echo "Only revisions running $IMAGE are active; waiting ${DRAIN_SECONDS}s for the previous revision's in-flight requests."
+                sleep "$DRAIN_SECONDS"
+                exit 0
+                ;;
+              failed)
+                echo "::error::The new revision of $APP_NAME failed to provision; the previous revision is still serving."
+                exit 1
+                ;;
+            esac
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::The new revision of $APP_NAME did not replace the previous one within ${TIMEOUT_SECONDS}s ($state)."
+              exit 1
+            fi
+            echo "$state"
+            sleep "$POLL_SECONDS"
+          done
 
       - name: Export application URL
         id: export-app-url
