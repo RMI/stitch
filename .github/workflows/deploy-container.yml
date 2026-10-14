@@ -372,25 +372,31 @@ jobs:
         run: |
           set -euo pipefail
           deadline=$(( $(date +%s) + TIMEOUT_SECONDS ))
+          az_errors="$(mktemp)"
           while true; do
-            # Lists the app's active revisions.
-            revisions="$(
+            # A failed poll (ARM throttling, a network blip, an unexpected
+            # payload) is logged and retried until the deadline rather than
+            # failing the deploy; only the outcomes below end the step.
+            if ! revisions="$(
               az containerapp revision list \
                 --name "$APP_NAME" \
                 --resource-group "$AZURE_RESOURCE_GROUP" \
-                --output json
-            )"
-            state="$(
+                --output json 2> "$az_errors"
+            )"; then
+              state="waiting: couldn't list revisions ($(tail -n 1 "$az_errors"))"
+            elif ! state="$(
               jq -r --arg image "$IMAGE" '
                 [.[] | select(.properties.active)] as $active
-                | [$active[] | select(any(.properties.template.containers[]; .image == $image))] as $new
-                | [$active[] | select(all(.properties.template.containers[]; .image != $image))] as $old
+                | [$active[] | select(any((.properties.template.containers // [])[]; .image == $image))] as $new
+                | [$active[] | select(all((.properties.template.containers // [])[]; .image != $image))] as $old
                 | if any($new[]; .properties.provisioningState == "Failed") then "failed"
                   elif ($old | length) == 0 and any($new[]; .properties.provisioningState == "Provisioned") then "done"
                   else "waiting: \($old | length) active revision(s) on another image; \($new | length) on this image (\([$new[].properties.provisioningState] | join(", ")))"
                   end
-              ' <<< "$revisions"
-            )"
+              ' <<< "$revisions" 2>&1
+            )"; then
+              state="waiting: couldn't read the revision list ($state)"
+            fi
             case "$state" in
               done)
                 echo "Only revisions running $IMAGE are active; waiting ${DRAIN_SECONDS}s for the previous revision's in-flight requests."
