@@ -28,6 +28,7 @@ from .state import (
     DEFAULT_BATCH_SIZE,
     ResourceStateRebuildError,
     current_code_version,
+    is_resource_state_disabled,
     rebuild_all_resource_state,
     rebuild_resource_state_if_stale,
     refresh_resource_states,
@@ -78,15 +79,16 @@ async def _refuse_if_served_by_other_code(session: AsyncSession) -> None:
 
     The API trusts a ready table only as built entirely by its own commit, so
     rows recomputed here by different code would be served under the wrong
-    version. A table that isn't ready isn't served, and the next full rebuild
-    replaces its rows. Holds a share lock on the status row, so readiness can't
-    change before this transaction ends.
+    version. A table that isn't ready, or is switched off, isn't served, and the
+    next full rebuild replaces its rows. Holds a share lock on the status row,
+    so readiness can't change before this transaction ends.
     """
     status = (
         await session.execute(
             select(
                 OGFieldResourceStateStatus.ready,
                 OGFieldResourceStateStatus.code_version,
+                OGFieldResourceStateStatus.disabled,
             )
             .where(OGFieldResourceStateStatus.key == RESOURCE_STATE_STATUS_KEY)
             .with_for_update(read=True)
@@ -95,6 +97,7 @@ async def _refuse_if_served_by_other_code(session: AsyncSession) -> None:
     if (
         status is not None
         and status.ready
+        and not status.disabled
         and status.code_version != current_code_version()
     ):
         raise ResourceStateRebuildError(
@@ -164,6 +167,14 @@ async def _run(ids: list[int] | None, batch_size: int, if_stale: bool = False) -
                 "model is ready.",
                 count,
                 current_code_version(),
+            )
+        async with session_factory() as session:
+            disabled = await is_resource_state_disabled(session)
+        if disabled:
+            logger.warning(
+                "The read model is switched off (disabled), so the API keeps "
+                "answering lists live. Rebuilds never switch it back on; to do so: "
+                "UPDATE og_field_resource_state_status SET disabled = false;"
             )
     finally:
         await dispose_engine()

@@ -211,6 +211,17 @@ class TestFallback:
         await session.commit()
         await self._assert_live_answer(session, PROFILES[3])
 
+    async def test_read_model_switched_off(
+        self,
+        seeded_integration_session: AsyncSession,
+        rebuilt: Dataset,
+        read_model_forbidden: None,
+    ):
+        session = seeded_integration_session
+        await session.execute(update(OGFieldResourceStateStatus).values(disabled=True))
+        await session.commit()
+        await self._assert_live_answer(session, PROFILES[3])
+
     async def test_read_model_built_by_other_code(
         self,
         seeded_integration_session: AsyncSession,

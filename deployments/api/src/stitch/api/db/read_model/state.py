@@ -17,11 +17,13 @@ or a write.
   the readiness flag, so new readers stay on the live path until it fully
   succeeds. It never empties the table, so a reader already past the readiness
   check sees each resource's old or new rows, never a missing one.
-* ``is_resource_state_ready`` checks the table can be used: a completed full
-  rebuild, by the same commit as the running code. Any change to how rows are
-  computed ships in a new commit, so deploying it switches reads to live until
-  that code rebuilds the table. List reads go through
-  ``is_resource_state_ready_for_reads``, which asks at most every few seconds.
+* ``is_resource_state_current`` checks a full rebuild by the same commit as the
+  running code completed. Any change to how rows are computed ships in a new
+  commit, so deploying it makes the table stale until that code rebuilds it.
+* ``is_resource_state_ready`` checks readers may use it: current, and not
+  switched off by an operator (``disabled``, which rebuilds never clear). List
+  reads go through ``is_resource_state_ready_for_reads``, which asks at most
+  every few seconds.
 """
 
 from __future__ import annotations
@@ -210,25 +212,45 @@ def current_code_version() -> str:
     return get_settings().git_sha or UNKNOWN_CODE_VERSION
 
 
-async def is_resource_state_ready(session: AsyncSession) -> bool:
-    """True only when a full rebuild by this same commit completed.
-
-    A missing status row, a cleared flag, or rows built by other code (an older
-    or newer deploy) all mean not ready.
-    """
-    status = (
+async def _status(session: AsyncSession) -> Any | None:
+    return (
         await session.execute(
             select(
                 OGFieldResourceStateStatus.ready,
                 OGFieldResourceStateStatus.code_version,
+                OGFieldResourceStateStatus.disabled,
             ).where(OGFieldResourceStateStatus.key == RESOURCE_STATE_STATUS_KEY)
         )
     ).one_or_none()
+
+
+def _is_current(status: Any | None) -> bool:
     return (
         status is not None
         and status.ready is True
         and status.code_version == current_code_version()
     )
+
+
+async def is_resource_state_current(session: AsyncSession) -> bool:
+    """True when a full rebuild by this same commit completed (enabled or not).
+
+    A missing status row, a cleared flag, or rows built by other code (an older
+    or newer deploy) all mean not current.
+    """
+    return _is_current(await _status(session))
+
+
+async def is_resource_state_ready(session: AsyncSession) -> bool:
+    """True when readers may use the table: current, and not ``disabled``."""
+    status = await _status(session)
+    return _is_current(status) and not status.disabled
+
+
+async def is_resource_state_disabled(session: AsyncSession) -> bool:
+    """True when an operator has switched the read model off."""
+    status = await _status(session)
+    return status is not None and status.disabled is True
 
 
 class _ReadinessCache:
@@ -464,7 +486,7 @@ async def rebuild_resource_state_if_stale(
     _check_batch_size(batch_size)
     async with _exclusive_rebuild(session_factory, wait=lock_wait):
         async with session_factory() as session:
-            if await is_resource_state_ready(session):
+            if await is_resource_state_current(session):
                 return None
         return await _rebuild_while_locked(
             session_factory, batch_size, recompute_everything=False

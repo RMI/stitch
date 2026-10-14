@@ -24,8 +24,11 @@ answers the slower way ("live"), with the same results.
   only when it is ready **and** was built by the same commit the API is running;
   otherwise it answers live. So every deploy of new code switches reads to live
   until that code rebuilds the table — a change to how answers are computed can
-  never be served from rows built by older code. Each API process re-checks
-  readiness at most every 5 seconds, so changes to it take effect within that.
+  never be served from rows built by older code. An operator can also switch
+  the fast path off (`disabled`, see [Verifying](#verifying)); that stays off
+  across rebuilds and deploys until someone switches it back on. Each API
+  process re-checks readiness at most every 5 seconds, so changes to it take
+  effect within that.
 - **Staying current:** every write that can change a list answer (creating or
   attaching sources, re-ordering a field's sources, merging) recomputes the
   affected resources' rows in the same transaction, so they commit together.
@@ -53,8 +56,9 @@ comes back (each commit only trusts rows it built). CI does this automatically:
 2. **If that job fails,** the deploy still goes out and lists stay on live. On
    a PR, the deploy summary comment shows a warning saying so. Re-run the job,
    or run the rebuild by hand from the deployed image (below).
-3. **Verify** (below). If anything looks wrong, clear readiness (below) and reads
-   go back to live within a few seconds.
+3. **Verify** (below). If anything looks wrong, switch the fast path off
+   (below) and reads go back to live within a few seconds, and stay there
+   through later deploys until you switch it back on.
 
 ## Running a rebuild
 
@@ -133,9 +137,9 @@ python -m stitch.api.db.read_model.rebuild --ids 123 456
 ## Verifying
 
 ```sql
--- Ready, when it was last rebuilt, and by which commit (compare with
--- build.git_sha from the API's health endpoint)
-SELECT ready, rebuilt_at, code_version FROM og_field_resource_state_status;
+-- Ready, when it was last rebuilt, by which commit (compare with
+-- build.git_sha from the API's health endpoint), and whether it's switched off
+SELECT ready, rebuilt_at, code_version, disabled FROM og_field_resource_state_status;
 
 -- Exactly 4 rows per listable resource
 SELECT count(*) AS state_rows, count(DISTINCT resource_id) AS resources
@@ -166,8 +170,20 @@ model adds to writes (and to rebuild batches) is labeled `read_model.refresh`.
 this up within about 5 seconds):
 
 ```sql
-UPDATE og_field_resource_state_status SET ready = false;
+UPDATE og_field_resource_state_status SET disabled = true;
 ```
+
+It stays off until you switch it back on. Rebuilds (including CI's after every
+deploy) still run and keep the rows current, but never switch it back on; they
+log a warning saying it's off. Once the problem is fixed and a rebuild by the
+deployed code has finished:
+
+```sql
+UPDATE og_field_resource_state_status SET disabled = false;
+```
+
+(Setting `ready = false` instead only lasts until the next rebuild, which CI
+runs on every deploy.)
 
 ## When a full rebuild is needed again
 

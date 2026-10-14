@@ -266,6 +266,119 @@ def _deploy(monkeypatch: pytest.MonkeyPatch, git_sha: str | None) -> None:
     get_settings.cache_clear()
 
 
+async def _set_disabled(session: AsyncSession, disabled: bool) -> None:
+    """What the runbook's switch-off / switch-on SQL does."""
+    await session.execute(update(OGFieldResourceStateStatus).values(disabled=disabled))
+    await session.commit()
+
+
+class TestDisabled:
+    """An operator's switch-off sticks: rebuilds keep the rows current but never
+    turn the read model back on; only clearing ``disabled`` does."""
+
+    async def test_disabled_read_model_is_not_ready(
+        self, seeded_integration_session: AsyncSession, rebuilt: Dataset
+    ):
+        session = seeded_integration_session
+        await _set_disabled(session, True)
+        assert not await is_resource_state_ready(session)
+
+        await _set_disabled(session, False)
+        assert await is_resource_state_ready(session)
+
+    async def test_rebuilds_do_not_re_enable_it(
+        self,
+        seeded_integration_session: AsyncSession,
+        rebuilt: Dataset,
+        integration_session_factory: SessionFactory,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        session = seeded_integration_session
+        await _set_disabled(session, True)
+
+        await rebuild_all_resource_state(integration_session_factory)
+        _deploy(monkeypatch, "a-later-commit")
+        await rebuild_resource_state_if_stale(integration_session_factory)
+
+        status = (
+            await session.execute(select(OGFieldResourceStateStatus.__table__))
+        ).one()
+        assert (status.ready, status.code_version, status.disabled) == (
+            True,
+            "a-later-commit",
+            True,
+        )
+        assert not await is_resource_state_ready(session)
+
+    async def test_if_stale_does_not_rebuild_a_current_disabled_table(
+        self,
+        seeded_integration_session: AsyncSession,
+        rebuilt: Dataset,
+        integration_session_factory: SessionFactory,
+    ):
+        """Disabled isn't stale: deploys of the same commit don't rebuild."""
+        session = seeded_integration_session
+        await _set_disabled(session, True)
+        built_at = await session.scalar(select(OGFieldResourceStateStatus.rebuilt_at))
+
+        assert (
+            await rebuild_resource_state_if_stale(integration_session_factory) is None
+        )
+        assert (
+            await session.scalar(select(OGFieldResourceStateStatus.rebuilt_at))
+            == built_at
+        )
+
+    async def test_cli_says_the_rebuilt_read_model_is_still_disabled(
+        self,
+        seeded_integration_session: AsyncSession,
+        rebuilt: Dataset,
+        monkeypatch: pytest.MonkeyPatch,
+        integration_engine: AsyncEngine,
+        integration_session_factory: SessionFactory,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        async def _no_dispose() -> None:
+            return None
+
+        monkeypatch.setattr(
+            rebuild_cli, "get_session_factory", lambda: integration_session_factory
+        )
+        monkeypatch.setattr(rebuild_cli, "dispose_engine", _no_dispose)
+        monkeypatch.setattr(rebuild_cli, "get_engine", lambda: integration_engine)
+        caplog.set_level(logging.INFO)
+        await _set_disabled(seeded_integration_session, True)
+
+        await rebuild_cli._run(ids=None, batch_size=500)
+
+        assert "disabled" in caplog.text
+
+    async def test_ids_repair_allowed_on_a_disabled_table_from_other_code(
+        self,
+        seeded_integration_session: AsyncSession,
+        dataset: Dataset,
+        integration_session_factory: SessionFactory,
+        monkeypatch: pytest.MonkeyPatch,
+        integration_engine: AsyncEngine,
+    ):
+        """A disabled table isn't served, so the version guard doesn't apply."""
+        session = seeded_integration_session
+        _deploy(monkeypatch, "commit-a")
+        await rebuild_all_resource_state(integration_session_factory)
+        await _set_disabled(session, True)
+
+        async def _no_dispose() -> None:
+            return None
+
+        monkeypatch.setattr(
+            rebuild_cli, "get_session_factory", lambda: integration_session_factory
+        )
+        monkeypatch.setattr(rebuild_cli, "dispose_engine", _no_dispose)
+        monkeypatch.setattr(rebuild_cli, "get_engine", lambda: integration_engine)
+        _deploy(monkeypatch, "commit-b")
+        await rebuild_cli._run(ids=[dataset.alpha], batch_size=1)
+
+
 class TestCodeVersion:
     """The read model is used only by the commit whose rebuild produced it."""
 
