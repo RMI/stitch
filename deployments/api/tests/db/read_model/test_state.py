@@ -741,6 +741,51 @@ class TestRebuildCli:
         assert f"[{rebuilt.zeta_a}]" in caplog.text
         assert "not listed" in caplog.text
 
+    async def test_ids_refused_when_the_served_table_is_from_other_code(
+        self,
+        seeded_integration_session: AsyncSession,
+        dataset: Dataset,
+        integration_session_factory: SessionFactory,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Repairing from commit B would put B-computed rows into a table that
+        commit A is serving as built entirely by A."""
+        session = seeded_integration_session
+        _deploy(monkeypatch, "commit-a")
+        await rebuild_all_resource_state(integration_session_factory)
+        await _corrupt(session, dataset.alpha)
+        before = await dump_state(session)
+
+        _deploy(monkeypatch, "commit-b")
+        with pytest.raises(ResourceStateRebuildError, match="commit-a"):
+            await rebuild_cli._run(ids=[dataset.alpha], batch_size=1)
+
+        assert await dump_state(session) == before
+        status = (
+            await session.execute(select(OGFieldResourceStateStatus.__table__))
+        ).one()
+        assert (status.ready, status.code_version) == (True, "commit-a")
+
+    async def test_ids_allowed_from_any_code_while_not_ready(
+        self,
+        seeded_integration_session: AsyncSession,
+        dataset: Dataset,
+        integration_session_factory: SessionFactory,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """A table that isn't ready isn't being served, and the next rebuild
+        replaces its rows, so a repair from any code is harmless."""
+        session = seeded_integration_session
+        _deploy(monkeypatch, "commit-a")
+        await rebuild_all_resource_state(integration_session_factory)
+        await session.execute(update(OGFieldResourceStateStatus).values(ready=False))
+        await session.commit()
+
+        _deploy(monkeypatch, "commit-b")
+        await rebuild_cli._run(ids=[dataset.alpha], batch_size=1)
+
+        assert {rid for rid, _ in await dump_state(session)} >= {dataset.alpha}
+
     async def test_unknown_ids_fail_without_changing_anything(
         self, seeded_integration_session: AsyncSession, rebuilt: Dataset
     ):

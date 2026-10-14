@@ -22,7 +22,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..config import dispose_engine, get_engine, get_session_factory
-from ..model import ResourceModel
+from ..model import OGFieldResourceStateStatus, ResourceModel
+from ..model.og_field_resource_state import RESOURCE_STATE_STATUS_KEY
 from .state import (
     DEFAULT_BATCH_SIZE,
     ResourceStateRebuildError,
@@ -72,12 +73,46 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+async def _refuse_if_served_by_other_code(session: AsyncSession) -> None:
+    """Refuse to change a table that is being served as built by other code.
+
+    The API trusts a ready table only as built entirely by its own commit, so
+    rows recomputed here by different code would be served under the wrong
+    version. A table that isn't ready isn't served, and the next full rebuild
+    replaces its rows. Holds a share lock on the status row, so readiness can't
+    change before this transaction ends.
+    """
+    status = (
+        await session.execute(
+            select(
+                OGFieldResourceStateStatus.ready,
+                OGFieldResourceStateStatus.code_version,
+            )
+            .where(OGFieldResourceStateStatus.key == RESOURCE_STATE_STATUS_KEY)
+            .with_for_update(read=True)
+        )
+    ).one_or_none()
+    if (
+        status is not None
+        and status.ready
+        and status.code_version != current_code_version()
+    ):
+        raise ResourceStateRebuildError(
+            f"The read model is being served as built by code "
+            f"{status.code_version}, but this is code {current_code_version()}. "
+            "Run the repair from that code (or a full rebuild from this code); "
+            "nothing was changed."
+        )
+
+
 async def _repair(
     session_factory: async_sessionmaker[AsyncSession], ids: list[int]
 ) -> None:
-    """Recompute the given resources, refusing unknown ids (likely typos)."""
+    """Recompute the given resources, refusing unknown ids (likely typos) and
+    tables being served as built by other code."""
     requested = sorted(set(ids))
     async with session_factory.begin() as session:
+        await _refuse_if_served_by_other_code(session)
         existing = set(
             (
                 await session.scalars(

@@ -108,10 +108,12 @@ python -m stitch.api.db.read_model.rebuild --ids 123 456
 
   SELECT pg_terminate_backend(<pid>);
   ```
-- `--ids` never changes readiness; it's safe at any time. It reports which ids it
-  recomputed and which aren't listed (merged away, or no active sources — any
-  stored rows for those are removed). If any id doesn't exist it changes nothing
-  and exits with an error, since that's usually a typo.
+- `--ids` never changes readiness, and is safe while the API serves reads. It
+  reports which ids it recomputed and which aren't listed (merged away, or no
+  active sources — any stored rows for those are removed). It changes nothing
+  and exits with an error if any id doesn't exist (usually a typo), or if the
+  table is being served as built by different code: run it from the same image
+  as the API, so served rows never mix two versions.
 - Errors print as a single `ERROR` line and exit with status 1.
 
 ## Verifying
