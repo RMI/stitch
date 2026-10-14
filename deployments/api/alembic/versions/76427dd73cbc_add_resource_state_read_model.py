@@ -7,9 +7,15 @@ Create Date: 2026-10-09 00:00:00.000000
 Create the precomputed current-state read model (STIT-766):
 
 * ``og_field_resource_state`` -- one row per ``(resource, permission_mask)`` with
-  the coalesced value of every ``OilGasFieldBase`` field plus a ``provenance`` map.
+  the coalesced value of every ``OilGasFieldBase`` field plus a ``provenance`` map,
+  and the ``code_version`` (git SHA) of the code that computed the row. A full
+  rebuild recomputes rows computed by other code (for example an older API
+  revision still writing during a deploy) before marking the table ready.
 * ``og_field_resource_state_status`` -- the single readiness row, created with
-  ``ready = false``.
+  ``ready = false``. ``code_version`` records the commit whose full rebuild last
+  marked it ready; readers use the read model only when it matches their own
+  commit. ``disabled`` is an operator's switch to keep the API on live reads,
+  which rebuilds never clear.
 
 Schema only. The table is derived data, filled by the application's full rebuild
 (a required deploy step after this migration, run outside Alembic because it
@@ -75,6 +81,7 @@ def upgrade() -> None:
         sa.Column("owners", _JSON, nullable=True),
         sa.Column("operators", _JSON, nullable=True),
         sa.Column("provenance", _JSON, nullable=False),
+        sa.Column("code_version", sa.String(), nullable=True),
         sa.CheckConstraint(
             "permission_mask BETWEEN 0 AND 3",
             name="ck_resource_state_permission_mask",
@@ -106,6 +113,8 @@ def upgrade() -> None:
         sa.Column("key", sa.String(), nullable=False),
         sa.Column("ready", sa.Boolean(), nullable=False),
         sa.Column("rebuilt_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("code_version", sa.String(), nullable=True),
+        sa.Column("disabled", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.PrimaryKeyConstraint("key"),
     )
     op.bulk_insert(status, [{"key": "resource_state", "ready": False}])
