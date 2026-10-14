@@ -8,7 +8,6 @@ function createMockConfig() {
   return {
     appEnv: "local",
     apiBaseUrl: "http://localhost:8000/api/v1",
-    entityLinkageBaseUrl: "http://localhost:8001/api/v1",
     auth0: {
       domain: "example.auth0.com",
       clientId: "client-id",

@@ -8,7 +8,6 @@ expect.extend(matchers);
 const TEST_CONFIG = {
   appEnv: "test",
   apiBaseUrl: "http://localhost:8000/api/v1",
-  entityLinkageBaseUrl: "http://localhost:8001/api/v1",
   stitchLlmBaseUrl: "http://localhost:8002/api/v1",
   etlBaseUrl: "http://localhost:8100/api/v1/etl",
   auth0: {
