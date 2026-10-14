@@ -50,7 +50,7 @@ from .queries import (
 )
 from .read_model.permissions import read_model_mask
 from .read_model.state import (
-    is_resource_state_ready,
+    is_resource_state_ready_for_reads,
     lock_resources,
     refresh_resource_state,
     refresh_resource_states,
@@ -93,11 +93,12 @@ async def _ready_read_model_mask(
 ) -> int | None:
     """The permission mask to read, or ``None`` to use live coalescing.
 
-    Unlabeled on purpose: the readiness lookup is not part of the list /
+    Readiness is re-checked at most every few seconds per process. When it is
+    asked, the lookup is unlabeled on purpose: it is not part of the list /
     filter-options ``named_query`` contract.
     """
     mask = read_model_mask(licensed_sources)
-    if mask is None or not await is_resource_state_ready(session):
+    if mask is None or not await is_resource_state_ready_for_reads(session):
         return None
     return mask
 
@@ -180,6 +181,11 @@ async def filter_options(
     if mask is None:
         return await _filter_options_live(session, licensed_sources)
 
+    # One DISTINCT per field, each answered from its (permission_mask, field)
+    # index. A single UNION ALL of all six was measured slower at 50K resources
+    # (the cost is the index scans, not round trips); that the six statements
+    # may see slightly different moments only affects dropdown suggestions,
+    # transiently.
     options: dict[str, list[str]] = {}
     with named_query("resources.filter_options"):
         for field in FILTER_OPTION_FIELDS:

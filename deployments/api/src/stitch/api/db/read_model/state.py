@@ -17,10 +17,11 @@ or a write.
   the readiness flag, so new readers stay on the live path until it fully
   succeeds. It never empties the table, so a reader already past the readiness
   check sees each resource's old or new rows, never a missing one.
-* ``is_resource_state_ready`` is the check readers make before using the table:
-  a completed full rebuild, by the same commit as the running code. Any change
-  to how rows are computed ships in a new commit, so deploying it switches reads
-  to live until that code rebuilds the table.
+* ``is_resource_state_ready`` checks the table can be used: a completed full
+  rebuild, by the same commit as the running code. Any change to how rows are
+  computed ships in a new commit, so deploying it switches reads to live until
+  that code rebuilds the table. List reads go through
+  ``is_resource_state_ready_for_reads``, which asks at most every few seconds.
 """
 
 from __future__ import annotations
@@ -53,6 +54,12 @@ DEFAULT_BATCH_SIZE: Final[int] = 500
 # a developer machine). Deliberately not the local git HEAD: that would switch a
 # local read model off on every commit.
 UNKNOWN_CODE_VERSION: Final[str] = "unknown"
+
+# List reads re-check readiness at most this often per API process. The table
+# is never emptied and each process only trusts rows built by its own commit,
+# so a briefly out-of-date answer only delays switching between the read model
+# and live reads; it never serves a broken page.
+READINESS_CACHE_SECONDS: Final[float] = 5.0
 
 # Postgres advisory-lock key held for the duration of a full rebuild, so two
 # rebuilds can't interleave. Arbitrary; only needs to be unique within the app.
@@ -216,6 +223,46 @@ async def is_resource_state_ready(session: AsyncSession) -> bool:
     )
 
 
+class _ReadinessCache:
+    """This process's most recent readiness answer, and when it was checked."""
+
+    def __init__(self) -> None:
+        self.checked_at: float | None = None
+        self.ready = False
+
+    def fresh(self) -> bool:
+        return (
+            self.checked_at is not None
+            and time.monotonic() - self.checked_at < READINESS_CACHE_SECONDS
+        )
+
+    def remember(self, ready: bool) -> None:
+        self.checked_at = time.monotonic()
+        self.ready = ready
+
+    def forget(self) -> None:
+        self.checked_at = None
+
+
+_readiness_cache = _ReadinessCache()
+
+
+async def is_resource_state_ready_for_reads(session: AsyncSession) -> bool:
+    """``is_resource_state_ready``, asked at most every few seconds per process.
+
+    For the list/filter-options read path, so most requests don't pay a round
+    trip just to check readiness (see ``READINESS_CACHE_SECONDS``).
+    """
+    if not _readiness_cache.fresh():
+        _readiness_cache.remember(await is_resource_state_ready(session))
+    return _readiness_cache.ready
+
+
+def forget_cached_readiness() -> None:
+    """Make the next list read ask the database again."""
+    _readiness_cache.forget()
+
+
 async def _set_ready(session: AsyncSession, ready: bool) -> None:
     status = await session.get(OGFieldResourceStateStatus, RESOURCE_STATE_STATUS_KEY)
     if status is None:
@@ -375,9 +422,14 @@ def _check_batch_size(batch_size: int) -> None:
 async def _rebuild_while_locked(
     session_factory: async_sessionmaker[AsyncSession], batch_size: int
 ) -> int:
-    """The full rebuild itself; the caller holds the rebuild lock."""
+    """The full rebuild itself; the caller holds the rebuild lock.
+
+    Forgets this process's cached readiness after each change commits, so reads
+    here switch immediately (other processes switch within the cache window).
+    """
     async with session_factory.begin() as session:
         await _set_ready(session, False)
+    forget_cached_readiness()
     async with session_factory() as session:
         ids = list(
             (
@@ -402,4 +454,5 @@ async def _rebuild_while_locked(
                 + "; ".join(problems)
             )
         await _set_ready(session, True)
+    forget_cached_readiness()
     return len(ids)

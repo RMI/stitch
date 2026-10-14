@@ -24,7 +24,8 @@ answers the slower way ("live"), with the same results.
   only when it is ready **and** was built by the same commit the API is running;
   otherwise it answers live. So every deploy of new code switches reads to live
   until that code rebuilds the table — a change to how answers are computed can
-  never be served from rows built by older code.
+  never be served from rows built by older code. Each API process re-checks
+  readiness at most every 5 seconds, so changes to it take effect within that.
 - **Staying current:** every write that can change a list answer (creating or
   attaching sources, re-ordering a field's sources, merging) recomputes the
   affected resources' rows in the same transaction, so they commit together.
@@ -140,7 +141,8 @@ runs `resources.count` and `resources.list_page`; served live it runs
 Filter-options is `resources.filter_options` either way. The cost the read
 model adds to writes (and to rebuild batches) is labeled `read_model.refresh`.
 
-**To switch the fast path off** without deleting anything:
+**To switch the fast path off** without deleting anything (API processes pick
+this up within about 5 seconds):
 
 ```sql
 UPDATE og_field_resource_state_status SET ready = false;

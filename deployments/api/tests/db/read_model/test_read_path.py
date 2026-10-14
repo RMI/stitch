@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Iterator
 from typing import Any, get_args
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import update
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy import event, update
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db.model import OGFieldResourceState, OGFieldResourceStateStatus
+from stitch.api.db.read_model import state
 from stitch.api.db.read_model.permissions import PROFILES, PUBLIC_SOURCES
 from stitch.api.db.read_model.state import (
     rebuild_all_resource_state,
@@ -247,6 +249,83 @@ class TestFallback:
         licensed: frozenset[str] | None,
     ):
         await self._assert_live_answer(seeded_integration_session, licensed)
+
+
+class TestReadinessCache:
+    """List reads ask the database about readiness at most every few seconds."""
+
+    @pytest.fixture
+    def readiness_lookups(self, integration_engine: AsyncEngine) -> Iterator[list[str]]:
+        seen: list[str] = []
+
+        def record(conn, cursor, statement, params, context, executemany):
+            if "og_field_resource_state_status" in statement:
+                seen.append(statement)
+
+        event.listen(integration_engine.sync_engine, "before_cursor_execute", record)
+        yield seen
+        event.remove(integration_engine.sync_engine, "before_cursor_execute", record)
+
+    @pytest.fixture
+    def paths_taken(self, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+        taken: list[str] = []
+        for name, label in (("_query_read_model", "cached"), ("_query_live", "live")):
+            real = getattr(resource_actions, name)
+
+            async def tracked(*args: Any, _real=real, _label=label, **kwargs: Any):
+                taken.append(_label)
+                return await _real(*args, **kwargs)
+
+            monkeypatch.setattr(resource_actions, name, tracked)
+        return taken
+
+    async def _list(self, session: AsyncSession) -> None:
+        await resource_actions.query(session, OGFieldQueryParams(), PROFILES[3])
+
+    async def test_back_to_back_requests_ask_once(
+        self,
+        seeded_integration_session: AsyncSession,
+        rebuilt: Dataset,
+        readiness_lookups: list[str],
+    ):
+        session = seeded_integration_session
+        await self._list(session)
+        await self._list(session)
+        await resource_actions.filter_options(session, PROFILES[3])
+        assert len(readiness_lookups) == 1
+
+    async def test_readiness_change_is_seen_once_the_window_passes(
+        self,
+        seeded_integration_session: AsyncSession,
+        rebuilt: Dataset,
+        paths_taken: list[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        session = seeded_integration_session
+        await self._list(session)
+        await session.execute(update(OGFieldResourceStateStatus).values(ready=False))
+        await session.commit()
+
+        await self._list(session)  # within the window: still the earlier answer
+        later = time.monotonic() + state.READINESS_CACHE_SECONDS + 1
+        monkeypatch.setattr(state.time, "monotonic", lambda: later)
+        await self._list(session)
+
+        assert paths_taken == ["cached", "cached", "live"]
+
+    async def test_a_rebuild_in_this_process_switches_reads_immediately(
+        self,
+        seeded_integration_session: AsyncSession,
+        dataset: Dataset,
+        integration_session_factory: async_sessionmaker[AsyncSession],
+        paths_taken: list[str],
+    ):
+        session = seeded_integration_session
+        await self._list(session)  # not built yet: live, and remembered
+        await rebuild_all_resource_state(integration_session_factory)
+        await self._list(session)
+
+        assert paths_taken == ["live", "cached"]
 
 
 class TestServedFromStoredState:
