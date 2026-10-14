@@ -44,10 +44,11 @@ comes back (each commit only trusts rows it built). CI does this automatically:
    would refresh rows with the old code's rules, is gone first. Reads use live
    from the deploy until the rebuild finishes (~1.5–2 minutes at 50K resources
    after the deploy) — correct, just slower.
-2. **If that job fails,** the deploy still goes out and lists stay on live.
-   Re-run the job, or run the rebuild by hand from the deployed image (below).
+2. **If that job fails,** the deploy still goes out and lists stay on live. On
+   a PR, the deploy summary comment shows a warning saying so. Re-run the job,
+   or run the rebuild by hand from the deployed image (below).
 3. **Verify** (below). If anything looks wrong, clear readiness (below) and reads
-   go back to live immediately.
+   go back to live within a few seconds.
 
 ## Running a rebuild
 

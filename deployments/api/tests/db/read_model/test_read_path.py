@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable, Iterator
 from typing import Any, get_args
 
@@ -307,8 +306,9 @@ class TestReadinessCache:
         await session.commit()
 
         await self._list(session)  # within the window: still the earlier answer
-        later = time.monotonic() + state.READINESS_CACHE_SECONDS + 1
-        monkeypatch.setattr(state.time, "monotonic", lambda: later)
+        # The window has passed (shrinking it, rather than moving the shared
+        # clock the event loop also uses).
+        monkeypatch.setattr(state, "READINESS_CACHE_SECONDS", 0)
         await self._list(session)
 
         assert paths_taken == ["cached", "cached", "live"]
