@@ -62,6 +62,7 @@ jobs:
         run: docker pull "${{ inputs.full-image-name }}"
 
       - name: Rebuild read model if stale
+        id: rebuild
         env:
           POSTGRES_HOST: ${{ inputs.postgres-host }}
           POSTGRES_PORT: ${{ inputs.postgres-port }}
@@ -84,3 +85,37 @@ jobs:
             -e OTEL_TRACES_EXPORTER \
             "${{ inputs.full-image-name }}" \
             python -m stitch.api.db.read_model.rebuild --if-stale
+
+      # Only when the rebuild didn't succeed (failed, cancelled, or never ran):
+      # a warning-only entry for the PR summary comment, so reviewers know the
+      # preview's lists are on the slower live path.
+      - name: Write comment JSON
+        if: ${{ always() && github.event_name == 'pull_request' && steps.rebuild.outcome != 'success' }}
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.rebuild.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/comment-json
+          json_file="/tmp/comment-json/comment-json-read-model.json"
+
+          jq -n \
+            --arg outcome "$OUTCOME" \
+            '{
+              "kind": "read_model_rebuild",
+              "name": "rebuild-read-model",
+              "warnings": [
+                "the read model was not rebuilt (\($outcome)); list reads use the slower live path until it is"
+              ]
+            }' > "$json_file"
+
+          jq empty "$json_file"
+          cat "$json_file"
+
+      - name: Upload comment JSON artifact
+        if: ${{ always() && github.event_name == 'pull_request' && steps.rebuild.outcome != 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: comment-json-read-model
+          path: /tmp/comment-json/*.json
+          if-no-files-found: error
