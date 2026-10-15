@@ -38,7 +38,7 @@ from tests.utils import make_source_record
 
 from .dataset import attach, dump_state, new_resource
 from .postgres import requires_postgres
-from .scenarios import rebuild_with_writes_midway
+from .scenarios import rebuild_with_reads_and_writes_midway
 
 pytestmark = [pytest.mark.anyio, requires_postgres]
 
@@ -411,9 +411,11 @@ async def test_attach_waiting_on_a_merge_sees_the_resource_was_merged(
     await _assert_matches_recompute(pg_session_factory)
 
 
-async def test_writes_midway_through_a_rebuild(
+async def test_reads_and_writes_midway_through_a_rebuild(
     pg_session_factory: SessionFactory,
     test_user: User,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    await rebuild_with_writes_midway(pg_session_factory, test_user, monkeypatch)
+    await rebuild_with_reads_and_writes_midway(
+        pg_session_factory, test_user, monkeypatch
+    )

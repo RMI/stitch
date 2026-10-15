@@ -4,11 +4,11 @@
     python -m stitch.api.db.read_model.rebuild --if-stale  # only if not current
     python -m stitch.api.db.read_model.rebuild --ids 12 34 # repair these resources
 
-The read model counts as ready only once a full rebuild by the same commit has
+The API uses the read model only when a full rebuild by the same commit has
 completed, so a full rebuild is needed after every deploy of new code (and after
 a data restore). ``--if-stale`` is the deploy step: it rebuilds only when the
 read model isn't already current for this code. ``--ids`` recomputes only the
-given resources and never changes readiness.
+given resources and is safe to run while the read model is serving reads.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from .state import (
     DEFAULT_BATCH_SIZE,
     ResourceStateRebuildError,
     current_code_version,
+    is_resource_state_disabled,
     rebuild_all_resource_state,
     rebuild_resource_state_if_stale,
     refresh_resource_states,
@@ -78,17 +79,18 @@ async def _refuse_if_served_by_other_code(session: AsyncSession) -> None:
 
     The API trusts a ready table only as built entirely by its own commit, so
     rows recomputed here by different code would be served under the wrong
-    version. A table that isn't ready isn't served, and the next full rebuild
-    replaces its rows. Holds a share lock on the status row until this
-    transaction ends, so readiness can't change meanwhile: a full rebuild
-    finishing now waits for the repair to commit, then sees its rows and redoes
-    them before marking the table ready.
+    version. A table that isn't ready, or is switched off, isn't served, and the
+    next full rebuild replaces its rows. Holds a share lock on the status row
+    until this transaction ends, so readiness can't change meanwhile: a full
+    rebuild finishing now waits for the repair to commit, then sees its rows and
+    redoes them before marking the table ready.
     """
     status = (
         await session.execute(
             select(
                 OGFieldResourceStateStatus.ready,
                 OGFieldResourceStateStatus.code_version,
+                OGFieldResourceStateStatus.disabled,
             )
             .where(OGFieldResourceStateStatus.key == RESOURCE_STATE_STATUS_KEY)
             .with_for_update(read=True)
@@ -97,6 +99,7 @@ async def _refuse_if_served_by_other_code(session: AsyncSession) -> None:
     if (
         status is not None
         and status.ready
+        and not status.disabled
         and status.code_version != current_code_version()
     ):
         raise ResourceStateRebuildError(
@@ -166,6 +169,14 @@ async def _run(ids: list[int] | None, batch_size: int, if_stale: bool = False) -
                 "model is ready.",
                 count,
                 current_code_version(),
+            )
+        async with session_factory() as session:
+            disabled = await is_resource_state_disabled(session)
+        if disabled:
+            logger.warning(
+                "The read model is switched off (disabled), so the API keeps "
+                "answering lists live. Rebuilds never switch it back on; to do so: "
+                "UPDATE og_field_resource_state_status SET disabled = false;"
             )
     finally:
         await dispose_engine()

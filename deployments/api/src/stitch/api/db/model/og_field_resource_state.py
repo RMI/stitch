@@ -3,20 +3,21 @@
 ``og_field_resource_state`` holds one row per ``(resource, permission_mask)``: the
 already-coalesced value of every ``OilGasFieldBase`` field as that permission
 profile sees it, plus the field -> winning source key ``provenance`` map the list
-view returns, so that ``list`` and ``filter-options`` can read these rows instead
-of re-running the coalescing window on every request.
+view returns. ``list`` and ``filter-options`` read these rows instead of re-running
+the coalescing window on every request.
 
 This is derived data. Every row is reconstructable from memberships, source values
 and priorities using the live coalescer, so deleting or emptying the table loses
 nothing. ``permission_mask`` identifies one of four exact
 permission profiles (see ``db.read_model.permissions``).
 
-``og_field_resource_state_status`` is a single-row readiness record. Readers may
-use the state table only while ``ready`` is true and ``code_version`` names the
-commit they are running; a missing row means not ready. A partial, failed, or
-in-progress rebuild leaves ``ready`` false, so incomplete state is never served,
-and deploying new code makes the existing rows unusable until that code rebuilds
-them.
+``og_field_resource_state_status`` is a single-row readiness record. Readers use
+the state table only while ``ready`` is true, ``code_version`` names the commit
+they are running, and ``disabled`` is false; a missing row means not ready. A
+partial, failed, or in-progress rebuild leaves ``ready`` false, so incomplete
+state is never served, and deploying new code makes the existing rows unusable
+until that code rebuilds them. ``disabled`` is an operator's switch-off that
+rebuilds never clear.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from typing import Any, Final
 
 from sqlalchemy import (
     Boolean,
+    false,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -127,7 +129,8 @@ class OGFieldResourceStateStatus(Base):
 
     The migration creates the single row (``key = RESOURCE_STATE_STATUS_KEY``)
     with ``ready = false``. Only a complete full rebuild sets it true, recording
-    in ``code_version`` the commit of the code that built the rows.
+    in ``code_version`` the commit of the code that built the rows. ``disabled``
+    is set and cleared only by hand (see deployments/api/READ_MODEL.md).
     """
 
     __tablename__ = "og_field_resource_state_status"
@@ -138,3 +141,6 @@ class OGFieldResourceStateStatus(Base):
         DateTime(timezone=True), nullable=True
     )
     code_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    disabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )

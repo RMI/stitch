@@ -13,13 +13,14 @@ from stitch.api.db import og_field_source_actions as source_actions
 from stitch.api.db.model import ResourceModel
 from stitch.api.db.queries import resource_universe
 from stitch.api.db.read_model import state
+from stitch.api.db.read_model.permissions import PROFILES
 from stitch.api.db.read_model.state import (
     _integrity_problems,
-    is_resource_state_current,
+    is_resource_state_ready,
     rebuild_all_resource_state,
     refresh_resource_states,
 )
-from stitch.api.entities import User
+from stitch.api.entities import OGFieldQueryParams, User
 from stitch.ogsi.model import GemSource, OGFieldResource, RMISource
 
 from tests.utils import make_source_record
@@ -29,14 +30,19 @@ from .dataset import attach, dump_state, new_resource
 type SessionFactory = async_sessionmaker[AsyncSession]
 
 
-async def rebuild_with_writes_midway(
+async def rebuild_with_reads_and_writes_midway(
     factory: SessionFactory, user: User, monkeypatch
 ) -> None:
-    """Pause a full rebuild after its first batch, write, then finish it.
+    """Pause a full rebuild after its first batch, read and write, then finish it.
 
     Six resources are rebuilt two per batch. While the rebuild waits before its
-    second batch, writes land on resources in the finished batch and in pending
-    batches: attaches, a merge across both, and a brand-new resource.
+    second batch:
+
+    * a reader that passed the readiness check just before the rebuild started
+      lists resources straight from the table, and must get the full, correct
+      answer (not an empty or partial table);
+    * writes land on resources in the finished batch and in pending batches:
+      attaches, a merge across both, and a brand-new resource.
 
     The finished rebuild must be ready, complete, and match a fresh recompute.
     """
@@ -70,6 +76,13 @@ async def rebuild_with_writes_midway(
     monkeypatch.setattr(state, "refresh_resource_states", pause_before_second_batch)
     rebuild = asyncio.create_task(rebuild_all_resource_state(factory, batch_size=2))
     await asyncio.wait_for(rebuild_paused.wait(), timeout=30)
+
+    # A reader that saw ready=true just before the rebuild began.
+    params = OGFieldQueryParams(page_size=50)
+    async with factory() as session:
+        cached = await resource_actions._query_read_model(session, params, mask=3)
+        live = await resource_actions._query_live(session, params, PROFILES[3])
+    assert cached == live, "an in-flight reader saw a partially rebuilt table"
 
     done, pending = ids[:2], ids[2:]
     async with factory.begin() as session:
@@ -114,7 +127,7 @@ async def rebuild_with_writes_midway(
     await asyncio.wait_for(rebuild, timeout=60)
 
     async with factory() as session:
-        assert await is_resource_state_current(session)
+        assert await is_resource_state_ready(session)
         assert await _integrity_problems(session) == []
         listable = set((await session.scalars(resource_universe())).all())
         assert {rid for rid, _ in await dump_state(session)} == listable

@@ -1,5 +1,5 @@
 from collections.abc import Collection, Sequence
-from typing import get_args
+from typing import Any, get_args
 
 from fastapi import HTTPException
 from sqlalchemy import delete, func, select
@@ -27,6 +27,7 @@ from stitch.ogsi.model import (
     OGFieldResource,
     OGFieldSourceValueView,
 )
+from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
 
 from .model import (
@@ -43,8 +44,13 @@ from .queries import (
     base_resource_query,
     field_source_candidates,
     filter_option_rows,
+    resource_state_filter_option_query,
+    resource_state_page_query,
+    resource_state_query,
 )
+from .read_model.permissions import read_model_mask
 from .read_model.state import (
+    is_resource_state_ready_for_reads,
     lock_resources,
     refresh_resource_state,
     refresh_resource_states,
@@ -66,10 +72,9 @@ async def query(
 ) -> tuple[list[OGFieldListItemView], int]:
     """Query coalesced resource list items, restricted to licensed sources.
 
-    A narrowed id-query (+ count) over the participating fields selects and
-    orders the page, then one SQL coalesce (``coalesce_resources``) hydrates
-    those ids -- values and provenance come straight from the query, with no
-    second coalesce pass.
+    Served from the precomputed read model when the caller's licensed sources
+    exactly match one of its permission profiles and the model is ready;
+    otherwise from live coalescing. Both return the same answer.
     """
     if params.sort_by == "source":
         raise HTTPException(
@@ -77,6 +82,73 @@ async def query(
             detail="sort_by=source is not supported for resource list queries.",
         )
 
+    mask = await _ready_read_model_mask(session, licensed_sources)
+    if mask is not None:
+        return await _query_read_model(session, params, mask)
+    return await _query_live(session, params, licensed_sources)
+
+
+async def _ready_read_model_mask(
+    session: AsyncSession, licensed_sources: Collection[OGSISrcKey] | None
+) -> int | None:
+    """The permission mask to read, or ``None`` to use live coalescing.
+
+    Readiness is re-checked at most every few seconds per process. When it is
+    asked, the lookup is unlabeled on purpose: it is not part of the list /
+    filter-options ``named_query`` contract.
+    """
+    mask = read_model_mask(licensed_sources)
+    if mask is None or not await is_resource_state_ready_for_reads(session):
+        return None
+    return mask
+
+
+async def _query_read_model(
+    session: AsyncSession, params: OGFieldQueryParams, mask: int
+) -> tuple[list[OGFieldListItemView], int]:
+    """List page read from stored, already-coalesced rows for one profile.
+
+    The page's rows are read by the same statement that picks them, so a write
+    that lands mid-request (e.g. a merge removing a resource's rows) can't
+    remove a row between choosing the page and loading it.
+    """
+    # Count without the ORDER BY: Postgres would otherwise sort every matching
+    # row just to count them (~40ms at 50K resources for a non-indexed sort).
+    count_stmt = select(func.count()).select_from(
+        resource_state_query(params, mask).order_by(None).subquery()
+    )
+    with named_query("resources.count"):
+        total = (await session.scalar(count_stmt)) or 0
+    with named_query("resources.list_page"):
+        rows = (await session.execute(resource_state_page_query(params, mask))).all()
+    return [_state_row_to_list_item_view(row) for row in rows], total
+
+
+def _state_row_to_list_item_view(row: Any) -> OGFieldListItemView:
+    """Build the list item from a stored row, as the live path builds it from
+    winners: the same ``OilGasFieldBase`` inputs, and provenance keyed in
+    attribute order (JSONB does not keep key order)."""
+    return OGFieldListItemView(
+        id=row.resource_id,
+        data=OilGasFieldBase(
+            **{field: getattr(row, field) for field in ATTRIBUTE_NAMES}
+        ),
+        provenance={field: row.provenance.get(field) for field in ATTRIBUTE_NAMES},
+    )
+
+
+async def _query_live(
+    session: AsyncSession,
+    params: OGFieldQueryParams,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> tuple[list[OGFieldListItemView], int]:
+    """List page from live coalescing: any profile, any readiness.
+
+    A narrowed id-query (+ count) over the participating fields selects and
+    orders the page, then one SQL coalesce (``coalesce_resources``) hydrates
+    those ids -- values and provenance come straight from the query, with no
+    second coalesce pass.
+    """
     ids_stmt = base_resource_query(params, licensed_sources)
     count_stmt = select(func.count()).select_from(ids_stmt.subquery())
     with named_query("resources.count"):
@@ -100,7 +172,33 @@ async def filter_options(
     session: AsyncSession,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> dict[str, list[str]]:
-    """Distinct coalesced values for every filterable field, in one query."""
+    """Distinct coalesced values for every filterable field.
+
+    Read from the precomputed read model under the same gate as ``query``;
+    otherwise from live coalescing.
+    """
+    mask = await _ready_read_model_mask(session, licensed_sources)
+    if mask is None:
+        return await _filter_options_live(session, licensed_sources)
+
+    # One DISTINCT per field, each answered from its (permission_mask, field)
+    # index. A single UNION ALL of all six was measured slower at 50K resources
+    # (the cost is the index scans, not round trips); that the six statements
+    # may see slightly different moments only affects dropdown suggestions,
+    # transiently.
+    options: dict[str, list[str]] = {}
+    with named_query("resources.filter_options"):
+        for field in FILTER_OPTION_FIELDS:
+            stmt = resource_state_filter_option_query(field, mask)
+            options[field] = list((await session.scalars(stmt)).all())
+    return options
+
+
+async def _filter_options_live(
+    session: AsyncSession,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> dict[str, list[str]]:
+    """Distinct coalesced values for every filterable field, in one live query."""
     options: dict[str, list[str]] = {field: [] for field in FILTER_OPTION_FIELDS}
     with named_query("resources.filter_options"):
         for colname, value in await session.execute(
