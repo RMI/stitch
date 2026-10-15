@@ -79,8 +79,10 @@ async def _refuse_if_served_by_other_code(session: AsyncSession) -> None:
     The API trusts a ready table only as built entirely by its own commit, so
     rows recomputed here by different code would be served under the wrong
     version. A table that isn't ready isn't served, and the next full rebuild
-    replaces its rows. Holds a share lock on the status row, so readiness can't
-    change before this transaction ends.
+    replaces its rows. Holds a share lock on the status row until this
+    transaction ends, so readiness can't change meanwhile: a full rebuild
+    finishing now waits for the repair to commit, then sees its rows and redoes
+    them before marking the table ready.
     """
     status = (
         await session.execute(

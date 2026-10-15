@@ -61,13 +61,15 @@ python -m stitch.api.db.read_model.rebuild --ids 123 456
   it's rebuilt. Resources are rebuilt in committed batches (`--batch-size`,
   default 500), each batch replacing its resources' rows. Then it checks for
   resources whose rows were since rewritten by other code (an older API
-  revision still serving writes) and redoes those, repeating until none are
-  left; rows for resources that are no longer listable are removed; the result
-  is checked (every listable resource has all four rows, all computed by this
-  code, and nothing else has any), and only then is readiness set. The table is
-  never emptied along the way, so a reader that checked readiness just before
-  the rebuild started still finds a row for every resource. At ~50K resources
-  it takes about 1.5 minutes.
+  revision still serving writes, or an `--ids` repair run from another image)
+  and redoes those, repeating until none are left. The last of these checks
+  happens in the same transaction that sets readiness, so no repair can slip in
+  between: rows for resources that are no longer listable are removed, the
+  result is checked (every listable resource has all four rows, all computed by
+  this code, and nothing else has any), and only then is readiness set. The
+  table is never emptied along the way, so a reader that checked readiness just
+  before the rebuild started still finds a row for every resource. At ~50K
+  resources it takes about 1.5 minutes.
 - **Full rebuild vs `--if-stale`:** a plain full rebuild recomputes every
   resource. `--if-stale` only recomputes resources not already computed by this
   code, so re-running it after a failed or cancelled run picks up where that run
@@ -97,7 +99,10 @@ python -m stitch.api.db.read_model.rebuild --ids 123 456
   active sources — any stored rows for those are removed). It changes nothing
   and exits with an error if any id doesn't exist (usually a typo), or if the
   table is ready but was built by different code: run it from the same image
-  as the API, so the table never mixes two versions.
+  as the API, so the table never mixes two versions. During a full rebuild the
+  table isn't ready, so a repair from any image runs; the rebuild waits for it
+  and redoes its rows before finishing. A repair that starts just as a rebuild
+  finishes waits for it, then refuses if that rebuild was by other code.
 - Errors print as a single `ERROR` line and exit with status 1.
 
 ## Changing the code safely

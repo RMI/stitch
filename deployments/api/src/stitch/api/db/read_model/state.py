@@ -227,6 +227,19 @@ async def is_resource_state_current(session: AsyncSession) -> bool:
     return _is_current(await _status(session))
 
 
+async def _lock_status_row(session: AsyncSession) -> None:
+    """Hold the status row exclusively until the caller's transaction ends.
+
+    ``--ids`` repairs hold it shared while they run, so this waits for any that
+    are running and makes new ones wait. No-op on SQLite (no row locks).
+    """
+    await session.execute(
+        select(OGFieldResourceStateStatus.key)
+        .where(OGFieldResourceStateStatus.key == RESOURCE_STATE_STATUS_KEY)
+        .with_for_update()
+    )
+
+
 async def _set_ready(session: AsyncSession, ready: bool) -> None:
     status = await session.get(OGFieldResourceStateStatus, RESOURCE_STATE_STATUS_KEY)
     if status is None:
@@ -445,9 +458,15 @@ async def _rebuild_while_locked(
     listable resource (``recompute_everything``, e.g. after a restore) or only
     those not already computed by this code (resuming a rebuild that stopped).
     Each later pass recomputes resources whose rows were since rewritten by
-    other code -- an older API revision still serving writes -- until none are
-    left. Only then are stray rows removed, the result checked, and readiness
-    set.
+    other code -- an older API revision still serving writes, or an ``--ids``
+    repair run from another image -- until none are left.
+
+    The last check happens in the transaction that sets readiness, holding the
+    status row exclusively: a repair holds it shared while it runs, so this
+    waits for any repair already running to commit, and repairs that start
+    later wait for readiness and then see who built the table. Anything found
+    then gets another pass. Only when nothing is left are stray rows removed,
+    the result checked, and readiness set, all before the lock is released.
     """
     async with session_factory.begin() as session:
         await _set_ready(session, False)
@@ -466,42 +485,46 @@ async def _rebuild_while_locked(
 
     recomputed = 0
     passes = 0
-    while pending:
-        passes += 1
-        if passes > _MAX_REBUILD_PASSES:
-            raise ResourceStateRebuildError(
-                f"After {_MAX_REBUILD_PASSES} passes, {len(pending)} resource(s) "
-                "still lack a row per profile computed by this code: rows are "
-                "missing, or keep being rewritten by other code (is an older API "
-                "version still serving writes?). The read model was left not ready."
-            )
-        if passes > 1:
-            logger.info(
-                "Pass %d: %d resource(s) were rewritten by other code during the "
-                "rebuild; recomputing them.",
-                passes,
-                len(pending),
-            )
-        for start in range(0, len(pending), batch_size):
-            async with session_factory.begin() as session:
-                await refresh_resource_states(
-                    session, pending[start : start + batch_size]
+    while True:
+        if pending:
+            passes += 1
+            if passes > _MAX_REBUILD_PASSES:
+                raise ResourceStateRebuildError(
+                    f"After {_MAX_REBUILD_PASSES} passes, {len(pending)} "
+                    "resource(s) still lack a row per profile computed by this "
+                    "code: rows are missing, or keep being rewritten by other code "
+                    "(is an older API version still serving writes?). The read "
+                    "model was left not ready."
                 )
-            logger.info(
-                "Rebuilt resource state for %d of %d resources.",
-                min(start + batch_size, len(pending)),
-                len(pending),
-            )
-        recomputed += len(pending)
-        async with session_factory() as session:
-            pending = await _resources_needing_rebuild(session)
+            if passes > 1:
+                logger.info(
+                    "Pass %d: %d resource(s) were rewritten by other code during "
+                    "the rebuild; recomputing them.",
+                    passes,
+                    len(pending),
+                )
+            for start in range(0, len(pending), batch_size):
+                async with session_factory.begin() as session:
+                    await refresh_resource_states(
+                        session, pending[start : start + batch_size]
+                    )
+                logger.info(
+                    "Rebuilt resource state for %d of %d resources.",
+                    min(start + batch_size, len(pending)),
+                    len(pending),
+                )
+            recomputed += len(pending)
 
-    async with session_factory.begin() as session:
-        await _delete_unlistable_state(session)
-        if problems := await _integrity_problems(session):
-            raise ResourceStateRebuildError(
-                "Resource-state rebuild failed its integrity check: "
-                + "; ".join(problems)
-            )
-        await _set_ready(session, True)
-    return recomputed
+        async with session_factory.begin() as session:
+            await _lock_status_row(session)
+            pending = await _resources_needing_rebuild(session)
+            if pending:
+                continue
+            await _delete_unlistable_state(session)
+            if problems := await _integrity_problems(session):
+                raise ResourceStateRebuildError(
+                    "Resource-state rebuild failed its integrity check: "
+                    + "; ".join(problems)
+                )
+            await _set_ready(session, True)
+        return recomputed
