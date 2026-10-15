@@ -275,8 +275,8 @@ class TestInPlaceSourceValueEdit:
 class TestLockBeforeRecompute:
     """Option (a): runs everywhere, checks the lock is taken before any read.
 
-    SQLite doesn't render ``FOR UPDATE``, so the lock call is recorded with a
-    spy alongside every SQL statement the engine executes.
+    SQLite doesn't render row locks, so the lock call is recorded with a spy
+    alongside every SQL statement the engine executes.
     """
 
     @pytest.fixture
@@ -378,9 +378,9 @@ class TestLockBeforeRecompute:
             )
             resource_id = rebuilt.alpha
 
-        # Locking first -- before the action's own reads and inserts, whose
-        # foreign keys take a weaker lock on the resource row -- is what keeps
-        # concurrent writers queueing instead of deadlocking at the refresh.
+        # Locking first -- before the action's own reads -- is what makes a
+        # writer that waited read the other's committed changes (e.g. a merge)
+        # instead of acting on what it read before.
         assert events[0] == ("LOCK", [resource_id])
         state_writes = [
             e for e in events if isinstance(e, str) and "og_field_resource_state" in e

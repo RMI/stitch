@@ -261,7 +261,7 @@ async def set_field_source_priority(
             detail=f"field={field} is not a known resource field.",
         )
     # Lock before reading or writing anything, so concurrent writes to this
-    # resource queue here rather than deadlocking at the read-model refresh; then
+    # resource queue here and each reads the other's committed changes; then
     # re-read it in case it was merged while we waited.
     with named_query("resources.set_field_source_priority.load"):
         await lock_resources(session, [id])

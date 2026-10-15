@@ -3,10 +3,11 @@
 Every write recomputes its resource's read-model rows in its own transaction.
 Without the per-resource row lock, two concurrent writers would each recompute
 from a snapshot missing the other's change, and the second insert would collide
-with the first's rows. The lock must also be taken at the *start* of each write:
-its inserts' foreign keys take a weaker lock on the resource row, and two
-writers holding that while both wait to upgrade it deadlock. SQLite serializes
-all writers and ignores ``FOR UPDATE``, so this can only be exercised on
+with the first's rows. The lock is taken at the *start* of each write, so a
+writer that waited reads the other's committed changes (e.g. a merge), and it
+is ``FOR NO KEY UPDATE`` so it never conflicts with the key-share locks that
+inserting rows referencing a resource takes (which would deadlock). SQLite
+serializes all writers and has no row locks, so this can only be exercised on
 Postgres (opt-in, see ``postgres.py``).
 """
 
@@ -22,7 +23,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db import og_field_source_actions as source_actions
 from stitch.api.db.errors import ResourceIntegrityError
-from stitch.api.db.model import ResourceModel
+from stitch.api.db.merge_candidate_actions import _fingerprint
+from stitch.api.db.model import (
+    MergeCandidateItemModel,
+    MergeCandidateModel,
+    ResourceModel,
+)
 from stitch.api.db.read_model import state
 from stitch.api.db.read_model.state import refresh_resource_states
 from stitch.api.entities import User
@@ -185,11 +191,55 @@ async def test_overlapping_merges_in_opposite_order_serialize(
     await _assert_matches_recompute(pg_session_factory)
 
 
+async def test_merge_candidate_creation_and_a_merge_in_opposite_order_do_not_deadlock(
+    pg_session_factory: SessionFactory, test_user: User
+):
+    """Creating a merge candidate inserts its items in request order, each
+    taking a key-share lock on its resource; a merge locks its resources in id
+    order. A merge lock that conflicted with key-share (``FOR UPDATE``) would
+    deadlock here: the merge holds ``a`` and waits on ``b``, while the creation
+    holds ``b`` and waits on ``a``."""
+    a, b = await _seed_resources(pg_session_factory, test_user, 2)
+
+    async with pg_session_factory.begin() as creating:
+        candidate = MergeCandidateModel.create(
+            created_by=test_user, fingerprint=_fingerprint([b, a])
+        )
+        creating.add(candidate)
+        await creating.flush()
+        creating.add(
+            MergeCandidateItemModel(
+                merge_candidate_id=candidate.id, resource_id=b, position=0
+            )
+        )
+        await creating.flush()
+
+        async def merge() -> None:
+            async with pg_session_factory.begin() as merging:
+                await resource_actions.apply_resource_merge(merging, test_user, [a, b])
+
+        merging = asyncio.create_task(merge())
+        await asyncio.sleep(_BLOCKED_FOR_SECONDS)
+        creating.add(
+            MergeCandidateItemModel(
+                merge_candidate_id=candidate.id, resource_id=a, position=1
+            )
+        )
+        await creating.flush()
+
+    await asyncio.wait_for(merging, timeout=30)
+    async with pg_session_factory() as session:
+        stored_ids = {rid for rid, _ in await dump_state(session)}
+    assert a not in stored_ids and b not in stored_ids
+    await _assert_matches_recompute(pg_session_factory)
+
+
 class _Rendezvous:
     """Holds each writer just before its read-model refresh until the other
     writer gets there too (or ``timeout`` passes), so both have finished their
     own inserts before either refreshes -- the interleaving most likely to
-    deadlock if a writer locks the resource only at refresh time.
+    deadlock if a writer's lock conflicted with its inserts' key-share locks
+    (e.g. ``FOR UPDATE`` taken only at refresh time).
 
     The timeout lets a writer carry on when the other is (correctly) waiting on
     its lock; under heavy machine load a short one can let the writers miss

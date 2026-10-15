@@ -120,7 +120,8 @@ python -m stitch.api.db.read_model.rebuild --ids 123 456
 - **New write path** that can change a list answer (a source value, membership,
   priority, or merge state): first call `lock_resources` from
   `db/read_model/state.py` for the affected resources, before reading or
-  writing anything (locking later lets concurrent writers deadlock); then call
+  writing anything (so a writer that waited reads the other's committed
+  changes, e.g. a merge); then call
   `refresh_resource_state(s)` in the same transaction; and add a case to
   `tests/db/read_model/test_mutations.py`. Editing a source's values in place
   affects *every* resource it is attached to — lock and refresh all of them.

@@ -48,11 +48,11 @@ async def _get_attachable_resource(
 ) -> ResourceModel:
     """Lock and fetch a resource that is a valid attachment target.
 
-    The row lock is taken before anything is written for the attach, and held to
-    the end of the transaction: concurrent writes to the resource then queue
-    here instead of deadlocking when each later locks it to refresh its
-    read-model state. The resource is re-read after locking, so a merge that
-    committed while we waited is seen.
+    The row lock is taken before anything is read or written for the attach,
+    and held to the end of the transaction: concurrent writes to the resource
+    then queue here, and the resource is re-read after locking, so a merge that
+    committed while we waited is seen (rather than attaching to a resource that
+    was just merged away).
 
     Raises:
         ResourceNotFoundError: if no resource exists for ``resource_id``.

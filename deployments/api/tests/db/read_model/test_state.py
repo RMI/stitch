@@ -252,7 +252,11 @@ class TestLocking:
         )
         assert "FROM og_field_resources" in sql
         assert "IN (10, 20, 30)" in sql
-        assert sql.rstrip().endswith("ORDER BY og_field_resources.id FOR UPDATE"), sql
+        # NO KEY UPDATE, not UPDATE: it mustn't conflict with the key-share
+        # locks that inserting rows referencing a resource takes.
+        assert sql.rstrip().endswith(
+            "ORDER BY og_field_resources.id FOR NO KEY UPDATE"
+        ), sql
 
 
 def _deploy(monkeypatch: pytest.MonkeyPatch, git_sha: str | None) -> None:
