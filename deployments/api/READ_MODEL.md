@@ -103,7 +103,11 @@ python -m stitch.api.db.read_model.rebuild --ids 123 456
   table isn't ready, so a repair from any image runs; the rebuild waits for it
   and redoes its rows before finishing. A repair that starts just as a rebuild
   finishes waits for it, then refuses if that rebuild was by other code.
-- Errors print as a single `ERROR` line and exit with status 1.
+- Expected failures (another rebuild running, a failed integrity check, rows
+  still rewritten by other code after 5 passes, unknown ids, a table built by
+  other code) print as a single `ERROR` line; unexpected ones (e.g. the
+  database is unreachable) show a traceback. Either way it exits with status 1.
+  Invalid arguments print the usage and exit with status 2.
 
 ## Changing the code safely
 
