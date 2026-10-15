@@ -17,6 +17,7 @@ from stitch.api.db.model import (
     OGFieldResourceState,
     OGFieldResourceStateStatus,
 )
+from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db.model.oil_gas_field_source_value import ATTRIBUTE_NAMES
 from stitch.api.db.queries import resource_universe
 from stitch.api.db.read_model import rebuild as rebuild_cli
@@ -50,6 +51,7 @@ from .dataset import (
     dump_state,
     new_resource,
 )
+from .scenarios import rebuild_with_writes_midway
 
 pytestmark = pytest.mark.anyio
 
@@ -629,7 +631,8 @@ class TestFullRebuild:
 class TestValuesTodaysModelRejects:
     """Stored values can predate today's validation (e.g. a country code that
     is no longer valid). Building state must not validate them: one such value
-    would otherwise stop every full rebuild from finishing."""
+    would otherwise stop every full rebuild from finishing and fail every write
+    to its resource."""
 
     @pytest.fixture
     async def good_and_legacy(
@@ -659,6 +662,41 @@ class TestValuesTodaysModelRejects:
         session = seeded_integration_session
         assert await is_resource_state_current(session)
         assert (await dump_state(session))[(legacy, 0)]["country"] == "Gemland"
+
+    async def test_writes_to_the_resource_still_succeed(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+        good_and_legacy: tuple[int, int],
+    ):
+        _, legacy = good_and_legacy
+        session = seeded_integration_session
+        current = await resource_actions.field_source_values(session, legacy, "name")
+        await resource_actions.set_field_source_priority(
+            session,
+            test_user,
+            legacy,
+            "name",
+            [view.source_id for view in reversed(current)],
+        )
+        await session.commit()
+
+        stored = await dump_state(session)
+        assert stored[(legacy, 0)]["name"] == "Old GEM"
+        assert stored[(legacy, 0)]["country"] == "Gemland"
+
+
+class TestRebuildAlongsideTraffic:
+    async def test_writes_midway_through_a_rebuild(
+        self,
+        seeded_integration_session: AsyncSession,
+        integration_session_factory: SessionFactory,
+        test_user: User,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        await rebuild_with_writes_midway(
+            integration_session_factory, test_user, monkeypatch
+        )
 
 
 class TestIntegrityCheck:
