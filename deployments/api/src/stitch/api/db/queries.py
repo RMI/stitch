@@ -388,11 +388,14 @@ def coalesced_candidate_rows(
     )
 
 
-def _resource_universe() -> Select[tuple[int]]:
+def resource_universe() -> Select[tuple[int]]:
     """Resources eligible to appear in a list: any non-repointed resource with an
     active membership. Membership-derived and ungated by licensing/source, so a
     resource whose licensed values are all absent still appears as a null-shell on
-    an unfiltered list (and drops out once a field is filtered)."""
+    an unfiltered list (and drops out once a field is filtered).
+
+    Also decides which resources get rows in the resource-state read model
+    (``read_model.state``), so cached and live listability can't diverge."""
     m = MembershipModel
     r = ResourceModel
     return (
@@ -409,7 +412,7 @@ def base_resource_query(
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> Select[tuple[int]]:
     involved = _participating_columns(params)
-    universe = _resource_universe().cte("resource_universe")
+    universe = resource_universe().cte("resource_universe")
 
     if not involved:
         # No value field filtered or sorted -> the universe alone (every active
