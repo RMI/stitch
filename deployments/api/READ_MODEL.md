@@ -9,8 +9,8 @@ The table is a cache, not a source of truth. Everything in it can be rebuilt fro
 the authoritative tables at any time, and when it can't be trusted the API simply
 answers the slower way ("live"), with the same results.
 
-So far the tables and the rebuild command exist. Nothing reads the table yet, and
-API writes don't keep it current yet, so answers are unchanged.
+So far the tables and the rebuild command exist, and API writes keep the table
+current. Nothing reads it yet, so answers are unchanged.
 
 ## How it works
 
@@ -25,6 +25,12 @@ API writes don't keep it current yet, so answers are unchanged.
   (`code_version`). Each row also records the commit that computed it. The table
   may be used only when it is ready **and** was built by the same commit the API
   is running.
+- **Staying current:** every write that can change a list answer (creating or
+  attaching sources, re-ordering a field's sources, merging) locks the affected
+  resources first, then recomputes their rows in the same transaction, so they
+  commit together. Rows written by an older API revision still serving during a
+  deploy carry that revision's commit, so the next rebuild finds and redoes
+  them.
 
 ## Running a rebuild
 
@@ -111,6 +117,14 @@ python -m stitch.api.db.read_model.rebuild --ids 123 456
 
 ## Changing the code safely
 
+- **New write path** that can change a list answer (a source value, membership,
+  priority, or merge state): first call `lock_resources` from
+  `db/read_model/state.py` for the affected resources, before reading or
+  writing anything (so a writer that waited reads the other's committed
+  changes, e.g. a merge); then call
+  `refresh_resource_state(s)` in the same transaction; and add a case to
+  `tests/db/read_model/test_mutations.py`. Editing a source's values in place
+  affects *every* resource it is attached to — lock and refresh all of them.
 - **New field** on `OilGasFieldBase`: add the column to `OGFieldResourceState`
   (an import-time check fails until you do) plus a migration, then rebuild.
 - **New source key:** decide whether it's public or restricted in
@@ -119,11 +133,20 @@ python -m stitch.api.db.read_model.rebuild --ids 123 456
 
 ## Tests
 
-The normal suite runs on SQLite. A few tests need real Postgres (e.g. the rebuild
-lock). CI runs them on every PR against a throwaway Postgres; locally they're
-skipped unless pointed at a disposable database. They create and drop their own
-schema:
+The normal suite runs on SQLite. A few tests need real Postgres (row locks under
+concurrent writes, the rebuild lock). CI runs them on every PR against a
+throwaway Postgres; locally they're skipped unless pointed at a disposable
+database. They create and drop their own schema:
 
 ```bash
 STITCH_TEST_POSTGRES_URL=postgresql+psycopg://postgres:pg@127.0.0.1:55432/stitch uv run --package stitch-api pytest deployments/api/tests/db/read_model -q
 ```
+
+## Known limitations and follow-ups
+
+- **Write overhead:** each write's refresh (query label `read_model.refresh`)
+  takes ~85 ms at 50K resources, almost all of it finding the resource's
+  memberships, because `og_field_memberships` has no index on `resource_id`.
+  The unique `(resource_id, source_pk)` constraint from the separate DB-cleanup
+  work (#322) provides one; with it the refresh drops to ~16 ms per resource
+  (~24 ms for a three-resource merge).

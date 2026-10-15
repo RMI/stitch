@@ -83,7 +83,8 @@ class ResourceStateRebuildError(RuntimeError):
 
 
 def lock_resources_statement(resource_ids: Collection[int]) -> Select[tuple[int]]:
-    """``SELECT ... FOR UPDATE`` over the resource rows, in ascending id order.
+    """``SELECT ... FOR NO KEY UPDATE`` over the resource rows, in ascending id
+    order.
 
     A stable order means two transactions locking overlapping sets (e.g. two
     merges) always queue in the same order instead of deadlocking.
@@ -92,18 +93,29 @@ def lock_resources_statement(resource_ids: Collection[int]) -> Select[tuple[int]
         select(ResourceModel.id)
         .where(ResourceModel.id.in_(sorted(set(resource_ids))))
         .order_by(ResourceModel.id)
-        .with_for_update()
+        .with_for_update(key_share=True)
     )
 
 
 async def lock_resources(session: AsyncSession, resource_ids: Collection[int]) -> None:
     """Lock the resource rows until the caller's transaction ends.
 
-    ``refresh_resource_states`` takes it before recomputing, so two
-    transactions recomputing the same resource (e.g. a full rebuild and an
-    ``--ids`` repair) queue instead of one overwriting the other with a stale
-    recompute. SQLite has no row locks (it already serializes writers), so this
-    is a no-op there.
+    ``FOR NO KEY UPDATE`` is the lock Postgres already takes to update a
+    resource's non-key columns (e.g. a merge setting ``repointed_id``). It
+    conflicts with itself, so concurrent writers taking it queue, but not with
+    the key-share lock that inserting any row referencing a resource takes (a
+    membership, a merge candidate's items, ...). ``FOR UPDATE`` would conflict
+    with those: a writer holding one resource and waiting on a second, while an
+    insert holds a key-share lock on the second and waits on the first,
+    deadlock.
+
+    Write actions take it at their start, before their own reads: the second of
+    two concurrent writers waits, then reads the first's committed changes --
+    including a merge that repointed the resource -- so neither acts on stale
+    data or overwrites the other with a stale recompute.
+    ``refresh_resource_states`` locks again (a no-op when already held) to
+    protect callers like the full rebuild. SQLite has no row locks (it already
+    serializes writers), so this is a no-op there.
     """
     if resource_ids:
         await session.execute(lock_resources_statement(resource_ids))
