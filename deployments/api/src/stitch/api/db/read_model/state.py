@@ -60,7 +60,10 @@ UNKNOWN_CODE_VERSION: Final[str] = "unknown"
 # List reads re-check readiness at most this often per API process. The table
 # is never emptied and each process only trusts rows built by its own commit,
 # so a briefly out-of-date answer only delays switching between the read model
-# and live reads; it never serves a broken page.
+# and live reads; it never serves a broken page. The exception: a rebuild by
+# other code while this process still serves can rewrite rows within that
+# window, so deploys wait for the old revision to stop serving before
+# rebuilding (see deployments/api/READ_MODEL.md).
 READINESS_CACHE_SECONDS: Final[float] = 5.0
 
 # Postgres advisory-lock key held for the duration of a full rebuild, so two

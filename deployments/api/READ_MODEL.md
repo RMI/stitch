@@ -86,6 +86,12 @@ python -m stitch.api.db.read_model.rebuild --ids 123 456
   POSTGRES_HOST=127.0.0.1 POSTGRES_USER=stitch_app uv run --env-file .env -- python -m stitch.api.db.read_model.rebuild
   ```
 
+  Don't run a rebuild from a *different* image while the old one is still
+  serving: an old API process that checked readiness in the last 5 seconds
+  keeps trusting the table, and can read rows the new code has just rewritten.
+  Deploys wait for the previous revision to stop serving before rebuilding (see
+  [Rolling it out](#rolling-it-out)); do the same whenever you rebuild by hand.
+
 - **What happens:** readiness is cleared first, so reads switch to live for the
   duration. Resources are rebuilt in committed batches (`--batch-size`,
   default 500), each batch replacing its resources' rows. Then it checks for
