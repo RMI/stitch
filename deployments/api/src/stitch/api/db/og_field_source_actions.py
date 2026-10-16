@@ -183,10 +183,6 @@ async def _attach_source_models(
     user: User,
 ) -> None:
     """Create ACTIVE memberships linking each source model to ``resource``.
-
-    A source is attached to a resource at most once: sources already attached
-    (in any status) or repeated within ``src_models`` are skipped, upholding
-    ``uq_membership_resource_source``.
     """
     already_attached = set(
         (

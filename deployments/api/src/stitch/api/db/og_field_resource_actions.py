@@ -449,10 +449,6 @@ async def _repoint_memberships(
         )
     ).all()
 
-    # One new membership per source record: the same source may belong to more
-    # than one of the merged resources, and (resource_id, source_pk) is unique.
-    # The new membership is ACTIVE if any contributing membership was; otherwise
-    # it keeps the status of the earliest (lowest id) contributing membership.
     new_by_source_pk: dict[int, MembershipModel] = {}
     for mem in existing_memberships:
         new_mem = new_by_source_pk.get(mem.source_pk)

@@ -232,8 +232,6 @@ class TestAttachSourcesDedup:
         )
         [src_model] = await source_actions._get_source_models(session, [created.id])
 
-        # The public paths already collapse repeated ids when loading source
-        # models, so exercise the attach helper directly with a repeated model.
         await source_actions._attach_source_models(
             session, resource, [src_model, src_model], test_user
         )

@@ -13,7 +13,6 @@ Revision ID: 901d261fce8b
 Revises: 71aa7ef8150b
 Create Date: 2026-10-09 00:00:00.000000
 """
-
 from __future__ import annotations
 
 from alembic import op
@@ -44,8 +43,6 @@ WHERE id IN (
 
 def upgrade() -> None:
     op.execute(_DEDUP_MEMBERSHIPS_SQL)
-    # Batch mode so SQLite (no ALTER ... ADD CONSTRAINT) rebuilds the table;
-    # PostgreSQL still gets a plain ALTER TABLE.
     with op.batch_alter_table("og_field_memberships") as batch_op:
         batch_op.create_unique_constraint(
             "uq_membership_resource_source",
