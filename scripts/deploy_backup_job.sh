@@ -13,17 +13,17 @@ host=
 database=
 user=postgres
 name=
-rendered=
 
 usage() {
   cat >&2 <<'EOF'
 usage:
   deploy_backup_job.sh setup  -g RG -s ACCOUNT
   deploy_backup_job.sh deploy -g RG -s ACCOUNT -e ENV -H HOST -d DB [-u USER] [-n JOB]
+  deploy_backup_job.sh run    -g RG {-d DB | -n JOB}
   deploy_backup_job.sh delete -g RG {-d DB | -n JOB}
 
 options:
-  -g, --resource-group   resource group of the identity, storage account and environment
+  -g, --resource-group   Azure resource group
   -s, --storage-account  storage account holding the backups container
   -e, --environment      Container Apps environment that runs the job
   -H, --host             Postgres host
@@ -32,15 +32,16 @@ options:
   -n, --name             job name (default: the database name, hyphenated)
   -h, --help             show this message
 
-setup prepares one storage account: it creates the backup identity and the
-backups container, and lets that identity write there. Run it once per account.
+setup: create & configure identity and permissions for one storage account.
 
-deploy creates or updates the nightly job for a single database, reading the
-password from PGPASSWORD. One job backs up one database, so run deploy once per
-database you want backed up.
+deploy: create/update a job for one database.
 
-delete removes the job for one database. It leaves the identity, the container
-and the dumps alone, and does nothing when the job is already gone.
+run: back up one database immediately by running an existing job.
+(All job configuration is left unchanged)
+
+delete: remove the job for one database (does nothing when there's no matching job).
+The identity, container, storage account, and any existing dumps remain.
+
 EOF
   exit 2
 }
@@ -62,31 +63,57 @@ setup() {
   echo "$IDENTITY_NAME can now write to $BLOB_CONTAINER on $storage_account"
 }
 
+job_exists() {
+  az containerapp job show --resource-group "$resource_group" --name "$name" \
+    --output none 2>/dev/null
+}
+
+render() {
+  local out pair key value
+
+  out="$(<"$SPEC")"
+  for pair in "$@"; do
+    key="${pair%%=*}"
+    value="${pair#*=}"
+    out="${out//\{\{ $key \}\}/$value}"
+  done
+
+  case "$out" in
+  *'{{'*)
+    echo "render: $SPEC has a placeholder with no value" >&2
+    return 1
+    ;;
+  esac
+
+  printf '%s\n' "$out"
+}
+
 deploy() {
-  local action
+  local action identity identity_id client_id environment_id pgpassword_json
   : "${PGPASSWORD:?the password for --user on --host}"
-  [ -n "$name" ] || name="${database//_/-}"
 
-  IFS=$'\t' read -r JOB_IDENTITY_ID JOB_IDENTITY_CLIENT_ID < <(
-    az identity show --resource-group "$resource_group" --name "$IDENTITY_NAME" \
-      --query "[id, clientId]" --output tsv
-  )
-  JOB_ENVIRONMENT_ID="$(az containerapp env show --resource-group "$resource_group" \
+  identity="$(az identity show --resource-group "$resource_group" \
+    --name "$IDENTITY_NAME" --query "{id: id, clientId: clientId}" --output json)"
+  identity_id="$(jq -r .id <<<"$identity")"
+  client_id="$(jq -r .clientId <<<"$identity")"
+  environment_id="$(az containerapp env show --resource-group "$resource_group" \
     --name "$environment" --query id --output tsv)"
-  JOB_PGPASSWORD_JSON="$(printf '%s' "$PGPASSWORD" | jq -Rs .)"
-
-  export JOB_IDENTITY_ID JOB_IDENTITY_CLIENT_ID JOB_ENVIRONMENT_ID JOB_PGPASSWORD_JSON
-  export JOB_PGHOST="$host" JOB_PGUSER="$user" JOB_DATABASE="$database" \
-    JOB_STORAGE_ACCOUNT="$storage_account"
+  pgpassword_json="$(printf '%s' "$PGPASSWORD" | jq -Rs .)"
 
   rendered="$(mktemp)"
   trap 'rm -f "$rendered"' EXIT
-  envsubst '${JOB_IDENTITY_ID} ${JOB_IDENTITY_CLIENT_ID} ${JOB_ENVIRONMENT_ID}
-    ${JOB_PGPASSWORD_JSON} ${JOB_PGHOST} ${JOB_PGUSER} ${JOB_DATABASE}
-    ${JOB_STORAGE_ACCOUNT}' <"$SPEC" >"$rendered"
+  render \
+    "identity_id=$identity_id" \
+    "identity_client_id=$client_id" \
+    "environment_id=$environment_id" \
+    "pgpassword_json=$pgpassword_json" \
+    "pghost=$host" \
+    "pguser=$user" \
+    "database=$database" \
+    "storage_account=$storage_account" \
+    "blob_container=$BLOB_CONTAINER" >"$rendered"
 
-  if az containerapp job show --resource-group "$resource_group" --name "$name" \
-    --output none 2>/dev/null; then
+  if job_exists; then
     action=update
   else
     action=create
@@ -98,12 +125,22 @@ deploy() {
   echo "Job $name backs up $database nightly to $storage_account/$BLOB_CONTAINER/$database"
 }
 
-delete() {
-  [ -n "$name" ] || name="${database//_/-}"
+run() {
+  local execution
+
   [ -n "$name" ] || usage
 
-  if ! az containerapp job show --resource-group "$resource_group" --name "$name" \
-    --output none 2>/dev/null; then
+  execution="$(az containerapp job start --resource-group "$resource_group" \
+    --name "$name" --query name --output tsv)"
+
+  echo "Started $execution. Check on it with:"
+  echo "  az containerapp job execution list -g $resource_group -n $name -o table"
+}
+
+delete() {
+  [ -n "$name" ] || usage
+
+  if ! job_exists; then
     echo "No job named $name in $resource_group"
     return
   fi
@@ -120,22 +157,25 @@ shift || usage
 while [ "$#" -gt 0 ]; do
   [ "$#" -ge 2 ] || usage
   case "$1" in
-    -h | --help) usage ;;
-    -g | --resource-group) resource_group="$2" ;;
-    -s | --storage-account) storage_account="$2" ;;
-    -e | --environment) environment="$2" ;;
-    -H | --host) host="$2" ;;
-    -d | --database) database="$2" ;;
-    -u | --user) user="$2" ;;
-    -n | --name) name="$2" ;;
-    *) usage ;;
+  -h | --help) usage ;;
+  -g | --resource-group) resource_group="$2" ;;
+  -s | --storage-account) storage_account="$2" ;;
+  -e | --environment) environment="$2" ;;
+  -H | --host) host="$2" ;;
+  -d | --database) database="$2" ;;
+  -u | --user) user="$2" ;;
+  -n | --name) name="$2" ;;
+  *) usage ;;
   esac
   shift 2
 done
 
+[ -n "$name" ] || name="${database//_/-}"
+
 case "$command" in
-  setup) setup ;;
-  deploy) deploy ;;
-  delete) delete ;;
-  *) usage ;;
+setup) setup ;;
+deploy) deploy ;;
+run) run ;;
+delete) delete ;;
+*) usage ;;
 esac

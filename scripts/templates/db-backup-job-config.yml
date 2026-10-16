@@ -4,9 +4,9 @@ tags:
 identity:
   type: UserAssigned
   userAssignedIdentities:
-    "${JOB_IDENTITY_ID}": {}
+    "{{ identity_id }}": {}
 properties:
-  environmentId: "${JOB_ENVIRONMENT_ID}"
+  environmentId: "{{ environment_id }}"
   configuration:
     triggerType: Schedule
     replicaTimeout: 1800
@@ -17,7 +17,7 @@ properties:
       replicaCompletionCount: 1
     secrets:
       - name: pgpassword
-        value: ${JOB_PGPASSWORD_JSON}
+        value: {{ pgpassword_json }}
   template:
     volumes:
       - name: scratch
@@ -29,9 +29,9 @@ properties:
         volumeMounts:
           - { volumeName: scratch, mountPath: /scratch }
         env:
-          - { name: PGHOST, value: "${JOB_PGHOST}" }
-          - { name: PGUSER, value: "${JOB_PGUSER}" }
-          - { name: PGDATABASE, value: "${JOB_DATABASE}" }
+          - { name: PGHOST, value: "{{ pghost }}" }
+          - { name: PGUSER, value: "{{ pguser }}" }
+          - { name: PGDATABASE, value: "{{ database }}" }
           - { name: PGSSLMODE, value: require }
           - { name: PGPASSWORD, secretRef: pgpassword }
         command: ["pg_dump"]
@@ -43,9 +43,10 @@ properties:
         volumeMounts:
           - { volumeName: scratch, mountPath: /scratch }
         env:
-          - { name: DATABASE, value: "${JOB_DATABASE}" }
-          - { name: ACCOUNT, value: "${JOB_STORAGE_ACCOUNT}" }
-          - { name: CLIENT_ID, value: "${JOB_IDENTITY_CLIENT_ID}" }
+          - { name: DATABASE, value: "{{ database }}" }
+          - { name: ACCOUNT, value: "{{ storage_account }}" }
+          - { name: CLIENT_ID, value: "{{ identity_client_id }}" }
+          - { name: CONTAINER, value: "{{ blob_container }}" }
         command: ["/bin/sh", "-c"]
         args:
-          - 'set -e; az login --identity --client-id "$CLIENT_ID" -o none; az storage blob upload --account-name "$ACCOUNT" --auth-mode login -c backups -n "$DATABASE/$(date -u +%Y%m%dT%H%M%SZ).dump" -f /scratch/dump -o none'
+          - 'set -e; az login --identity --client-id "$CLIENT_ID" -o none; az storage blob upload --account-name "$ACCOUNT" --auth-mode login -c "$CONTAINER" -n "$DATABASE/$(date -u +%Y%m%dT%H%M%SZ).dump" -f /scratch/dump -o none'

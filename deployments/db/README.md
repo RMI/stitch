@@ -161,16 +161,15 @@ A scheduled Azure Container Apps job backs up one database. The job runs
 container as `<database>/<timestamp>.dump`.
 
 Each database needs its own job. The job name is the database name, with
-hyphens in place of underscores.
+hyphens in place of underscores. Use `-n` to choose a different name.
 
 A run stops after 30 minutes. A failed run does not retry. Nothing deletes old
 dumps. A lifecycle policy on the `backups` container limits its size.
 
 ### Deploying the job
 
-`scripts/deploy_backup_job.sh` needs `az`, `jq`, and `envsubst`. The gettext
-package provides `envsubst`, which macOS does not install by default. Before you
-run the script, authenticate `az` against the correct subscription.
+`scripts/deploy_backup_job.sh` needs `az` and `jq`. Before you run the script,
+authenticate `az` against the correct subscription.
 
 1. Run `setup` one time for each storage account:
 
@@ -206,6 +205,24 @@ To run `setup`, your account needs these permissions:
 
 CAUTION: Wait two minutes after `setup` before you start the job. Azure needs
 time to apply the role assignment. Until then, the upload step fails.
+
+### Backing up now
+
+To back up a database immediately, run:
+
+```bash
+scripts/deploy_backup_job.sh run -g <resource-group> -d <database>
+```
+
+This starts the same job that `deploy` created, so the dump goes to the same
+place. The nightly schedule stays in place. Use this to test a new job, or to
+take a dump before a risky change.
+
+The command prints the name of the run it started. To see the result:
+
+```bash
+az containerapp job execution list -g <resource-group> -n <job> -o table
+```
 
 ### Deleting a job
 
