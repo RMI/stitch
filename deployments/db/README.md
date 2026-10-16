@@ -154,6 +154,89 @@ You should now see seeded dev data.
 
 ---
 
+## Backups
+
+A scheduled Azure Container Apps job backs up one database. The job runs
+`pg_dump -Fc` at 03:00 UTC. Then it uploads the dump to the `backups` blob
+container as `<database>/<timestamp>.dump`.
+
+Each database needs its own job. The job name is the database name, with
+hyphens in place of underscores. Use `-n` to choose a different name.
+
+A run stops after 30 minutes. A failed run does not retry. Nothing deletes old
+dumps. A lifecycle policy on the `backups` container limits its size.
+
+### Deploying the job
+
+`scripts/deploy_backup_job.sh` needs `az` and `jq`. Before you run the script,
+authenticate `az` against the correct subscription.
+
+1. Run `setup` one time for each storage account:
+
+   ```bash
+   scripts/deploy_backup_job.sh setup -g <resource-group> -s <storage-account>
+   ```
+
+   This creates the `stitch-backup-identity` managed identity and the `backups`
+   container. Then it grants **Storage Blob Data Contributor** to that identity
+   on the container.
+
+2. Run `deploy` one time for each database:
+
+   ```bash
+   PGPASSWORD=<password> scripts/deploy_backup_job.sh deploy \
+     -g <resource-group> -s <storage-account> -e <environment> \
+     -H <postgres-host> -d <database>
+   ```
+
+   This creates the job, or updates it when the job exists.
+
+Every command is safe to run again. For all options, run
+`scripts/deploy_backup_job.sh --help`.
+
+To run `setup`, your account needs these permissions:
+
+- create a managed identity
+- create a role assignment
+- a blob data role on the storage account, such as **Storage Blob Data
+  Contributor**
+
+`deploy` needs none of these permissions.
+
+CAUTION: Wait two minutes after `setup` before you start the job. Azure needs
+time to apply the role assignment. Until then, the upload step fails.
+
+### Backing up now
+
+To back up a database immediately, run:
+
+```bash
+scripts/deploy_backup_job.sh run -g <resource-group> -d <database>
+```
+
+This starts the same job that `deploy` created, so the dump goes to the same
+place. The nightly schedule stays in place. Use this to test a new job, or to
+take a dump before a risky change.
+
+The command prints the name of the run it started. To see the result:
+
+```bash
+az containerapp job execution list -g <resource-group> -n <job> -o table
+```
+
+### Deleting a job
+
+Deleting a database does not delete its job. To delete a job, run:
+
+```bash
+scripts/deploy_backup_job.sh delete -g <resource-group> -d <database>
+```
+
+This leaves the identity, the `backups` container, and the dumps in place. It
+does nothing when the job is already gone.
+
+---
+
 ## Updating Database
 
 ⚠ DBA-ONLY WORKFLOW
