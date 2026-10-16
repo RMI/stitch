@@ -1,0 +1,4 @@
+# Raw run artifacts (environment-specific, regenerated each run)
+logs/
+consistency/
+results/
