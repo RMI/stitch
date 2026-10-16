@@ -2092,3 +2092,98 @@ class TestCoalesceResources:
         res = out[rid]
         assert res.view.name is None
         assert res.provenance["name"] is None
+
+
+class TestMembershipUniqueness:
+    """(resource_id, source_pk) is unique; merge collapses a shared source."""
+
+    @staticmethod
+    async def _resources_sharing_one_source(
+        session: AsyncSession, user: User
+    ) -> tuple[int, int, int]:
+        """Two resources, each with a membership on the same source record."""
+        rid_a = await _create_resource_with_sources(session, user)
+        rid_b = await _create_resource_with_sources(session, user)
+        source = make_source_model(
+            source="gem", created_by_id=user.id, name="Shared", country="USA"
+        )
+        session.add(source)
+        await session.flush()
+        # A source may belong to several different resources.
+        for rid in (rid_a, rid_b):
+            session.add(
+                MembershipModel.create(
+                    created_by=user, resource_id=rid, source="gem", source_pk=source.id
+                )
+            )
+        await session.flush()
+        return rid_a, rid_b, source.id
+
+    @staticmethod
+    async def _memberships(session: AsyncSession, rid: int, source_pk: int):
+        return (
+            await session.scalars(
+                select(MembershipModel).where(
+                    MembershipModel.resource_id == rid,
+                    MembershipModel.source_pk == source_pk,
+                )
+            )
+        ).all()
+
+    @pytest.mark.anyio
+    async def test_duplicate_membership_rejected(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid = await _create_resource_with_sources(
+            session, test_user, {"source": "gem", "name": "X", "country": "USA"}
+        )
+        (pk,) = await _source_pks(session, rid, "gem")
+        session.add(
+            MembershipModel.create(
+                created_by=test_user,
+                resource_id=rid,
+                source="gem",
+                source_pk=pk,
+                status=MembershipStatus.INACTIVE,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await session.flush()
+
+    @pytest.mark.anyio
+    async def test_merge_collapses_source_shared_by_parents(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid_a, rid_b, pk = await self._resources_sharing_one_source(session, test_user)
+
+        merged = await resource_actions.apply_resource_merge(
+            session, test_user, [rid_a, rid_b]
+        )
+        await session.flush()
+
+        [target] = await self._memberships(session, merged.id, pk)
+        assert target.status == MembershipStatus.ACTIVE
+        for rid in (rid_a, rid_b):
+            [parent] = await self._memberships(session, rid, pk)
+            assert parent.status == MembershipStatus.INACTIVE
+
+    @pytest.mark.anyio
+    async def test_merge_target_active_if_any_parent_active(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid_a, rid_b, pk = await self._resources_sharing_one_source(session, test_user)
+        # The earlier (lower id) membership is inactive, the later one active.
+        [first] = await self._memberships(session, rid_a, pk)
+        first.status = MembershipStatus.INACTIVE
+        await session.flush()
+
+        merged = await resource_actions.apply_resource_merge(
+            session, test_user, [rid_a, rid_b]
+        )
+        await session.flush()
+
+        [target] = await self._memberships(session, merged.id, pk)
+        assert target.status == MembershipStatus.ACTIVE
