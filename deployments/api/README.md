@@ -3,9 +3,10 @@
 ## Resource-state read model
 
 The list and filter-options endpoints are served from a precomputed table that
-must be **rebuilt after each deploy of new code** (and after a data restore).
-Until then they use the slower live path, with the same results. See
-[`READ_MODEL.md`](./READ_MODEL.md) for rollout, rebuild, and verification steps.
+must be **rebuilt after each deploy of new code** (CI does this automatically)
+and after a data restore. Until then they use the slower live path, with the
+same results. See [`READ_MODEL.md`](./READ_MODEL.md) for rollout, rebuild, and
+verification steps.
 
 ## Deployment: Azure Container App
 
