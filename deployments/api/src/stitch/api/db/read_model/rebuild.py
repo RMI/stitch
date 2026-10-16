@@ -4,11 +4,11 @@
     python -m stitch.api.db.read_model.rebuild --if-stale  # only if not current
     python -m stitch.api.db.read_model.rebuild --ids 12 34 # repair these resources
 
-The read model counts as ready only once a full rebuild by the same commit has
+The API uses the read model only when a full rebuild by the same commit has
 completed, so a full rebuild is needed after every deploy of new code (and after
 a data restore). ``--if-stale`` is the deploy step: it rebuilds only when the
 read model isn't already current for this code. ``--ids`` recomputes only the
-given resources and never changes readiness.
+given resources and is safe to run while the read model is serving reads.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from .state import (
     DEFAULT_BATCH_SIZE,
     ResourceStateRebuildError,
     current_code_version,
+    is_resource_state_disabled,
     rebuild_all_resource_state,
     rebuild_resource_state_if_stale,
     refresh_resource_states,
@@ -74,15 +75,17 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 
 async def _refuse_if_served_by_other_code(session: AsyncSession) -> None:
-    """Refuse to change a table that is being served as built by other code.
+    """Refuse to change a table that is ready as built by other code.
 
     The API trusts a ready table only as built entirely by its own commit, so
     rows recomputed here by different code would be served under the wrong
     version. A table that isn't ready isn't served, and the next full rebuild
-    replaces its rows. Holds a share lock on the status row until this
-    transaction ends, so readiness can't change meanwhile: a full rebuild
-    finishing now waits for the repair to commit, then sees its rows and redoes
-    them before marking the table ready.
+    replaces its rows. A switched-off table still counts: switching it back on
+    serves its rows again, and ``--if-stale`` from the commit that built it
+    would see nothing to redo. Holds a share lock on the status row
+    until this transaction ends, so readiness can't change meanwhile: a full
+    rebuild finishing now waits for the repair to commit, then sees its rows and
+    redoes them before marking the table ready.
     """
     status = (
         await session.execute(
@@ -100,7 +103,7 @@ async def _refuse_if_served_by_other_code(session: AsyncSession) -> None:
         and status.code_version != current_code_version()
     ):
         raise ResourceStateRebuildError(
-            f"The read model is being served as built by code "
+            f"The read model is ready as built by code "
             f"{status.code_version}, but this is code {current_code_version()}. "
             "Run the repair from that code (or a full rebuild from this code); "
             "nothing was changed."
@@ -166,6 +169,14 @@ async def _run(ids: list[int] | None, batch_size: int, if_stale: bool = False) -
                 "model is ready.",
                 count,
                 current_code_version(),
+            )
+        async with session_factory() as session:
+            disabled = await is_resource_state_disabled(session)
+        if disabled:
+            logger.warning(
+                "The read model is switched off (disabled), so the API keeps "
+                "answering lists live. Rebuilds never switch it back on; to do so: "
+                "UPDATE og_field_resource_state_status SET disabled = false;"
             )
     finally:
         await dispose_engine()

@@ -7,6 +7,7 @@ from collections.abc import Collection
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import delete, insert, select, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -24,6 +25,7 @@ from stitch.api.db.read_model import rebuild as rebuild_cli
 from stitch.api.db.read_model import state
 from stitch.api.db.read_model.permissions import (
     PERMISSION_MASKS,
+    PROFILES,
     visible_sources_for_mask,
 )
 from stitch.api.db.read_model.state import (
@@ -32,13 +34,14 @@ from stitch.api.db.read_model.state import (
     rebuild_resource_state_if_stale,
     _integrity_problems,
     is_resource_state_current,
+    is_resource_state_ready,
     lock_resources_statement,
     rebuild_all_resource_state,
     refresh_resource_state,
     refresh_resource_states,
 )
 from stitch.api.db.utils import coalesce_resources, resource_to_list_item_view
-from stitch.api.entities import User
+from stitch.api.entities import OGFieldQueryParams, User
 from stitch.api.settings import get_settings
 from stitch.ogsi.model import OGFieldListItemView
 from stitch.ogsi.model.og_field import OilGasFieldBase
@@ -51,7 +54,7 @@ from .dataset import (
     dump_state,
     new_resource,
 )
-from .scenarios import rebuild_with_writes_midway
+from .scenarios import rebuild_with_reads_and_writes_midway
 
 pytestmark = pytest.mark.anyio
 
@@ -266,6 +269,133 @@ def _deploy(monkeypatch: pytest.MonkeyPatch, git_sha: str | None) -> None:
     else:
         monkeypatch.setenv("GIT_SHA", git_sha)
     get_settings.cache_clear()
+
+
+async def _set_disabled(session: AsyncSession, disabled: bool) -> None:
+    """What the runbook's switch-off / switch-on SQL does."""
+    await session.execute(update(OGFieldResourceStateStatus).values(disabled=disabled))
+    await session.commit()
+
+
+class TestDisabled:
+    """An operator's switch-off sticks: rebuilds keep the rows current but never
+    turn the read model back on; only clearing ``disabled`` does."""
+
+    async def test_disabled_read_model_is_not_ready(
+        self, seeded_integration_session: AsyncSession, rebuilt: Dataset
+    ):
+        session = seeded_integration_session
+        await _set_disabled(session, True)
+        assert not await is_resource_state_ready(session)
+
+        await _set_disabled(session, False)
+        assert await is_resource_state_ready(session)
+
+    async def test_rebuilds_do_not_re_enable_it(
+        self,
+        seeded_integration_session: AsyncSession,
+        rebuilt: Dataset,
+        integration_session_factory: SessionFactory,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        session = seeded_integration_session
+        await _set_disabled(session, True)
+
+        await rebuild_all_resource_state(integration_session_factory)
+        _deploy(monkeypatch, "a-later-commit")
+        await rebuild_resource_state_if_stale(integration_session_factory)
+
+        status = (
+            await session.execute(select(OGFieldResourceStateStatus.__table__))
+        ).one()
+        assert (status.ready, status.code_version, status.disabled) == (
+            True,
+            "a-later-commit",
+            True,
+        )
+        assert not await is_resource_state_ready(session)
+
+    async def test_if_stale_does_not_rebuild_a_current_disabled_table(
+        self,
+        seeded_integration_session: AsyncSession,
+        rebuilt: Dataset,
+        integration_session_factory: SessionFactory,
+    ):
+        """Disabled isn't stale: deploys of the same commit don't rebuild."""
+        session = seeded_integration_session
+        await _set_disabled(session, True)
+        built_at = await session.scalar(select(OGFieldResourceStateStatus.rebuilt_at))
+
+        assert (
+            await rebuild_resource_state_if_stale(integration_session_factory) is None
+        )
+        assert (
+            await session.scalar(select(OGFieldResourceStateStatus.rebuilt_at))
+            == built_at
+        )
+
+    async def test_cli_says_the_rebuilt_read_model_is_still_disabled(
+        self,
+        seeded_integration_session: AsyncSession,
+        rebuilt: Dataset,
+        monkeypatch: pytest.MonkeyPatch,
+        integration_engine: AsyncEngine,
+        integration_session_factory: SessionFactory,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        async def _no_dispose() -> None:
+            return None
+
+        monkeypatch.setattr(
+            rebuild_cli, "get_session_factory", lambda: integration_session_factory
+        )
+        monkeypatch.setattr(rebuild_cli, "dispose_engine", _no_dispose)
+        monkeypatch.setattr(rebuild_cli, "get_engine", lambda: integration_engine)
+        caplog.set_level(logging.INFO)
+        await _set_disabled(seeded_integration_session, True)
+
+        await rebuild_cli._run(ids=None, batch_size=500)
+
+        assert "disabled" in caplog.text
+
+    async def test_ids_repair_from_other_code_is_refused_on_a_disabled_table(
+        self,
+        seeded_integration_session: AsyncSession,
+        dataset: Dataset,
+        integration_session_factory: SessionFactory,
+        monkeypatch: pytest.MonkeyPatch,
+        integration_engine: AsyncEngine,
+    ):
+        """Switched off isn't the same as not ready: switching it back on would
+        serve the repair's rows under the commit that built the rest, and
+        ``--if-stale`` from that commit would see nothing to redo."""
+        session = seeded_integration_session
+        _deploy(monkeypatch, "commit-a")
+        await rebuild_all_resource_state(integration_session_factory)
+        await _set_disabled(session, True)
+        before = await dump_state(session)
+
+        async def _no_dispose() -> None:
+            return None
+
+        monkeypatch.setattr(
+            rebuild_cli, "get_session_factory", lambda: integration_session_factory
+        )
+        monkeypatch.setattr(rebuild_cli, "dispose_engine", _no_dispose)
+        monkeypatch.setattr(rebuild_cli, "get_engine", lambda: integration_engine)
+        _deploy(monkeypatch, "commit-b")
+        with pytest.raises(ResourceStateRebuildError, match="built by code commit-a"):
+            await rebuild_cli._run(ids=[dataset.alpha], batch_size=1)
+        assert await dump_state(session) == before
+
+        # Back under commit A and switched back on: every served row is A's.
+        _deploy(monkeypatch, "commit-a")
+        assert (
+            await rebuild_resource_state_if_stale(integration_session_factory) is None
+        )
+        await _set_disabled(session, False)
+        assert await is_resource_state_ready(session)
+        assert set().union(*(await _row_versions(session)).values()) == {"commit-a"}
 
 
 class TestCodeVersion:
@@ -636,7 +766,7 @@ class TestValuesTodaysModelRejects:
     """Stored values can predate today's validation (e.g. a country code that
     is no longer valid). Building state must not validate them: one such value
     would otherwise stop every full rebuild from finishing and fail every write
-    to its resource."""
+    to its resource, while the live list only fails on a page that shows it."""
 
     @pytest.fixture
     async def good_and_legacy(
@@ -689,16 +819,38 @@ class TestValuesTodaysModelRejects:
         assert stored[(legacy, 0)]["name"] == "Old GEM"
         assert stored[(legacy, 0)]["country"] == "Gemland"
 
+    async def test_list_fails_only_where_live_fails(
+        self,
+        seeded_integration_session: AsyncSession,
+        integration_session_factory: SessionFactory,
+        good_and_legacy: tuple[int, int],
+    ):
+        good, legacy = good_and_legacy
+        await rebuild_all_resource_state(integration_session_factory)
+        session = seeded_integration_session
+        licensed = PROFILES[3]
+
+        good_page = OGFieldQueryParams(id=good)
+        assert await resource_actions.query(
+            session, good_page, licensed
+        ) == await resource_actions._query_live(session, good_page, licensed)
+
+        legacy_page = OGFieldQueryParams(id=legacy)
+        with pytest.raises(ValidationError):
+            await resource_actions._query_live(session, legacy_page, licensed)
+        with pytest.raises(ValidationError):
+            await resource_actions.query(session, legacy_page, licensed)
+
 
 class TestRebuildAlongsideTraffic:
-    async def test_writes_midway_through_a_rebuild(
+    async def test_reads_and_writes_midway_through_a_rebuild(
         self,
         seeded_integration_session: AsyncSession,
         integration_session_factory: SessionFactory,
         test_user: User,
         monkeypatch: pytest.MonkeyPatch,
     ):
-        await rebuild_with_writes_midway(
+        await rebuild_with_reads_and_writes_midway(
             integration_session_factory, test_user, monkeypatch
         )
 

@@ -15,6 +15,7 @@ from stitch.auth.permissions import ALL_PERMISSIONS
 from stitch.ogsi.model import SOURCE_PRIORITY
 
 from stitch.api.db.config import UnitOfWork, get_uow
+from stitch.api.db.read_model.state import forget_cached_readiness
 from stitch.api.db.model import (
     OGFieldSourcePriority,
     StitchBase,
@@ -102,6 +103,12 @@ def mock_uow(mock_session: MagicMock) -> MagicMock:
     uow.commit = AsyncMock()
     uow.rollback = AsyncMock()
     return uow
+
+
+@pytest.fixture(autouse=True)
+def forget_cached_read_model_readiness():
+    """Each test starts without another test's cached read-model readiness."""
+    forget_cached_readiness()
 
 
 @pytest.fixture(autouse=True)
