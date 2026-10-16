@@ -289,6 +289,27 @@ jobs:
       postgres-db: ${{ needs.deploy-db.outputs.postgres-db }}
       postgres-sslmode: ${{ needs.deploy-db.outputs.postgres-sslmode }}
 
+  # Rebuilds the API's resource-state read model for this commit (a no-op if
+  # it's already current). Runs after the API deploy, which waits until the
+  # previous revision has stopped serving (wait-for-cutover): that revision's
+  # writes refresh rows with the old code's rules, and could otherwise land
+  # after this rebuild marks the table ready.
+  # Nothing waits on this job: until it finishes, list reads are served live
+  # (correct, just slower), so a slow or failed rebuild never blocks a deploy.
+  rebuild-read-model:
+    name: "Rebuild Read Model"
+    needs: [resolve-context, build-api-docker-image, deploy-db, run-db-migrations, deploy-api]
+    uses: ./.github/workflows/rebuild-read-model.yml
+    secrets:
+      stitch-app-password: ${{ secrets.STITCH_APP_PASSWORD }}
+    with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
+      full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
+      postgres-host: ${{ needs.deploy-db.outputs.postgres-host }}
+      postgres-port: ${{ needs.deploy-db.outputs.postgres-port }}
+      postgres-db: ${{ needs.deploy-db.outputs.postgres-db }}
+      postgres-sslmode: ${{ needs.deploy-db.outputs.postgres-sslmode }}
+
   check-db-migrations-live:
     name: "Check DB Migrations (live)"
     needs: [resolve-context, build-api-docker-image, deploy-db, run-db-migrations]
@@ -337,6 +358,9 @@ jobs:
         OTEL_SERVICE_NAME=stitch-api
         OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
       deployment-label: api
+      # The read-model rebuild that runs after this deploy must not overlap
+      # the previous API revision's writes.
+      wait-for-cutover: true
       # Only the production release stays warm; everything else scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.always-on }}
 
@@ -470,4 +494,4 @@ jobs:
       && !contains(github.event.pull_request.labels.*.name, 'no-deploy') }}
     uses: ./.github/workflows/comment-pr-summary.yml
     secrets: inherit
-    needs: [resolve-context, build-api-docker-image, build-stitch-llm-docker-image, build-seed-docker-image, deploy-db, run-db-migrations, deploy-api, deploy-stitch-llm, deploy-etl, run-seed, deploy-frontend]
+    needs: [resolve-context, build-api-docker-image, build-stitch-llm-docker-image, build-seed-docker-image, deploy-db, run-db-migrations, deploy-api, rebuild-read-model, deploy-stitch-llm, deploy-etl, run-seed, deploy-frontend]

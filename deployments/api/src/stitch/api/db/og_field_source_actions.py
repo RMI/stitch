@@ -23,6 +23,7 @@ from .model import (
 from .queries import (
     base_source_query,
 )
+from .read_model.state import lock_resources, refresh_resource_state
 from .utils import resource_model_to_entity
 
 
@@ -45,14 +46,21 @@ async def create_source(
 async def _get_attachable_resource(
     session: AsyncSession, resource_id: int
 ) -> ResourceModel:
-    """Fetch a resource that is a valid attachment target.
+    """Lock and fetch a resource that is a valid attachment target.
+
+    The row lock is taken before anything is read or written for the attach,
+    and held to the end of the transaction: concurrent writes to the resource
+    then queue here, and the resource is re-read after locking, so a merge that
+    committed while we waited is seen (rather than attaching to a resource that
+    was just merged away).
 
     Raises:
         ResourceNotFoundError: if no resource exists for ``resource_id``.
         ResourceIntegrityError: if the resource has been merged (repointed);
             memberships on it would never surface in coalescing/queries.
     """
-    resource = await session.get(ResourceModel, resource_id)
+    await lock_resources(session, [resource_id])
+    resource = await session.get(ResourceModel, resource_id, populate_existing=True)
     if resource is None:
         raise ResourceNotFoundError(f"No resource found for id: {resource_id}")
     if resource.repointed_id is not None:
@@ -182,7 +190,12 @@ async def _attach_source_models(
     src_models: Sequence[OilGasFieldSourceModel],
     user: User,
 ) -> None:
-    """Create ACTIVE memberships linking each source model to ``resource``."""
+    """Create ACTIVE memberships linking each source model to ``resource``.
+
+    The single place the attach paths (create, attach, create-and-attach) add
+    memberships, so it also refreshes the resource's read-model state in the
+    same transaction.
+    """
     memberships = [
         MembershipModel.create(
             created_by=user,
@@ -194,6 +207,7 @@ async def _attach_source_models(
     ]
     session.add_all(memberships)
     await session.flush()
+    await refresh_resource_state(session, resource.id)
 
 
 async def attach_sources_to_resource(

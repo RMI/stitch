@@ -30,7 +30,9 @@ def build_comment_body(root: Path) -> str:
     for item in items:
         for warning in item.get("warnings", []):
             warnings.append(f"{item.get('name', 'unknown')}: {warning}")
-        sections.setdefault(item.get("section", "other"), []).append(item)
+        # Entries with no table data only contribute warnings.
+        if item.get("data"):
+            sections.setdefault(item.get("section", "other"), []).append(item)
 
     short_sha = ""
     for item in items:
