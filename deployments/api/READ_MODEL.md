@@ -41,16 +41,21 @@ answers the slower way ("live"), with the same results.
 ## Rolling it out
 
 Every deploy of new code needs a full rebuild by that code before the fast path
-comes back (each commit only trusts rows it built). Until CI runs it
-automatically, do it by hand:
+comes back (each commit only trusts rows it built). CI does this automatically:
 
-1. **Deploy as usual,** and wait until the previous API revision has stopped
-   serving. Its writes refresh rows with the old rules, and one that lands after
-   the rebuild marks the table ready would be served.
-2. **Run `--if-stale`** from the deployed API image (see
-   [Running a rebuild](#running-a-rebuild)). Lists use live until it finishes
-   (~1.5 minutes at 50K resources) — correct, just slower — then switch to the
-   read model within a few seconds.
+1. **Deploy as usual.** CI runs the migrations and deploys the API, then the
+   **Rebuild Read Model** job (`.github/workflows/rebuild-read-model.yml`) runs
+   `python -m stitch.api.db.read_model.rebuild --if-stale` from the same API
+   image. The API deploy doesn't finish until the previous revision has stopped
+   serving (only revisions running the new image are active, plus 45 s for
+   in-flight requests), so the old code's writes, which refresh rows with the
+   old rules, can't land after the rebuild marks the table ready. Any that land
+   *during* the rebuild are caught by each row's `code_version` and redone.
+   Reads use live from the deploy until the rebuild finishes (~1.5–2 minutes at
+   50K resources after the deploy) — correct, just slower.
+2. **If that job fails,** the deploy still goes out and lists stay on live. On
+   a PR, the deploy summary comment shows a warning saying so. Re-run the job,
+   or run the rebuild by hand from the deployed image (below).
 3. **Verify** (below). If anything looks wrong, switch the fast path off
    (below) and reads go back to live within a few seconds, and stay there
    through later deploys until you switch it back on.
@@ -61,7 +66,7 @@ automatically, do it by hand:
 # Full rebuild (all resources). Safe while the API is serving traffic.
 python -m stitch.api.db.read_model.rebuild
 
-# Full rebuild only if it isn't already built by this code (the post-deploy step).
+# Full rebuild only if it isn't already built by this code (what CI runs).
 python -m stitch.api.db.read_model.rebuild --if-stale
 
 # Recompute specific resources only (e.g. after fixing data by hand).
@@ -177,23 +182,26 @@ this up within about 5 seconds):
 UPDATE og_field_resource_state_status SET disabled = true;
 ```
 
-It stays off until you switch it back on. Rebuilds still run and keep the rows
-current, but never switch it back on; they log a warning saying it's off. Once
-the problem is fixed and a rebuild by the deployed code has finished:
+It stays off until you switch it back on. Rebuilds (including CI's after every
+deploy) still run and keep the rows current, but never switch it back on; they
+log a warning saying it's off. Once the problem is fixed and a rebuild by the
+deployed code has finished:
 
 ```sql
 UPDATE og_field_resource_state_status SET disabled = false;
 ```
 
-(Setting `ready = false` instead only lasts until the next rebuild.)
+(Setting `ready = false` instead only lasts until the next rebuild, which CI
+runs on every deploy.)
 
 ## When a full rebuild is needed again
 
 Ordinary API writes keep the table current. Beyond that:
 
 - **Every deploy of new code** needs a rebuild before the fast path comes back
-  (see readiness above). This covers changes to how answers are computed and
-  migrations alike — nothing else needs to clear readiness.
+  (see readiness above); CI's Rebuild Read Model job runs it. This covers changes
+  to how answers are computed and migrations alike — nothing else needs to clear
+  readiness.
 - **A database restore, or manual SQL edits** to sources, memberships, or
   priorities, change answers without the code or the writes noticing: run a
   plain full rebuild (or `--ids` for the affected resources). Not `--if-stale`:
