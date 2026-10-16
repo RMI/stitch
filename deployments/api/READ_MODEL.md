@@ -127,8 +127,9 @@ python -m stitch.api.db.read_model.rebuild --ids 123 456
   reports which ids it recomputed and which aren't listed (merged away, or no
   active sources — any stored rows for those are removed). It changes nothing
   and exits with an error if any id doesn't exist (usually a typo), or if the
-  table is ready but was built by different code: run it from the same image
-  as the API, so the table never mixes two versions. During a full rebuild the
+  table is ready but was built by different code (even if switched off, since
+  switching it back on serves those rows): run it from the same image as the
+  API, so the table never mixes two versions. During a full rebuild the
   table isn't ready, so a repair from any image runs; the rebuild waits for it
   and redoes its rows before finishing. A repair that starts just as a rebuild
   finishes waits for it, then refuses if that rebuild was by other code.

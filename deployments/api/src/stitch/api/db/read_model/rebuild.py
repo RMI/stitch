@@ -75,12 +75,14 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 
 async def _refuse_if_served_by_other_code(session: AsyncSession) -> None:
-    """Refuse to change a table that is being served as built by other code.
+    """Refuse to change a table that is ready as built by other code.
 
     The API trusts a ready table only as built entirely by its own commit, so
     rows recomputed here by different code would be served under the wrong
-    version. A table that isn't ready, or is switched off, isn't served, and the
-    next full rebuild replaces its rows. Holds a share lock on the status row
+    version. A table that isn't ready isn't served, and the next full rebuild
+    replaces its rows. A switched-off table still counts: switching it back on
+    serves its rows again, and ``--if-stale`` from the commit that built it
+    would see nothing to redo. Holds a share lock on the status row
     until this transaction ends, so readiness can't change meanwhile: a full
     rebuild finishing now waits for the repair to commit, then sees its rows and
     redoes them before marking the table ready.
@@ -90,7 +92,6 @@ async def _refuse_if_served_by_other_code(session: AsyncSession) -> None:
             select(
                 OGFieldResourceStateStatus.ready,
                 OGFieldResourceStateStatus.code_version,
-                OGFieldResourceStateStatus.disabled,
             )
             .where(OGFieldResourceStateStatus.key == RESOURCE_STATE_STATUS_KEY)
             .with_for_update(read=True)
@@ -99,11 +100,10 @@ async def _refuse_if_served_by_other_code(session: AsyncSession) -> None:
     if (
         status is not None
         and status.ready
-        and not status.disabled
         and status.code_version != current_code_version()
     ):
         raise ResourceStateRebuildError(
-            f"The read model is being served as built by code "
+            f"The read model is ready as built by code "
             f"{status.code_version}, but this is code {current_code_version()}. "
             "Run the repair from that code (or a full rebuild from this code); "
             "nothing was changed."

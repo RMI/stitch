@@ -358,7 +358,7 @@ class TestDisabled:
 
         assert "disabled" in caplog.text
 
-    async def test_ids_repair_allowed_on_a_disabled_table_from_other_code(
+    async def test_ids_repair_from_other_code_is_refused_on_a_disabled_table(
         self,
         seeded_integration_session: AsyncSession,
         dataset: Dataset,
@@ -366,11 +366,14 @@ class TestDisabled:
         monkeypatch: pytest.MonkeyPatch,
         integration_engine: AsyncEngine,
     ):
-        """A disabled table isn't served, so the version guard doesn't apply."""
+        """Switched off isn't the same as not ready: switching it back on would
+        serve the repair's rows under the commit that built the rest, and
+        ``--if-stale`` from that commit would see nothing to redo."""
         session = seeded_integration_session
         _deploy(monkeypatch, "commit-a")
         await rebuild_all_resource_state(integration_session_factory)
         await _set_disabled(session, True)
+        before = await dump_state(session)
 
         async def _no_dispose() -> None:
             return None
@@ -381,7 +384,18 @@ class TestDisabled:
         monkeypatch.setattr(rebuild_cli, "dispose_engine", _no_dispose)
         monkeypatch.setattr(rebuild_cli, "get_engine", lambda: integration_engine)
         _deploy(monkeypatch, "commit-b")
-        await rebuild_cli._run(ids=[dataset.alpha], batch_size=1)
+        with pytest.raises(ResourceStateRebuildError, match="built by code commit-a"):
+            await rebuild_cli._run(ids=[dataset.alpha], batch_size=1)
+        assert await dump_state(session) == before
+
+        # Back under commit A and switched back on: every served row is A's.
+        _deploy(monkeypatch, "commit-a")
+        assert (
+            await rebuild_resource_state_if_stale(integration_session_factory) is None
+        )
+        await _set_disabled(session, False)
+        assert await is_resource_state_ready(session)
+        assert set().union(*(await _row_versions(session)).values()) == {"commit-a"}
 
 
 class TestCodeVersion:
