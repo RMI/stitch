@@ -182,8 +182,7 @@ async def _attach_source_models(
     src_models: Sequence[OilGasFieldSourceModel],
     user: User,
 ) -> None:
-    """Create ACTIVE memberships linking each source model to ``resource``.
-    """
+    """Create ACTIVE memberships linking each source model to ``resource``."""
     already_attached = set(
         (
             await session.scalars(
