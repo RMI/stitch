@@ -97,12 +97,9 @@ async def filter_options(
     params: OGFieldFilterParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> dict[str, list[str]]:
-    """Each filterable field's values still reachable under ``params``.
+    """Fetch filterable values for each filter param.
 
-    Still one query: the per-field branches are unioned in SQL. Each field is
-    narrowed by every *other* filter but not by its own, so ticking one value
-    leaves that dropdown's remaining values on offer. Sorting happens here
-    rather than in SQL because SQLite and Postgres order strings differently.
+    Applies `params` to result set before collecting unique values for each key.
     """
     options: dict[str, list[str]] = {field: [] for field in FILTER_OPTION_FIELDS}
     with named_query("resources.filter_options"):

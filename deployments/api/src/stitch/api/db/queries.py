@@ -274,28 +274,13 @@ def filter_option_rows(
     params: OGFieldFilterParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> CompoundSelect:
-    """Distinct ``(colname, value)`` pairs still reachable under ``params``.
-
-    One branch per filterable field, unioned into a single statement so the
-    endpoint stays one round trip. Each branch applies every filter *except* the
-    branch field's own, so a field is never narrowed by its own selection: after
-    ticking one country the country list still offers the rest. Clearing the
-    field on a copy of ``params`` is what expresses that, which keeps ``q``,
-    multi-select, and the non-faceted exact filters working here exactly as they
-    do on the list query.
-
-    Unordered on purpose: SQLite and Postgres disagree on string collation, so
-    the caller sorts in Python.
-    """
+    """Fetch distinct ``(colname, value)`` pairs still present after filtering by ``params``."""
     m = MembershipModel
     v = OilGasFieldSourceValueModel
     r = ResourceModel
     p = OGFieldSourcePriority
     o = OGFieldResourceSourcePriority
 
-    # The faceted fields are always needed, since each one is a branch target.
-    # The rest are needed only when a filter or the search term actually reads
-    # them, so ranking and pivoting stay as narrow as the current params allow.
     involved = list(FILTER_OPTION_FIELDS)
     for field_name in EXACT_MATCH_FIELDS:
         if _filter_values(params, field_name):
@@ -320,8 +305,6 @@ def filter_option_rows(
         .join(p, p.source == m.source)
         .outerjoin(o, _override_join(m.resource_id))
         .where(
-            # A merged-away resource matches no list row, so its values must not
-            # be offered as options either.
             r.repointed_id.is_(None),
             m.status == MembershipStatus.ACTIVE,
             v.colname.in_(involved),
@@ -332,8 +315,6 @@ def filter_option_rows(
 
     ranked = add_ranking(base.cte("filter_option_base")).cte("filter_option_ranked")
 
-    # Pivot the winning values to one row per resource: a branch listing one
-    # field's values has to filter on the *other* fields of the same resource.
     pivot = _add_pivot_columns(
         select(ranked.c.resource_id.label("resource_id")),
         involved,
