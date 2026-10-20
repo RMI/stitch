@@ -30,3 +30,11 @@ jobs:
   no-plan-file:
     name: "Check for committed plan files"
     uses: ./.github/workflows/admin-no-plan-file.yml
+
+  pr-size:
+    name: "Check PR size"
+    uses: ./.github/workflows/admin-pr-size.yml
+    with:
+      ignore: |
+        **/uv.lock
+        **/package-lock.json
