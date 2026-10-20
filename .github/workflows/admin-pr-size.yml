@@ -50,6 +50,13 @@ jobs:
         run: |
           set -euo pipefail
 
+          # The `-gt` comparison below only handles whole numbers; anything
+          # else would error inside the `if` and silently pass the check.
+          if [[ ! "$MAX_LINES" =~ ^[0-9]+$ ]]; then
+            echo "::error title=Invalid max_lines::max_lines must be a whole number, got '$MAX_LINES'."
+            exit 1
+          fi
+
           # Count everything, minus the ignore list.
           pathspecs=(.)
           ignored_list=""
