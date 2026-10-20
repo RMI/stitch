@@ -93,8 +93,6 @@ export const resourceQueries = {
       placeholderData: keepPreviousData,
     }),
 
-  // The options are per-selection, so the selections belong in the key, in
-  // the same shape the list key uses.
   filterOptions: (config, endpoint = "resources", filters = {}, q) =>
     queryOptions({
       queryKey: keys.filterOptions(endpoint, { ...filters, q }),

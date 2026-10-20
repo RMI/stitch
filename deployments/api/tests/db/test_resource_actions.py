@@ -1335,12 +1335,7 @@ class TestResourceFilterOptionsAction:
 
 
 class TestResourceFilterOptionsCascade:
-    """Options offered for one field reflect the *other* fields' selections.
-
-    The bug this closes: with global option lists a user could pick Country =
-    Canada, then pick Alaska from a State/Province list that still offered every
-    state, and land on "No resources match".
-    """
+    """Options offered for one field reflect the *other* fields' selections."""
 
     async def _seed_two_countries(
         self,
@@ -1515,12 +1510,7 @@ class TestResourceFilterOptionsCascade:
         seeded_integration_session: AsyncSession,
         test_user: User,
     ):
-        """A merged-away resource's values are not offered.
-
-        Behaviour change: the previous query never joined ``ResourceModel``, so a
-        repointed resource's values stayed in the dropdowns while matching no
-        list row. Sharing the list query's base removes them.
-        """
+        """A merged-away resource's values are not offered."""
         root_id = await _create_resource_with_sources(
             seeded_integration_session,
             test_user,

@@ -1,6 +1,3 @@
-// The list query and the filter-options query must serialize the current
-// selections identically: the options a dropdown offers are the values still
-// reachable under exactly the filters the list is about to apply.
 function appendFilterParams(params, filters = {}, q) {
   for (const [key, values] of Object.entries(filters)) {
     for (const v of values) {

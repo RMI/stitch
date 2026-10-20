@@ -8,10 +8,6 @@ export default function FilterBar({
   onFiltersChange,
   optionParams,
 }) {
-  // `filters` drives the ticked boxes and updates on every click. The options
-  // request runs on `optionParams`, which the caller debounces alongside the
-  // list request, so a settled change costs one options request, not one per
-  // click.
   const { data: filterOptions } = useResourceFilterOptions(
     endpoint,
     optionParams,

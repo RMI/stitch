@@ -225,9 +225,6 @@ function getMockFilterOptions({ filters = {}, q } = {}) {
       field,
       Array.from(
         new Set(
-          // Leave-one-out, matching the backend: a field's options are the
-          // values reachable under every *other* filter, so ticking one value
-          // never hides that field's remaining values.
           applyMockFilters(searched, { ...filters, [field]: [] })
             .map((resource) => getResourceField(resource, field))
             .filter((value) => value != null && value !== "")
