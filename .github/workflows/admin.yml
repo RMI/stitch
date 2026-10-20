@@ -35,6 +35,9 @@ jobs:
     name: "Check PR size"
     uses: ./.github/workflows/admin-pr-size.yml
     with:
+      # Release promotions (next -> production ) and backmerges
+      # (production -> main) aggregate already-reviewed work.
+      exempt_head_branches: '["main", "next", "production"]'
       ignore: |
         **/uv.lock
         **/package-lock.json

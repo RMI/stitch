@@ -10,21 +10,25 @@ on:
         description: "Newline-delimited git glob pathspecs whose changes are not counted (e.g. **/uv.lock)"
         type: string
         default: ""
+      exempt_head_branches:
+        # JSON rather than newline-delimited so the job-level `if:` can test
+        # it: expressions have fromJSON() but no way to split a string.
+        description: 'JSON array of source branches in this repo whose PRs skip the check (e.g. ["main", "production"])'
+        type: string
+        default: "[]"
 
 jobs:
   check:
     name: Check PR size
-    # Only meaningful for pull requests. PRs whose source is a long-lived
-    # branch of this repo are release promotions (production <- next) or
-    # backmerges (main <- production): they aggregate already-reviewed work,
-    # so they are exempt. A fork's `main` is just a contributor's branch, so
-    # the exemption only applies to same-repo PRs. Skipping here (rather than
-    # in the caller) keeps the check name stable, and a skipped job still
-    # satisfies a required status check.
+    # Only meaningful for pull requests. PRs from an exempt source branch
+    # skip the check. A fork's branch of the same name is just a
+    # contributor's branch, so the exemption only applies to same-repo PRs.
+    # Skipping here (rather than in the caller) keeps the check name stable,
+    # and a skipped job still satisfies a required status check.
     if: >-
       github.event_name == 'pull_request'
       && !(github.event.pull_request.head.repo.full_name == github.repository
-      && contains(fromJSON('["main", "next", "production"]'), github.head_ref))
+      && contains(fromJSON(inputs.exempt_head_branches), github.head_ref))
     runs-on: ubuntu-latest
     permissions:
       contents: read
