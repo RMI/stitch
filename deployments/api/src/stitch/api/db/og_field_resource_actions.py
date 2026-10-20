@@ -97,10 +97,7 @@ async def filter_options(
     params: OGFieldFilterParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> dict[str, list[str]]:
-    """Fetch filterable values for each filter param.
-
-    Applies `params` to result set before collecting unique values for each key.
-    """
+    """Fetch availible values for each attribute after filtering the db results."""
     options: dict[str, list[str]] = {field: [] for field in FILTER_OPTION_FIELDS}
     with named_query("resources.filter_options"):
         for colname, value in await session.execute(
