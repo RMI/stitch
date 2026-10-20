@@ -15,13 +15,16 @@ jobs:
   check:
     name: Check PR size
     # Only meaningful for pull requests. PRs whose source is a long-lived
-    # branch are release promotions (production <- next) or backmerges
-    # (main <- production): they aggregate already-reviewed work, so they are
-    # exempt. Skipping here (rather than in the caller) keeps the check name
-    # stable, and a skipped job still satisfies a required status check.
+    # branch of this repo are release promotions (production <- next) or
+    # backmerges (main <- production): they aggregate already-reviewed work,
+    # so they are exempt. A fork's `main` is just a contributor's branch, so
+    # the exemption only applies to same-repo PRs. Skipping here (rather than
+    # in the caller) keeps the check name stable, and a skipped job still
+    # satisfies a required status check.
     if: >-
       github.event_name == 'pull_request'
-      && !contains(fromJSON('["main", "next", "production"]'), github.head_ref)
+      && !(github.event.pull_request.head.repo.full_name == github.repository
+      && contains(fromJSON('["main", "next", "production"]'), github.head_ref))
     runs-on: ubuntu-latest
     permissions:
       contents: read
