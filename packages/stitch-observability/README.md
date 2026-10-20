@@ -14,7 +14,7 @@ from stitch.observability import (
 )
 
 provider = configure_tracing(
-    service_name="stitch-entity-linkage",
+    service_name="stitch-api",
     enabled=settings.otel_enabled,
     exporter=settings.otel_traces_exporter,
     otlp_endpoint=settings.otel_exporter_otlp_endpoint,

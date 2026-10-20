@@ -234,19 +234,6 @@ jobs:
     with:
       full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
 
-  build-entity-linkage-docker-image:
-    name: "Build and publish Entity Linkage"
-    needs: [resolve-context]
-    uses: ./.github/workflows/build-and-push-Docker-image.yml
-    secrets: inherit
-    permissions:
-      packages: write
-      contents: read
-    with:
-      dockerfile: deployments/entity-linkage/Dockerfile
-      image-name: ${{ github.event.repository.name }}-entity-linkage
-      image-tag: ${{ needs.resolve-context.outputs.deployment-name }}
-
   build-stitch-llm-docker-image:
     name: "Build and publish Stitch LLM"
     needs: [resolve-context]
@@ -353,39 +340,6 @@ jobs:
       # Only the production release stays warm; everything else scales to zero.
       min-replicas: ${{ needs.resolve-context.outputs.always-on }}
 
-  deploy-entity-linkage:
-    name: "Deploy entity linkage"
-    needs: [resolve-context, lane-config-validate, build-entity-linkage-docker-image, deploy-api]
-    uses: ./.github/workflows/deploy-container.yml
-    secrets:
-      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      stitch-client-bearer-token: ${{ secrets.STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN }}
-    with:
-      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      full-image-name: ${{ needs.build-entity-linkage-docker-image.outputs.digest-image-name }}
-      container-app-name: ${{ format('{0}-el', needs.resolve-context.outputs.deployment-name) }}
-      environment-variables: >-
-        LOG_LEVEL=info
-        AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
-        DEPLOYMENT_LANE=${{ needs.resolve-context.outputs.deployment-lane }}
-        DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
-        AUTH_ISSUER=${{ needs.lane-config-validate.outputs.auth-issuer }}
-        AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
-        AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
-        ENTITY_LINKAGE_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
-        ENTITY_LINKAGE_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
-        OTEL_SERVICE_NAME=stitch-entity-linkage
-        OTEL_RESOURCE_ATTRIBUTES=deployment.name=${{ needs.resolve-context.outputs.deployment-name }},deployment.lane=${{ needs.resolve-context.outputs.deployment-lane }},service.version=${{ github.sha }}
-      deployment-label: entity-linkage
-      # Only the production release stays warm; everything else scales to zero.
-      min-replicas: ${{ needs.resolve-context.outputs.always-on }}
-      # Deliberately unpinned: takes the platform default (~0.5 vCPU / 1 GiB),
-      # the same as the API. This service is I/O-bound waiting on sequential API
-      # responses, so the 2.0 vCPU it used to request bought little while giving
-      # the batch pass 4x the CPU of the API it hammers.
-
   deploy-stitch-llm:
     name: "Deploy stitch-llm"
     needs: [resolve-context, lane-config-validate, build-stitch-llm-docker-image, deploy-api]
@@ -484,7 +438,7 @@ jobs:
       || (github.event.pull_request.head.repo.full_name == github.repository
       && github.event.pull_request.user.type == 'User'
       && !contains(github.event.pull_request.labels.*.name, 'no-deploy'))) }}
-    needs: [resolve-context, lane-config-validate, build-frontend, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl]
+    needs: [resolve-context, lane-config-validate, build-frontend, deploy-api, deploy-stitch-llm, deploy-etl]
     uses: ./.github/workflows/azure-static-web-apps.yml
     secrets:
       azure-static-web-apps-deploy-token: ${{ secrets.AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN }}
@@ -493,7 +447,6 @@ jobs:
       artifact-name: dist-tgz
       deployment-name: ${{ needs.resolve-context.outputs.deployment-name }}
       api-url: ${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
-      entity-linkage-url: ${{ format('{0}/api/v1', needs.deploy-entity-linkage.outputs.container-app-url) }}
       stitch-llm-url: ${{ format('{0}/api/v1', needs.deploy-stitch-llm.outputs.container-app-url) }}
       etl-url: ${{ needs.deploy-etl.result == 'success' && format('{0}/api/v1/etl', needs.deploy-etl.outputs.container-app-url) || '' }}
       auth0-domain: ${{ needs.lane-config-validate.outputs.auth0-domain }}
@@ -517,4 +470,4 @@ jobs:
       && !contains(github.event.pull_request.labels.*.name, 'no-deploy') }}
     uses: ./.github/workflows/comment-pr-summary.yml
     secrets: inherit
-    needs: [resolve-context, build-api-docker-image, build-entity-linkage-docker-image, build-stitch-llm-docker-image, build-seed-docker-image, deploy-db, run-db-migrations, deploy-api, deploy-entity-linkage, deploy-stitch-llm, deploy-etl, run-seed, deploy-frontend]
+    needs: [resolve-context, build-api-docker-image, build-stitch-llm-docker-image, build-seed-docker-image, deploy-db, run-db-migrations, deploy-api, deploy-stitch-llm, deploy-etl, run-seed, deploy-frontend]

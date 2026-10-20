@@ -19,7 +19,6 @@ describe("config/env", () => {
       json: async () => ({
         appEnv: "test",
         apiUrl: "https://example.test/api/v1",
-        entityLinkageUrl: "https://entity-linkage.test/api/v1",
         stitchLlmUrl: "https://stitch-llm.test/api/v1",
         etlUrl: "https://etl.test/api/v1/etl",
         auth0Domain: "my.auth0.com",
@@ -46,9 +45,6 @@ describe("config/env", () => {
     expect(config.auth0.clientId).toBe("my-client-id");
     expect(config.auth0.audience).toBe("https://my-api");
     expect(config.apiBaseUrl).toBe("https://example.test/api/v1");
-    expect(config.entityLinkageBaseUrl).toBe(
-      "https://entity-linkage.test/api/v1",
-    );
     expect(config.stitchLlmBaseUrl).toBe("https://stitch-llm.test/api/v1");
     expect(config.etlBaseUrl).toBe("https://etl.test/api/v1/etl");
     expect(config.appEnv).toBe("test");
@@ -98,7 +94,6 @@ describe("config/env", () => {
       json: async () => ({
         appEnv: "test",
         apiUrl: 1234,
-        entityLinkageUrl: "https://entity-linkage.test/api/v1",
         auth0Domain: "my.auth0.com",
         auth0ClientId: "my-client-id",
         auth0Audience: "https://my-api",
@@ -121,7 +116,6 @@ describe("config/env", () => {
         auth0ClientId: "my-client-id",
         auth0Audience: "https://my-api",
         apiUrl: "",
-        entityLinkageUrl: "",
         stitchLlmUrl: "",
         etlUrl: "",
       }),
@@ -131,7 +125,6 @@ describe("config/env", () => {
     const config = await loadConfig();
 
     expect(config.apiBaseUrl).toBe("http://localhost:8000/api/v1");
-    expect(config.entityLinkageBaseUrl).toBe("http://localhost:8001/api/v1");
     expect(config.stitchLlmBaseUrl).toBe("http://localhost:8002/api/v1");
     expect(config.etlBaseUrl).toBe("http://localhost:8100/api/v1/etl");
   });

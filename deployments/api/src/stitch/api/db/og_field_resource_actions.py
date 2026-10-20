@@ -361,12 +361,11 @@ async def apply_resource_merge(
     user: CurrentUser,
     resource_ids: Sequence[int],
 ) -> OGFieldResource:
-    """
-    Stub "merge" behavior:
-    - Treat ids[0] as the canonical/target resource.
-    - Update all resources in ids[1:] to have repointed_id = ids[0].
+    """Merge ``resource_ids`` into a brand-new resource.
 
-    NOTE: This only updates the resource table repointing field (no membership/source consolidation).
+    - Create a new resource and set every input resource's ``repointed_id`` to it.
+    - Repoint memberships onto the new resource, one per source record (see
+      ``_repoint_memberships``).
     """
     # preserve order but drop duplicates
     unique_ids = list(dict.fromkeys(resource_ids))
@@ -425,8 +424,9 @@ async def _repoint_memberships(
 ) -> Sequence[MembershipModel]:
     """Create new memberships pointing to a different resource.
 
-    Collect all memberships whose `resource_id` is in the `from_resoure_ids` argument. For each of these, create
-    a new membership where `resource_id` = `to_resource_id`.
+    Collect all memberships whose `resource_id` is in `from_ids`. For each distinct `source_pk` among
+    these, create one new membership where `resource_id` = `to_id`. Every ACTIVE original membership is
+    set INACTIVE.
 
     This all takes place after an approved merge candidate is applied and a new ResourceModel is created.
 
@@ -445,24 +445,27 @@ async def _repoint_memberships(
 
     existing_memberships = (
         await session.scalars(
-            select(MembershipModel).where(MembershipModel.resource_id.in_(from_ids))
+            select(MembershipModel)
+            .where(MembershipModel.resource_id.in_(from_ids))
+            .order_by(MembershipModel.id)
         )
     ).all()
 
-    # create new memberships pointing to the new resource
-    new_memberships: list[MembershipModel] = []
+    new_by_source_pk: dict[int, MembershipModel] = {}
     for mem in existing_memberships:
-        # set status on
-        new_memberships.append(
-            MembershipModel.create(
+        new_mem = new_by_source_pk.get(mem.source_pk)
+        if new_mem is None:
+            new_by_source_pk[mem.source_pk] = MembershipModel.create(
                 created_by=user,
                 resource_id=res.id,
                 source=mem.source,
                 source_pk=mem.source_pk,
                 status=mem.status,
             )
-        )
+        elif mem.status == MembershipStatus.ACTIVE:
+            new_mem.status = MembershipStatus.ACTIVE
         if mem.status == MembershipStatus.ACTIVE:
             mem.status = MembershipStatus.INACTIVE
+    new_memberships = list(new_by_source_pk.values())
     session.add_all(new_memberships)
     return new_memberships

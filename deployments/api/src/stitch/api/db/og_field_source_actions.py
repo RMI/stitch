@@ -183,15 +183,29 @@ async def _attach_source_models(
     user: User,
 ) -> None:
     """Create ACTIVE memberships linking each source model to ``resource``."""
-    memberships = [
-        MembershipModel.create(
-            created_by=user,
-            resource_id=resource.id,
-            source=src.source,
-            source_pk=src.id,
+    already_attached = set(
+        (
+            await session.scalars(
+                select(MembershipModel.source_pk).where(
+                    MembershipModel.resource_id == resource.id,
+                    MembershipModel.source_pk.in_([src.id for src in src_models]),
+                )
+            )
+        ).all()
+    )
+    memberships: list[MembershipModel] = []
+    for src in src_models:
+        if src.id in already_attached:
+            continue
+        already_attached.add(src.id)
+        memberships.append(
+            MembershipModel.create(
+                created_by=user,
+                resource_id=resource.id,
+                source=src.source,
+                source_pk=src.id,
+            )
         )
-        for src in src_models
-    ]
     session.add_all(memberships)
     await session.flush()
 
