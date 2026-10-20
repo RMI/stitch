@@ -11,24 +11,15 @@ on:
         type: string
         default: ""
       exempt_head_branches:
-        # JSON rather than newline-delimited so the job-level `if:` can test
-        # it: expressions have fromJSON() but no way to split a string.
-        description: 'JSON array of source branches in this repo whose PRs skip the check (e.g. ["main", "production"])'
+        description: "Newline-delimited source branches in this repo whose PRs skip the check (e.g. production)"
         type: string
-        default: "[]"
+        default: ""
 
 jobs:
   check:
     name: Check PR size
-    # Only meaningful for pull requests. PRs from an exempt source branch
-    # skip the check. A fork's branch of the same name is just a
-    # contributor's branch, so the exemption only applies to same-repo PRs.
-    # Skipping here (rather than in the caller) keeps the check name stable,
-    # and a skipped job still satisfies a required status check.
-    if: >-
-      github.event_name == 'pull_request'
-      && !(github.event.pull_request.head.repo.full_name == github.repository
-      && contains(fromJSON(inputs.exempt_head_branches), github.head_ref))
+    # Only meaningful for pull requests.
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -44,9 +35,13 @@ jobs:
         shell: bash
         env:
           BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           MAX_LINES: ${{ inputs.max_lines }}
           IGNORE: ${{ inputs.ignore }}
+          EXEMPT: ${{ inputs.exempt_head_branches }}
         run: |
           set -euo pipefail
 
@@ -55,6 +50,19 @@ jobs:
           if [[ ! "$MAX_LINES" =~ ^[0-9]+$ ]]; then
             echo "::error title=Invalid max_lines::max_lines must be a whole number, got '$MAX_LINES'."
             exit 1
+          fi
+
+          # PRs from an exempt source branch skip the check. A fork's branch
+          # of the same name is just a contributor's branch, so only same-repo
+          # PRs are exempt. Exact, case-sensitive match, as git compares
+          # branch names (GitHub expressions would ignore case).
+          if [ "$HEAD_REPO" = "$REPO" ]; then
+            while read -r branch; do
+              if [ "$branch" = "$HEAD_REF" ]; then
+                echo "::notice title=PR size check skipped::PRs from '$HEAD_REF' are exempt from the size limit."
+                exit 0
+              fi
+            done <<< "$EXEMPT"
           fi
 
           # Count everything, minus the ignore list.
