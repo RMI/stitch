@@ -43,51 +43,34 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Count everything, minus each ignore pattern (blank lines and
-          # '#' comments in the ignore list are skipped).
+          # Count everything, minus the ignore list.
           pathspecs=(.)
           ignored_list=""
-          while IFS= read -r pattern; do
-            pattern="$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' <<< "$pattern")"
-            if [ -z "$pattern" ] || [[ "$pattern" == \#* ]]; then
-              continue
+          while read -r pattern; do
+            if [ -n "$pattern" ]; then
+              pathspecs+=(":(glob,exclude)$pattern")
+              ignored_list+="${ignored_list:+, }$pattern"
             fi
-            pathspecs+=(":(glob,exclude)$pattern")
-            ignored_list+="${ignored_list:+, }$pattern"
           done <<< "$IGNORE"
 
           # Three-dot diff: changes on the PR branch since it diverged from
-          # the target, matching GitHub's "Files changed" view. Captured first
-          # so a git failure fails the step instead of being hidden by a pipe.
-          numstat="$(git diff --numstat "$BASE_SHA...$HEAD_SHA" -- "${pathspecs[@]}")"
+          # the target, matching GitHub's "Files changed" view.
+          range="$BASE_SHA...$HEAD_SHA"
 
-          # numstat lines are "<added>\t<deleted>\t<path>". Binary files
-          # report "-" for both and count as 0 lines, as on GitHub.
-          per_file="$(awk -F '\t' 'NF >= 3 && $1 != "-" { print $1 + $2 "\t" $3 }' <<< "$numstat" | sort -rn)"
-          total="$(awk -F '\t' '{ sum += $1 } END { print sum + 0 }' <<< "$per_file")"
+          # Per-file breakdown for the log, so authors can see where the lines are.
+          git diff --stat=200 "$range" -- "${pathspecs[@]}"
 
-          {
-            echo "## PR size"
-            echo
-            echo "**$total** lines changed (additions + deletions). The limit is **$MAX_LINES**."
-            echo
-            if [ -n "$ignored_list" ]; then
-              echo "Not counted: \`$ignored_list\`"
-              echo
-            fi
-            if [ -n "$per_file" ]; then
-              echo "| Lines | Largest files |"
-              echo "| ---: | --- |"
-              head -n 10 <<< "$per_file" | awk -F '\t' '{ printf "| %s | `%s` |\n", $1, $2 }'
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          # numstat lines are "<added> <deleted> <path>";
+          # binary files report "-" for both and count as 0 lines, as on GitHub.
+          numstat="$(git diff --numstat "$range" -- "${pathspecs[@]}")"
+          total="$(awk '$1 != "-" { sum += $1 + $2 } END { print sum + 0 }' <<< "$numstat")"
 
           if [ "$total" -gt "$MAX_LINES" ]; then
             not_counted=""
             if [ -n "$ignored_list" ]; then
               not_counted=" (not counting $ignored_list)"
             fi
-            echo "::error title=PR too large::This PR changes $total lines; the limit is $MAX_LINES$not_counted. Split it into smaller PRs that can be reviewed independently. The job summary lists the largest files."
+            echo "::error title=PR too large::This PR changes $total lines; the limit is $MAX_LINES$not_counted."
             exit 1
           fi
 
