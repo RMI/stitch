@@ -15,6 +15,7 @@ from pathlib import Path
 from stitch.ogsi.model.types import (
     FieldStatus,
     LocationType,
+    OGSISrcKey,
     PrimaryHydrocarbonGroup,
     ProductionConventionality,
 )
@@ -22,6 +23,12 @@ from stitch.ogsi.model.types import (
 logger = logging.getLogger("stitch.seed")
 
 PRODUCER_NAME = "stitch-seed"
+
+# Legacy pool: the four keys the seeder has always used for `mixed`.
+BASE_SOURCE_KEYS: tuple[str, ...] = ("gem", "wm", "rmi", "llm")
+# Full OGSI source vocabulary (8 keys, incl. ccr/alb/bc/nor). Used when
+# SEED_ALL_SOURCE_KEYS is on so comparisons can exercise every source key.
+ALL_SOURCE_KEYS: tuple[str, ...] = tuple(get_args(OGSISrcKey))
 
 # The canonical Region vocabulary the ETL emits (derived there from ISO3 country).
 # Seeding from the same set keeps the Region filter dropdown coherent locally.
@@ -49,16 +56,32 @@ def _seed(random_seed: int | None) -> int | None:
     return int(random_seed)
 
 
-def _source_key(seed_source: str, rng: random.Random) -> str:
+def _key_pool(all_source_keys: bool) -> tuple[str, ...]:
+    """Which source keys `mixed` may draw from."""
+    return ALL_SOURCE_KEYS if all_source_keys else BASE_SOURCE_KEYS
+
+
+def _source_key(seed_source: str, rng: random.Random, *, all_source_keys: bool) -> str:
     """
     Choose which discriminator `source` to use in source_data.
-    Env: SEED_SOURCE=gem|wm|rmi|llm|mixed
+    Env: SEED_SOURCE=gem|wm|rmi|llm|...|mixed (with SEED_ALL_SOURCE_KEYS, `mixed`
+    spans all 8 OGSI keys).
     """
+    pool = _key_pool(all_source_keys)
     if seed_source == "mixed":
-        return rng.choice(["gem", "wm", "rmi", "llm"])
-    if seed_source in {"gem", "wm", "rmi", "llm"}:
+        return rng.choice(list(pool))
+    if seed_source in ALL_SOURCE_KEYS:
         return seed_source
     return "gem"
+
+
+def _pick_source_keys(
+    rng: random.Random, n: int, *, all_source_keys: bool
+) -> list[str]:
+    """`n` *distinct* source keys for a multi-source resource, best-effort."""
+    pool = list(_key_pool(all_source_keys))
+    n = max(1, min(n, len(pool)))
+    return rng.sample(pool, n)
 
 
 def _year_triplet(rng: random.Random) -> tuple[int | None, int | None, int | None]:
@@ -133,7 +156,7 @@ def _maybe(value_fn, *, rng: random.Random, allow_null: bool = True, null_prob: 
 
 
 def build_og_field(
-    *, fake: Faker, seed_source: str, rng: random.Random, null_prob: float
+    *, fake: Faker, source_key: str, rng: random.Random, null_prob: float
 ) -> dict[str, Any]:
     country = fake.country_code(representation="alpha-3")
     name = _fake_companyish(fake, rng)
@@ -197,14 +220,14 @@ def build_og_field(
             rng=rng,
             null_prob=null_prob,
         ),
-        "source": _source_key(seed_source=seed_source, rng=rng),
+        "source": source_key,
     }
 
 
 def build_payload(
     *,
     fake: Faker,
-    seed_source: str,
+    source_keys: list[str],
     rng: random.Random,
     null_prob: float,
     random_seed: int | None,
@@ -213,31 +236,59 @@ def build_payload(
 ) -> dict[str, Any]:
     """
     POST body is Resource-Input (OpenAPI), which requires id.
+
+    ``source_keys`` may name one key (legacy single-source resource) or several
+    distinct keys — the create endpoint turns each ``source_data`` entry into its
+    own source record + membership on one resource, giving the coalescer real
+    per-field ranking work.
     """
-    src = build_og_field(
-        fake=fake, seed_source=seed_source, rng=rng, null_prob=null_prob
-    )
-    original_source = dict(src)
-    src["source_record"] = {
-        "record_id": f"faker:{index}:1",
-        "run_id": run_id,
-        "observed_at": datetime.now(UTC).isoformat(),
-        "producer": _producer(),
-        "payload": {
-            "kind": "seed_faker",
-            "source": original_source,
-            "random_seed": random_seed,
-            "index": index,
-            "seed_source": seed_source,
-            "null_probability": _null_probability(null_prob),
-        },
-    }
+    source_data: list[dict[str, Any]] = []
+    for source_index, source_key in enumerate(source_keys, start=1):
+        src = build_og_field(
+            fake=fake, source_key=source_key, rng=rng, null_prob=null_prob
+        )
+        original_source = dict(src)
+        src["source_record"] = {
+            "record_id": f"faker:{index}:{source_index}",
+            "run_id": run_id,
+            "observed_at": datetime.now(UTC).isoformat(),
+            "producer": _producer(),
+            "payload": {
+                "kind": "seed_faker",
+                "source": original_source,
+                "random_seed": random_seed,
+                "index": index,
+                "source_index": source_index,
+                "seed_source": source_key,
+                "null_probability": _null_probability(null_prob),
+            },
+        }
+        source_data.append(src)
 
     return {
         "id": 0,
-        "source_data": [src],
+        "source_data": source_data,
         "constituents": [],
     }
+
+
+def _source_keys_for_resource(
+    *,
+    seed_source: str,
+    rng: random.Random,
+    all_source_keys: bool,
+    multi_source_prob: float,
+    max_extra_sources: int,
+) -> list[str]:
+    """Decide the source keys for one resource (1 = single-source, N = complex)."""
+    if (
+        multi_source_prob > 0.0
+        and max_extra_sources > 0
+        and rng.random() < multi_source_prob
+    ):
+        n = 1 + rng.randint(1, max_extra_sources)
+        return _pick_source_keys(rng, n, all_source_keys=all_source_keys)
+    return [_source_key(seed_source, rng, all_source_keys=all_source_keys)]
 
 
 def _iter_faker_payload(
@@ -248,19 +299,38 @@ def _iter_faker_payload(
     null_prob: float,
     random_seed: int | None,
     run_id: str,
+    all_source_keys: bool,
+    multi_source_prob: float,
+    max_extra_sources: int,
+    start_index: int = 0,
 ) -> Iterator[dict[str, Any]]:
-    logger.info("Seeding random payloads")
-    for i in range(1, faker_count + 1):
-        logger.debug("Random payload %s", i)
-        yield build_payload(
-            fake=fake,
+    logger.info(
+        "Seeding random payloads (indices %d..%d)",
+        start_index + 1,
+        start_index + faker_count,
+    )
+    # Build every payload from index 1 so the RNG advances identically to a fresh
+    # full run, but only emit indices > start_index (cumulative-seeding offset).
+    for i in range(1, start_index + faker_count + 1):
+        source_keys = _source_keys_for_resource(
             seed_source=seed_source,
+            rng=rng,
+            all_source_keys=all_source_keys,
+            multi_source_prob=multi_source_prob,
+            max_extra_sources=max_extra_sources,
+        )
+        payload = build_payload(
+            fake=fake,
+            source_keys=source_keys,
             rng=rng,
             null_prob=null_prob,
             random_seed=random_seed,
             run_id=run_id,
             index=i,
         )
+        if i > start_index:
+            logger.debug("Random payload %s", i)
+            yield payload
 
 
 def _attach_source_record(
@@ -371,6 +441,10 @@ def iter_payloads(
     random_seed: int | None,
     seed_source: str,
     null_prob: float,
+    all_source_keys: bool = False,
+    multi_source_prob: float = 0.0,
+    max_extra_sources: int = 0,
+    start_index: int = 0,
 ) -> Iterable[dict[str, Any]]:
     seed = _seed(random_seed)
     rng = random.Random(seed)
@@ -379,7 +453,9 @@ def iter_payloads(
     if seed is not None:
         Faker.seed(seed)
 
-    if static_payload_dir is not None:
+    # Static payloads are emitted once (at the base rung); continuation runs
+    # (start_index > 0) skip them so they aren't duplicated.
+    if static_payload_dir is not None and start_index == 0:
         yield from _iter_static_payloads(static_payload_dir, run_id)
 
     if faker_count is not None and faker_count > 0:
@@ -391,4 +467,8 @@ def iter_payloads(
             null_prob=null_prob,
             random_seed=seed,
             run_id=run_id,
+            all_source_keys=all_source_keys,
+            multi_source_prob=multi_source_prob,
+            max_extra_sources=max_extra_sources,
+            start_index=start_index,
         )
