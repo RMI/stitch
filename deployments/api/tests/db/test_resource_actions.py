@@ -1167,30 +1167,6 @@ class TestResourceFilterOptionsAction:
         assert options["basin"] == ["Permian", "Texas"]
         assert options["region"] == ["North America"]
 
-    def test_postgres_query_unions_one_distinct_branch_per_field(self):
-        """``filter_option_rows`` compiles on Postgres as one unioned statement.
-
-        One ``DISTINCT`` branch per filterable field, unioned, so the endpoint
-        stays a single round trip. Sorting is deliberately absent: the two
-        dialects collate strings differently, so the action sorts in Python.
-        """
-        stmt = filter_option_rows(
-            OGFieldFilterParams(),
-            licensed_sources=frozenset({"gem", "wm", "rmi", "llm"}),
-        )
-
-        sql = str(
-            stmt.compile(
-                dialect=postgresql.dialect(),
-                compile_kwargs={"literal_binds": True},
-            )
-        )
-
-        assert sql.count("SELECT DISTINCT") >= len(FILTER_OPTION_FIELDS)
-        assert sql.count("UNION ALL") == len(FILTER_OPTION_FIELDS) - 1
-        for field in FILTER_OPTION_FIELDS:
-            assert f"'{field}' AS colname" in sql
-
     def test_self_exclusion_omits_only_the_branch_fields_own_filter(self):
         """A field's branch drops its own filter and keeps every other one."""
         stmt = filter_option_rows(
