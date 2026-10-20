@@ -4,7 +4,6 @@ set -euo pipefail
 IDENTITY_NAME=stitch-backup-identity
 BLOB_CONTAINER=backups
 ROLE="Storage Blob Data Contributor"
-SPEC="$(cd "$(dirname "$0")" && pwd)/templates/db-backup-job-config.yml"
 
 resource_group=
 storage_account=
@@ -13,14 +12,15 @@ host=
 database=
 user=postgres
 name=
+password=
 
 usage() {
   cat >&2 <<'EOF'
 usage:
-  deploy_backup_job.sh setup  -g RG -s ACCOUNT
-  deploy_backup_job.sh deploy -g RG -s ACCOUNT -e ENV -H HOST -d DB [-u USER] [-n JOB]
-  deploy_backup_job.sh run    -g RG {-d DB | -n JOB}
-  deploy_backup_job.sh delete -g RG {-d DB | -n JOB}
+  db_backup_job.sh setup  -g RG -s ACCOUNT
+  db_backup_job.sh deploy -g RG -s ACCOUNT -e ENV -H HOST -d DB [-P PASSWORD] [-u USER] [-n JOB]
+  db_backup_job.sh run    -g RG {-d DB | -n JOB}
+  db_backup_job.sh delete -g RG {-d DB | -n JOB}
 
 options:
   -g, --resource-group   Azure resource group
@@ -30,6 +30,7 @@ options:
   -d, --database         database to back up
   -u, --user             Postgres user (default: postgres)
   -n, --name             job name (default: the database name, hyphenated)
+  -P, --password         Postgres password (default: PGPASSWORD)
   -h, --help             show this message
 
 setup: create & configure identity and permissions for one storage account.
@@ -69,28 +70,70 @@ job_exists() {
 }
 
 render() {
-  local out pair key value
+  local key val identity_id client_id environment_id pgpassword_json
+  local host user database storage_account blob_container
 
-  out="$(<"$SPEC")"
-  for pair in "$@"; do
-    key="${pair%%=*}"
-    value="${pair#*=}"
-    out="${out//\{\{ $key \}\}/$value}"
-  done
+  while IFS='=' read -r key val; do printf -v "$key" '%s' "$val"; done
 
-  case "$out" in
-  *'{{'*)
-    echo "render: $SPEC has a placeholder with no value" >&2
-    return 1
-    ;;
-  esac
-
-  printf '%s\n' "$out"
+  cat <<EOF
+---
+tags:
+  purpose: backup
+identity:
+  type: UserAssigned
+  userAssignedIdentities:
+    "$identity_id": {}
+properties:
+  environmentId: "$environment_id"
+  configuration:
+    triggerType: Schedule
+    replicaTimeout: 1800
+    replicaRetryLimit: 0
+    scheduleTriggerConfig:
+      cronExpression: "0 3 * * *"
+      parallelism: 1
+      replicaCompletionCount: 1
+    secrets:
+      - name: pgpassword
+        value: $pgpassword_json
+  template:
+    volumes:
+      - name: scratch
+        storageType: EmptyDir
+    initContainers:
+      - name: dump
+        image: postgres:17-alpine
+        resources: { cpu: 0.5, memory: 1.0Gi }
+        volumeMounts:
+          - { volumeName: scratch, mountPath: /scratch }
+        env:
+          - { name: PGHOST, value: "$host" }
+          - { name: PGUSER, value: "$user" }
+          - { name: PGDATABASE, value: "$database" }
+          - { name: PGSSLMODE, value: require }
+          - { name: PGPASSWORD, secretRef: pgpassword }
+        command: ["pg_dump"]
+        args: ["-Fc", "-f", "/scratch/dump"]
+    containers:
+      - name: upload
+        image: mcr.microsoft.com/azure-cli
+        resources: { cpu: 0.5, memory: 1.0Gi }
+        volumeMounts:
+          - { volumeName: scratch, mountPath: /scratch }
+        env:
+          - { name: DATABASE, value: "$database" }
+          - { name: ACCOUNT, value: "$storage_account" }
+          - { name: CLIENT_ID, value: "$client_id" }
+          - { name: CONTAINER, value: "$blob_container" }
+        command: ["/bin/sh", "-c"]
+        args:
+          - 'set -e; az login --identity --client-id "\$CLIENT_ID" -o none; az storage blob upload --account-name "\$ACCOUNT" --auth-mode login -c "\$CONTAINER" -n "\$DATABASE/\$(date -u +%Y%m%dT%H%M%SZ).dump" -f /scratch/dump -o none'
+EOF
 }
 
 deploy() {
   local action identity identity_id client_id environment_id pgpassword_json
-  : "${PGPASSWORD:?the password for --user on --host}"
+  : "${password:?the password for --user on --host, via --password or PGPASSWORD}"
 
   identity="$(az identity show --resource-group "$resource_group" \
     --name "$IDENTITY_NAME" --query "{id: id, clientId: clientId}" --output json)"
@@ -98,20 +141,21 @@ deploy() {
   client_id="$(jq -r .clientId <<<"$identity")"
   environment_id="$(az containerapp env show --resource-group "$resource_group" \
     --name "$environment" --query id --output tsv)"
-  pgpassword_json="$(printf '%s' "$PGPASSWORD" | jq -Rs .)"
+  pgpassword_json="$(printf '%s' "$password" | jq -Rs .)"
 
   rendered="$(mktemp)"
   trap 'rm -f "$rendered"' EXIT
-  render \
-    "identity_id=$identity_id" \
-    "identity_client_id=$client_id" \
-    "environment_id=$environment_id" \
-    "pgpassword_json=$pgpassword_json" \
-    "pghost=$host" \
-    "pguser=$user" \
-    "database=$database" \
-    "storage_account=$storage_account" \
-    "blob_container=$BLOB_CONTAINER" >"$rendered"
+  render >"$rendered" <<EOF
+identity_id=$identity_id
+client_id=$client_id
+environment_id=$environment_id
+pgpassword_json=$pgpassword_json
+host=$host
+user=$user
+database=$database
+storage_account=$storage_account
+blob_container=$BLOB_CONTAINER
+EOF
 
   if job_exists; then
     action=update
@@ -165,12 +209,14 @@ while [ "$#" -gt 0 ]; do
   -d | --database) database="$2" ;;
   -u | --user) user="$2" ;;
   -n | --name) name="$2" ;;
+  -P | --password) password="$2" ;;
   *) usage ;;
   esac
   shift 2
 done
 
 [ -n "$name" ] || name="${database//_/-}"
+[ -n "$password" ] || password="${PGPASSWORD:-}"
 
 case "$command" in
 setup) setup ;;

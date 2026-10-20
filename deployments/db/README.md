@@ -168,13 +168,13 @@ dumps. A lifecycle policy on the `backups` container limits its size.
 
 ### Deploying the job
 
-`scripts/deploy_backup_job.sh` needs `az` and `jq`. Before you run the script,
+`scripts/db_backup_job.sh` needs `az` and `jq`. Before you run the script,
 authenticate `az` against the correct subscription.
 
 1. Run `setup` one time for each storage account:
 
    ```bash
-   scripts/deploy_backup_job.sh setup -g <resource-group> -s <storage-account>
+   scripts/db_backup_job.sh setup -g <resource-group> -s <storage-account>
    ```
 
    This creates the `stitch-backup-identity` managed identity and the `backups`
@@ -184,15 +184,16 @@ authenticate `az` against the correct subscription.
 2. Run `deploy` one time for each database:
 
    ```bash
-   PGPASSWORD=<password> scripts/deploy_backup_job.sh deploy \
+   scripts/db_backup_job.sh deploy \
      -g <resource-group> -s <storage-account> -e <environment> \
-     -H <postgres-host> -d <database>
+     -H <postgres-host> -d <database> -P <password>
    ```
 
-   This creates the job, or updates it when the job exists.
+   This creates the job, or updates it when the job exists. Leave off `-P` to
+   take the password from `PGPASSWORD` instead.
 
 Every command is safe to run again. For all options, run
-`scripts/deploy_backup_job.sh --help`.
+`scripts/db_backup_job.sh --help`.
 
 To run `setup`, your account needs these permissions:
 
@@ -211,7 +212,7 @@ time to apply the role assignment. Until then, the upload step fails.
 To back up a database immediately, run:
 
 ```bash
-scripts/deploy_backup_job.sh run -g <resource-group> -d <database>
+scripts/db_backup_job.sh run -g <resource-group> -d <database>
 ```
 
 This starts the same job that `deploy` created, so the dump goes to the same
@@ -229,7 +230,7 @@ az containerapp job execution list -g <resource-group> -n <job> -o table
 Deleting a database does not delete its job. To delete a job, run:
 
 ```bash
-scripts/deploy_backup_job.sh delete -g <resource-group> -d <database>
+scripts/db_backup_job.sh delete -g <resource-group> -d <database>
 ```
 
 This leaves the identity, the `backups` container, and the dumps in place. It
