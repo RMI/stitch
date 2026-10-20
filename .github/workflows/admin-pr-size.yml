@@ -39,7 +39,7 @@ jobs:
       - name: Count changed lines
         shell: bash
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.base_ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           MAX_LINES: ${{ inputs.max_lines }}
           IGNORE: ${{ inputs.ignore }}
@@ -58,7 +58,7 @@ jobs:
 
           # Three-dot diff: changes on the PR branch since it diverged from
           # the target, matching GitHub's "Files changed" view.
-          range="$BASE_SHA...$HEAD_SHA"
+          range="origin/$BASE_REF...$HEAD_SHA"
 
           # Per-file breakdown for the log, so authors can see where the lines are.
           git diff --stat=200 "$range" -- "${pathspecs[@]}"
