@@ -84,8 +84,8 @@ jobs:
             if [ -n "$ignored_list" ]; then
               not_counted=" (not counting $ignored_list)"
             fi
-            echo "::error title=PR too large::This PR changes $total lines; the limit is $MAX_LINES$not_counted."
+            echo "::error title=PR too large::This PR changes $total lines; the limit is $MAX_LINES$not_counted. Consider splitting into smaller PRs."
             exit 1
           fi
 
-          echo "PR size OK: $total of $MAX_LINES lines changed."
+          echo "PR size OK: $total lines changed; the limit is $MAX_LINES."
