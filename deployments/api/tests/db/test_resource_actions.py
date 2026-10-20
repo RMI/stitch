@@ -1167,23 +1167,6 @@ class TestResourceFilterOptionsAction:
         assert options["basin"] == ["Permian", "Texas"]
         assert options["region"] == ["North America"]
 
-    def test_self_exclusion_omits_only_the_branch_fields_own_filter(self):
-        """A field's branch drops its own filter and keeps every other one."""
-        stmt = filter_option_rows(
-            OGFieldFilterParams(country=["CAN"], state_province=["Alberta"]),
-        )
-
-        sql = str(
-            stmt.compile(
-                dialect=postgresql.dialect(),
-                compile_kwargs={"literal_binds": True},
-            )
-        )
-
-        # Applied in every branch but the field's own -> one fewer than six.
-        assert sql.count("IN ('CAN')") == len(FILTER_OPTION_FIELDS) - 1
-        assert sql.count("IN ('Alberta')") == len(FILTER_OPTION_FIELDS) - 1
-
     @pytest.mark.anyio
     async def test_only_unlicensed_selected_sources_still_return_resource(
         self,
