@@ -37,7 +37,7 @@ stitch-frontend/
 │   ├── components/              # Shared UI components
 │   │   ├── FieldCard.jsx        # Field value card + FieldGrid layout
 │   │   ├── FilterBar.jsx        # Filter dropdown row + active chips
-│   │   ├── FilterDropdown.jsx   # Multi-select dropdown with counts
+│   │   ├── FilterDropdown.jsx   # Multi-select dropdown
 │   │   ├── ResourcesTable.jsx   # Sortable resources table
 │   │   ├── ResourcesView.jsx    # Resources list page section
 │   │   ├── ResourceView.jsx     # Single resource fetch section
@@ -487,22 +487,13 @@ export function useMutateResource(id) {
 
 ## Filters
 
-The resources table supports multi-select filters with OR-within / AND-across logic (e.g. region = "Asia" OR "Europe", AND basin = "Arabian").
+The resources table supports multi-select filters with OR-within / AND-across logic (e.g. region = "Asia" OR "Europe", AND basin = "Arabian"). Selections are sent to the API as the list params described above; nothing is filtered in the browser.
 
-Filter fields are configured in one place:
+Dropdown options come from `GET /oil-gas-fields/filter-options`, which cascades. It returns only the values still reachable under the other active filters and the search term, so choosing a country narrows the state/province and basin lists. A field's own selection never narrows its own list, so you can always widen or change it. Options are requested from the settled (debounced) filters, so typing in the search box does not refetch them on every keystroke.
 
-```js
-// src/config/filters.js
-export const FILTER_FIELDS = [
-  { key: "region", label: "Region" },
-  { key: "state_province", label: "State/Province" },
-  { key: "basin", label: "Basin" },
-];
-```
+Filter fields are configured in `src/config/filters.js`. Add one by appending an entry to `FILTER_FIELDS`; the `key` must match the field name the API filters on.
 
-Add a new filter by appending an entry. The `key` must match the field name on the resource object. Option counts are computed statically from the full dataset on load.
-
-Active filter selections are displayed as removable chips beneath the dropdowns. Filters are applied client-side in `ResourcesView` via `applyFilters()`. This function is a pure utility designed to be lifted server-side when pagination is introduced.
+Active filter selections are displayed as removable chips beneath the dropdowns.
 
 ## Deployment: Azure Static Web Apps
 

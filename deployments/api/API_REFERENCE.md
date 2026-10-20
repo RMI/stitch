@@ -73,7 +73,9 @@
 
 ### `GET /api/v1/oil-gas-fields/filter-options`
 
-<!-- description -->
+Distinct values available for each filter dropdown, limited to the caller's licensed sources.
+
+Accepts the same filter and search parameters as `GET /api/v1/oil-gas-fields/` (not paging, sorting or `source`). Options cascade: each field lists only the values still reachable under the other active filters, so a field's own selection never narrows its own list.
 
 **Response:** `200`
 
