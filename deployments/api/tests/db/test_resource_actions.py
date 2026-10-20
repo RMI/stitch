@@ -2,7 +2,6 @@
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy.dialects import postgresql
 from sqlalchemy import event, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +20,6 @@ from stitch.api.db.model import (
     OilGasFieldSourceValueModel,
     ResourceModel,
 )
-from stitch.api.db.queries import filter_option_rows
 from stitch.api.entities import (
     FILTER_OPTION_FIELDS,
     OGFieldFilterParams,
