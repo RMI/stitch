@@ -48,18 +48,16 @@ EOF
 }
 
 setup() {
-  local principal account_id
+  local principal container_id
 
   principal="$(az identity create --resource-group "$resource_group" \
     --name "$IDENTITY_NAME" --query principalId --output tsv)"
 
-  az storage container create --account-name "$storage_account" --auth-mode login \
-    --name "$BLOB_CONTAINER" --output none
+  container_id="$(az storage container-rm create --resource-group "$resource_group" \
+    --storage-account "$storage_account" --name "$BLOB_CONTAINER" --query id --output tsv)"
 
-  account_id="$(az storage account show --name "$storage_account" --query id --output tsv)"
   az role assignment create --role "$ROLE" --assignee-object-id "$principal" \
-    --assignee-principal-type ServicePrincipal \
-    --scope "$account_id/blobServices/default/containers/$BLOB_CONTAINER" --output none
+    --assignee-principal-type ServicePrincipal --scope "$container_id" --output none
 
   echo "$IDENTITY_NAME can now write to $BLOB_CONTAINER on $storage_account"
 }

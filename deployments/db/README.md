@@ -199,8 +199,7 @@ To run `setup`, your account needs these permissions:
 
 - create a managed identity
 - create a role assignment
-- a blob data role on the storage account, such as **Storage Blob Data
-  Contributor**
+- create a blob container on the storage account
 
 `deploy` needs none of these permissions.
 
