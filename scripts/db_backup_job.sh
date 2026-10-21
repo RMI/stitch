@@ -8,7 +8,7 @@ ROLE="Storage Blob Data Contributor"
 resource_group=
 storage_account=
 environment=
-host=
+server=
 database=
 user=postgres
 name=
@@ -18,7 +18,7 @@ usage() {
   cat >&2 <<'EOF'
 usage:
   db_backup_job.sh setup  -g RG -s ACCOUNT
-  db_backup_job.sh deploy -g RG -s ACCOUNT -e ENV -H HOST -d DB [-P PASSWORD] [-u USER] [-n JOB]
+  db_backup_job.sh deploy -g RG -s ACCOUNT -e ENV -S SERVER -d DB [-P PASSWORD] [-u USER] [-n JOB]
   db_backup_job.sh run    -g RG {-d DB | -n JOB}
   db_backup_job.sh delete -g RG {-d DB | -n JOB}
 
@@ -26,7 +26,7 @@ options:
   -g, --resource-group   Azure resource group
   -s, --storage-account  storage account holding the backups container
   -e, --environment      Container Apps environment that runs the job
-  -H, --host             Postgres host
+  -S, --server           Postgres flexible server running the database
   -d, --database         database to back up
   -u, --user             Postgres user (default: postgres)
   -n, --name             job name (default: the database name, hyphenated)
@@ -67,12 +67,7 @@ job_exists() {
     --output none 2>/dev/null
 }
 
-render() {
-  local key val identity_id client_id environment_id pgpassword_json
-  local host user database storage_account blob_container
-
-  while IFS='=' read -r key val; do printf -v "$key" '%s' "$val"; done
-
+render_job_template() {
   cat <<EOF
 ---
 tags:
@@ -122,7 +117,7 @@ properties:
           - { name: DATABASE, value: "$database" }
           - { name: ACCOUNT, value: "$storage_account" }
           - { name: CLIENT_ID, value: "$client_id" }
-          - { name: CONTAINER, value: "$blob_container" }
+          - { name: CONTAINER, value: "$BLOB_CONTAINER" }
         command: ["/bin/sh", "-c"]
         args:
           - 'set -e; az login --identity --client-id "\$CLIENT_ID" -o none; az storage blob upload --account-name "\$ACCOUNT" --auth-mode login -c "\$CONTAINER" -n "\$DATABASE/\$(date -u +%Y%m%dT%H%M%SZ).dump" -f /scratch/dump -o none'
@@ -130,8 +125,8 @@ EOF
 }
 
 deploy() {
-  local action identity identity_id client_id environment_id pgpassword_json
-  : "${password:?the password for --user on --host, via --password or PGPASSWORD}"
+  local action identity identity_id client_id environment_id host pgpassword_json
+  : "${password:?the password for --user on --server, via --password or PGPASSWORD}"
 
   identity="$(az identity show --resource-group "$resource_group" \
     --name "$IDENTITY_NAME" --query "{id: id, clientId: clientId}" --output json)"
@@ -139,21 +134,13 @@ deploy() {
   client_id="$(jq -r .clientId <<<"$identity")"
   environment_id="$(az containerapp env show --resource-group "$resource_group" \
     --name "$environment" --query id --output tsv)"
+  host="$(az postgres flexible-server show --resource-group "$resource_group" \
+    --name "$server" --query fullyQualifiedDomainName --output tsv)"
   pgpassword_json="$(printf '%s' "$password" | jq -Rs .)"
 
   rendered="$(mktemp)"
   trap 'rm -f "$rendered"' EXIT
-  render >"$rendered" <<EOF
-identity_id=$identity_id
-client_id=$client_id
-environment_id=$environment_id
-pgpassword_json=$pgpassword_json
-host=$host
-user=$user
-database=$database
-storage_account=$storage_account
-blob_container=$BLOB_CONTAINER
-EOF
+  render_job_template >"$rendered"
 
   if job_exists; then
     action=update
@@ -203,7 +190,7 @@ while [ "$#" -gt 0 ]; do
   -g | --resource-group) resource_group="$2" ;;
   -s | --storage-account) storage_account="$2" ;;
   -e | --environment) environment="$2" ;;
-  -H | --host) host="$2" ;;
+  -S | --server) server="$2" ;;
   -d | --database) database="$2" ;;
   -u | --user) user="$2" ;;
   -n | --name) name="$2" ;;

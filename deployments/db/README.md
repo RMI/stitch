@@ -186,8 +186,11 @@ authenticate `az` against the correct subscription.
    ```bash
    scripts/db_backup_job.sh deploy \
      -g <resource-group> -s <storage-account> -e <environment> \
-     -H <postgres-host> -d <database> -P <password>
+     -S <server> -d <database> -P <password>
    ```
+
+   Give `-S` the name of the Postgres flexible server, such as
+   `stitch-staging`. The script finds the host name for you.
 
    This creates the job, or updates it when the job exists. Leave off `-P` to
    take the password from `PGPASSWORD` instead.
@@ -201,7 +204,7 @@ To run `setup`, your account needs these permissions:
 - create a role assignment
 - create a blob container on the storage account
 
-`deploy` needs none of these permissions.
+`deploy` only requires read access on the Postgres server.
 
 CAUTION: Wait two minutes after `setup` before you start the job. Azure needs
 time to apply the role assignment. Until then, the upload step fails.
