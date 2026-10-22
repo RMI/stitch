@@ -9,14 +9,17 @@ identified by ``permission_mask``:
     3 = PUBLIC + wm + ccr
 
 A caller is served from the read model only when their licensed sources *exactly
-equal* one of these sets. Anything else -- a partial public grant, an extra or
-unknown key, or an unscoped (``None``) caller -- matches no profile and is refused.
+equal* one of these sets. Anything else -- a partial public grant, a source not in
+any profile, or an unscoped (``None``) caller -- matches no profile and is refused.
 There is no subset or closest-profile matching, so a stored answer can never show a
 caller more (or less) than they are granted.
 
-The sets are spelled out literally rather than derived from ``OGSISrcKey``: a new
-source key must be added here deliberately. Until then every caller holding it is
-refused (fail closed), and a drift test flags the gap.
+A token's ``source:read:<key>`` for a key the code doesn't know never gets here:
+``api.permissions.licensed_sources`` drops keys outside ``OGSISrcKey``, so such a
+caller is matched on their other grants. The extra key that does get here is a
+source added to ``OGSISrcKey`` but not to the sets below, which are spelled out
+literally so each new source is classified deliberately. Until it is, every caller
+holding it is refused (fail closed), and a drift test flags the gap.
 """
 
 from __future__ import annotations
