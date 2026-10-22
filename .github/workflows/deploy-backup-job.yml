@@ -1,0 +1,74 @@
+---
+on:
+  workflow_call:
+    inputs:
+      deployment-lane:
+        description: "Deployment lane and GitHub Environment name"
+        required: true
+        type: string
+      postgres-host:
+        description: "Database server hostname"
+        required: true
+        type: string
+      postgres-db:
+        description: "Database the job backs up"
+        required: true
+        type: string
+    secrets:
+      azure-client-id:
+        required: true
+      azure-tenant-id:
+        required: true
+      azure-subscription-id:
+        required: true
+      pgpassword:
+        required: true
+
+name: Deploy Backup Job
+
+jobs:
+  deploy-backup-job:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.deployment-lane }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.azure-client-id }}
+          tenant-id: ${{ secrets.azure-tenant-id }}
+          subscription-id: ${{ secrets.azure-subscription-id }}
+
+      - name: Ensure containerapp extension is available
+        run: |
+          az extension add --name containerapp --upgrade --allow-preview true
+
+      - name: Install envsubst
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gettext-base
+
+      - name: Deploy the backup job
+        shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_CONTAINER_APP_ENVIRONMENT: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
+          BACKUP_STORAGE_ACCOUNT: ${{ vars.BACKUP_STORAGE_ACCOUNT }}
+          PGHOST: ${{ inputs.postgres-host }}
+          PGUSER: ${{ vars.POSTGRES_ADMIN_USER || 'postgres' }}
+          PGDATABASE: ${{ inputs.postgres-db }}
+          PGPASSWORD: ${{ secrets.pgpassword }}
+        run: |
+          set -euo pipefail
+          scripts/deploy_backup_job.sh deploy \
+            -g "$AZURE_RESOURCE_GROUP" \
+            -s "$BACKUP_STORAGE_ACCOUNT" \
+            -e "$AZURE_CONTAINER_APP_ENVIRONMENT" \
+            -H "$PGHOST" \
+            -u "$PGUSER" \
+            -d "$PGDATABASE"
