@@ -9,10 +9,11 @@ identified by ``permission_mask``:
     3 = PUBLIC + wm + ccr
 
 A caller is served from the read model only when their licensed sources *exactly
-equal* one of these sets. Anything else -- a partial public grant, a source not in
-any profile, or an unscoped (``None``) caller -- matches no profile and is refused.
-There is no subset or closest-profile matching, so a stored answer can never show a
-caller more (or less) than they are granted.
+equal* one of these sets. Anything else -- a partial public grant, or a source not
+in any profile -- matches no profile and is refused. There is no subset or
+closest-profile matching, so a stored answer can never show a caller more (or less)
+than they are granted. (``None``, which only internal callers pass, means every
+source; the list actions read the all-sources profile for it.)
 
 A token's ``source:read:<key>`` for a key the code doesn't know never gets here:
 ``api.permissions.licensed_sources`` drops keys outside ``OGSISrcKey``, so such a

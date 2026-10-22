@@ -59,6 +59,15 @@ def _assert_labels(events: list[dict], expected: set[str]) -> None:
     assert actual == expected, f"unexpected labels: {actual ^ expected}"
 
 
+def _labeled_statements_use_read_model(events: list[dict]) -> bool:
+    """Every labeled query read the precomputed table."""
+    return all(
+        "og_field_resource_state" in event["statement"]
+        for event in events
+        if "query_name" in event
+    )
+
+
 class TestEndpointQueryLabels:
     """Drive the real HTTP read endpoints and assert the exact labels each emits."""
 
@@ -69,7 +78,6 @@ class TestEndpointQueryLabels:
         og_create_res_fact,
         captured_query_events: list[dict],
     ):
-        # A row must exist for the hydrate query to run (skipped when empty).
         create = await integration_client.post(
             "/oil-gas-fields/",
             json=og_create_res_fact(name="Labeled Resource").model_dump(mode="json"),
@@ -80,10 +88,12 @@ class TestEndpointQueryLabels:
         response = await integration_client.get("/oil-gas-fields/")
         assert response.status_code == 200, response.text
 
+        # The list reads its page's rows from the precomputed read model in the
+        # same statement that picks them.
         _assert_labels(
-            captured_query_events,
-            {"resources.count", "resources.list_ids", "resources.list_hydrate"},
+            captured_query_events, {"resources.count", "resources.list_page"}
         )
+        assert _labeled_statements_use_read_model(captured_query_events)
 
     @pytest.mark.anyio
     async def test_filter_options_endpoint_labels(
@@ -91,11 +101,12 @@ class TestEndpointQueryLabels:
         integration_client: AsyncClient,
         captured_query_events: list[dict],
     ):
-        # filter-options returns every filterable field in one combined query.
+        # One DISTINCT per filterable field, all from the read model.
         response = await integration_client.get("/oil-gas-fields/filter-options")
         assert response.status_code == 200, response.text
 
         _assert_labels(captured_query_events, {"resources.filter_options"})
+        assert _labeled_statements_use_read_model(captured_query_events)
 
     @pytest.mark.anyio
     async def test_detail_endpoint_labels(
@@ -167,8 +178,7 @@ class TestActionCallSiteLabels:
         captured_query_events.clear()
         await resource_actions.query(session, OGFieldQueryParams())
         _assert_labels(
-            captured_query_events,
-            {"resources.count", "resources.list_ids", "resources.list_hydrate"},
+            captured_query_events, {"resources.count", "resources.list_page"}
         )
 
         captured_query_events.clear()

@@ -1,11 +1,11 @@
 from collections.abc import Collection, Sequence
-from typing import get_args
+from typing import Any, get_args
 
 from fastapi import HTTPException
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from starlette.status import HTTP_404_NOT_FOUND
+from starlette.status import HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND
 
 from stitch.api.db.errors import (
     InvalidActionError,
@@ -27,6 +27,7 @@ from stitch.ogsi.model import (
     OGFieldResource,
     OGFieldSourceValueView,
 )
+from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
 
 from .model import (
@@ -40,23 +41,47 @@ from .model.oil_gas_field_source_value import (
     materialize_value,
 )
 from .queries import (
-    base_resource_query,
     field_source_candidates,
-    filter_option_rows,
+    resource_state_filter_option_query,
+    resource_state_page_query,
+    resource_state_query,
 )
+from .read_model.permissions import PUBLIC_SOURCES, read_model_mask
 from .read_model.state import (
     lock_resources,
     refresh_resource_state,
     refresh_resource_states,
 )
 from .utils import (
-    coalesce_resources,
     resource_model_to_entity,
-    resource_to_list_item_view,
 )
 
 
 _ALL_SOURCES: frozenset[OGSISrcKey] = frozenset(get_args(OGSISrcKey))
+
+
+def _profile_mask(licensed_sources: Collection[OGSISrcKey] | None) -> int:
+    """The read-model profile to answer from, or 403 if the caller has none.
+
+    ``None`` comes only from internal callers and means every source, as it
+    always has. Anyone else must hold exactly one of the stored profiles (see
+    ``read_model.permissions``): a caller missing a public source, or holding a
+    source not in any profile, is refused rather than shown a different set.
+    """
+    if licensed_sources is None:
+        licensed_sources = _ALL_SOURCES
+    mask = read_model_mask(licensed_sources)
+    if mask is not None:
+        return mask
+    if missing := sorted(PUBLIC_SOURCES - frozenset(licensed_sources)):
+        reason = f"it is missing read access to public source(s) {missing}"
+    else:
+        reason = "it holds read access to a source the list can't serve yet"
+    raise HTTPException(
+        status_code=HTTP_403_FORBIDDEN,
+        detail=f"This account can't list oil & gas fields: {reason}. "
+        "Ask an administrator to update its source permissions.",
+    )
 
 
 async def query(
@@ -66,47 +91,64 @@ async def query(
 ) -> tuple[list[OGFieldListItemView], int]:
     """Query coalesced resource list items, restricted to licensed sources.
 
-    A narrowed id-query (+ count) over the participating fields selects and
-    orders the page, then one SQL coalesce (``coalesce_resources``) hydrates
-    those ids -- values and provenance come straight from the query, with no
-    second coalesce pass.
+    Served from the precomputed read model (``og_field_resource_state``) for
+    the caller's permission profile; 403 if they have none. The page's rows are
+    read by the same statement that picks them, so a write that lands
+    mid-request (e.g. a merge removing a resource's rows) can't remove a row
+    between choosing the page and loading it.
     """
     if params.sort_by == "source":
         raise HTTPException(
             status_code=422,
             detail="sort_by=source is not supported for resource list queries.",
         )
+    mask = _profile_mask(licensed_sources)
 
-    ids_stmt = base_resource_query(params, licensed_sources)
-    count_stmt = select(func.count()).select_from(ids_stmt.subquery())
+    # Count without the ORDER BY: Postgres would otherwise sort every matching
+    # row just to count them (~40ms at 50K resources for a non-indexed sort).
+    count_stmt = select(func.count()).select_from(
+        resource_state_query(params, mask).order_by(None).subquery()
+    )
     with named_query("resources.count"):
         total = (await session.scalar(count_stmt)) or 0
-    ids_stmt = ids_stmt.limit(params.limit).offset(params.offset)
-    with named_query("resources.list_ids"):
-        ids = list((await session.scalars(ids_stmt)).all())
+    with named_query("resources.list_page"):
+        rows = (await session.execute(resource_state_page_query(params, mask))).all()
+    return [_state_row_to_list_item_view(row) for row in rows], total
 
-    if not ids:
-        return [], total
 
-    # Hydrate the page with the shared SQL coalescer (same one the detail path
-    # uses), then the shared list-item projection, in phase-1 order.
-    with named_query("resources.list_hydrate"):
-        coalesced = await coalesce_resources(session, ids, licensed_sources)
-    items = [resource_to_list_item_view(coalesced[rid]) for rid in ids]
-    return items, total
+def _state_row_to_list_item_view(row: Any) -> OGFieldListItemView:
+    """Build the list item from a stored row: the same ``OilGasFieldBase``
+    inputs the detail view coalesces, and provenance keyed in attribute order
+    (JSONB does not keep key order)."""
+    return OGFieldListItemView(
+        id=row.resource_id,
+        data=OilGasFieldBase(
+            **{field: getattr(row, field) for field in ATTRIBUTE_NAMES}
+        ),
+        provenance={field: row.provenance.get(field) for field in ATTRIBUTE_NAMES},
+    )
 
 
 async def filter_options(
     session: AsyncSession,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> dict[str, list[str]]:
-    """Distinct coalesced values for every filterable field, in one query."""
-    options: dict[str, list[str]] = {field: [] for field in FILTER_OPTION_FIELDS}
+    """Distinct coalesced values for every filterable field.
+
+    Read from the precomputed read model for the caller's permission profile;
+    403 if they have none.
+    """
+    mask = _profile_mask(licensed_sources)
+    # One DISTINCT per field, each answered from its (permission_mask, field)
+    # index. A single UNION ALL of all six was measured slower at 50K resources
+    # (the cost is the index scans, not round trips); that the six statements
+    # may see slightly different moments only affects dropdown suggestions,
+    # transiently.
+    options: dict[str, list[str]] = {}
     with named_query("resources.filter_options"):
-        for colname, value in await session.execute(
-            filter_option_rows(licensed_sources)
-        ):
-            options[colname].append(value)
+        for field in FILTER_OPTION_FIELDS:
+            stmt = resource_state_filter_option_query(field, mask)
+            options[field] = list((await session.scalars(stmt)).all())
     return options
 
 
