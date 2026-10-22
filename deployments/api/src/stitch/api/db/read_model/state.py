@@ -59,13 +59,20 @@ async def lock_resources(session: AsyncSession, resource_ids: Collection[int]) -
 
     ``FOR NO KEY UPDATE`` is the lock Postgres already takes to update a
     resource's non-key columns (e.g. a merge setting ``repointed_id``). It
-    conflicts with itself, so concurrent refreshes of a resource queue, but not
+    conflicts with itself, so concurrent writers to a resource queue, but not
     with the key-share lock that inserting any row referencing a resource takes
     (a membership, a merge candidate's items, ...). ``FOR UPDATE`` would conflict
     with those: a transaction holding one resource and waiting on a second,
     while an insert holds a key-share lock on the second and waits on the first,
-    deadlock. SQLite has no row locks (it already serializes writers), so this
-    is a no-op there.
+    deadlock.
+
+    Write actions take it at their start, before their own reads: the second of
+    two concurrent writers waits, then reads the first's committed changes --
+    including a merge that repointed the resource -- so neither acts on stale
+    data or overwrites the other with a stale recompute.
+    ``refresh_resource_states`` locks again (a no-op when already held) to
+    protect callers like the full rebuild. SQLite has no row locks (it already
+    serializes writers), so this is a no-op there.
     """
     if resource_ids:
         await session.execute(lock_resources_statement(resource_ids))

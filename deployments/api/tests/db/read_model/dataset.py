@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from stitch.api.db import og_field_resource_actions as resource_actions
@@ -186,6 +186,10 @@ async def seed_dataset(session: AsyncSession, user: User) -> Dataset:
         session, user, [zeta_a, zeta_b]
     )
     assert merged.id is not None
+
+    # The merge action maintains read-model state as it goes; start every test
+    # from an empty read model instead, as after the schema migration.
+    await session.execute(delete(OGFieldResourceState))
     await session.commit()
     return Dataset(
         alpha=alpha,
