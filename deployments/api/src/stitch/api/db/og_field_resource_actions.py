@@ -16,6 +16,7 @@ from stitch.api.auth import CurrentUser
 from stitch.api.observability.context import named_query
 from stitch.api.entities import (
     FILTER_OPTION_FIELDS,
+    OGFieldFilterParams,
     OGFieldQueryParams,
 )
 from stitch.api.db.og_field_source_actions import (
@@ -93,16 +94,17 @@ async def query(
 
 async def filter_options(
     session: AsyncSession,
+    params: OGFieldFilterParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> dict[str, list[str]]:
-    """Distinct coalesced values for every filterable field, in one query."""
+    """Fetch availible values for each attribute after filtering the db results."""
     options: dict[str, list[str]] = {field: [] for field in FILTER_OPTION_FIELDS}
     with named_query("resources.filter_options"):
         for colname, value in await session.execute(
-            filter_option_rows(licensed_sources)
+            filter_option_rows(params, licensed_sources)
         ):
             options[colname].append(value)
-    return options
+    return {field: sorted(values) for field, values in options.items()}
 
 
 async def get(

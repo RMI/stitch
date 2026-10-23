@@ -156,6 +156,24 @@ describe("API Functions", () => {
       expect(result).toEqual(mockOptions);
     });
 
+    it("sends the current filters and search so the options cascade", async () => {
+      mockFetcher.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      });
+
+      await getResourceFilterOptions(config, mockFetcher, "oil-gas-fields", {
+        filters: { country: ["NOR", "SAU"], basin: [] },
+        q: "ghawar",
+      });
+
+      expect(mockFetcher).toHaveBeenCalledWith(
+        "http://localhost:8000/api/v1/oil-gas-fields/filter-options" +
+          "?country=NOR&country=SAU&q=ghawar",
+      );
+    });
+
     it("throws error when filter options response is not ok", async () => {
       mockFetcher.mockResolvedValueOnce({
         ok: false,
