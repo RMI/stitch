@@ -1,11 +1,11 @@
 from collections.abc import Collection, Sequence
-from typing import get_args
+from typing import Any, get_args
 
 from fastapi import HTTPException
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from starlette.status import HTTP_404_NOT_FOUND
+from starlette.status import HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND
 
 from stitch.api.db.errors import (
     InvalidActionError,
@@ -28,6 +28,7 @@ from stitch.ogsi.model import (
     OGFieldResource,
     OGFieldSourceValueView,
 )
+from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
 
 from .model import (
@@ -41,18 +42,47 @@ from .model.oil_gas_field_source_value import (
     materialize_value,
 )
 from .queries import (
-    base_resource_query,
     field_source_candidates,
-    filter_option_rows,
+    resource_state_filter_option_query,
+    resource_state_page_query,
+    resource_state_query,
+)
+from .read_model.permissions import PUBLIC_SOURCES, read_model_mask
+from .read_model.state import (
+    lock_resources,
+    refresh_resource_state,
+    refresh_resource_states,
 )
 from .utils import (
-    coalesce_resources,
     resource_model_to_entity,
-    resource_to_list_item_view,
 )
 
 
 _ALL_SOURCES: frozenset[OGSISrcKey] = frozenset(get_args(OGSISrcKey))
+
+
+def _profile_mask(licensed_sources: Collection[OGSISrcKey] | None) -> int:
+    """The read-model profile to answer from, or 403 if the caller has none.
+
+    ``None`` comes only from internal callers and means every source, as it
+    always has. Anyone else must hold exactly one of the stored profiles (see
+    ``read_model.permissions``): a caller missing a public source, or holding a
+    source not in any profile, is refused rather than shown a different set.
+    """
+    if licensed_sources is None:
+        licensed_sources = _ALL_SOURCES
+    mask = read_model_mask(licensed_sources)
+    if mask is not None:
+        return mask
+    if missing := sorted(PUBLIC_SOURCES - frozenset(licensed_sources)):
+        reason = f"it is missing read access to public source(s) {missing}"
+    else:
+        reason = "it holds read access to a source the list can't serve yet"
+    raise HTTPException(
+        status_code=HTTP_403_FORBIDDEN,
+        detail=f"This account can't list oil & gas fields: {reason}. "
+        "Ask an administrator to update its source permissions.",
+    )
 
 
 async def query(
@@ -62,34 +92,42 @@ async def query(
 ) -> tuple[list[OGFieldListItemView], int]:
     """Query coalesced resource list items, restricted to licensed sources.
 
-    A narrowed id-query (+ count) over the participating fields selects and
-    orders the page, then one SQL coalesce (``coalesce_resources``) hydrates
-    those ids -- values and provenance come straight from the query, with no
-    second coalesce pass.
+    Served from the precomputed read model (``og_field_resource_state``) for
+    the caller's permission profile; 403 if they have none. The page's rows are
+    read by the same statement that picks them, so a write that lands
+    mid-request (e.g. a merge removing a resource's rows) can't remove a row
+    between choosing the page and loading it.
     """
     if params.sort_by == "source":
         raise HTTPException(
             status_code=422,
             detail="sort_by=source is not supported for resource list queries.",
         )
+    mask = _profile_mask(licensed_sources)
 
-    ids_stmt = base_resource_query(params, licensed_sources)
-    count_stmt = select(func.count()).select_from(ids_stmt.subquery())
+    # Count without the ORDER BY: Postgres would otherwise sort every matching
+    # row just to count them (~40ms at 50K resources for a non-indexed sort).
+    count_stmt = select(func.count()).select_from(
+        resource_state_query(params, mask).order_by(None).subquery()
+    )
     with named_query("resources.count"):
         total = (await session.scalar(count_stmt)) or 0
-    ids_stmt = ids_stmt.limit(params.limit).offset(params.offset)
-    with named_query("resources.list_ids"):
-        ids = list((await session.scalars(ids_stmt)).all())
+    with named_query("resources.list_page"):
+        rows = (await session.execute(resource_state_page_query(params, mask))).all()
+    return [_state_row_to_list_item_view(row) for row in rows], total
 
-    if not ids:
-        return [], total
 
-    # Hydrate the page with the shared SQL coalescer (same one the detail path
-    # uses), then the shared list-item projection, in phase-1 order.
-    with named_query("resources.list_hydrate"):
-        coalesced = await coalesce_resources(session, ids, licensed_sources)
-    items = [resource_to_list_item_view(coalesced[rid]) for rid in ids]
-    return items, total
+def _state_row_to_list_item_view(row: Any) -> OGFieldListItemView:
+    """Build the list item from a stored row: the same ``OilGasFieldBase``
+    inputs the detail view coalesces, and provenance keyed in attribute order
+    (JSONB does not keep key order)."""
+    return OGFieldListItemView(
+        id=row.resource_id,
+        data=OilGasFieldBase(
+            **{field: getattr(row, field) for field in ATTRIBUTE_NAMES}
+        ),
+        provenance={field: row.provenance.get(field) for field in ATTRIBUTE_NAMES},
+    )
 
 
 async def filter_options(
@@ -97,14 +135,23 @@ async def filter_options(
     params: OGFieldFilterParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> dict[str, list[str]]:
-    """Fetch availible values for each attribute after filtering the db results."""
-    options: dict[str, list[str]] = {field: [] for field in FILTER_OPTION_FIELDS}
+    """Distinct coalesced values for every filterable field.
+
+    Read from the precomputed read model for the caller's permission profile;
+    403 if they have none.
+    """
+    mask = _profile_mask(licensed_sources)
+    # One DISTINCT per field, each answered from its (permission_mask, field)
+    # index. A single UNION ALL of all six was measured slower at 50K resources
+    # (the cost is the index scans, not round trips); that the six statements
+    # may see slightly different moments only affects dropdown suggestions,
+    # transiently.
+    options: dict[str, list[str]] = {}
     with named_query("resources.filter_options"):
-        for colname, value in await session.execute(
-            filter_option_rows(params, licensed_sources)
-        ):
-            options[colname].append(value)
-    return {field: sorted(values) for field, values in options.items()}
+        for field in FILTER_OPTION_FIELDS:
+            stmt = resource_state_filter_option_query(field, mask)
+            options[field] = list((await session.scalars(stmt)).all())
+    return options
 
 
 async def get(
@@ -257,8 +304,12 @@ async def set_field_source_priority(
             status_code=422,
             detail=f"field={field} is not a known resource field.",
         )
+    # Lock before reading or writing anything, so concurrent writes to this
+    # resource queue here and each reads the other's committed changes; then
+    # re-read it in case it was merged while we waited.
     with named_query("resources.set_field_source_priority.load"):
-        resource = await session.get(ResourceModel, id)
+        await lock_resources(session, [id])
+        resource = await session.get(ResourceModel, id, populate_existing=True)
     if resource is None:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND, detail=f"No Resource with id `{id}` found."
@@ -322,6 +373,8 @@ async def set_field_source_priority(
                 )
             )
         await session.flush()
+        # The new order can change this resource's winners.
+        await refresh_resource_state(session, id)
     return await field_source_values(session, id, field, licensed_sources)
 
 
@@ -361,12 +414,11 @@ async def apply_resource_merge(
     user: CurrentUser,
     resource_ids: Sequence[int],
 ) -> OGFieldResource:
-    """
-    Stub "merge" behavior:
-    - Treat ids[0] as the canonical/target resource.
-    - Update all resources in ids[1:] to have repointed_id = ids[0].
+    """Merge ``resource_ids`` into a brand-new resource.
 
-    NOTE: This only updates the resource table repointing field (no membership/source consolidation).
+    - Create a new resource and set every input resource's ``repointed_id`` to it.
+    - Repoint memberships onto the new resource, one per source record (see
+      ``_repoint_memberships``).
     """
     # preserve order but drop duplicates
     unique_ids = list(dict.fromkeys(resource_ids))
@@ -375,9 +427,18 @@ async def apply_resource_merge(
             f"Merging only possible between multiple ids: received: {unique_ids}"
         )
 
-    stmt = select(ResourceModel).where(ResourceModel.id.in_(unique_ids))
+    # Lock the originals (in id order, so overlapping merges can't deadlock)
+    # before reading them, and re-read their current state rather than any copy
+    # the session already holds: a merge that waited on the lock must see that
+    # a concurrent merge already repointed them.
+    stmt = (
+        select(ResourceModel)
+        .where(ResourceModel.id.in_(unique_ids))
+        .execution_options(populate_existing=True)
+    )
 
     with named_query("resources.merge.load"):
+        await lock_resources(session, unique_ids)
         results = (await session.scalars(stmt)).all()
     missing_ids = set(unique_ids).difference(set([r.id for r in results]))
     if len(missing_ids) > 0:
@@ -412,6 +473,10 @@ async def apply_resource_merge(
 
         _ = await _repoint_memberships(session, user, new_resource.id, unique_ids)
 
+        # The originals stop being listable (their rows are removed) and the new
+        # resource becomes listable with their combined sources.
+        await refresh_resource_states(session, [*unique_ids, new_resource.id])
+
         # Return the canonical resource entity
         await session.refresh(new_resource, ["memberships"])
         return await resource_model_to_entity(session, new_resource)
@@ -425,8 +490,9 @@ async def _repoint_memberships(
 ) -> Sequence[MembershipModel]:
     """Create new memberships pointing to a different resource.
 
-    Collect all memberships whose `resource_id` is in the `from_resoure_ids` argument. For each of these, create
-    a new membership where `resource_id` = `to_resource_id`.
+    Collect all memberships whose `resource_id` is in `from_ids`. For each distinct `source_pk` among
+    these, create one new membership where `resource_id` = `to_id`. Every ACTIVE original membership is
+    set INACTIVE.
 
     This all takes place after an approved merge candidate is applied and a new ResourceModel is created.
 
@@ -445,24 +511,27 @@ async def _repoint_memberships(
 
     existing_memberships = (
         await session.scalars(
-            select(MembershipModel).where(MembershipModel.resource_id.in_(from_ids))
+            select(MembershipModel)
+            .where(MembershipModel.resource_id.in_(from_ids))
+            .order_by(MembershipModel.id)
         )
     ).all()
 
-    # create new memberships pointing to the new resource
-    new_memberships: list[MembershipModel] = []
+    new_by_source_pk: dict[int, MembershipModel] = {}
     for mem in existing_memberships:
-        # set status on
-        new_memberships.append(
-            MembershipModel.create(
+        new_mem = new_by_source_pk.get(mem.source_pk)
+        if new_mem is None:
+            new_by_source_pk[mem.source_pk] = MembershipModel.create(
                 created_by=user,
                 resource_id=res.id,
                 source=mem.source,
                 source_pk=mem.source_pk,
                 status=mem.status,
             )
-        )
+        elif mem.status == MembershipStatus.ACTIVE:
+            new_mem.status = MembershipStatus.ACTIVE
         if mem.status == MembershipStatus.ACTIVE:
             mem.status = MembershipStatus.INACTIVE
+    new_memberships = list(new_by_source_pk.values())
     session.add_all(new_memberships)
     return new_memberships

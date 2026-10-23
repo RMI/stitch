@@ -60,6 +60,15 @@ def _assert_labels(events: list[dict], expected: set[str]) -> None:
     assert actual == expected, f"unexpected labels: {actual ^ expected}"
 
 
+def _labeled_statements_use_read_model(events: list[dict]) -> bool:
+    """Every labeled query read the precomputed table."""
+    return all(
+        "og_field_resource_state" in event["statement"]
+        for event in events
+        if "query_name" in event
+    )
+
+
 class TestEndpointQueryLabels:
     """Drive the real HTTP read endpoints and assert the exact labels each emits."""
 
@@ -70,7 +79,6 @@ class TestEndpointQueryLabels:
         og_create_res_fact,
         captured_query_events: list[dict],
     ):
-        # A row must exist for the hydrate query to run (skipped when empty).
         create = await integration_client.post(
             "/oil-gas-fields/",
             json=og_create_res_fact(name="Labeled Resource").model_dump(mode="json"),
@@ -81,10 +89,12 @@ class TestEndpointQueryLabels:
         response = await integration_client.get("/oil-gas-fields/")
         assert response.status_code == 200, response.text
 
+        # The list reads its page's rows from the precomputed read model in the
+        # same statement that picks them.
         _assert_labels(
-            captured_query_events,
-            {"resources.count", "resources.list_ids", "resources.list_hydrate"},
+            captured_query_events, {"resources.count", "resources.list_page"}
         )
+        assert _labeled_statements_use_read_model(captured_query_events)
 
     @pytest.mark.anyio
     async def test_filter_options_endpoint_labels(
@@ -92,11 +102,12 @@ class TestEndpointQueryLabels:
         integration_client: AsyncClient,
         captured_query_events: list[dict],
     ):
-        # filter-options returns every filterable field in one combined query.
+        # One DISTINCT per filterable field, all from the read model.
         response = await integration_client.get("/oil-gas-fields/filter-options")
         assert response.status_code == 200, response.text
 
         _assert_labels(captured_query_events, {"resources.filter_options"})
+        assert _labeled_statements_use_read_model(captured_query_events)
 
     @pytest.mark.anyio
     async def test_detail_endpoint_labels(
@@ -168,8 +179,7 @@ class TestActionCallSiteLabels:
         captured_query_events.clear()
         await resource_actions.query(session, OGFieldQueryParams())
         _assert_labels(
-            captured_query_events,
-            {"resources.count", "resources.list_ids", "resources.list_hydrate"},
+            captured_query_events, {"resources.count", "resources.list_page"}
         )
 
         captured_query_events.clear()
@@ -208,7 +218,12 @@ class TestActionCallSiteLabels:
         # create() with source_data fans out to the source helpers.
         _assert_labels(
             captured_query_events,
-            {"resources.create", "sources.get_or_create", "sources.attach"},
+            {
+                "resources.create",
+                "sources.get_or_create",
+                "sources.attach",
+                "read_model.refresh",
+            },
         )
 
     @pytest.mark.anyio
@@ -233,7 +248,8 @@ class TestActionCallSiteLabels:
             session, test_user, [first.id, second.id]
         )
         _assert_labels(
-            captured_query_events, {"resources.merge.load", "resources.merge.apply"}
+            captured_query_events,
+            {"resources.merge.load", "resources.merge.apply", "read_model.refresh"},
         )
 
     @pytest.mark.anyio
@@ -276,10 +292,50 @@ class TestActionCallSiteLabels:
                 "resources.set_field_source_priority.load",
                 "resources.set_field_source_priority.candidates",
                 "resources.set_field_source_priority.persist",
+                "read_model.refresh",
                 "resources.resolve_root",
                 "resources.field_source_values",
             },
         )
+
+    @pytest.mark.anyio
+    async def test_read_model_refresh_has_its_own_label(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+        og_create_res_fact,
+        source_maker,
+        captured_query_events: list[dict],
+    ):
+        """The read-model refresh inside a write is labeled on its own, and the
+        write's label is restored afterwards (the attach then loads the entity
+        it returns under ``sources.attach``)."""
+        session = seeded_integration_session
+        parent = await resource_actions.create(
+            session, test_user, og_create_res_fact(name="Parent")
+        )
+        await session.commit()
+        existing = (
+            await source_actions.create_and_attach_sources(
+                session, test_user, [source_maker(managed=False)], parent.id
+            )
+        )[0]
+
+        captured_query_events.clear()
+        await source_actions.attach_sources_to_resource(
+            session, parent.id, [existing], test_user
+        )
+
+        labels = [e["query_name"] for e in captured_query_events if "query_name" in e]
+        state_labels = {
+            e["query_name"]
+            for e in captured_query_events
+            if "og_field_resource_state" in e["statement"]
+        }
+        assert state_labels == {"read_model.refresh"}
+        refreshed_at = labels.index("read_model.refresh")
+        assert set(labels[:refreshed_at]) == {"sources.attach"}
+        assert labels[-1] == "sources.attach"
 
     @pytest.mark.anyio
     async def test_source_action_labels(
@@ -306,7 +362,9 @@ class TestActionCallSiteLabels:
         await source_actions.create_and_attach_sources(
             session, test_user, [source_maker(managed=False, source="rmi")], parent.id
         )
-        _assert_labels(captured_query_events, {"sources.create_and_attach"})
+        _assert_labels(
+            captured_query_events, {"sources.create_and_attach", "read_model.refresh"}
+        )
 
         captured_query_events.clear()
         await source_actions.get_or_create_sources(
@@ -318,7 +376,7 @@ class TestActionCallSiteLabels:
         await source_actions.attach_sources_to_resource(
             session, parent.id, [source_maker(managed=False, source="bc")], test_user
         )
-        _assert_labels(captured_query_events, {"sources.attach"})
+        _assert_labels(captured_query_events, {"sources.attach", "read_model.refresh"})
 
         captured_query_events.clear()
         await source_actions.get_source(session, created.id)
@@ -400,6 +458,7 @@ class TestActionCallSiteLabels:
                 "merge_candidates.approve.persist",
                 "resources.merge.load",
                 "resources.merge.apply",
+                "read_model.refresh",
             },
         )
 

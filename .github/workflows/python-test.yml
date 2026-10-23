@@ -5,6 +5,26 @@ jobs:
   test:
     name: "tests (pytest)"
     runs-on: ubuntu-latest
+    # Throwaway Postgres for the API tests SQLite can't exercise (row locks under
+    # concurrency, JSONB): see deployments/api/tests/db/read_model/postgres.py.
+    # Each test creates and drops its own schema.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: stitch_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d stitch_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      STITCH_TEST_POSTGRES_URL: postgresql+psycopg://postgres:postgres@localhost:5432/stitch_test
+      # Fail rather than skip if the URL above ever goes missing.
+      STITCH_REQUIRE_POSTGRES_TESTS: "1"
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

@@ -1,5 +1,4 @@
 services:
-
   adminer:
     image: adminer:latest
     ports:
@@ -33,7 +32,16 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./deployments/api/alembic/versions:/app/deployments/api/alembic/versions:rw
-    command: ["alembic", "-c", "deployments/api/alembic.ini", "revision", "--autogenerate", "-m", "baseline"]
+    command:
+      [
+        "alembic",
+        "-c",
+        "deployments/api/alembic.ini",
+        "revision",
+        "--autogenerate",
+        "-m",
+        "baseline",
+      ]
     # On-demand only (via `make alembic-autogenerate`). Must NOT be in the
     # `tools`/`full` profiles, or it autogenerates a blank revision on every
     # `make api-dev` / `make reboot-docker` startup.
@@ -61,40 +69,11 @@ services:
     depends_on:
       api:
         condition: service_healthy
+        required: false
     volumes:
       - ./deployments/seed/data:/mnt/data:ro
     restart: "no"
     profiles: ["seed", "full"]
-
-  entity-linkage:
-    build:
-      context: .
-      dockerfile: deployments/entity-linkage/Dockerfile
-    env_file:
-      - .env
-    environment:
-      LOG_LEVEL: ${ENTITY_LINKAGE_LOG_LEVEL:-info}
-      ENTITY_LINKAGE_API_BASE_URL: ${ENTITY_LINKAGE_API_BASE_URL:-http://api:8000/api/v1}
-      STITCH_CLIENT_BEARER_TOKEN: ${STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN:?STITCH_CLIENT_PRIVILEGED_BEARER_TOKEN must be set}
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=2).read()\" || exit 1"
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
-      start_interval: 1s
-    ports:
-      - "8001:8000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      api:
-        condition: service_healthy
-    profiles: ["entity-linkage", "full", "friends"]
 
   stitch-llm:
     build:
@@ -104,12 +83,13 @@ services:
       - .env
     environment:
       LOG_LEVEL: ${STITCH_LLM_LOG_LEVEL:-info}
+      STITCH_LLM_API_BASE_URL: ${STITCH_LLM_API_BASE_URL:-http://api:8000/api/v1}
       STITCH_CLIENT_BEARER_TOKEN: ${STITCH_CLIENT_LLM_BEARER_TOKEN:?STITCH_CLIENT_LLM_BEARER_TOKEN must be set}
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=2).read()\" || exit 1"
+          'python -c "import urllib.request; urllib.request.urlopen(''http://127.0.0.1:8000/api/v1/health'', timeout=2).read()" || exit 1',
         ]
       interval: 5s
       timeout: 5s
@@ -123,4 +103,5 @@ services:
     depends_on:
       api:
         condition: service_healthy
+        required: false
     profiles: ["stitch-llm", "full", "friends"]

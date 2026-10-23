@@ -7,7 +7,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from stitch.api.db import og_field_resource_actions as resource_actions
-from stitch.api.db import utils
 from stitch.api.db.errors import (
     InvalidActionError,
     ResourceIntegrityError,
@@ -20,6 +19,8 @@ from stitch.api.db.model import (
     OilGasFieldSourceValueModel,
     ResourceModel,
 )
+from stitch.api.db.read_model.permissions import PROFILES
+from stitch.api.db.read_model.state import refresh_resource_states
 from stitch.api.entities import (
     FILTER_OPTION_FIELDS,
     OGFieldFilterParams,
@@ -31,6 +32,12 @@ from tests.utils import make_source_model
 
 
 _QueryParams = OGFieldQueryParams
+
+# Callers hold exactly one of the read model's profiles: every public source,
+# plus any of the restricted ones (wm, ccr). Licensing tests hide a restricted
+# source by leaving it out.
+_PUBLIC = PROFILES[0]
+_PUBLIC_AND_WM = PROFILES[2]
 
 
 async def _create_resource_with_sources(
@@ -63,6 +70,9 @@ async def _create_resource_with_sources(
         )
 
     await session.flush()
+    # Seeded directly, not through a write action: bring the read model the
+    # list reads from up to date, as the write actions do.
+    await refresh_resource_states(session, [resource.id])
     return resource.id
 
 
@@ -83,6 +93,7 @@ async def _add_source(session, user, rid: int, **attrs) -> int:
         )
     )
     await session.flush()
+    await refresh_resource_states(session, [rid])
     return source.id
 
 
@@ -115,6 +126,7 @@ async def _override(
         )
     )
     await session.flush()
+    await refresh_resource_states(session, [rid])
     return pk
 
 
@@ -656,11 +668,11 @@ class TestResourceQueryAction:
             seeded_integration_session,
             test_user,
             {
-                "source": "rmi",
-                "name": "RMI Name",
+                "source": "wm",
+                "name": "WM Name",
                 "country": "USA",
-                "owners": [{"name": "RMI Owner", "stake": 55.0}],
-                "operators": [{"name": "RMI Operator", "stake": 100.0}],
+                "owners": [{"name": "WM Owner", "stake": 55.0}],
+                "operators": [{"name": "WM Operator", "stake": 100.0}],
             },
             {
                 "source": "gem",
@@ -675,7 +687,7 @@ class TestResourceQueryAction:
         items, total = await resource_actions.query(
             seeded_integration_session,
             params,
-            licensed_sources=frozenset({"gem", "wm", "llm"}),
+            licensed_sources=_PUBLIC,
         )
 
         assert total == 1
@@ -708,7 +720,7 @@ class TestResourceQueryAction:
         items, total = await resource_actions.query(
             seeded_integration_session,
             params,
-            licensed_sources=frozenset({"rmi", "gem", "llm"}),
+            licensed_sources=_PUBLIC,
         )
 
         assert total == 1
@@ -1030,13 +1042,13 @@ class TestResourceFilterOptionsAction:
         await _create_resource_with_sources(
             seeded_integration_session,
             test_user,
-            {"source": "rmi", "country": None},
+            {"source": "wm", "country": None},
             {"source": "gem", "country": "CAN"},
         )
         await _create_resource_with_sources(
             seeded_integration_session,
             test_user,
-            {"source": "rmi", "country": "USA"},
+            {"source": "wm", "country": "USA"},
         )
 
         options = await resource_actions.filter_options(
@@ -1100,6 +1112,7 @@ class TestResourceFilterOptionsAction:
         assert inactive_membership is not None
         inactive_membership.status = MembershipStatus.INACTIVE
         await seeded_integration_session.flush()
+        await refresh_resource_states(seeded_integration_session, [inactive_id])
 
         options = await resource_actions.filter_options(
             seeded_integration_session, OGFieldFilterParams()
@@ -1181,7 +1194,7 @@ class TestResourceFilterOptionsAction:
         items, total = await resource_actions.query(
             seeded_integration_session,
             params,
-            licensed_sources=frozenset({"rmi", "gem", "llm"}),
+            licensed_sources=_PUBLIC,
         )
 
         assert total == 1
@@ -1205,7 +1218,7 @@ class TestResourceFilterOptionsAction:
             seeded_integration_session,
             test_user,
             {
-                "source": "rmi",
+                "source": "wm",
                 "name": "State Test",
                 "country": "USA",
                 "state_province": "New Mexico",
@@ -1227,7 +1240,7 @@ class TestResourceFilterOptionsAction:
         items, total = await resource_actions.query(
             seeded_integration_session,
             params,
-            licensed_sources=frozenset({"gem", "wm", "llm"}),
+            licensed_sources=_PUBLIC,
         )
 
         assert total == 1
@@ -1244,7 +1257,7 @@ class TestResourceFilterOptionsAction:
         await _create_resource_with_sources(
             seeded_integration_session,
             test_user,
-            {"source": "rmi", "name": "Hidden", "country": "USA"},
+            {"source": "wm", "name": "Hidden", "country": "USA"},
             {"source": "gem", "name": "Target Alpha", "country": "USA"},
         )
         await _create_resource_with_sources(
@@ -1262,7 +1275,7 @@ class TestResourceFilterOptionsAction:
         items, total = await resource_actions.query(
             seeded_integration_session,
             params,
-            licensed_sources=frozenset({"gem", "wm", "llm"}),
+            licensed_sources=_PUBLIC,
         )
 
         assert total == 2
@@ -2184,7 +2197,7 @@ class TestBatchedSourceData:
 
 
 class TestCoalescingEngineParity:
-    """Phase-1 (SQL) and phase-2/detail (Python) coalescing pick the same winner.
+    """The list (read model) and the detail view pick the same winner.
 
     Exercises all three tiebreak paths at once: an unlicensed higher-priority
     source (dropped), a per-resource priority override, and duplicate
@@ -2201,40 +2214,43 @@ class TestCoalescingEngineParity:
         rid = await _create_resource_with_sources(
             session,
             test_user,
-            # rmi has the top DEFAULT priority and would win the (priority=1,
-            # source-ASC) tie against the wm override -- but it is left unlicensed
-            # below, so it must fall through (the unlicensed-fallthrough path).
-            {"source": "rmi", "name": "RMI Name", "country": "MEX"},
+            {"source": "ccr", "name": "CCR Name", "country": "MEX"},
             {"source": "wm", "name": "WM First", "country": "USA"},
             {"source": "wm", "name": "WM Second", "country": "CAN"},
             {"source": "gem", "name": "GEM Name", "country": "BRA"},
         )
-        # Override: wm becomes top priority for the NAME field, both wm records
-        # curated in source_pk order (WM First < WM Second), so WM First wins.
-        for priority, pk in enumerate(await _source_pks(session, rid, "wm")):
+        # Overrides for the NAME field: ccr first (it would win if licensed),
+        # then both wm records in source_pk order (WM First < WM Second).
+        (ccr_pk,) = await _source_pks(session, rid, "ccr")
+        for priority, (source, pk) in enumerate(
+            [("ccr", ccr_pk)]
+            + [("wm", pk) for pk in await _source_pks(session, rid, "wm")]
+        ):
             session.add(
                 OGFieldResourceSourcePriority.create(
                     created_by=test_user,
                     resource_id=rid,
-                    source="wm",
+                    source=source,
                     source_pk=pk,
                     colname="name",
                     priority=priority,
                 )
             )
         await session.flush()
+        await refresh_resource_states(session, [rid])
 
-        # rmi unlicensed -> falls through; among licensed sources wm (override)
-        # wins, and the lowest source_pk among the duplicate wm records wins.
-        licensed = frozenset({"wm", "gem"})
+        # ccr unlicensed -> falls through; among licensed sources the wm
+        # override wins, and the lowest source_pk among the duplicate wm
+        # records wins.
+        licensed = _PUBLIC_AND_WM
 
         # Detail (Python) winner.
         detail = await resource_actions.get(session, rid, licensed_sources=licensed)
         assert detail.view.name == "WM First"
         assert detail.provenance["name"][1] == "wm"
 
-        # List/phase-1 (SQL): filtering on the detail winner's coalesced name must
-        # return the resource, and the hydrated (phase-2) value + provenance match.
+        # List (read model): filtering on the detail winner's coalesced name must
+        # return the resource, with the same value + provenance.
         params = _QueryParams(name=detail.view.name, page=1, page_size=10)
         items, total = await resource_actions.query(
             session, params, licensed_sources=licensed
@@ -2245,60 +2261,96 @@ class TestCoalescingEngineParity:
         assert items[0].provenance["name"] == detail.provenance["name"][1]
 
 
-class TestCoalesceResources:
-    """The shared SQL coalescing core used by detail + list.
+class TestMembershipUniqueness:
+    """(resource_id, source_pk) is unique; merge collapses a shared source."""
 
-    Produces the coalesced view + provenance; raw ``source_data`` is left empty
-    here and attached by the detail path (``resource_model_to_entity``).
-    """
+    @staticmethod
+    async def _resources_sharing_one_source(
+        session: AsyncSession, user: User
+    ) -> tuple[int, int, int]:
+        """Two resources, each with a membership on the same source record."""
+        rid_a = await _create_resource_with_sources(session, user)
+        rid_b = await _create_resource_with_sources(session, user)
+        source = make_source_model(
+            source="gem", created_by_id=user.id, name="Shared", country="USA"
+        )
+        session.add(source)
+        await session.flush()
+        # A source may belong to several different resources.
+        for rid in (rid_a, rid_b):
+            session.add(
+                MembershipModel.create(
+                    created_by=user, resource_id=rid, source="gem", source_pk=source.id
+                )
+            )
+        await session.flush()
+        return rid_a, rid_b, source.id
+
+    @staticmethod
+    async def _memberships(session: AsyncSession, rid: int, source_pk: int):
+        return (
+            await session.scalars(
+                select(MembershipModel).where(
+                    MembershipModel.resource_id == rid,
+                    MembershipModel.source_pk == source_pk,
+                )
+            )
+        ).all()
 
     @pytest.mark.anyio
-    async def test_entry_per_id_with_nullshell_for_empty(
-        self,
-        seeded_integration_session: AsyncSession,
-        test_user: User,
+    async def test_duplicate_membership_rejected(
+        self, seeded_integration_session: AsyncSession, test_user: User
     ):
         session = seeded_integration_session
         rid = await _create_resource_with_sources(
-            session, test_user, {"source": "gem", "name": "G", "country": "USA"}
+            session, test_user, {"source": "gem", "name": "X", "country": "USA"}
         )
-        empty = ResourceModel.create(created_by=test_user)
-        session.add(empty)
+        (pk,) = await _source_pks(session, rid, "gem")
+        session.add(
+            MembershipModel.create(
+                created_by=test_user,
+                resource_id=rid,
+                source="gem",
+                source_pk=pk,
+                status=MembershipStatus.INACTIVE,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await session.flush()
+
+    @pytest.mark.anyio
+    async def test_merge_collapses_source_shared_by_parents(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid_a, rid_b, pk = await self._resources_sharing_one_source(session, test_user)
+
+        merged = await resource_actions.apply_resource_merge(
+            session, test_user, [rid_a, rid_b]
+        )
         await session.flush()
 
-        out = await utils.coalesce_resources(session, [rid, empty.id])
-
-        res = out[rid]
-        assert res.view.name == "G"
-        assert res.provenance["name"][1] == "gem"
-        # coalesce_resources returns the coalesced view + provenance only; raw
-        # sources are attached separately by the detail path.
-        assert res.source_data == []
-
-        empty_res = out[empty.id]
-        assert empty_res.view.name is None
-        assert empty_res.provenance["name"] is None
-        assert empty_res.source_data == []
+        [target] = await self._memberships(session, merged.id, pk)
+        assert target.status == MembershipStatus.ACTIVE
+        for rid in (rid_a, rid_b):
+            [parent] = await self._memberships(session, rid, pk)
+            assert parent.status == MembershipStatus.INACTIVE
 
     @pytest.mark.anyio
-    async def test_repointed_resource_yields_nullshell(
-        self,
-        seeded_integration_session: AsyncSession,
-        test_user: User,
+    async def test_merge_target_active_if_any_parent_active(
+        self, seeded_integration_session: AsyncSession, test_user: User
     ):
         session = seeded_integration_session
-        target = await _create_resource_with_sources(
-            session, test_user, {"source": "wm", "name": "Target"}
+        rid_a, rid_b, pk = await self._resources_sharing_one_source(session, test_user)
+        # The earlier (lower id) membership is inactive, the later one active.
+        [first] = await self._memberships(session, rid_a, pk)
+        first.status = MembershipStatus.INACTIVE
+        await session.flush()
+
+        merged = await resource_actions.apply_resource_merge(
+            session, test_user, [rid_a, rid_b]
         )
-        rid = await _create_resource_with_sources(
-            session,
-            test_user,
-            {"source": "gem", "name": "G", "country": "USA"},
-            repointed_to=target,
-        )
-        # The source query filters repointed_id IS NULL, so a repointed resource
-        # returns no rows and coalesces to a null-shell.
-        out = await utils.coalesce_resources(session, [rid])
-        res = out[rid]
-        assert res.view.name is None
-        assert res.provenance["name"] is None
+        await session.flush()
+
+        [target] = await self._memberships(session, merged.id, pk)
+        assert target.status == MembershipStatus.ACTIVE
