@@ -289,6 +289,21 @@ jobs:
       postgres-db: ${{ needs.deploy-db.outputs.postgres-db }}
       postgres-sslmode: ${{ needs.deploy-db.outputs.postgres-sslmode }}
 
+  # Rebuilds the API's resource-state read model with the code just deployed
+  # (see deployments/api/READ_MODEL.md). Nothing waits on this job: the write
+  # paths keep the rows current, so the rebuild only repairs drift and picks up
+  # changes to how answers are computed, and a failure never blocks a deploy.
+  rebuild-read-model:
+    name: "Rebuild Read Model"
+    needs: [resolve-context, build-api-docker-image, deploy-db, run-db-migrations, deploy-api]
+    uses: ./.github/workflows/rebuild-read-model.yml
+    secrets:
+      stitch-app-password: ${{ secrets.STITCH_APP_PASSWORD }}
+    with:
+      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
+      full-image-name: ${{ needs.build-api-docker-image.outputs.digest-image-name }}
+      postgres-db: ${{ needs.deploy-db.outputs.postgres-db }}
+
   check-db-migrations-live:
     name: "Check DB Migrations (live)"
     needs: [resolve-context, build-api-docker-image, deploy-db, run-db-migrations]
