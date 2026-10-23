@@ -339,7 +339,8 @@ make db-restore BACKUP_URL=<backup URL>
 ```
 
 This needs `az login` with **Storage Blob Data Reader** on the backups
-container. It finds the backup first, so without access it stops before it
+container. It finds the newest backup, or checks that `BACKUP_URL` exists,
+before anything else, so without access or with a wrong URL it stops before it
 changes anything. Then it stops the `api` and `seed` containers, recreates the
 `stitch` database and its grants, restores the backup, and runs alembic to
 bring the schema up to your branch.

@@ -4,6 +4,7 @@ set -euo pipefail
 DEFAULT_PREFIX=https://rmistitchprod.blob.core.windows.net/backups/production/
 PG_IMAGE=postgres:17-alpine
 URL_PATTERN='^https://([a-z0-9]+)\.blob\.core\.windows\.net/([a-z0-9-]+)/(.*)$'
+BACKUP_NAME_PATTERN='(^|/)[0-9]{8}T[0-9]{6}Z\.dump$'
 
 prefix="$DEFAULT_PREFIX"
 backup_url=
@@ -26,7 +27,8 @@ options:
                     (default: stitch_migrator)
   -h, --help        show this message
 
-latest: print the URL of the newest backup under the prefix.
+latest: print the URL of the newest backup under the prefix. Only backups
+named the way the backup job names them (<timestamp>.dump) count.
 
 restore: download one backup and restore it into an existing, empty database.
 The database must already have the roles and grants from
@@ -41,7 +43,7 @@ EOF
 }
 
 latest() {
-  local account container path newest
+  local account container path names newest
 
   if [[ ! "$prefix" =~ $URL_PATTERN ]]; then
     echo "Invalid prefix: '$prefix'. Expected https://<account>.blob.core.windows.net/<container>/<path>" >&2
@@ -51,14 +53,16 @@ latest() {
   container="${BASH_REMATCH[2]}"
   path="${BASH_REMATCH[3]}"
 
-  # Backups are named by UTC timestamp, so the last name is the newest.
-  newest="$(az storage blob list --auth-mode login \
+  names="$(az storage blob list --auth-mode login \
     --account-name "$account" --container-name "$container" \
-    --prefix "$path" --num-results "*" \
-    --query "sort_by(@, &name)[-1].name" --output tsv)"
+    --prefix "$path" --num-results "*" --query "[].name" --output tsv)"
+
+  # The backup job names each dump by its UTC timestamp, so the last one in
+  # sort order is the newest. Anything else under the prefix is ignored.
+  newest="$(grep -E "$BACKUP_NAME_PATTERN" <<<"$names" | sort | tail -n 1 || true)"
 
   if [ -z "$newest" ]; then
-    echo "No backups found under $prefix" >&2
+    echo "No backups named <timestamp>.dump found under $prefix" >&2
     exit 1
   fi
 

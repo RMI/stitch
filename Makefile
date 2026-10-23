@@ -276,12 +276,19 @@ follow-stack-logs:
 # BACKUP_URL=<full blob URL>. Needs `az login` with read access to the backups
 # container. See deployments/db/README.md.
 #
+# Find or check the backup before touching the database, so a missing
+# permission or a wrong URL leaves the local data alone.
+#
 # On a fresh volume the db health check passes while initdb still runs on a
 # socket-only server, so wait for the real one to accept TCP connections.
 db-restore:
 	@set -eu; \
 	backup_url="$(BACKUP_URL)"; \
-	if [ -z "$$backup_url" ]; then backup_url="$$(scripts/db_restore.sh latest)"; fi; \
+	if [ -z "$$backup_url" ]; then \
+		backup_url="$$(scripts/db_restore.sh latest)"; \
+	else \
+		az storage blob show --auth-mode login --blob-url "$$backup_url" --output none; \
+	fi; \
 	$(DOCKER_COMPOSE_DEV) stop api seed; \
 	$(DOCKER_COMPOSE_DEV) up --detach --wait db; \
 	echo "Recreating the local database"; \
