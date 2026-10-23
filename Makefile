@@ -272,6 +272,27 @@ reboot-docker-heavy: clean-docker
 follow-stack-logs:
 	$(DOCKER_COMPOSE_DEV) --profile full logs -f
 
+# Replace the local database with a backup: the newest production backup, or
+# BACKUP_URL=<full blob URL>. Needs `az login` with read access to the backups
+# container. See deployments/db/README.md.
+#
+# On a fresh volume the db health check passes while initdb still runs on a
+# socket-only server, so wait for the real one to accept TCP connections.
+db-restore:
+	@set -eu; \
+	backup_url="$(BACKUP_URL)"; \
+	if [ -z "$$backup_url" ]; then backup_url="$$(scripts/db_restore.sh latest)"; fi; \
+	$(DOCKER_COMPOSE_DEV) stop api seed; \
+	$(DOCKER_COMPOSE_DEV) up --detach --wait db; \
+	echo "Recreating the local database"; \
+	$(DOCKER_COMPOSE_DEV) exec -T db sh -c 'until pg_isready -q -h localhost; do sleep 1; done; dropdb --force --if-exists -U "$$POSTGRES_USER" "$$POSTGRES_DB" && createdb -U "$$POSTGRES_USER" "$$POSTGRES_DB" && sh /docker-entrypoint-initdb.d/00-init-roles.sh'; \
+	PGHOST=host.docker.internal PGPORT=5432 \
+	PGPASSWORD="$$($(DOCKER_COMPOSE_DEV) exec -T db printenv STITCH_MIGRATOR_PASSWORD)" \
+		scripts/db_restore.sh restore \
+		--database "$$($(DOCKER_COMPOSE_DEV) exec -T db printenv POSTGRES_DB)" \
+		--backup-url "$$backup_url"; \
+	$(DOCKER_COMPOSE_DEV) run --rm alembic
+
 # Workspace
 .PHONY: check lint test format format-check lock-check
 .PHONY: build-all
@@ -303,5 +324,5 @@ follow-stack-logs:
 .PHONY: frontend-dev frontend-clean
 
 # Docker
-.PHONY: clean-docker dev-docker reboot-docker reboot-docker-heavy
+.PHONY: clean-docker dev-docker reboot-docker reboot-docker-heavy db-restore
 .PHONY: stack-frontend-dev follow-stack-logs
