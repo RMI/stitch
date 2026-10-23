@@ -280,7 +280,7 @@ jobs:
       restore-from-backup: ${{ needs.resolve-context.outputs.deployment-lane == 'staging' }}
       # To restore a specific backup, set its full blob URL, e.g.
       # https://rmistitchprod.blob.core.windows.net/backups/production/20261023T030039Z.dump
-      backup-url: ""
+      backup-url: "https://stitchstaging.blob.core.windows.net/backups/dress_rehearsal/20261023T030057Z.dump"
 
   run-db-migrations:
     name: "Run DB Migrations"
