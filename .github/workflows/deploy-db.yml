@@ -245,10 +245,18 @@ jobs:
       - name: Write comment JSON
         if: ${{ github.event_name == 'pull_request' }}
         shell: bash
+        env:
+          RESTORED_FROM: ${{ steps.resolve-backup.outputs.backup-url }}
         run: |
           set -euo pipefail
           mkdir -p /tmp/comment-json
           json_file="/tmp/comment-json/comment-json-db-deploy.json"
+
+          # Empty unless this run restored a backup.
+          restored_from=""
+          if [ -n "${RESTORED_FROM}" ]; then
+            restored_from="\`${RESTORED_FROM}\`"
+          fi
 
           jq -n \
             --arg section "database" \
@@ -258,6 +266,7 @@ jobs:
             --arg postgres_host "\`${PGHOST}\`" \
             --arg postgres_port "\`${PGPORT}\`" \
             --arg postgres_db "\`${{ steps.normalize-name.outputs.db-name }}\`" \
+            --arg restored_from "$restored_from" \
             '{
               "section": $section,
               "kind": $kind,
@@ -267,7 +276,8 @@ jobs:
                 "db_name": $db_name,
                 "postgres_host": $postgres_host,
                 "postgres_port": $postgres_port,
-                "postgres_db": $postgres_db
+                "postgres_db": $postgres_db,
+                "restored_from": $restored_from
               }
             }' > "$json_file"
 
