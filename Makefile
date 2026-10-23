@@ -281,6 +281,9 @@ follow-stack-logs:
 #
 # On a fresh volume the db health check passes while initdb still runs on a
 # socket-only server, so wait for the real one to accept TCP connections.
+#
+# Rebuild the alembic image so it has this branch's migrations, not those of
+# whenever the stack was last built.
 db-restore:
 	@set -eu; \
 	backup_url="$(BACKUP_URL)"; \
@@ -298,7 +301,7 @@ db-restore:
 		scripts/db_restore.sh restore \
 		--database "$$($(DOCKER_COMPOSE_DEV) exec -T db printenv POSTGRES_DB)" \
 		--backup-url "$$backup_url"; \
-	$(DOCKER_COMPOSE_DEV) run --rm alembic
+	$(DOCKER_COMPOSE_DEV) run --rm --build alembic
 
 # Workspace
 .PHONY: check lint test format format-check lock-check
