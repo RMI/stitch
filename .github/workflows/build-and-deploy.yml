@@ -271,9 +271,16 @@ jobs:
       pgpassword: ${{ secrets.PGPASSWORD }}
       stitch-migrator-password: ${{ secrets.STITCH_MIGRATOR_PASSWORD }}
       stitch-app-password: ${{ secrets.STITCH_APP_PASSWORD }}
+      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       deployment-name: ${{ needs.resolve-context.outputs.deployment-name }}
+      # Staging databases start as a copy of a backup (the newest production
+      # backup by default) instead of empty. See deployments/db/README.md.
+      restore-from-backup: ${{ needs.resolve-context.outputs.deployment-lane == 'staging' }}
+      # To restore a specific backup, set its full blob URL, e.g.
+      # https://rmistitchprod.blob.core.windows.net/backups/production/20261023T030039Z.dump
+      backup-url: "https://stitchstaging.blob.core.windows.net/backups/dress_rehearsal/20261023T030057Z.dump"
 
   run-db-migrations:
     name: "Run DB Migrations"
