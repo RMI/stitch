@@ -11,7 +11,7 @@ on:
         required: true
         type: string
       restore-from-backup:
-        description: "Restore a backup into the database when this run creates it"
+        description: "Restore a backup into the database when it has no tables yet"
         required: false
         default: false
         type: boolean
@@ -179,11 +179,30 @@ jobs:
           STITCH_APP_PASSWORD: ${{ secrets.stitch-app-password }}
         run: deployments/db/00-init-roles.sh
 
-      # Restore only into a database this run created, so a redeploy never
-      # overwrites data. To refresh from a newer backup, drop the database
-      # (e.g. toggle the PR's 'no-deploy' label) and let the next run recreate it.
+      # Restore only into an empty database, so a redeploy never overwrites
+      # data. The restore is a single transaction, so a failed or cancelled
+      # one leaves the database empty and the next run tries again. To refresh
+      # from a newer backup, drop the database (e.g. toggle the PR's
+      # 'no-deploy' label) and let the next run recreate it.
+      - name: Check whether the database is empty
+        id: check-empty
+        if: ${{ inputs.restore-from-backup }}
+        env:
+          DB_NAME: ${{ steps.normalize-name.outputs.db-name }}
+        run: |
+          set -euo pipefail
+          has_tables=$(psql -X -tA -v ON_ERROR_STOP=1 --dbname "${DB_NAME}" \
+            -c "SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public')")
+          if [ "$has_tables" = "f" ]; then
+            echo "Database '${DB_NAME}' is empty. Restoring a backup."
+            echo "empty=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Database '${DB_NAME}' already has tables. Skipping the restore."
+            echo "empty=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Validate restore config
-        if: ${{ inputs.restore-from-backup && steps.create-db.outputs.database-created == 'true' }}
+        if: ${{ steps.check-empty.outputs.empty == 'true' }}
         env:
           RESTORE_AZURE_CLIENT_ID: ${{ vars.RESTORE_AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ secrets.azure-tenant-id }}
@@ -195,7 +214,7 @@ jobs:
       # The restore identity only holds a blob-reader role on the backups
       # containers, so it has no subscription to select.
       - name: Azure login
-        if: ${{ inputs.restore-from-backup && steps.create-db.outputs.database-created == 'true' }}
+        if: ${{ steps.check-empty.outputs.empty == 'true' }}
         uses: azure/login@v3
         with:
           client-id: ${{ vars.RESTORE_AZURE_CLIENT_ID }}
@@ -204,7 +223,7 @@ jobs:
 
       - name: Resolve backup URL
         id: resolve-backup
-        if: ${{ inputs.restore-from-backup && steps.create-db.outputs.database-created == 'true' }}
+        if: ${{ steps.check-empty.outputs.empty == 'true' }}
         env:
           BACKUP_URL: ${{ inputs.backup-url }}
         run: |
@@ -218,29 +237,12 @@ jobs:
           echo "backup-url=$backup_url" >> "$GITHUB_OUTPUT"
 
       - name: Restore backup
-        if: ${{ inputs.restore-from-backup && steps.create-db.outputs.database-created == 'true' }}
+        if: ${{ steps.check-empty.outputs.empty == 'true' }}
         env:
           DB_NAME: ${{ steps.normalize-name.outputs.db-name }}
           BACKUP_URL: ${{ steps.resolve-backup.outputs.backup-url }}
           PGPASSWORD: ${{ secrets.stitch-migrator-password }}
         run: scripts/db_restore.sh restore --database "${DB_NAME}" --backup-url "${BACKUP_URL}"
-
-      # Otherwise the next run finds the database, skips the restore, and
-      # migrates an empty database instead.
-      - name: Drop database after failed restore
-        if: ${{ failure() && inputs.restore-from-backup && steps.create-db.outputs.database-created == 'true' }}
-        env:
-          DB_NAME: ${{ steps.normalize-name.outputs.db-name }}
-        run: |
-          set -euo pipefail
-          psql -X -v ON_ERROR_STOP=1 -c "
-            SELECT pg_terminate_backend(pid)
-            FROM pg_stat_activity
-            WHERE datname = '${DB_NAME}'
-              AND pid <> pg_backend_pid();
-          "
-          psql -X -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS \"${DB_NAME}\";"
-          echo "Dropped '${DB_NAME}' so the next run creates and restores it again."
 
       - name: Write comment JSON
         if: ${{ github.event_name == 'pull_request' }}

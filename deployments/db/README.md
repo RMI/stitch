@@ -267,9 +267,10 @@ same Auth0 subscription and application as production.
 ### Staging deployments
 
 When a staging deployment (a PR into `production`, or a PR from a `demo/*`
-branch) creates its database, it restores the newest production backup into
-it. Alembic then applies only the PR's new migrations. Later pushes keep the
-database as it is. The PR summary comment shows which backup was restored.
+branch) finds its database empty, as it is when first created, it restores the
+newest production backup into it. Alembic then applies only the PR's new
+migrations. Later pushes keep the database as it is. The PR summary comment
+shows which backup was restored.
 
 To restore a newer backup, add the `no-deploy` label to the PR, then remove it.
 This deletes the deployment, and the next deploy restores again. Closing and
@@ -281,8 +282,8 @@ To restore a specific backup, set `backup-url` on the `deploy-db` job in
 This means editing the GH workflow file, so it's expected to be used rarely, and
 for code versions that aren't expected to be merged directly to `main`.
 
-If a restore fails, the deployment deletes the new database, so the next push
-tries again.
+If a restore fails or the run is cancelled, the database stays empty, so the
+next push tries again.
 
 #### One-time setup
 
