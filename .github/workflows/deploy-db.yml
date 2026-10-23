@@ -201,6 +201,22 @@ jobs:
             echo "empty=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # A run that died mid-restore can leave its connection open on the server,
+      # holding locks that block the next restore until it times out. Nothing
+      # useful is connected to an empty database, so close whatever is there.
+      - name: Close leftover connections
+        if: ${{ steps.check-empty.outputs.empty == 'true' }}
+        env:
+          DB_NAME: ${{ steps.normalize-name.outputs.db-name }}
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 -c "
+            SELECT pg_terminate_backend(pid)
+            FROM pg_stat_activity
+            WHERE datname = '${DB_NAME}'
+              AND pid <> pg_backend_pid();
+          "
+
       - name: Validate restore config
         if: ${{ steps.check-empty.outputs.empty == 'true' }}
         env:
