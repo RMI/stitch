@@ -18,10 +18,12 @@ This directory contains resources for building and running the development Postg
 - The database data is stored in a Docker volume (`stitch-db-data` by default).
 - This ensures data persists across container restarts.
 - To reset the database (remove all data and reseed):
+
   ```bash
   docker compose down -v
   docker compose up
   ```
+
   This deletes the volume and triggers reseeding.
 
 - Connection details (database name, user, password, host, port) are set via environment variables.
@@ -154,6 +156,99 @@ You should now see seeded dev data.
 
 ---
 
+## Backups
+
+A scheduled Azure Container Apps job backs up one database. The job runs
+`pg_dump -Fc` daily at 03:00 UTC. Then it uploads the dump to the `backups`
+blob container as `<database>/<timestamp>.dump`.
+
+Each database needs its own job. The job name defaults to the database name
+with underscores replaced by hyphens. Use `-n` to choose a different name.
+
+A run stops after 30 minutes. A failed run does not retry. Nothing deletes old
+dumps. A lifecycle policy on the `backups` container limits its size.
+
+> [!NOTE] ACA Emphemeral Storage
+> Each job uses ephemeral storage to temporarily house the dump before
+> uploading to the blob storage account. This scales with the configured
+> vCPU count to a maximum of 8Gb. As of 2026-10-21, job containers are
+> configured to 0.5 vCPUs, providing 2Gb of storage. Current DB size is
+> 50-200Mb depending on instance.
+
+### Deploying the job
+
+`scripts/db_backup_job.sh` needs `az` and `jq`. Before you run the script,
+authenticate `az` against the correct subscription.
+
+1. Run `setup` one time for each storage account:
+
+   ```bash
+   scripts/db_backup_job.sh setup -g <resource-group> -s <storage-account>
+   ```
+
+   This creates the `stitch-backup-identity` managed identity and the `backups`
+   container. Then it grants **Storage Blob Data Contributor** to that identity
+   on the container.
+
+2. Run `deploy` one time for each database:
+
+   ```bash
+   scripts/db_backup_job.sh deploy \
+     -g <resource-group> -s <storage-account> -e <environment> \
+     -S <server> -d <database> -P <password>
+   ```
+
+   Give `-S` the name of the Postgres flexible server, such as
+   `stitch-staging`. The script finds the host name for you.
+
+   This creates the job, or updates it when the job exists. Leave off `-P` to
+   take the password from `PGPASSWORD` instead.
+
+Every command is safe to run again. For all options, run
+`scripts/db_backup_job.sh --help`.
+
+To run `setup`, your account needs these permissions:
+
+- create a managed identity
+- create a role assignment
+- create a blob container on the storage account
+
+`deploy` only requires read access on the Postgres server.
+
+CAUTION: Wait two minutes after `setup` before you start the job. Azure needs
+time to apply the role assignment. Until then, the upload step fails.
+
+### Backing up now
+
+To back up a database immediately, run:
+
+```bash
+scripts/db_backup_job.sh run -g <resource-group> -d <database>
+```
+
+This starts the same job that `deploy` created, so the dump goes to the same
+place. The nightly schedule stays in place. Use this to test a new job, or to
+take a dump before a risky change.
+
+The command prints the name of the run it started. To see the result:
+
+```bash
+az containerapp job execution list -g <resource-group> -n <job> -o table
+```
+
+### Deleting a job
+
+Deleting a database does not delete its job. To delete a job, run:
+
+```bash
+scripts/db_backup_job.sh delete -g <resource-group> -d <database>
+```
+
+This leaves the identity, the `backups` container, and the dumps in place. It
+does nothing when the job is already gone.
+
+---
+
 ## Updating Database
 
 ⚠ DBA-ONLY WORKFLOW
@@ -173,18 +268,18 @@ Remove docker volume (`make clean-docker`) and re-run `alembic`.
 stitch → stitch_old_YYYYMMDD
 ```
 
-2. Create new empty `stitch` database.
+1. Create new empty `stitch` database.
 
-3. Re-grant privileges to:
+2. Re-grant privileges to:
 
 - stitch_migrator
 - stitch_app
 
 (Do not recreate users.)
 
-4. Update local `.env` to point to cloud host.
+1. Update local `.env` to point to cloud host.
 
-5. Run:
+2. Run:
 
 ```bash
 docker compose up alembic
