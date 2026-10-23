@@ -1,5 +1,12 @@
 # api
 
+## Resource-state read model
+
+The oil & gas field list and filter-options endpoints are served from a
+precomputed table, kept current by the API's writes and rebuilt by CI after each
+deploy and every 6 hours. See [`READ_MODEL.md`](./READ_MODEL.md) for how it
+works and how to rebuild or verify it.
+
 ## Deployment: Azure Container App
 
 ### Prerequisites
