@@ -250,12 +250,6 @@ jobs:
           mkdir -p /tmp/comment-json
           json_file="/tmp/comment-json/comment-json-db-deploy.json"
 
-          # Empty unless this run restored a backup.
-          restored_from=""
-          if [ -n "${RESTORED_FROM}" ]; then
-            restored_from="\`${RESTORED_FROM}\`"
-          fi
-
           jq -n \
             --arg section "database" \
             --arg kind "postgres_database" \
@@ -264,19 +258,19 @@ jobs:
             --arg postgres_host "\`${PGHOST}\`" \
             --arg postgres_port "\`${PGPORT}\`" \
             --arg postgres_db "\`${{ steps.normalize-name.outputs.db-name }}\`" \
-            --arg restored_from "$restored_from" \
+            --arg restored_from "${RESTORED_FROM}" \
             '{
               "section": $section,
               "kind": $kind,
               "name": $name,
               "warnings": [],
-              "data": {
+              "data": ({
                 "db_name": $db_name,
                 "postgres_host": $postgres_host,
                 "postgres_port": $postgres_port,
-                "postgres_db": $postgres_db,
-                "restored_from": $restored_from
-              }
+                "postgres_db": $postgres_db
+              } + (if $restored_from == "" then {}
+                   else {"restored_from": ("`" + $restored_from + "`")} end))
             }' > "$json_file"
 
           jq empty "$json_file"
