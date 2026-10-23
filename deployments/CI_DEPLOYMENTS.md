@@ -329,8 +329,10 @@ API deploy, `rebuild-read-model` rebuilds the API's resource-state read model
 from the same `api` image; nothing waits on it, so a failure never blocks a
 deploy. `scheduled-rebuild-read-model.yml` also rebuilds it every 6 hours for the
 long-lived `main` and `production` deployments, using the API image tag each
-deploy pushes (also runnable by hand from the Actions tab). See
-[`api/READ_MODEL.md`](./api/READ_MODEL.md).
+deploy pushes. Scheduled runs come from `main`, and the production environment
+only accepts deployments from the `production` branch, so the scheduled run
+starts the same workflow on `production` for that one. Either can also be run
+by hand from the Actions tab. See [`api/READ_MODEL.md`](./api/READ_MODEL.md).
 
 ### Custom domains (RMI hostnames)
 

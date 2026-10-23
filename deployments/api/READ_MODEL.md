@@ -27,8 +27,8 @@ use it; they coalesce on every request.
   commit together.
 - **Rebuilds:** a full rebuild recomputes every listable resource. CI runs one
   after every API deploy (picking up any change to how answers are computed),
-  and every 6 hours for the `main` and `production` deployments (repairing drift
-  the writes can't see). Nothing waits on either.
+  and every 6 hours for the `main` and `production` deployments (repairing
+  drift the writes can't see). Nothing waits on either.
 
 ## Running a rebuild
 
@@ -43,7 +43,7 @@ python -m stitch.api.db.read_model.rebuild --ids 123 456
 - **When to run one by hand:** after a database restore, or after editing
   sources, memberships, or priorities with SQL (for a handful of resources,
   `--ids` is enough). Either one changes answers without going through the
-  write paths. CI's runs cover deploys and drift.
+  write paths; otherwise the next scheduled rebuild repairs it within 6 hours.
 - **Where to run it:** with the same code the API is running. For a deployed
   lane, run the deployed `api` image the same way CI does (see
   `.github/workflows/rebuild-read-model.yml`), with the lane's `POSTGRES_*`
@@ -152,10 +152,15 @@ Medians of 7 runs, full action call; both columns return identical results.
   its writes recompute use its rules, and rows the new revision serves were
   computed by the old code until the post-deploy rebuild finishes. This only
   matters for a deploy that changes how answers are computed; the next rebuild
-  (after the deploy, or within 6 hours) corrects it.
-- **The scheduled rebuild** uses each deployment's image tag. If a deploy pushed
-  its image and then failed, that tag is ahead of the running code until the
-  next successful deploy.
+  (within 6 hours) corrects it.
+- **The scheduled rebuild** (`.github/workflows/scheduled-rebuild-read-model.yml`)
+  runs from `main`, but the `production` GitHub Environment only accepts
+  deployments from the `production` branch. So the scheduled run rebuilds
+  `main` and starts the same workflow on the `production` branch, which only
+  works once a release has carried the workflow there; that production run
+  shows as a separate run in the Actions tab. Each run uses its deployment's
+  image tag: if a deploy pushed its image and then failed, that tag is ahead
+  of the running code until the next successful deploy.
 - **Incremental `--since` repair** is not implemented: no timestamp can reliably
   catch every kind of change (STIT-809).
 - **Sorting by fields other than `name`** has no index (30–100 ms). Add

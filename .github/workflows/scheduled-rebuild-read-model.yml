@@ -1,8 +1,15 @@
 ---
-# Every 6 hours, rebuild the API's resource-state read model for each
-# long-lived deployment. The write paths keep the rows current; this repairs
-# drift they can't see (manual SQL, a database restore). A rebuild also runs
-# after every deploy (build-and-deploy.yml).
+# Every 6 hours, rebuild the API's resource-state read model for the long-lived
+# `main` and `production` deployments. The write paths keep the rows current;
+# this repairs drift they can't see (manual SQL, a database restore). A rebuild
+# also runs after every deploy (build-and-deploy.yml).
+#
+# Each run rebuilds the deployment named by its branch: `main` or `production`.
+# Scheduled runs always come from `main`, and the `production` GitHub
+# Environment only accepts deployments from the `production` branch, so the
+# scheduled run also starts this workflow on `production` (which works once a
+# release has carried this file there). It can also be run by hand on either
+# branch from the Actions tab.
 #
 # Uses the image tag each deploy pushes (`stitch-api:<deployment-name>`). If a
 # deploy pushed its image and then failed, that tag is ahead of the running
@@ -18,18 +25,11 @@ on:
 
 jobs:
   rebuild-read-model:
-    name: "Rebuild Read Model (${{ matrix.deployment-name }})"
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - deployment-lane: development
-            deployment-name: main
-          - deployment-lane: production
-            deployment-name: production
+    name: "Rebuild Read Model (${{ github.ref_name }})"
+    if: github.ref_name == 'main' || github.ref_name == 'production'
     # One at a time per deployment; never cancel a rebuild partway.
     concurrency:
-      group: scheduled-rebuild-read-model-${{ matrix.deployment-name }}
+      group: scheduled-rebuild-read-model-${{ github.ref_name }}
       cancel-in-progress: false
     permissions:
       contents: read
@@ -38,7 +38,23 @@ jobs:
     secrets:
       stitch-app-password: ${{ secrets.STITCH_APP_PASSWORD }}
     with:
-      deployment-lane: ${{ matrix.deployment-lane }}
-      full-image-name: ghcr.io/rmi/stitch-api:${{ matrix.deployment-name }}
+      # Lanes and deployment names as in resolve-deployment-context.yml.
+      deployment-lane: ${{ github.ref_name == 'production' && 'production' || 'development' }}
+      full-image-name: ghcr.io/rmi/stitch-api:${{ github.ref_name }}
       # Each deployment's database is named after it (see deploy-db.yml).
-      postgres-db: ${{ matrix.deployment-name }}
+      postgres-db: ${{ github.ref_name }}
+
+  start-production-rebuild:
+    name: "Start the production rebuild"
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      # A run started with the workflow's own token is allowed to trigger
+      # workflow_dispatch (unlike most events).
+      - name: Run this workflow on the production branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run scheduled-rebuild-read-model.yml --ref production
