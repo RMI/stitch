@@ -279,6 +279,9 @@ reopening the PR does the same.
 To restore a specific backup, set `backup-url` on the `deploy-db` job in
 `.github/workflows/build-and-deploy.yml` to its full URL, for example
 `https://rmistitchprod.blob.core.windows.net/backups/production/20261023T030039Z.dump`.
+Use the plain URL, without a SAS token (`?sv=...`): the job log and the PR
+comment show it, and the restore signs in as its own identity anyway, so the
+script refuses URLs with a query string.
 This means editing the GH workflow file, so it's expected to be used rarely, and
 for code versions that aren't expected to be merged directly to `main`.
 

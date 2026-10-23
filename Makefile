@@ -286,12 +286,7 @@ follow-stack-logs:
 # whenever the stack was last built.
 db-restore:
 	@set -eu; \
-	backup_url="$(BACKUP_URL)"; \
-	if [ -z "$$backup_url" ]; then \
-		backup_url="$$(scripts/db_restore.sh latest)"; \
-	else \
-		az storage blob show --auth-mode login --blob-url "$$backup_url" --output none; \
-	fi; \
+	backup_url="$$(scripts/db_restore.sh resolve --backup-url "$(BACKUP_URL)")"; \
 	$(DOCKER_COMPOSE_DEV) stop api seed; \
 	$(DOCKER_COMPOSE_DEV) up --detach --wait db; \
 	echo "Recreating the local database"; \

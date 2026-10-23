@@ -3,7 +3,7 @@ set -euo pipefail
 
 DEFAULT_PREFIX=https://rmistitchprod.blob.core.windows.net/backups/production/
 PG_IMAGE=postgres:17-alpine
-URL_PATTERN='^https://([a-z0-9]+)\.blob\.core\.windows\.net/([a-z0-9-]+)/(.*)$'
+URL_PATTERN='^https://([a-z0-9]+)\.blob\.core\.windows\.net/([a-z0-9-]+)/([^?#]*)$'
 BACKUP_NAME_PATTERN='(^|/)[0-9]{8}T[0-9]{6}Z\.dump$'
 
 prefix="$DEFAULT_PREFIX"
@@ -14,7 +14,7 @@ user=stitch_migrator
 usage() {
   cat >&2 <<'EOF'
 usage:
-  db_restore.sh latest  [-p PREFIX_URL]
+  db_restore.sh resolve [-b BACKUP_URL] [-p PREFIX_URL]
   db_restore.sh restore -d DB [-b BACKUP_URL] [-u USER]
 
 options:
@@ -27,16 +27,19 @@ options:
                     (default: stitch_migrator)
   -h, --help        show this message
 
-latest: print the URL of the newest backup under the prefix. Only backups
-named the way the backup job names them (<timestamp>.dump) count.
+resolve: print the URL of the backup to restore. With --backup-url, check that
+the backup exists and print its URL. Otherwise print the newest backup under
+the prefix: only backups named the way the backup job names them
+(<timestamp>.dump) count.
 
 restore: download one backup and restore it into an existing, empty database.
 The database must already have the roles and grants from
 deployments/db/00-init-roles.sh. Connection settings come from PGHOST,
 PGPORT, PGPASSWORD and PGSSLMODE.
 
-Both commands need `az` logged in with read access to the backups container.
-restore also needs docker.
+URLs must not include a query string such as a SAS token: both commands sign
+in with `az`, which needs read access to the backups container. restore also
+needs docker.
 
 EOF
   exit 2
@@ -46,7 +49,7 @@ latest() {
   local account container path names newest
 
   if [[ ! "$prefix" =~ $URL_PATTERN ]]; then
-    echo "Invalid prefix: '$prefix'. Expected https://<account>.blob.core.windows.net/<container>/<path>" >&2
+    echo "Invalid prefix: '${prefix%%\?*}'. Expected https://<account>.blob.core.windows.net/<container>/<path>, with no query string" >&2
     exit 1
   fi
   account="${BASH_REMATCH[1]}"
@@ -69,14 +72,26 @@ latest() {
   echo "https://$account.blob.core.windows.net/$container/$newest"
 }
 
-restore() {
-  [ -n "$database" ] || usage
-  [ -n "$backup_url" ] || backup_url="$(latest)"
+# CI logs and PR comments show the backup URL, so refuse one with a query
+# string (which could hold a SAS token) and never print that part.
+resolve() {
+  if [ -z "$backup_url" ]; then
+    latest
+    return
+  fi
 
   if [[ ! "$backup_url" =~ $URL_PATTERN ]] || [ -z "${BASH_REMATCH[3]}" ]; then
-    echo "Invalid backup URL: '$backup_url'. Expected https://<account>.blob.core.windows.net/<container>/<blob>" >&2
+    echo "Invalid backup URL: '${backup_url%%\?*}'. Expected https://<account>.blob.core.windows.net/<container>/<blob>, with no query string" >&2
     exit 1
   fi
+
+  az storage blob show --auth-mode login --blob-url "$backup_url" --output none
+  echo "$backup_url"
+}
+
+restore() {
+  [ -n "$database" ] || usage
+  backup_url="$(resolve)"
 
   scratch="$(mktemp -d)"
   trap 'rm -rf "$scratch"' EXIT
@@ -117,7 +132,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$command" in
-latest) latest ;;
+resolve) resolve ;;
 restore) restore ;;
 *) usage ;;
 esac

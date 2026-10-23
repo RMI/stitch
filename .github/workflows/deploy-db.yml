@@ -225,14 +225,10 @@ jobs:
         id: resolve-backup
         if: ${{ steps.check-empty.outputs.empty == 'true' }}
         env:
-          BACKUP_URL: ${{ inputs.backup-url }}
+          PINNED_BACKUP_URL: ${{ inputs.backup-url }}
         run: |
           set -euo pipefail
-          if [ -n "${BACKUP_URL}" ]; then
-            backup_url="${BACKUP_URL}"
-          else
-            backup_url="$(scripts/db_restore.sh latest)"
-          fi
+          backup_url="$(scripts/db_restore.sh resolve --backup-url "${PINNED_BACKUP_URL}")"
           echo "Backup: $backup_url"
           echo "backup-url=$backup_url" >> "$GITHUB_OUTPUT"
 
