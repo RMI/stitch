@@ -2,16 +2,8 @@ import FilterDropdown from "./FilterDropdown";
 import { FILTER_FIELDS, EMPTY_FILTERS } from "../config/filters";
 import { useResourceFilterOptions } from "../hooks/useResources";
 
-export default function FilterBar({
-  endpoint,
-  filters,
-  onFiltersChange,
-  optionParams,
-}) {
-  const { data: filterOptions } = useResourceFilterOptions(
-    endpoint,
-    optionParams,
-  );
+export default function FilterBar({ endpoint, filters, onFiltersChange }) {
+  const { data: filterOptions } = useResourceFilterOptions(endpoint);
 
   // Flatten active filters into chips: [{ field, label, value, displayValue }, ...]
   // `value` is the stored/API value; `displayValue` is what the user sees.

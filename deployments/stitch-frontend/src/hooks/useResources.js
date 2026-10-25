@@ -55,13 +55,10 @@ function useResourcesReal(
   });
 }
 
-function useResourceFilterOptionsReal(
-  endpoint = "resources",
-  { filters = {}, q, enabled = true } = {},
-) {
+function useResourceFilterOptionsReal(endpoint = "resources", enabled = true) {
   const config = useConfig();
   return useAuthenticatedQuery({
-    ...resourceQueries.filterOptions(config, endpoint, filters, q),
+    ...resourceQueries.filterOptions(config, endpoint),
     enabled,
   });
 }
@@ -217,16 +214,15 @@ function getMockResourcePage({
   };
 }
 
-function getMockFilterOptions({ filters = {}, q } = {}) {
-  const searched = applyMockSearch(MOCK_RESOURCE_ITEMS, q);
-
+function getMockFilterOptions() {
   return Object.fromEntries(
     FILTER_FIELDS.map(({ key: field }) => [
       field,
       Array.from(
         new Set(
-          applyMockFilters(searched, { ...filters, [field]: [] })
-            .map((resource) => getResourceField(resource, field))
+          MOCK_RESOURCE_ITEMS.map((resource) =>
+            getResourceField(resource, field),
+          )
             .filter((value) => value != null && value !== "")
             .map(String),
         ),
@@ -273,13 +269,10 @@ function useResourcesMock(
   });
 }
 
-function useResourceFilterOptionsMock(
-  endpoint = "resources",
-  { filters = {}, q, enabled = true } = {},
-) {
+function useResourceFilterOptionsMock(endpoint = "resources", enabled = true) {
   return useQuery({
-    ...resourceQueries.filterOptions(UNUSED_MOCK_CONFIG, endpoint, filters, q),
-    queryFn: () => Promise.resolve(getMockFilterOptions({ filters, q })),
+    ...resourceQueries.filterOptions(UNUSED_MOCK_CONFIG, endpoint),
+    queryFn: () => Promise.resolve(getMockFilterOptions()),
     enabled,
   });
 }

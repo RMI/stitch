@@ -28,10 +28,9 @@ const keys = {
   all: (endpoint = "resources") => [endpoint],
   lists: (endpoint = "resources") => [...keys.all(endpoint), "list"],
   list: (endpoint = "resources", filters) => [...keys.lists(endpoint), filters],
-  filterOptions: (endpoint = "resources", params) => [
+  filterOptions: (endpoint = "resources") => [
     ...keys.all(endpoint),
     "filter-options",
-    params,
   ],
   details: (endpoint = "resources") => [...keys.all(endpoint), "detail"],
   detail: (endpoint = "resources", id) => [...keys.details(endpoint), id],
@@ -93,11 +92,10 @@ export const resourceQueries = {
       placeholderData: keepPreviousData,
     }),
 
-  filterOptions: (config, endpoint = "resources", filters = {}, q) =>
+  filterOptions: (config, endpoint = "resources") =>
     queryOptions({
-      queryKey: keys.filterOptions(endpoint, { ...filters, q }),
-      queryFn: (fetcher) =>
-        getResourceFilterOptions(config, fetcher, endpoint, { filters, q }),
+      queryKey: keys.filterOptions(endpoint),
+      queryFn: (fetcher) => getResourceFilterOptions(config, fetcher, endpoint),
       staleTime: DEFAULT_STALE_TIME,
     }),
 
