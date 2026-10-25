@@ -18,17 +18,14 @@ from typing import Any, Final, Literal
 from sqlalchemy import (
     CTE,
     ColumnElement,
-    CompoundSelect,
     Select,
     and_,
     asc,
     case,
     desc,
     func,
-    literal,
     or_,
     select,
-    union_all,
 )
 
 from stitch.api.db.model import (
@@ -429,17 +426,19 @@ def _resource_state_profile(permission_mask: int) -> Select[Any]:
 
 
 def resource_state_filter_option_query(
-    field_name: str, permission_mask: int
-) -> Select[tuple[str]]:
-    """Distinct non-null stored values of one filterable field for one profile."""
+    permission_mask: int,
+    params: OGFieldFilterParams,
+) -> Select[tuple[Any, ...]]:
+    """Distinct stored values of every filterable field, for the rows ``params`` matches."""
     state = OGFieldResourceState
-    col = getattr(state, field_name)
-    return (
-        select(col)
-        .where(state.permission_mask == permission_mask, col.is_not(None))
-        .distinct()
-        .order_by(col)
+    stmt = select(*(getattr(state, field) for field in FILTER_OPTION_FIELDS)).where(
+        state.permission_mask == permission_mask
     )
+    for cond in _build_field_conditions(
+        _resource_state_profile(permission_mask), params
+    ):
+        stmt = stmt.where(cond)
+    return stmt.distinct()
 
 
 def _add_pivot_columns(

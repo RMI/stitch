@@ -1054,7 +1054,7 @@ class TestResourceFilterOptionsAction:
         options = await resource_actions.filter_options(
             seeded_integration_session,
             OGFieldFilterParams(),
-            licensed_sources=frozenset({"gem", "wm", "llm"}),
+            licensed_sources=_PUBLIC,
         )
 
         assert options["country"] == ["CAN"]
@@ -1078,14 +1078,14 @@ class TestResourceFilterOptionsAction:
         with_wm = await resource_actions.filter_options(
             seeded_integration_session,
             OGFieldFilterParams(),
-            licensed_sources=frozenset({"gem", "wm"}),
+            licensed_sources=_PUBLIC_AND_WM,
         )
         assert with_wm["country"] == ["USA"]
 
         without_wm = await resource_actions.filter_options(
             seeded_integration_session,
             OGFieldFilterParams(),
-            licensed_sources=frozenset({"gem"}),
+            licensed_sources=_PUBLIC,
         )
         assert without_wm["country"] == ["CAN"]
 
@@ -1437,19 +1437,24 @@ class TestResourceFilterOptionsCascade:
         assert options["country"] == ["CAN", "USA"]
 
     @pytest.mark.anyio
-    async def test_field_is_not_narrowed_by_its_own_selection(
+    async def test_field_is_narrowed_by_its_own_selection(
         self,
         seeded_integration_session: AsyncSession,
         test_user: User,
     ):
-        """Multi-select keeps working: Country still offers the un-ticked ones."""
+        """Every field answers for the query as given, its own selection included.
+
+        Keeping a multi-select's un-ticked values on offer is the frontend's job:
+        it holds the options from before the selection and compares them with
+        this response.
+        """
         await self._seed_two_countries(seeded_integration_session, test_user)
 
         options = await resource_actions.filter_options(
             seeded_integration_session, OGFieldFilterParams(country=["CAN"])
         )
 
-        assert options["country"] == ["CAN", "USA"]
+        assert options["country"] == ["CAN"]
 
     @pytest.mark.anyio
     async def test_multi_select_unions_the_other_fields(
@@ -1556,7 +1561,7 @@ class TestResourceFilterOptionsCascade:
         options = await resource_actions.filter_options(
             seeded_integration_session,
             OGFieldFilterParams(country=["USA"]),
-            licensed_sources=frozenset({"gem"}),
+            licensed_sources=_PUBLIC,
         )
 
         assert options["basin"] == []
