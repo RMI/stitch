@@ -206,6 +206,29 @@ export async function getMergeCandidates(
   return await response.json();
 }
 
+export async function createMergeCandidate(
+  config,
+  resourceIds,
+  fetcher,
+  endpoint = "oil-gas-fields",
+) {
+  const url = `${config.apiBaseUrl}/${endpoint}/merge-candidates`;
+  const response = await fetcher(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ resource_ids: resourceIds }),
+  });
+
+  if (!response.ok) {
+    const detail = await getErrorDetail(response);
+    const error = new Error(detail);
+    error.status = response.status;
+    throw error;
+  }
+
+  return await response.json();
+}
+
 export async function getMergeCandidate(
   config,
   id,

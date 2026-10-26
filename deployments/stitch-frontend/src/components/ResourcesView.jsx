@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { useResources } from "../hooks/useResources";
+import { useNavigate } from "react-router";
+import { useResources, useCreateMergeCandidate } from "../hooks/useResources";
+import { useHasPermission } from "../hooks/usePermissions";
 import { useListState } from "../hooks/useListState";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import ResourcesTable from "./ResourcesTable";
@@ -126,6 +128,31 @@ export default function ResourcesView({ className = "", endpoint }) {
 
   const handleSortChange = (newSortConfig) => setSort(newSortConfig);
 
+  // Row-level multi-select feeds the "Propose merge" affordance below. Only
+  // rendered when the caller can create merge candidates; the backend enforces
+  // the same permission.
+  const canProposeMerge = useHasPermission("merge-candidate:create");
+  const navigate = useNavigate();
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const createMergeCandidate = useCreateMergeCandidate(endpoint);
+
+  const handleToggleSelect = (id) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const handleProposeMerge = () => {
+    createMergeCandidate.mutate([...selectedIds], {
+      onSuccess: () => {
+        setSelectedIds(new Set());
+        navigate("/merge-candidate-review");
+      },
+    });
+  };
+
   return (
     <div className={`mx-auto w-full max-w-6xl ${className}`}>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
@@ -231,11 +258,34 @@ export default function ResourcesView({ className = "", endpoint }) {
           No resources match the current search and filters.
         </p>
       )}
+      {canProposeMerge && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-ink-muted">
+          <span>
+            <span className="font-mono tabular-nums text-ink">
+              {selectedIds.size}
+            </span>{" "}
+            selected for merge
+          </span>
+          <Button
+            onClick={handleProposeMerge}
+            disabled={selectedIds.size < 2 || createMergeCandidate.isPending}
+          >
+            {createMergeCandidate.isPending ? "Proposing..." : "Propose merge"}
+          </Button>
+          {createMergeCandidate.isError && (
+            <span className="text-danger">
+              {createMergeCandidate.error.message}
+            </span>
+          )}
+        </div>
+      )}
       <ResourcesTable
         resources={resources}
         sortConfig={sort}
         onSort={handleSortChange}
         isFetching={isFetching}
+        selectedIds={selectedIds}
+        onToggleSelect={canProposeMerge ? handleToggleSelect : undefined}
       />
       {data && totalCount > 0 && (
         <Pagination
