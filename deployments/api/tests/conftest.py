@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 from polyfactory.pytest_plugin import register_fixture
-from sqlalchemy import insert
+from sqlalchemy import event, insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from stitch.auth import TokenClaims
@@ -147,6 +147,13 @@ async def integration_engine():
         "sqlite+aiosqlite:///:memory:",
         echo=False,
     )
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _enforce_foreign_keys(dbapi_connection, _record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     async with engine.begin() as conn:
         await conn.run_sync(StitchBase.metadata.create_all, tables=non_view_tables)
         # Production seeds og_field_source_priority via Alembic; the test schema

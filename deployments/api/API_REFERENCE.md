@@ -141,12 +141,31 @@
 
 ---
 
+### `POST /api/v1/oil-gas-fields/merge-candidates/link-all`
+
+Query every group of duplicate resources and queue each one for review.
+`apply_merges` defaults to true, passing false makes the call a dry run that reports the
+groups and writes nothing. Groups whose resource-id set already has a candidate are
+skipped, so repeat runs are safe.
+
+**Query Parameters:**
+
+- `apply_merges`: boolean (default `true`)
+
+**Response:** `200` — `LinkAllResponse`
+
+- `apply_merges`: boolean
+- `match_groups`: array[array[integer]]
+- `merge_candidates_created`: integer
+- `merge_candidates_skipped`: integer
+
+---
+
 ### `POST /api/v1/oil-gas-fields/merge-candidates/{id}/approve`
 
 <!-- description -->
 
 **Request Body:** MergeCandidateReviewRequest | null
-
 
 **Response:** `200`
 
@@ -169,7 +188,6 @@
 <!-- description -->
 
 **Request Body:** MergeCandidateReviewRequest | null
-
 
 **Response:** `200`
 
@@ -260,7 +278,6 @@
 
 **Request Body:** GemSource-Input | WoodMacSource-Input | RMISource-Input | LLMSource-Input | CCRSource-Input | ALBSource-Input | BCSource-Input
 
-
 **Response:** `200`
 
 - GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView
@@ -274,7 +291,6 @@
 <!-- description -->
 
 **Request Body:** GemSource-Input | WoodMacSource-Input | RMISource-Input | LLMSource-Input | CCRSource-Input | ALBSource-Input | BCSource-Input
-
 
 **Response:** `200`
 

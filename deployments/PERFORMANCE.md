@@ -37,13 +37,12 @@ Two structured log streams, distinguished by the `logger` field:
 `db_query_count` on a request is the N+1 detector; the `query` stream tells you
 *which* statement is expensive.
 
-`query_name` is a stable label (e.g. `resources.list_ids`, `resources.count`,
+`query_name` is a stable label (e.g. `resources.list_page`, `resources.count`,
 `resources.filter_options`) attached to the queries a request handler runs, so you
 can pick out a specific query without matching on SQL text — useful when two
-statements share a near-identical prefix (both list queries open with
-`WITH resource_universe AS …`). It is present only for queries executed inside a
-labeled scope; unlabeled queries (e.g. ORM-internal statements outside a handler)
-omit the field entirely.
+statements share a near-identical prefix. It is present only for queries
+executed inside a labeled scope; unlabeled queries (e.g. ORM-internal statements
+outside a handler) omit the field entirely.
 
 ---
 
