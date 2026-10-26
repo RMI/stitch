@@ -15,7 +15,7 @@ from stitch.api.db.model import OGFieldResourceState
 from stitch.api.db.read_model import state
 from stitch.api.db.read_model.permissions import PROFILES
 from stitch.api.db.read_model.state import rebuild_all_resource_state
-from stitch.api.entities import OGFieldQueryParams, User
+from stitch.api.entities import OGFieldFilterParams, OGFieldQueryParams, User
 
 from .dataset import Dataset, attach, new_resource
 
@@ -72,8 +72,10 @@ class TestServedFromStoredState:
         session = seeded_integration_session
         assert await _names(session, None) == await _names(session, PROFILES[3])
         assert await resource_actions.filter_options(
-            session
-        ) == await resource_actions.filter_options(session, PROFILES[3])
+            session, OGFieldFilterParams()
+        ) == await resource_actions.filter_options(
+            session, OGFieldFilterParams(), PROFILES[3]
+        )
 
 
 class TestValuesTodaysModelRejects:

@@ -23,6 +23,7 @@ from stitch.api.db.read_model.permissions import PROFILES
 from stitch.api.db.read_model.state import refresh_resource_states
 from stitch.api.entities import (
     FILTER_OPTION_FIELDS,
+    OGFieldFilterParams,
     OGFieldQueryParams,
     User,
 )
@@ -1026,7 +1027,9 @@ class TestResourceFilterOptionsAction:
             {"source": "rmi", "country": None},
         )
 
-        options = await resource_actions.filter_options(seeded_integration_session)
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams()
+        )
 
         assert options["country"] == ["CAN", "USA"]
 
@@ -1050,6 +1053,7 @@ class TestResourceFilterOptionsAction:
 
         options = await resource_actions.filter_options(
             seeded_integration_session,
+            OGFieldFilterParams(),
             licensed_sources=_PUBLIC,
         )
 
@@ -1073,12 +1077,14 @@ class TestResourceFilterOptionsAction:
 
         with_wm = await resource_actions.filter_options(
             seeded_integration_session,
+            OGFieldFilterParams(),
             licensed_sources=_PUBLIC_AND_WM,
         )
         assert with_wm["country"] == ["USA"]
 
         without_wm = await resource_actions.filter_options(
             seeded_integration_session,
+            OGFieldFilterParams(),
             licensed_sources=_PUBLIC,
         )
         assert without_wm["country"] == ["CAN"]
@@ -1108,7 +1114,9 @@ class TestResourceFilterOptionsAction:
         await seeded_integration_session.flush()
         await refresh_resource_states(seeded_integration_session, [inactive_id])
 
-        options = await resource_actions.filter_options(seeded_integration_session)
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams()
+        )
 
         assert options["country"] == ["USA"]
 
@@ -1124,7 +1132,9 @@ class TestResourceFilterOptionsAction:
             {"source": "rmi", "country": "USA"},
         )
 
-        options = await resource_actions.filter_options(seeded_integration_session)
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams()
+        )
 
         assert set(options.keys()) == set(FILTER_OPTION_FIELDS)
         assert options["country"] == ["USA"]
@@ -1159,7 +1169,9 @@ class TestResourceFilterOptionsAction:
             },
         )
 
-        options = await resource_actions.filter_options(seeded_integration_session)
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams()
+        )
 
         assert options["country"] == ["CAN", "USA"]
         assert options["state_province"] == ["Alberta", "Texas"]
@@ -1331,6 +1343,229 @@ class TestResourceFilterOptionsAction:
 
         assert total == 1
         assert [item.id for item in items] == [root_id]
+
+
+class TestResourceFilterOptionsCascade:
+    """Options offered for one field reflect the *other* fields' selections."""
+
+    async def _seed_two_countries(
+        self,
+        session: AsyncSession,
+        user: User,
+    ) -> None:
+        await _create_resource_with_sources(
+            session,
+            user,
+            {
+                "source": "gem",
+                "name": "Canadian field",
+                "country": "CAN",
+                "state_province": "Alberta",
+                "basin": "Western Canadian",
+            },
+        )
+        await _create_resource_with_sources(
+            session,
+            user,
+            {
+                "source": "gem",
+                "name": "American field",
+                "country": "USA",
+                "state_province": "Alaska",
+                "basin": "North Slope",
+            },
+        )
+
+    @pytest.mark.anyio
+    async def test_country_narrows_state_province(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        await self._seed_two_countries(seeded_integration_session, test_user)
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams(country=["CAN"])
+        )
+
+        assert options["state_province"] == ["Alberta"]
+        assert options["basin"] == ["Western Canadian"]
+
+    @pytest.mark.anyio
+    async def test_state_province_narrows_country(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """The reverse direction: picking a province narrows Country."""
+        await self._seed_two_countries(seeded_integration_session, test_user)
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session,
+            OGFieldFilterParams(state_province=["Alberta"]),
+        )
+
+        assert options["country"] == ["CAN"]
+
+    @pytest.mark.anyio
+    async def test_basin_spanning_two_countries_keeps_both(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """Narrowing is by reachability, not by a one-to-one hierarchy."""
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "country": "CAN", "basin": "Williston"},
+        )
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "country": "USA", "basin": "Williston"},
+        )
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "country": "NOR", "basin": "North Sea"},
+        )
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams(basin=["Williston"])
+        )
+
+        assert options["country"] == ["CAN", "USA"]
+
+    @pytest.mark.anyio
+    async def test_field_is_narrowed_by_its_own_selection(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """Every field answers for the query as given, its own selection included.
+
+        Keeping a multi-select's un-ticked values on offer is the frontend's job:
+        it holds the options from before the selection and compares them with
+        this response.
+        """
+        await self._seed_two_countries(seeded_integration_session, test_user)
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams(country=["CAN"])
+        )
+
+        assert options["country"] == ["CAN"]
+
+    @pytest.mark.anyio
+    async def test_multi_select_unions_the_other_fields(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """Two countries ticked -> the other fields offer both countries' values."""
+        await self._seed_two_countries(seeded_integration_session, test_user)
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session,
+            OGFieldFilterParams(country=["CAN", "USA"]),
+        )
+
+        assert options["state_province"] == ["Alaska", "Alberta"]
+
+    @pytest.mark.anyio
+    async def test_search_term_cascades_into_every_field(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        await self._seed_two_countries(seeded_integration_session, test_user)
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams(q="Canadian")
+        )
+
+        assert options["country"] == ["CAN"]
+        assert options["state_province"] == ["Alberta"]
+
+    @pytest.mark.anyio
+    async def test_search_term_is_not_self_excluded(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """``q`` is never a branch target, so it narrows even the fields it
+        matches on. ``basin`` is searchable, so a term matching only the Canadian
+        basin must still leave Basin showing that one value alone."""
+        await self._seed_two_countries(seeded_integration_session, test_user)
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams(q="Western Canadian")
+        )
+
+        assert options["basin"] == ["Western Canadian"]
+
+    @pytest.mark.anyio
+    async def test_unfiltered_params_offer_every_value(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """No filters set -> the pre-cascade behaviour, every reachable value."""
+        await self._seed_two_countries(seeded_integration_session, test_user)
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams()
+        )
+
+        assert options["country"] == ["CAN", "USA"]
+        assert options["state_province"] == ["Alaska", "Alberta"]
+
+    @pytest.mark.anyio
+    async def test_excludes_repointed_resources(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """A merged-away resource's values are not offered."""
+        root_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "country": "USA"},
+        )
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "country": "CAN"},
+            repointed_to=root_id,
+        )
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams()
+        )
+
+        assert options["country"] == ["USA"]
+
+    @pytest.mark.anyio
+    async def test_cascade_respects_licensed_sources(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """Filtering on an unlicensed source's value offers nothing elsewhere."""
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "wm", "country": "USA", "basin": "Permian"},
+        )
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session,
+            OGFieldFilterParams(country=["USA"]),
+            licensed_sources=_PUBLIC,
+        )
+
+        assert options["basin"] == []
+        assert options["country"] == []
 
 
 class TestResourcePriorityOverride:
