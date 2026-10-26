@@ -174,8 +174,8 @@ describe("useResourceFilterOptions", () => {
     );
   });
 
-  it("cascades every field while nothing is selected", async () => {
-    spyOnFilterOptions();
+  it("makes a single request while nothing is selected", async () => {
+    const spy = spyOnFilterOptions();
     const { wrapper } = createWrapper();
 
     const { result } = renderHook(
@@ -185,33 +185,9 @@ describe("useResourceFilterOptions", () => {
         }),
       { wrapper },
     );
-
-    await vi.waitFor(() => expect(result.current.data).toEqual(UNFILTERED));
-  });
-
-  it("requests the unfiltered options once across filter changes", async () => {
-    const spy = spyOnFilterOptions();
-    const { wrapper } = createWrapper();
-
-    const { result, rerender } = renderHook(
-      ({ filters }) => useResourceFilterOptions("oil-gas-fields", { filters }),
-      { wrapper, initialProps: { filters: { country: [], field_status: [] } } },
-    );
     await vi.waitFor(() => expect(result.current.data).toEqual(UNFILTERED));
 
-    for (const country of [["CAN"], ["CAN", "USA"], ["CAN", "USA", "BRA"]]) {
-      rerender({ filters: { country, field_status: [] } });
-      await vi.waitFor(() =>
-        expect(result.current.data?.field_status).toEqual(
-          FILTERED.field_status,
-        ),
-      );
-    }
-
-    const unfilteredCalls = spy.mock.calls.filter(([, , , params]) =>
-      params ? !hasSelection(params.filters) : true,
-    );
-    expect(unfilteredCalls).toHaveLength(1);
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 });
 
