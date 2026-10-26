@@ -95,7 +95,12 @@ export const resourceQueries = {
 
   filterOptions: (config, endpoint = "resources", filters = {}, q) =>
     queryOptions({
-      queryKey: keys.filterOptions(endpoint, { ...filters, q }),
+      queryKey: keys.filterOptions(endpoint, {
+        ...Object.fromEntries(
+          Object.entries(filters).filter(([, values]) => values.length > 0),
+        ),
+        q,
+      }),
       queryFn: (fetcher) =>
         getResourceFilterOptions(config, fetcher, endpoint, { filters, q }),
       staleTime: DEFAULT_STALE_TIME,
