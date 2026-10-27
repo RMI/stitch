@@ -75,7 +75,7 @@
 
 Distinct values available for each filter dropdown, limited to the caller's licensed sources.
 
-Accepts the same filter and search parameters as `GET /api/v1/oil-gas-fields/` (not paging, sorting or `source`). Options cascade: each field lists only the values still reachable under the other active filters, so a field's own selection never narrows its own list.
+Accepts the same filter and search parameters as `GET /api/v1/oil-gas-fields/` (not paging, sorting or `source`). Options cascade: each field lists only the values still reachable under the active filters. A field's own selection narrows its own list in the response, so clients are encouraged to access once without any filters, and use this endpoint to determine what combinations are valid while interrogating the dataset
 
 **Response:** `200`
 
