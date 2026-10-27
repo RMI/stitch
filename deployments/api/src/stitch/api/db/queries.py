@@ -39,7 +39,11 @@ from stitch.api.db.model import (
     ResourceModel,
 )
 from stitch.api.db.model.oil_gas_field_source_value import value_attr_for
-from stitch.api.entities import OGFieldQueryParams
+from stitch.api.entities import (
+    FILTER_OPTION_FIELDS,
+    OGFieldFilterParams,
+    OGFieldQueryParams,
+)
 from stitch.ogsi.model.types import OGSISrcKey
 
 # Single source of truth for the source-list field metadata. This is a shared
@@ -67,7 +71,7 @@ EXACT_MATCH_FIELDS: Final[tuple[str, ...]] = (
 _HEADER_SORT_FIELDS: Final[frozenset[str]] = frozenset({"id", "source", "resource_id"})
 
 
-def _filter_values(params: OGFieldQueryParams, field_name: str) -> list[Any]:
+def _filter_values(params: OGFieldFilterParams, field_name: str) -> list[Any]:
     """The values an exact-match filter is set to, as a list.
 
     Multi-select fields arrive as lists; the rest are scalars, returned as a
@@ -422,17 +426,19 @@ def _resource_state_profile(permission_mask: int) -> Select[Any]:
 
 
 def resource_state_filter_option_query(
-    field_name: str, permission_mask: int
-) -> Select[tuple[str]]:
-    """Distinct non-null stored values of one filterable field for one profile."""
+    permission_mask: int,
+    params: OGFieldFilterParams,
+) -> Select[tuple[Any, ...]]:
+    """Distinct stored values of every filterable field, for the rows ``params`` matches."""
     state = OGFieldResourceState
-    col = getattr(state, field_name)
-    return (
-        select(col)
-        .where(state.permission_mask == permission_mask, col.is_not(None))
-        .distinct()
-        .order_by(col)
+    stmt = select(*(getattr(state, field) for field in FILTER_OPTION_FIELDS)).where(
+        state.permission_mask == permission_mask
     )
+    for cond in _build_field_conditions(
+        _resource_state_profile(permission_mask), params
+    ):
+        stmt = stmt.where(cond)
+    return stmt.distinct()
 
 
 def _add_pivot_columns(
@@ -476,7 +482,7 @@ def _require_column(cte: CTE | Select, field_name: str) -> ColumnElement[Any]:
 
 def _build_field_conditions(
     cte: CTE | Select,
-    params: OGFieldQueryParams,
+    params: OGFieldFilterParams,
 ) -> list[ColumnElement[bool]]:
     """Path-agnostic q-ILIKE + exact-match filters over the pivoted columns.
 

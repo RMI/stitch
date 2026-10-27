@@ -16,6 +16,7 @@ from stitch.api.auth import CurrentUser
 from stitch.api.observability.context import named_query
 from stitch.api.entities import (
     FILTER_OPTION_FIELDS,
+    OGFieldFilterParams,
     OGFieldQueryParams,
 )
 from stitch.api.db.og_field_source_actions import (
@@ -131,6 +132,7 @@ def _state_row_to_list_item_view(row: Any) -> OGFieldListItemView:
 
 async def filter_options(
     session: AsyncSession,
+    params: OGFieldFilterParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> dict[str, list[str]]:
     """Distinct coalesced values for every filterable field.
@@ -139,17 +141,15 @@ async def filter_options(
     403 if they have none.
     """
     mask = _profile_mask(licensed_sources)
-    # One DISTINCT per field, each answered from its (permission_mask, field)
-    # index. A single UNION ALL of all six was measured slower at 50K resources
-    # (the cost is the index scans, not round trips); that the six statements
-    # may see slightly different moments only affects dropdown suggestions,
-    # transiently.
-    options: dict[str, list[str]] = {}
+    options: dict[str, set[str]] = {field: set() for field in FILTER_OPTION_FIELDS}
     with named_query("resources.filter_options"):
-        for field in FILTER_OPTION_FIELDS:
-            stmt = resource_state_filter_option_query(field, mask)
-            options[field] = list((await session.scalars(stmt)).all())
-    return options
+        stmt = resource_state_filter_option_query(mask, params)
+        for row in await session.execute(stmt):
+            for field, values in options.items():
+                value = getattr(row, field)
+                if value is not None:
+                    values.add(value)
+    return {field: sorted(values) for field, values in options.items()}
 
 
 async def get(
