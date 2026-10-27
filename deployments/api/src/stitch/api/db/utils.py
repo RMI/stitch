@@ -18,7 +18,7 @@ from stitch.api.db.errors import ResourceIntegrityError
 
 from .model import ResourceModel
 from .model.oil_gas_field_source_value import ATTRIBUTE_NAMES, materialize_value
-from .queries import coalesced_candidate_rows, coalesced_winner_rows
+from .queries import coalesced_candidate_rows
 
 # Per-field coalesced provenance: field -> (winning value, source key, source id),
 # or None when no source carries a value for the field.
@@ -125,8 +125,7 @@ async def coalesce_resources_with_sources(
 ) -> dict[int, OGFieldResource]:
     """Detail-grade hydration for many resources in a SINGLE query.
 
-    Like ``coalesce_resources`` but also populates ``source_data``. One
-    ``coalesced_candidate_rows`` query returns every ranked value row (joined to
+    One ``coalesced_candidate_rows`` query returns every ranked value row (joined to
     its source header) for all requested ids; per resource we derive the
     coalesced view + provenance (the ``rn == 1`` rows) and the raw ``source_data``
     (all rows grouped by source). The SQL ranking stays the only coalescer -- the
@@ -135,8 +134,7 @@ async def coalesce_resources_with_sources(
 
     Used wherever the raw per-source rows are needed: the single-resource detail
     path (``resource_model_to_entity``) and the merge-candidate ``compare`` view.
-    The list path uses ``coalesce_resources`` (no ``source_data``), which never
-    pays to hydrate the raw rows.
+    The list reads precomputed rows instead (``read_model``).
     """
     ids = list(dict.fromkeys(resource_ids))
     rows_by_id: dict[int, list[Any]] = {rid: [] for rid in ids}
@@ -193,46 +191,6 @@ async def resource_model_to_entity(
     return base.model_copy(
         update={"repointed_to": repointed_to, "constituents": constituents}
     )
-
-
-async def coalesce_resources(
-    session: AsyncSession,
-    resource_ids: Collection[int],
-    licensed_sources: Collection[OGSISrcKey] | None = None,
-) -> dict[int, OGFieldResource]:
-    """Coalesce many resources into one entity each -- coalescing done in SQL.
-
-    The list-path coalescer: the winning value + provenance for every
-    ``(resource, field)`` is chosen by the SQL ranking (``coalesced_winner_rows``);
-    Python only materializes the typed value and reads the winning source as
-    provenance -- no priority logic here. Returns an entry for every requested id;
-    ids with no active/licensed source data (including repointed resources, which
-    the query filters out) yield a null-shell view + all-``None`` provenance.
-
-    ``source_data`` is left empty: the list only needs the coalesced view, so it
-    never pays to hydrate the raw rows. The detail path builds view *and*
-    ``source_data`` from one query instead (see ``resource_model_to_entity``).
-    """
-    ids = list(dict.fromkeys(resource_ids))
-    winners_by_id: dict[int, list[WinnerRow]] = {rid: [] for rid in ids}
-    if ids:
-        rows = await session.execute(coalesced_winner_rows(ids, licensed_sources))
-        for rid, colname, value_text, value_num, value_json, source, source_pk in rows:
-            winners_by_id[rid].append(
-                (colname, value_text, value_num, value_json, source, source_pk)
-            )
-
-    out: dict[int, OGFieldResource] = {}
-    for rid in ids:
-        view, provenance = _view_and_provenance(winners_by_id[rid])
-        out[rid] = OGFieldResource(
-            id=rid,
-            source_data=[],
-            view=view,
-            provenance=provenance,
-            constituents=frozenset(),
-        )
-    return out
 
 
 def _require_view(resource: OGFieldResource) -> OilGasFieldBase:
