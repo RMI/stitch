@@ -54,7 +54,7 @@
 **Request Body:** `OGFieldResource`
 
 - `id`: integer | null
-- `source_data`: array[GemSource-Input | WoodMacSource-Input | RMISource-Input | LLMSource-Input | CCRSource-Input | ALBSource-Input | BCSource-Input]
+- `source_data`: array[GemSource-Input | WoodMacSource-Input | RMISource-Input | LLMSource-Input | CCRSource-Input | ALBSource-Input | BCSource-Input | NORSource-Input]
 - `repointed_to`: integer | null
 - `constituents`: array[integer]
 - `provenance`: object[string, array[object] | null]
@@ -63,7 +63,7 @@
 **Response:** `200`
 
 - `id`: integer | null
-- `source_data`: array[GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView]
+- `source_data`: array[GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView | NORSourceView]
 - `repointed_to`: integer | null
 - `constituents`: array[integer]
 - `provenance`: object[string, array[object] | null]
@@ -73,7 +73,9 @@
 
 ### `GET /api/v1/oil-gas-fields/filter-options`
 
-<!-- description -->
+Distinct values available for each filter dropdown, limited to the caller's licensed sources.
+
+Accepts the same filter and search parameters as `GET /api/v1/oil-gas-fields/` (not paging, sorting or `source`). Options cascade: each field lists only the values still reachable under the active filters. A field's own selection narrows its own list in the response, so clients are encouraged to access once without any filters, and use this endpoint to determine what combinations are valid while interrogating the dataset
 
 **Response:** `200`
 
@@ -243,7 +245,7 @@ skipped, so repeat runs are safe.
 - `id`: integer
 - `data`: OilGasFieldBase
 - `provenance`: object[string, string | null]
-- `source_data`: array[GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView]
+- `source_data`: array[GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView | NORSourceView]
 - `requested_resource_id`: integer | null
 
 ---
@@ -276,11 +278,11 @@ skipped, so repeat runs are safe.
 
 <!-- description -->
 
-**Request Body:** GemSource-Input | WoodMacSource-Input | RMISource-Input | LLMSource-Input | CCRSource-Input | ALBSource-Input | BCSource-Input
+**Request Body:** GemSource-Input | WoodMacSource-Input | RMISource-Input | LLMSource-Input | CCRSource-Input | ALBSource-Input | BCSource-Input | NORSource-Input
 
 **Response:** `200`
 
-- GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView
+- GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView | NORSourceView
 
 ---
 
@@ -290,11 +292,11 @@ skipped, so repeat runs are safe.
 
 <!-- description -->
 
-**Request Body:** GemSource-Input | WoodMacSource-Input | RMISource-Input | LLMSource-Input | CCRSource-Input | ALBSource-Input | BCSource-Input
+**Request Body:** GemSource-Input | WoodMacSource-Input | RMISource-Input | LLMSource-Input | CCRSource-Input | ALBSource-Input | BCSource-Input | NORSource-Input
 
 **Response:** `200`
 
-- GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView
+- GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView | NORSourceView
 
 ---
 
@@ -304,7 +306,7 @@ skipped, so repeat runs are safe.
 
 **Response:** `200`
 
-- `items`: array[GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView]
+- `items`: array[GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView | NORSourceView]
 - `total_count`: integer
 - `page`: integer
 - `page_size`: integer
@@ -318,7 +320,7 @@ skipped, so repeat runs are safe.
 
 **Response:** `200`
 
-- GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView
+- GemSourceView | WoodMacSourceView | RMISourceView | LLMSourceView | CCRSourceView | ALBSourceView | BCSourceView | NORSourceView
 
 ---
 
@@ -328,6 +330,6 @@ skipped, so repeat runs are safe.
 
 **Response:** `200`
 
-- GemSource-Output | WoodMacSource-Output | RMISource-Output | LLMSource-Output | CCRSource-Output | ALBSource-Output | BCSource-Output
+- GemSource-Output | WoodMacSource-Output | RMISource-Output | LLMSource-Output | CCRSource-Output | ALBSource-Output | BCSource-Output | NORSource-Output
 
 ---
