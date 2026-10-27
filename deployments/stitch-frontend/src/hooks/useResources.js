@@ -24,6 +24,17 @@ const MOCK_RESOURCE_ITEMS = mockResources.map(normalizeResourceListItem);
 // closes over is never read, since queryFn is always overridden below.
 const UNUSED_MOCK_CONFIG = {};
 
+export function mergeFilterOptions(filtered, unfiltered, filters) {
+  if (!filtered || !unfiltered) return filtered;
+
+  return Object.fromEntries(
+    Object.entries(filtered).map(([field, values]) => [
+      field,
+      filters[field]?.length ? unfiltered[field] : values,
+    ]),
+  );
+}
+
 //--------------------------------
 // Real Implementations
 //--------------------------------
@@ -55,12 +66,24 @@ function useResourcesReal(
   });
 }
 
-function useResourceFilterOptionsReal(endpoint = "resources", enabled = true) {
+function useResourceFilterOptionsReal(
+  endpoint = "resources",
+  { filters = {}, q, enabled = true } = {},
+) {
   const config = useConfig();
-  return useAuthenticatedQuery({
+  const filtered = useAuthenticatedQuery({
+    ...resourceQueries.filterOptions(config, endpoint, filters, q),
+    enabled,
+  });
+  const unfiltered = useAuthenticatedQuery({
     ...resourceQueries.filterOptions(config, endpoint),
     enabled,
   });
+
+  return {
+    ...filtered,
+    data: mergeFilterOptions(filtered.data, unfiltered.data, filters),
+  };
 }
 
 function useResourceReal(endpoint = "resources", id, enabled = true) {
@@ -214,15 +237,19 @@ function getMockResourcePage({
   };
 }
 
-function getMockFilterOptions() {
+function getMockFilterOptions({ filters = {}, q } = {}) {
+  const matching = applyMockFilters(
+    applyMockSearch(MOCK_RESOURCE_ITEMS, q),
+    filters,
+  );
+
   return Object.fromEntries(
     FILTER_FIELDS.map(({ key: field }) => [
       field,
       Array.from(
         new Set(
-          MOCK_RESOURCE_ITEMS.map((resource) =>
-            getResourceField(resource, field),
-          )
+          matching
+            .map((resource) => getResourceField(resource, field))
             .filter((value) => value != null && value !== "")
             .map(String),
         ),
@@ -269,12 +296,25 @@ function useResourcesMock(
   });
 }
 
-function useResourceFilterOptionsMock(endpoint = "resources", enabled = true) {
-  return useQuery({
+function useResourceFilterOptionsMock(
+  endpoint = "resources",
+  { filters = {}, q, enabled = true } = {},
+) {
+  const filtered = useQuery({
+    ...resourceQueries.filterOptions(UNUSED_MOCK_CONFIG, endpoint, filters, q),
+    queryFn: () => Promise.resolve(getMockFilterOptions({ filters, q })),
+    enabled,
+  });
+  const unfiltered = useQuery({
     ...resourceQueries.filterOptions(UNUSED_MOCK_CONFIG, endpoint),
     queryFn: () => Promise.resolve(getMockFilterOptions()),
     enabled,
   });
+
+  return {
+    ...filtered,
+    data: mergeFilterOptions(filtered.data, unfiltered.data, filters),
+  };
 }
 
 function useResourceMock(endpoint = "resources", id, enabled = true) {
