@@ -66,7 +66,7 @@ table schema stays uniform (the KQL in [`PERFORMANCE.md`](./PERFORMANCE.md) and
 the repo, so recreating an environment reverts it to `None` (a greyed-out Logs
 blade) — reconfigure it when that happens.
 
-### ETL pipelines (temporary POC wiring)
+### ETL pipelines (OGSI-specific)
 
 The single `etl` Container App is deployed from a pre-built image published by
 the separate `stitch-etl-ogsi` repository (`ghcr.io/rmi/stitch-etl-ogsi`). This
@@ -291,7 +291,8 @@ The ETL wiring was consolidated from two apps (`etl-gem`, `etl-woodmac`, two
 images) to one (`etl`, one image). To migrate a lane safely:
 
 1. Merge the consolidation to `stitch-etl-poc` `main` first, so
-   `ghcr.io/rmi/stitch-etl-poc:main` is published before this repo references it.
+1. Merge the consolidation to `stitch-etl-ogsi` `main` first, so
+`ghcr.io/rmi/stitch-etl-ogsi:main` is published before this repo references it.
 2. On the lane's GitHub Environment, add `ETL_IMAGE_TAG` (`main`) and delete the
    old `ETL_GEM_IMAGE_TAG` / `ETL_WOODMAC_IMAGE_TAG` variables.
 3. Deploy this repo; confirm the new `<name>-etl` app is healthy
