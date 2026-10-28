@@ -43,6 +43,7 @@ export default function ResourcesTable({
   isFetching,
   selectedIds,
   onToggleSelect,
+  selectionAtLimit = false,
 }) {
   const selectable = Boolean(onToggleSelect);
   if (!resources?.length) return null;
@@ -126,6 +127,9 @@ export default function ResourcesTable({
                         type="checkbox"
                         aria-label={`Select resource ${resource.id} for merge`}
                         checked={selectedIds.has(resource.id)}
+                        disabled={
+                          selectionAtLimit && !selectedIds.has(resource.id)
+                        }
                         onChange={() => onToggleSelect(resource.id)}
                       />
                     </td>

@@ -136,11 +136,16 @@ export default function ResourcesView({ className = "", endpoint }) {
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const createMergeCandidate = useCreateMergeCandidate(endpoint);
 
+  // A merge candidate joins exactly two resources, so the selection caps at
+  // two. The backend accepts >=2, but surfacing larger groups here would
+  // promise more than the review page is designed to handle.
+  const MERGE_SELECTION_LIMIT = 2;
+
   const handleToggleSelect = (id) =>
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
-      else next.add(id);
+      else if (next.size < MERGE_SELECTION_LIMIT) next.add(id);
       return next;
     });
 
@@ -263,12 +268,19 @@ export default function ResourcesView({ className = "", endpoint }) {
           <span>
             <span className="font-mono tabular-nums text-ink">
               {selectedIds.size}
+            </span>
+            {" of "}
+            <span className="font-mono tabular-nums text-ink">
+              {MERGE_SELECTION_LIMIT}
             </span>{" "}
             selected for merge
           </span>
           <Button
             onClick={handleProposeMerge}
-            disabled={selectedIds.size < 2 || createMergeCandidate.isPending}
+            disabled={
+              selectedIds.size !== MERGE_SELECTION_LIMIT ||
+              createMergeCandidate.isPending
+            }
           >
             {createMergeCandidate.isPending ? "Proposing..." : "Propose merge"}
           </Button>
@@ -286,6 +298,7 @@ export default function ResourcesView({ className = "", endpoint }) {
         isFetching={isFetching}
         selectedIds={selectedIds}
         onToggleSelect={canProposeMerge ? handleToggleSelect : undefined}
+        selectionAtLimit={selectedIds.size >= MERGE_SELECTION_LIMIT}
       />
       {data && totalCount > 0 && (
         <Pagination
