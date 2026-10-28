@@ -83,6 +83,9 @@ Seed and ETL are mutually exclusive per lane:
 - `development`: `seed` builds and runs; ETL deploy is skipped.
 - `staging` / `production`: ETL deploys; `seed` is skipped.
 
+A new `staging` database also starts as a copy of the newest production backup
+(see "Restoring from a backup" in `deployments/db/README.md`).
+
 Because the ETL image lives in another repo's GHCR, the Container App needs
 stored pull credentials. The ephemeral `GITHUB_TOKEN` cannot be used (it expires
 and the app re-pulls on every restart), so a long-lived classic PAT with
@@ -538,6 +541,10 @@ named:
   storage above).
 - `ETL_IMAGE_TAG` (example: `main`) — optional; consolidated ETL image tag to
   deploy, defaults to `main`. Only used on `staging` / `production`.
+- `RESTORE_AZURE_CLIENT_ID` (example: the client ID of `stitch-restore-identity`)
+  — the read-only identity `deploy-db` signs in as to restore a backup into a
+  new staging database. Only needed on `staging`. See "Restoring from a backup"
+  in `deployments/db/README.md`.
 
 The two frontend URLs together define the single CORS origin the API and
 stitch-llm services will accept for a given deployment, so

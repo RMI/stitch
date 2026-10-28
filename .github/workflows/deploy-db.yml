@@ -10,6 +10,18 @@ on:
         description: "Concrete deployment target name"
         required: true
         type: string
+      restore-from-backup:
+        description: "Restore a backup into the database when it has no tables yet"
+        required: false
+        default: false
+        type: boolean
+      backup-url:
+        description: >-
+          Full blob URL of the backup to restore. Empty restores the newest
+          production backup.
+        required: false
+        default: ""
+        type: string
     secrets:
       pgpassword:
         required: true
@@ -17,6 +29,9 @@ on:
         required: true
       stitch-app-password:
         required: true
+      azure-tenant-id:
+        description: "Required when restore-from-backup is true"
+        required: false
     outputs:
       database-created:
         description: "Whether this workflow created the database during this run"
@@ -43,6 +58,9 @@ jobs:
   create-db:
     runs-on: ubuntu-latest
     environment: ${{ inputs.deployment-lane }}
+    permissions:
+      id-token: write
+      contents: read
     outputs:
       database-created: ${{ steps.create-db.outputs.database-created }}
       postgres-host: ${{ steps.export-db-config.outputs.postgres-host }}
@@ -161,9 +179,88 @@ jobs:
           STITCH_APP_PASSWORD: ${{ secrets.stitch-app-password }}
         run: deployments/db/00-init-roles.sh
 
+      # Restore only into an empty database, so a redeploy never overwrites
+      # data. The restore is a single transaction, so a failed or cancelled
+      # one leaves the database empty and the next run tries again. To refresh
+      # from a newer backup, drop the database (e.g. toggle the PR's
+      # 'no-deploy' label) and let the next run recreate it.
+      - name: Check whether the database is empty
+        id: check-empty
+        if: ${{ inputs.restore-from-backup }}
+        env:
+          DB_NAME: ${{ steps.normalize-name.outputs.db-name }}
+        run: |
+          set -euo pipefail
+          has_tables=$(psql -X -tA -v ON_ERROR_STOP=1 --dbname "${DB_NAME}" \
+            -c "SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public')")
+          if [ "$has_tables" = "f" ]; then
+            echo "Database '${DB_NAME}' is empty. Restoring a backup."
+            echo "empty=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Database '${DB_NAME}' already has tables. Skipping the restore."
+            echo "empty=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A run that died mid-restore can leave its connection open on the server,
+      # holding locks that block the next restore until it times out. Nothing
+      # useful is connected to an empty database, so close whatever is there.
+      - name: Close leftover connections
+        if: ${{ steps.check-empty.outputs.empty == 'true' }}
+        env:
+          DB_NAME: ${{ steps.normalize-name.outputs.db-name }}
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 -c "
+            SELECT pg_terminate_backend(pid)
+            FROM pg_stat_activity
+            WHERE datname = '${DB_NAME}'
+              AND pid <> pg_backend_pid();
+          "
+
+      - name: Validate restore config
+        if: ${{ steps.check-empty.outputs.empty == 'true' }}
+        env:
+          RESTORE_AZURE_CLIENT_ID: ${{ vars.RESTORE_AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.azure-tenant-id }}
+        run: |
+          set -euo pipefail
+          : "${RESTORE_AZURE_CLIENT_ID:?Missing required variable RESTORE_AZURE_CLIENT_ID}"
+          : "${AZURE_TENANT_ID:?Missing required secret AZURE_TENANT_ID}"
+
+      # The restore identity only holds a blob-reader role on the backups
+      # containers, so it has no subscription to select.
+      - name: Azure login
+        if: ${{ steps.check-empty.outputs.empty == 'true' }}
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.RESTORE_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.azure-tenant-id }}
+          allow-no-subscriptions: true
+
+      - name: Resolve backup URL
+        id: resolve-backup
+        if: ${{ steps.check-empty.outputs.empty == 'true' }}
+        env:
+          PINNED_BACKUP_URL: ${{ inputs.backup-url }}
+        run: |
+          set -euo pipefail
+          backup_url="$(scripts/db_restore.sh resolve --backup-url "${PINNED_BACKUP_URL}")"
+          echo "Backup: $backup_url"
+          echo "backup-url=$backup_url" >> "$GITHUB_OUTPUT"
+
+      - name: Restore backup
+        if: ${{ steps.check-empty.outputs.empty == 'true' }}
+        env:
+          DB_NAME: ${{ steps.normalize-name.outputs.db-name }}
+          BACKUP_URL: ${{ steps.resolve-backup.outputs.backup-url }}
+          PGPASSWORD: ${{ secrets.stitch-migrator-password }}
+        run: scripts/db_restore.sh restore --database "${DB_NAME}" --backup-url "${BACKUP_URL}"
+
       - name: Write comment JSON
         if: ${{ github.event_name == 'pull_request' }}
         shell: bash
+        env:
+          RESTORED_FROM: ${{ steps.resolve-backup.outputs.backup-url }}
         run: |
           set -euo pipefail
           mkdir -p /tmp/comment-json
@@ -177,17 +274,19 @@ jobs:
             --arg postgres_host "\`${PGHOST}\`" \
             --arg postgres_port "\`${PGPORT}\`" \
             --arg postgres_db "\`${{ steps.normalize-name.outputs.db-name }}\`" \
+            --arg restored_from "${RESTORED_FROM}" \
             '{
               "section": $section,
               "kind": $kind,
               "name": $name,
               "warnings": [],
-              "data": {
+              "data": ({
                 "db_name": $db_name,
                 "postgres_host": $postgres_host,
                 "postgres_port": $postgres_port,
                 "postgres_db": $postgres_db
-              }
+              } + (if $restored_from == "" then {}
+                   else {"restored_from": ("`" + $restored_from + "`")} end))
             }' > "$json_file"
 
           jq empty "$json_file"
