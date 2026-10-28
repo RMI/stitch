@@ -129,6 +129,40 @@ jobs:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       container-app-name: ${{ format('{0}-etl', needs.resolve-context.outputs.deployment-name) }}
 
+  delete-backup-job:
+    name: Delete backup job
+    needs: [resolve-context]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-context.outputs.deployment-lane }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure containerapp extension is available
+        run: |
+          az extension add --name containerapp --upgrade --allow-preview true
+
+      - name: Delete the backup job
+        shell: bash
+        env:
+          JOB_NAME: ${{ needs.resolve-context.outputs.deployment-name }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: |
+          set -euo pipefail
+          scripts/deploy_backup_job.sh delete \
+            -g "$AZURE_RESOURCE_GROUP" \
+            -n "$JOB_NAME"
+
   close-static-web-app-preview:
     needs: [resolve-context]
     runs-on: ubuntu-latest

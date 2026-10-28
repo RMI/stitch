@@ -424,6 +424,33 @@ completing step 3 (**Set default**, so the old hostname 301-redirects and stops
 originating requests) and step 5 (`FRONTEND_PRODUCTION_URL = https://<custom-domain>`),
 then redeploy the lane so the backend containers pick up the new origin.
 
+### Backups
+
+The pipeline deploys a nightly backup job for selected databases. `deploy-db`
+creates the database. Then `deploy-backup-job` runs
+`scripts/deploy_backup_job.sh` against it. See [`db/README.md`](./db/README.md)
+for the job, the one-time `setup`, and how to delete a job.
+
+`BACKUP_DATABASES` lists the databases that get a job. An unset value means none
+do. Use the names the pipeline creates: `production`, `main`, or
+`pr_<number>_<branch>_<hash>` for a per-pull-request database.
+
+To add a database:
+
+1. Run the one-time `setup` described in [`db/README.md`](./db/README.md).
+2. Set `BACKUP_STORAGE_ACCOUNT` on the GitHub Environment of that lane.
+3. Add the database name to `BACKUP_DATABASES`.
+4. Deploy that database again.
+
+Step 4 is necessary. The deploy creates the job, so a new name takes effect on
+the next deploy of that database.
+
+To stop backups for a database, remove its name from `BACKUP_DATABASES`. The
+existing job stays until you delete it.
+
+When a pull request closes, the teardown deletes that deployment's backup job
+along with its database. The `production` and `main` jobs are not torn down.
+
 ## Azure Permissions
 
 Permissions for Azure Resources are handled through a managed identity, which GH
@@ -478,6 +505,13 @@ Container Apps environment):
 - `Reader` on `STITCH-PROD-RG` (Resource Group)
 - `Container Apps Contributor` on `STITCH-PROD-RG` (Resource Group)
 
+A lane with a database in `BACKUP_DATABASES` needs two more grants, because
+`Container Apps Contributor` carries no `Microsoft.App/jobs` actions:
+
+- `Container Apps Jobs Contributor` on that lane's resource group
+- `Managed Identity Operator` on `stitch-backup-identity`, so the deploy can
+  attach that identity to the job
+
 > **Reminder — when adding a new lane:** the federated-credential subject above
 > only lets the identity authenticate; it still needs these role assignments on
 > the new lane's resource group and Container Apps environment, or deploys fail
@@ -499,6 +533,11 @@ named:
 - `AZURE_CLIENT_ID`: Client ID for `GHActions-stitch-cicd`
 - `AZURE_SUBSCRIPTION_ID`: Subscription for the target Azure resources
 - `AZURE_TENANT_ID`: Tenant for `GHActions-stitch-cicd`
+
+### Repo-level variables
+
+- `BACKUP_DATABASES` (example: `production`) — space-separated databases that get
+  a nightly backup job. Unset means none do. See "Backups" above.
 
 ### Environment variables
 
@@ -538,6 +577,9 @@ named:
   storage above).
 - `ETL_IMAGE_TAG` (example: `main`) — optional; consolidated ETL image tag to
   deploy, defaults to `main`. Only used on `staging` / `production`.
+- `BACKUP_STORAGE_ACCOUNT` (example: `rmistitchprod`) — storage account holding
+  the `backups` container. Only needed on a lane with a database in
+  `BACKUP_DATABASES`.
 
 The two frontend URLs together define the single CORS origin the API and
 stitch-llm services will accept for a given deployment, so
