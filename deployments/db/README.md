@@ -249,6 +249,117 @@ does nothing when the job is already gone.
 
 ---
 
+## Restoring from a backup
+
+`scripts/db_restore.sh` restores one backup into an empty database. Staging
+deployments and `make db-restore` both use it. It needs `az`, logged in with
+read access to the backups container, and `docker`.
+
+The restore runs as `stitch_migrator`, so `stitch_migrator` owns every restored
+object and `stitch_app` gets the same access it has after a migration. The
+restore runs in one transaction: it either finishes or changes nothing.
+
+A restored database holds production data, including restricted sources, and the
+contents of the `users` table. How to handle those fields is not decided yet
+(STIT-48), but not immediately concerning, since staging environments use the
+same Auth0 subscription and application as production.
+
+### Staging deployments
+
+When a staging deployment (a PR into `production`, or a PR from a `demo/*`
+branch) finds its database empty, as it is when first created, it restores the
+newest production backup into it. Alembic then applies only the PR's new
+migrations. Later pushes keep the database as it is. The PR summary comment
+shows which backup was restored.
+
+To restore a newer backup, add the `no-deploy` label to the PR, then remove it.
+This deletes the deployment, and the next deploy restores again. Closing and
+reopening the PR does the same.
+
+To restore a specific backup, set `backup-url` on the `deploy-db` job in
+`.github/workflows/build-and-deploy.yml` to its full URL, for example
+`https://rmistitchprod.blob.core.windows.net/backups/production/20261023T030039Z.dump`.
+Use the plain URL, without a SAS token (`?sv=...`): the job log and the PR
+comment show it, and the restore signs in as its own identity anyway, so the
+script refuses URLs with a query string.
+This means editing the GH workflow file, so it's expected to be used rarely, and
+for code versions that aren't expected to be merged directly to `main`.
+
+If a restore fails or the run is cancelled, the database stays empty, so the
+next push tries again.
+
+#### One-time setup
+
+Staging signs in as the `stitch-restore-identity` managed identity. It can only
+read the backups containers, and only workflows in the `staging` GitHub
+environment can sign in as it. Set it up before staging deployments start
+restoring, or they fail at "Validate restore config".
+
+```bash
+az identity create -g STITCH-DEV-RG -n stitch-restore-identity
+
+principal="$(az identity show -g STITCH-DEV-RG -n stitch-restore-identity \
+  --query principalId --output tsv)"
+prod_backups="$(az storage container-rm show -g STITCH-PROD-RG \
+  --storage-account rmistitchprod -n backups --query id --output tsv)"
+staging_backups="$(az storage container-rm show -g STITCH-DEV-RG \
+  --storage-account stitchstaging -n backups --query id --output tsv)"
+
+for scope in "$prod_backups" "$staging_backups"; do
+  az role assignment create --role "Storage Blob Data Reader" \
+    --assignee-object-id "$principal" --assignee-principal-type ServicePrincipal \
+    --scope "$scope" --output none
+done
+
+az identity federated-credential create -g STITCH-DEV-RG \
+  --identity-name stitch-restore-identity --name github-staging \
+  --issuer https://token.actions.githubusercontent.com \
+  --subject repo:RMI/stitch:environment:staging \
+  --audiences api://AzureADTokenExchange
+
+gh variable set RESTORE_AZURE_CLIENT_ID --env staging --repo RMI/stitch \
+  --body "$(az identity show -g STITCH-DEV-RG -n stitch-restore-identity \
+    --query clientId --output tsv)"
+```
+
+To restore from another storage account, grant the identity the same role on
+that account's backups container first.
+
+CAUTION: Azure takes a couple of minutes to apply a new role assignment. Until
+then, the restore fails to list or download backups.
+
+### Local development
+
+To replace your local database with the newest production backup, run:
+
+```bash
+make db-restore
+```
+
+To restore a specific backup, pass its full URL:
+
+```bash
+make db-restore BACKUP_URL=<backup URL>
+```
+
+This needs `az login` with **Storage Blob Data Reader** on the backups
+container. It finds the newest backup, or checks that `BACKUP_URL` exists,
+before anything else, so without access or with a wrong URL it stops before it
+changes anything. Then it stops the `api` and `seed` containers, recreates the
+`stitch` database and its grants, restores the backup, and runs alembic to
+bring the schema up to your branch.
+
+Keep in mind:
+
+- `make api-dev` and `make frontend-dev` run the seed, which adds sample
+  records on top of the restored data.
+- If your branch is missing a migration that production already has, alembic
+  fails with "Can't locate revision". Update your branch from `main` and run
+  `make db-restore` again.
+- `make clean` and `make reboot-docker` delete the restored data.
+
+---
+
 ## Updating Database
 
 ⚠ DBA-ONLY WORKFLOW
