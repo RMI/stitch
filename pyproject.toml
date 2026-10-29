@@ -24,6 +24,9 @@ stitch-client = { workspace = true }
 [dependency-groups]
 dev = ["pytest>=9.1.1", "ruff>=0.16.4"]
 
+[tool.uv]
+constraint-dependencies = ["dnspython>=2.9.0", "opentelemetry-api>=1.45.1"]
+
 [tool.ruff.lint]
 # Ruff 0.16.0 expanded the default rule set from 59 to 413 rules. Pin the
 # pre-0.16 default selection here so this dependency bump preserves existing
