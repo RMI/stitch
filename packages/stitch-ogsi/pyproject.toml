@@ -7,7 +7,7 @@ authors = [{ name = "Michael Barlow", email = "mbarlow@rmi.org" }]
 requires-python = ">=3.12.12"
 dependencies = [
     "pydantic>=2.12.5",
-    "pytest>=9.1.1",
+    "pytest>=9.2.0",
     "stitch-models",
 ]
 
@@ -22,7 +22,7 @@ module-name = "stitch.ogsi"
 stitch-models = { workspace = true }
 
 [dependency-groups]
-dev = ["pytest>=9.1.1"]
+dev = ["pytest>=9.2.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
