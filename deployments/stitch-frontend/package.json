@@ -16,12 +16,12 @@
     "test:coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@auth0/auth0-react": "^2.28.2",
+    "@auth0/auth0-react": "^2.30.0",
     "@tailwindcss/vite": "^4.3.3",
-    "@tanstack/react-query": "^5.104.5",
+    "@tanstack/react-query": "^5.105.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-router": "^8.5.0",
+    "react-router": "^8.5.1",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
@@ -34,7 +34,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "@vitest/coverage-v8": "^5.0.5",
     "@vitest/ui": "^5.0.0",
-    "eslint": "^10.13.0",
+    "eslint": "^10.14.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.13.0",
