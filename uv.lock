@@ -1355,7 +1355,7 @@ dev = [
 requires-dist = [
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-settings", specifier = ">=2.15.0" },
-    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.15.0" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.15.1" },
 ]
 
 [package.metadata.requires-dev]
