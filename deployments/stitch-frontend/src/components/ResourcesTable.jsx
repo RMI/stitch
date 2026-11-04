@@ -41,7 +41,11 @@ export default function ResourcesTable({
   sortConfig,
   onSort,
   isFetching,
+  selectedIds,
+  onToggleSelect,
+  selectionAtLimit = false,
 }) {
+  const selectable = Boolean(onToggleSelect);
   if (!resources?.length) return null;
 
   function handleSort(key) {
@@ -67,6 +71,11 @@ export default function ResourcesTable({
         >
           <thead className="bg-surface">
             <tr className="border-b border-line text-left text-xs font-semibold tracking-wide text-ink-muted">
+              {selectable && (
+                <th className="w-10 px-3 py-2">
+                  <span className="sr-only">Select for merge</span>
+                </th>
+              )}
               {COLUMNS.map((col) =>
                 col.sortable ? (
                   <th
@@ -112,6 +121,19 @@ export default function ResourcesTable({
                   key={resource.id}
                   className="group border-b border-line/70 transition-colors hover:bg-surface"
                 >
+                  {selectable && (
+                    <td className="w-10 px-3 py-2.5">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select resource ${resource.id} for merge`}
+                        checked={selectedIds.has(resource.id)}
+                        disabled={
+                          selectionAtLimit && !selectedIds.has(resource.id)
+                        }
+                        onChange={() => onToggleSelect(resource.id)}
+                      />
+                    </td>
+                  )}
                   {COLUMNS.map((col) => {
                     const rawValue = getResourceField(resource, col.key);
                     const value =

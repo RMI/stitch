@@ -7,7 +7,11 @@ import {
   DEFAULT_PAGE_SIZE,
   DEFAULT_PAGE,
 } from "../queries/resources";
-import { createSourceForResource, reviewMergeCandidate } from "../queries/api";
+import {
+  createMergeCandidate,
+  createSourceForResource,
+  reviewMergeCandidate,
+} from "../queries/api";
 import mockResources from "../mockData/og_field_resources.json";
 import { FILTER_FIELDS } from "../config/filters";
 import {
@@ -402,6 +406,16 @@ export function useCreateSourceForResource(endpoint = "oil-gas-fields") {
     // resources.test.js), so this one-segment key invalidates everything
     // cached for the endpoint — lists, details, views, field-sources,
     // filter-options, and merge-candidates.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [endpoint] }),
+  });
+}
+
+export function useCreateMergeCandidate(endpoint = "oil-gas-fields") {
+  const config = useConfig();
+  const queryClient = useQueryClient();
+  return useAuthenticatedMutation({
+    mutationFn: (fetcher, resourceIds) =>
+      createMergeCandidate(config, resourceIds, fetcher, endpoint),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [endpoint] }),
   });
 }
