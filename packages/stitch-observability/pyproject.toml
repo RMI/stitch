@@ -26,7 +26,7 @@ dependencies = [
 asgi = ["starlette>=1.6.0"]
 
 [build-system]
-requires = ["uv_build>=0.12.5,<0.13.0"]
+requires = ["uv_build>=0.13.6,<0.14.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
@@ -43,4 +43,4 @@ addopts = ["-v", "--strict-markers", "--tb=short"]
 # fastapi + httpx are test-only. fastapi also pulls in Starlette (the `asgi`
 # extra's dependency), so the middleware tests exercise the real import path
 # without the suite needing to install the extra explicitly.
-dev = ["pytest>=9.0.2", "fastapi[standard-no-fastapi-cloud-cli]>=0.141.1", "httpx>=0.28.0"]
+dev = ["pytest>=9.2.0", "fastapi[standard-no-fastapi-cloud-cli]>=0.162.0", "httpx>=0.28.0"]
