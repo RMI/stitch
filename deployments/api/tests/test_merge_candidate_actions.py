@@ -162,7 +162,7 @@ async def test_list_merge_candidates_returns_page_with_names_and_counts(
             30: _named("Merged"),
         }
 
-    monkeypatch.setattr(mca, "coalesce_resources", fake_coalesce)
+    monkeypatch.setattr(mca, "coalesce_resources_with_sources", fake_coalesce)
 
     page = await mca.list_merge_candidates(
         session, MergeCandidateQueryParams(page=1, page_size=2), ["rmi"]
@@ -662,7 +662,7 @@ async def test_get_merge_candidate_returns_detail_view_in_item_order(monkeypatch
 @pytest.mark.anyio
 async def test_get_merge_candidate_after_merge_yields_empty_compare(monkeypatch):
     # Live behavior for an APPROVED candidate: originals are repointed with
-    # memberships INACTIVE, so coalesce_resources returns null-shell views with
+    # memberships INACTIVE, so the coalescer returns null-shell views with
     # no surviving source data.
     candidate = FakeCandidate(
         id=2,
@@ -675,6 +675,9 @@ async def test_get_merge_candidate_after_merge_yields_empty_compare(monkeypatch)
         return candidate
 
     async def fake_coalesce(session_arg, resource_ids, licensed):
+        # Called for the originals, then for the merged resource's name.
+        if resource_ids == [31]:
+            return {31: _named("Merged")}
         return {
             rid: SimpleNamespace(
                 source_data=[],
@@ -684,17 +687,12 @@ async def test_get_merge_candidate_after_merge_yields_empty_compare(monkeypatch)
             for rid in resource_ids
         }
 
-    async def fake_coalesce_merged(session_arg, resource_ids, licensed):
-        assert resource_ids == [31]
-        return {31: _named("Merged")}
-
     async def fake_default_priority(session_arg):
         return {"rmi": 1, "gem": 2, "wm": 3, "llm": 4}
 
     monkeypatch.setattr(mca, "_load_candidate_model", fake_load_candidate_model)
     monkeypatch.setattr(mca, "coalesce_resources_with_sources", fake_coalesce)
     monkeypatch.setattr(mca, "_default_source_priority", fake_default_priority)
-    monkeypatch.setattr(mca, "coalesce_resources", fake_coalesce_merged)
 
     view = await mca.get_merge_candidate(AsyncMock(), candidate_id=2)
 

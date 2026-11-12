@@ -1,0 +1,99 @@
+---
+on:
+  workflow_call:
+    inputs:
+      max_lines:
+        description: "Maximum lines changed (additions + deletions) allowed in a PR"
+        type: number
+        default: 600
+      ignore:
+        description: "Newline-delimited git glob pathspecs whose changes are not counted (e.g. **/uv.lock)"
+        type: string
+        default: ""
+      exempt_head_branches:
+        description: "Newline-delimited source branches in this repo whose PRs skip the check (e.g. production)"
+        type: string
+        default: ""
+
+jobs:
+  check:
+    name: Check PR size
+    # Only meaningful for pull requests.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          # Full history so the merge base with the target branch is available.
+          fetch-depth: 0
+
+      - name: Count changed lines
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MAX_LINES: ${{ inputs.max_lines }}
+          IGNORE: ${{ inputs.ignore }}
+          EXEMPT: ${{ inputs.exempt_head_branches }}
+        run: |
+          set -euo pipefail
+
+          # The `-gt` comparison below only handles whole numbers; anything
+          # else would error inside the `if` and silently pass the check.
+          if [[ ! "$MAX_LINES" =~ ^[0-9]+$ ]]; then
+            echo "::error title=Invalid max_lines::max_lines must be a whole number, got '$MAX_LINES'."
+            exit 1
+          fi
+
+          # PRs from an exempt source branch skip the check. A fork's branch
+          # of the same name is just a contributor's branch, so only same-repo
+          # PRs are exempt. Exact, case-sensitive match, as git compares
+          # branch names (GitHub expressions would ignore case).
+          if [ "$HEAD_REPO" = "$REPO" ]; then
+            while read -r branch; do
+              if [ "$branch" = "$HEAD_REF" ]; then
+                echo "::notice title=PR size check skipped::PRs from '$HEAD_REF' are exempt from the size limit."
+                exit 0
+              fi
+            done <<< "$EXEMPT"
+          fi
+
+          # Count everything, minus the ignore list.
+          pathspecs=(.)
+          ignored_list=""
+          while read -r pattern; do
+            if [ -n "$pattern" ]; then
+              pathspecs+=(":(glob,exclude)$pattern")
+              ignored_list+="${ignored_list:+, }$pattern"
+            fi
+          done <<< "$IGNORE"
+
+          # Three-dot diff: changes on the PR branch since it diverged from
+          # the target, matching GitHub's "Files changed" view.
+          range="origin/$BASE_REF...$HEAD_SHA"
+
+          # Per-file breakdown for the log, so authors can see where the lines are.
+          git diff --stat=200 "$range" -- "${pathspecs[@]}"
+
+          # numstat lines are "<added> <deleted> <path>";
+          # binary files report "-" for both and count as 0 lines, as on GitHub.
+          numstat="$(git diff --numstat "$range" -- "${pathspecs[@]}")"
+          total="$(awk '$1 != "-" { sum += $1 + $2 } END { print sum + 0 }' <<< "$numstat")"
+
+          if [ "$total" -gt "$MAX_LINES" ]; then
+            not_counted=""
+            if [ -n "$ignored_list" ]; then
+              not_counted=" (not counting $ignored_list)"
+            fi
+            echo "::error title=PR too large::This PR changes $total lines; the limit is $MAX_LINES$not_counted. Consider splitting into smaller PRs."
+            exit 1
+          fi
+
+          echo "PR size OK: $total lines changed; the limit is $MAX_LINES."

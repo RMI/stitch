@@ -96,6 +96,28 @@ Depending on which entrypoint you use, these are the main local endpoints:
 * API docs: `http://localhost:8000/docs`
 * Adminer: `http://localhost:8081`
 
+## The field list's precomputed table
+
+The oil & gas field list and filter-options read a precomputed table that the
+API's writes keep current, so data added through the API (including the seed)
+shows up straight away. Data that bypasses the API doesn't: after restoring a
+database dump, or editing sources, memberships, or priorities in SQL or Adminer,
+rebuild the table where the API runs:
+
+- API in Docker (`make frontend-dev`, `make dev-docker`):
+
+  ```bash
+  docker compose exec api python -m stitch.api.db.read_model.rebuild
+  ```
+
+- API on your machine (`make api-dev`):
+
+  ```bash
+  POSTGRES_HOST=127.0.0.1 POSTGRES_USER=stitch_app uv run --env-file .env -- python -m stitch.api.db.read_model.rebuild
+  ```
+
+See [`deployments/api/READ_MODEL.md`](deployments/api/READ_MODEL.md) for details.
+
 ## Other useful targets
 
 You do not need to memorize the whole Makefile, but these are worth knowing.

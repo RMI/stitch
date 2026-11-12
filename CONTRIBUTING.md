@@ -52,6 +52,10 @@ Work in this repo often happens in Draft PRs. These have the advantage of runnin
 
 When opening a PR, consider opening as Draft, and marking as ready for review once all checks are green.
 
+### PR Size
+
+CI fails a PR that changes more than 600 lines (additions + deletions). Lockfiles (`uv.lock`, `package-lock.json`) are not counted, and release and backmerge PRs between `main`, `next`, and `production` are exempt. If your PR goes over the limit, split it into smaller PRs that can be reviewed independently.
+
 ### Architectural Changes
 
 Architectural changes must be discussed and explicitly pre-approved before opening a PR. Start with an issue or design discussion that explains the proposed change, rationale, tradeoffs, and migration impact, then wait for maintainer approval before implementation.

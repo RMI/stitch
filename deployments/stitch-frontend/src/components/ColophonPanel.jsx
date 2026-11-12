@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { createAuthenticatedFetcher } from "../auth/api";
 import useBackendDiagnostics from "../hooks/useBackendDiagnostics";
 import { useConfig } from "../config/useConfig";
@@ -146,6 +147,7 @@ function getApiDocsUrl(apiBaseUrl) {
 
 export default function ColophonPanel({ diagnosticsOpen = false }) {
   const config = useConfig();
+  const queryClient = useQueryClient();
   const systemInfo = useSystemInfo();
   const { getAccessTokenSilently, isAuthenticated, isLoading } = useAuth0();
   const authenticatedFetcher = useMemo(() => {
@@ -173,6 +175,28 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
   const [copyError, setCopyError] = useState(false);
   const [tokenCopied, setTokenCopied] = useState(false);
   const [tokenCopyError, setTokenCopyError] = useState(false);
+  const [tokenRefreshStatus, setTokenRefreshStatus] = useState("idle");
+  const [tokenMenuOpen, setTokenMenuOpen] = useState(false);
+  const tokenMenuRef = useRef(null);
+  const tokenMenuButtonRef = useRef(null);
+  const tokenRefreshResetTimer = useRef(null);
+
+  useEffect(() => {
+    return () => window.clearTimeout(tokenRefreshResetTimer.current);
+  }, []);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (
+        tokenMenuRef.current &&
+        !tokenMenuRef.current.contains(event.target)
+      ) {
+        setTokenMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const apiDocsUrl = getApiDocsUrl(config.apiBaseUrl);
 
@@ -285,6 +309,10 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
       return;
     }
 
+    // A refresh result may still be showing on this button; clear it so the
+    // copy feedback is what the user sees.
+    setTokenRefreshStatus("idle");
+
     try {
       await navigator.clipboard.writeText(accessToken);
       setTokenCopied(true);
@@ -298,6 +326,44 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
     }
   }
 
+  // Logging out now ends the Auth0 session (STIT-721), so a quick log out and
+  // back in no longer picks up permission changes. Skipping the token cache
+  // makes Auth0 issue a new token that carries the user's current permissions;
+  // the diagnostics and any loaded app data are then refetched with it.
+  async function handleRefreshToken() {
+    if (tokenRefreshStatus === "refreshing") {
+      return;
+    }
+
+    // The menu item is about to disappear; keep keyboard focus on the arrow.
+    setTokenMenuOpen(false);
+    tokenMenuButtonRef.current?.focus();
+    // Cancel an earlier refresh's label reset so it can't end this one early.
+    window.clearTimeout(tokenRefreshResetTimer.current);
+    setTokenRefreshStatus("refreshing");
+
+    try {
+      const token = await getAccessTokenSilently({
+        authorizationParams: { audience: config.auth0.audience },
+        cacheMode: "off",
+      });
+
+      setAccessToken(token);
+      setTokenStatus("Available");
+      backendDiagnostics.reload();
+      void queryClient.invalidateQueries();
+      setTokenRefreshStatus("refreshed");
+    } catch (error) {
+      console.error("Failed to refresh access token:", error);
+      setTokenRefreshStatus("failed");
+    }
+
+    tokenRefreshResetTimer.current = window.setTimeout(
+      () => setTokenRefreshStatus("idle"),
+      2000,
+    );
+  }
+
   return (
     <div className="border-b border-line bg-surface">
       <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6 lg:px-8">
@@ -305,19 +371,71 @@ export default function ColophonPanel({ diagnosticsOpen = false }) {
           <h2 className="text-sm font-semibold text-ink">Diagnostics</h2>
 
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => void handleCopyToken()}
-              disabled={!accessToken}
-              className="rounded-md border border-line bg-panel px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:border-line-strong hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              title="Copy raw access token for API tools"
+            {/* Copy is the everyday action; refreshing is occasional, so it
+                sits behind the arrow. The main button also shows the refresh
+                result, since the menu has closed by then. */}
+            <div
+              ref={tokenMenuRef}
+              className="relative inline-flex"
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && tokenMenuOpen) {
+                  setTokenMenuOpen(false);
+                  tokenMenuButtonRef.current?.focus();
+                }
+              }}
             >
-              {tokenCopied
-                ? "Token copied!"
-                : tokenCopyError
-                  ? "Token copy failed"
-                  : "Copy token"}
-            </button>
+              <button
+                type="button"
+                onClick={() => void handleCopyToken()}
+                // Copying mid-refresh would copy the token being replaced.
+                disabled={!accessToken || tokenRefreshStatus === "refreshing"}
+                className="rounded-l-md border border-line bg-panel px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:border-line-strong hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Copy raw access token for API tools"
+              >
+                {tokenRefreshStatus === "refreshing"
+                  ? "Refreshing..."
+                  : tokenRefreshStatus === "refreshed"
+                    ? "Token refreshed!"
+                    : tokenRefreshStatus === "failed"
+                      ? "Refresh failed"
+                      : tokenCopied
+                        ? "Token copied!"
+                        : tokenCopyError
+                          ? "Token copy failed"
+                          : "Copy token"}
+              </button>
+              <button
+                ref={tokenMenuButtonRef}
+                type="button"
+                onClick={() => setTokenMenuOpen((open) => !open)}
+                // Stays enabled during a refresh so it can keep keyboard focus;
+                // the menu item is what blocks a second refresh.
+                disabled={!isAuthenticated}
+                aria-label="More token actions"
+                aria-expanded={tokenMenuOpen}
+                aria-controls="token-actions-menu"
+                className="-ml-px rounded-r-md border border-line bg-panel px-2 py-1.5 text-xs text-ink transition-colors hover:border-line-strong hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <span aria-hidden="true">▼</span>
+              </button>
+
+              {tokenMenuOpen && (
+                <div
+                  id="token-actions-menu"
+                  className="absolute right-0 top-full z-10 mt-1 min-w-max rounded-md border border-line bg-panel py-1 shadow-sm"
+                >
+                  <button
+                    type="button"
+                    onClick={() => void handleRefreshToken()}
+                    disabled={tokenRefreshStatus === "refreshing"}
+                    className="block w-full px-3 py-1.5 text-left text-sm text-ink hover:bg-surface focus:outline-none focus-visible:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
+                    title="Get a new access token with your latest permissions"
+                  >
+                    Refresh token
+                  </button>
+                </div>
+              )}
+            </div>
 
             {apiDocsUrl ? (
               <a

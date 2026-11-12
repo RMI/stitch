@@ -36,7 +36,24 @@ template verbatim". For a ruleset that maps to no shared template, use the
 `blank` template and author the whole thing in the overlay.
 
 Current overlays here: `gitflow-main`, `gitflow-production`,
-`gitflow-next-lifecycle`, `gitflow-next-pr`.
+`gitflow-production-second-approval`, `gitflow-next-lifecycle`,
+`gitflow-next-pr`.
+
+## Production approvals
+
+PRs into `production` normally need 2 approvals; an admin or maintainer can
+merge one (e.g. a hotfix) with 1. Two rulesets on `production` do this:
+
+- `gitflow-production` requires 1 approval plus every other protection (status
+  checks, code-owner review, merge commits only). Nobody can bypass it, so every
+  PR into `production` gets at least one review and passes CI.
+- `gitflow-production-second-approval` requires 2 approvals and nothing else.
+  The **Repository admin** and **Maintain** roles can bypass it, for pull
+  requests only.
+
+GitHub applies both rulesets, and a bypass skips only the ruleset that lists
+it. The bypass is the point of the second ruleset, but CI doesn't check bypass
+lists (see Notes), so if you recreate it, add the bypass in the UI.
 
 ## Changing a ruleset
 

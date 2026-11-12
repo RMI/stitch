@@ -1,13 +1,14 @@
 """Route-level integration tests for licensed-source filtering."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable, Collection
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from stitch.auth import TokenClaims
-from stitch.auth.permissions import RESOURCE_READ, SOURCE_READ_GEM
+from stitch.auth.permissions import RESOURCE_READ, SOURCE_READ_GEM, SOURCE_READ_PREFIX
 
 from stitch.api.auth import get_current_user, get_token_claims
 from stitch.api.db.config import UnitOfWork, get_uow
@@ -18,6 +19,9 @@ from stitch.api.db.model import (
     ResourceModel,
     UserModel,
 )
+from stitch.api import permissions as api_permissions
+from stitch.api.db.read_model.permissions import PUBLIC_SOURCES
+from stitch.api.db.read_model.state import refresh_resource_states
 from stitch.api.entities import User
 from stitch.api.main import app
 from tests.utils import make_source_model, make_source_record
@@ -39,6 +43,47 @@ def _resource_only_claims() -> TokenClaims:
         name="Test User",
         permissions=frozenset({RESOURCE_READ}),
     )
+
+
+_PUBLIC_SOURCE_READS = frozenset(f"{SOURCE_READ_PREFIX}{s}" for s in PUBLIC_SOURCES)
+
+type ClientFactory = Callable[
+    [Collection[str]], AbstractAsyncContextManager[AsyncClient]
+]
+
+
+@pytest.fixture
+async def client_with(
+    integration_session_factory: async_sessionmaker[AsyncSession],
+    test_user: User,
+    test_user_model: UserModel,
+) -> ClientFactory:
+    """Make clients whose token holds exactly the given permissions."""
+    async with integration_session_factory() as session:
+        session.add(test_user_model)
+        await session.commit()
+
+    async def override_get_uow() -> AsyncIterator[UnitOfWork]:
+        async with UnitOfWork(integration_session_factory) as uow:
+            yield uow
+
+    @asynccontextmanager
+    async def make(permissions: Collection[str]) -> AsyncIterator[AsyncClient]:
+        claims = TokenClaims(
+            sub="test|user-1",
+            email="test@test.com",
+            name="Test User",
+            permissions=frozenset(permissions),
+        )
+        app.dependency_overrides[get_uow] = override_get_uow
+        app.dependency_overrides[get_current_user] = lambda: test_user
+        app.dependency_overrides[get_token_claims] = lambda: claims
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test/api/v1"
+        ) as ac:
+            yield ac
+
+    return make
 
 
 @pytest.fixture
@@ -133,6 +178,10 @@ async def _seed_resource_with_sources(
                     status=MembershipStatus.ACTIVE,
                 )
             )
+        await session.flush()
+        # Seeded directly, not through a write action: bring the read model the
+        # list reads from up to date, as the write actions do.
+        await refresh_resource_states(session, [resource.id])
         await session.commit()
         return resource.id
 
@@ -155,61 +204,75 @@ async def _source_id_for(
 
 class TestOilGasFieldsLicensedSources:
     @pytest.mark.anyio
-    async def test_list_with_no_source_grants_returns_redacted_resource_shell(
+    @pytest.mark.parametrize(
+        "permissions",
+        [
+            pytest.param({RESOURCE_READ}, id="no source grants"),
+            pytest.param({RESOURCE_READ, SOURCE_READ_GEM}, id="one public source"),
+            pytest.param(
+                {RESOURCE_READ, *_PUBLIC_SOURCE_READS} - {f"{SOURCE_READ_PREFIX}nor"},
+                id="all public sources but one",
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "path", ["/oil-gas-fields/", "/oil-gas-fields/filter-options"]
+    )
+    async def test_callers_missing_a_public_source_are_refused(
         self,
-        resource_only_client: AsyncClient,
+        client_with: ClientFactory,
         integration_session_factory: async_sessionmaker[AsyncSession],
         test_user: User,
+        permissions: set[str],
+        path: str,
     ):
-        resource_id = await _seed_resource_with_sources(
+        """The list is served from precomputed rows for exact permission
+        profiles, all of which include every public source."""
+        await _seed_resource_with_sources(
             integration_session_factory,
             test_user,
             {"source": "rmi", "name": "RMI Name", "country": "USA"},
         )
 
-        response = await resource_only_client.get("/oil-gas-fields/")
+        async with client_with(permissions) as client:
+            response = await client.get(path)
 
-        assert response.status_code == 200
-        data = response.json()
-        assert data["total_count"] == 1
-        item = data["items"][0]
-        assert item["id"] == resource_id
-        assert item["data"]["name"] is None
-        assert item["data"]["country"] is None
-        assert item["provenance"]["name"] is None
+        assert response.status_code == 403
+        assert "missing read access to public source" in response.json()["detail"]
 
     @pytest.mark.anyio
     async def test_list_returns_only_licensed_data(
         self,
-        gem_only_client: AsyncClient,
+        client_with: ClientFactory,
         integration_session_factory: async_sessionmaker[AsyncSession],
         test_user: User,
     ):
         gem_id = await _seed_resource_with_sources(
             integration_session_factory,
             test_user,
-            {"source": "rmi", "name": "RMI Name", "country": "USA"},
+            {"source": "wm", "name": "WM Name", "country": "USA"},
             {"source": "gem", "name": "GEM Name", "country": "CAN"},
         )
-        rmi_only_id = await _seed_resource_with_sources(
+        wm_only_id = await _seed_resource_with_sources(
             integration_session_factory,
             test_user,
-            {"source": "rmi", "name": "Only RMI", "country": "USA"},
+            {"source": "wm", "name": "Only WM", "country": "USA"},
         )
 
-        response = await gem_only_client.get("/oil-gas-fields/")
+        async with client_with({RESOURCE_READ, *_PUBLIC_SOURCE_READS}) as client:
+            response = await client.get("/oil-gas-fields/")
 
         assert response.status_code == 200
         data = response.json()
         items = {item["id"]: item for item in data["items"]}
-        assert set(items.keys()) == {gem_id, rmi_only_id}
+        assert set(items.keys()) == {gem_id, wm_only_id}
 
         gem_item = items[gem_id]
         assert gem_item["data"]["name"] == "GEM Name"
         assert gem_item["data"]["country"] == "CAN"
         assert gem_item["provenance"]["name"] == "gem"
 
-        null_item = items[rmi_only_id]
+        null_item = items[wm_only_id]
         assert null_item["data"]["name"] is None
         assert null_item["data"]["country"] is None
         assert null_item["provenance"]["name"] is None
@@ -217,17 +280,18 @@ class TestOilGasFieldsLicensedSources:
     @pytest.mark.anyio
     async def test_list_with_explicit_unlicensed_source_returns_existence_with_null_fields(
         self,
-        gem_only_client: AsyncClient,
+        client_with: ClientFactory,
         integration_session_factory: async_sessionmaker[AsyncSession],
         test_user: User,
     ):
         resource_id = await _seed_resource_with_sources(
             integration_session_factory,
             test_user,
-            {"source": "llm", "name": "LLM Name", "country": "USA"},
+            {"source": "wm", "name": "WM Name", "country": "USA"},
         )
 
-        response = await gem_only_client.get("/oil-gas-fields/?source=llm")
+        async with client_with({RESOURCE_READ, *_PUBLIC_SOURCE_READS}) as client:
+            response = await client.get("/oil-gas-fields/?source=wm")
 
         assert response.status_code == 200
         data = response.json()
@@ -237,6 +301,71 @@ class TestOilGasFieldsLicensedSources:
         assert item["data"]["name"] is None
         assert item["data"]["country"] is None
         assert item["provenance"]["name"] is None
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        "path", ["/oil-gas-fields/", "/oil-gas-fields/filter-options"]
+    )
+    async def test_a_source_the_code_does_not_know_is_ignored(
+        self,
+        client_with: ClientFactory,
+        integration_session_factory: async_sessionmaker[AsyncSession],
+        test_user: User,
+        path: str,
+    ):
+        """``licensed_sources`` drops unknown ``source:read:<key>`` grants, so
+        the caller is matched on the rest: the public profile here."""
+        await _seed_resource_with_sources(
+            integration_session_factory,
+            test_user,
+            {"source": "wm", "name": "WM Name", "country": "USA"},
+            {"source": "gem", "name": "GEM Name", "country": "CAN"},
+        )
+        public = {RESOURCE_READ, *_PUBLIC_SOURCE_READS}
+
+        async with client_with(public) as client:
+            expected = await client.get(path)
+        async with client_with(public | {f"{SOURCE_READ_PREFIX}foo"}) as client:
+            response = await client.get(path)
+
+        assert response.status_code == 200
+        assert response.json() == expected.json()
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        "path", ["/oil-gas-fields/", "/oil-gas-fields/filter-options"]
+    )
+    async def test_a_source_not_in_any_profile_is_refused(
+        self,
+        client_with: ClientFactory,
+        integration_session_factory: async_sessionmaker[AsyncSession],
+        test_user: User,
+        monkeypatch: pytest.MonkeyPatch,
+        path: str,
+    ):
+        """A source added to the code but not yet classified as public or
+        restricted (``read_model.permissions``) matches no stored profile."""
+        monkeypatch.setattr(
+            api_permissions,
+            "_VALID_SOURCES",
+            api_permissions._VALID_SOURCES | {"foo"},
+        )
+        await _seed_resource_with_sources(
+            integration_session_factory,
+            test_user,
+            {"source": "gem", "name": "GEM Name", "country": "CAN"},
+        )
+
+        permissions = {
+            RESOURCE_READ,
+            *_PUBLIC_SOURCE_READS,
+            f"{SOURCE_READ_PREFIX}foo",
+        }
+        async with client_with(permissions) as client:
+            response = await client.get(path)
+
+        assert response.status_code == 403
+        assert "a source the list can't serve yet" in response.json()["detail"]
 
     @pytest.mark.anyio
     async def test_get_resource_redacts_unlicensed_source_data(

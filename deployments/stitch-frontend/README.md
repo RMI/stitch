@@ -38,7 +38,7 @@ stitch-frontend/
 │   ├── components/              # Shared UI components
 │   │   ├── FieldCard.jsx        # Field value card + FieldGrid layout
 │   │   ├── FilterBar.jsx        # Filter dropdown row + active chips
-│   │   ├── FilterDropdown.jsx   # Multi-select dropdown with counts
+│   │   ├── FilterDropdown.jsx   # Multi-select dropdown
 │   │   ├── ResourcesTable.jsx   # Sortable resources table
 │   │   ├── ResourcesView.jsx    # Resources list page section
 │   │   ├── ResourceView.jsx     # Single resource fetch section
@@ -111,7 +111,6 @@ This file contains public, deployment-specific browser settings such as:
 
 - `appEnv`
 - `apiUrl`
-- `entityLinkageUrl`
 - `auth0Domain`
 - `auth0ClientId`
 - `auth0Audience`
@@ -124,7 +123,6 @@ Example:
 {
   "appEnv": "local",
   "apiUrl": "http://localhost:8000/api/v1",
-  "entityLinkageUrl": "http://localhost:8001/api/v1",
   "auth0Domain": "rmi-spd.us.auth0.com",
   "auth0ClientId": "TS1V1soQbccAV1sitFFCfUaIlSwHD2S2",
   "auth0Audience": "https://stitch-api.local"
@@ -222,12 +220,12 @@ The schema lives in `src/config/listParams.js`.
 
 The Merge Review queue (`/merge-candidate-review`) encodes its view the same way, so a copied link opens the same page of the queue for everyone.
 
-| Param                    | Values                                                    | Omitted when                  |
-| ------------------------ | --------------------------------------------------------- | ----------------------------- |
-| `page`                   | integer ≥ 1                                               | page 1                        |
-| `page_size`              | 10, 25, 50, 100                                           | 25                            |
-| `status`                 | `PENDING`, `APPROVED`, `DENIED` (repeat per value), `all` | only `PENDING` is selected    |
-| `sort_by` + `sort_order` | `created` or `reviewed_at`, with `asc` or `desc`          | newest first (`created desc`) |
+| Param                    | Values                                                                           | Omitted when                  |
+| ------------------------ | -------------------------------------------------------------------------------- | ----------------------------- |
+| `page`                   | integer ≥ 1                                                                      | page 1                        |
+| `page_size`              | 10, 25, 50, 100                                                                  | 25                            |
+| `status`                 | `PENDING`, `APPROVED`, `DENIED` (repeat per value), `all`                        | only `PENDING` is selected    |
+| `sort_by` + `sort_order` | `created`, `reviewed_at` or `name`, with `asc` or `desc`; or `status` with `asc` | newest first (`created desc`) |
 
 Example — approved and denied candidates, most recently reviewed first, page 2:
 
@@ -239,6 +237,7 @@ Notes:
 
 - The queue shows pending candidates by default, so a bare `/merge-candidate-review` is the review work still to do. Clearing every status in the Status filter shows all of them, written as `status=all`.
 - The page size is not remembered between visits, unlike the resources list.
+- The `name` and `status` sorts are not done by the API yet: the page fetches the queue newest first and re-orders just the candidates on the current page, and says so when there is more than one page.
 - Unknown statuses are dropped, and a malformed `page`, `page_size` or sort falls back to its default. A `page` past the end steps back to the last page.
 
 The schema lives in `src/config/mergeReviewParams.js`.
@@ -513,22 +512,13 @@ export function useMutateResource(id) {
 
 ## Filters
 
-The resources table supports multi-select filters with OR-within / AND-across logic (e.g. region = "Asia" OR "Europe", AND basin = "Arabian").
+The resources table supports multi-select filters with OR-within / AND-across logic (e.g. region = "Asia" OR "Europe", AND basin = "Arabian"). Selections are sent to the API as the list params described above; nothing is filtered in the browser.
 
-Filter fields are configured in one place:
+Dropdown options come from `GET /oil-gas-fields/filter-options`, which cascades. It returns only the values still reachable under the other active filters and the search term, so choosing a country narrows the state/province and basin lists. A field's own selection never narrows its own list, so you can always widen or change it. Options are requested from the settled (debounced) filters, so typing in the search box does not refetch them on every keystroke.
 
-```js
-// src/config/filters.js
-export const FILTER_FIELDS = [
-  { key: "region", label: "Region" },
-  { key: "state_province", label: "State/Province" },
-  { key: "basin", label: "Basin" },
-];
-```
+Filter fields are configured in `src/config/filters.js`. Add one by appending an entry to `FILTER_FIELDS`; the `key` must match the field name the API filters on.
 
-Add a new filter by appending an entry. The `key` must match the field name on the resource object. Option counts are computed statically from the full dataset on load.
-
-Active filter selections are displayed as removable chips beneath the dropdowns. Filters are applied client-side in `ResourcesView` via `applyFilters()`. This function is a pure utility designed to be lifted server-side when pagination is introduced.
+Active filter selections are displayed as removable chips beneath the dropdowns.
 
 ## Deployment: Azure Static Web Apps
 
@@ -561,7 +551,6 @@ Recommended deploy sequence:
 SWA_NAME=stitch-frontend-demo-02
 RESOURCE_GROUP=STITCH-DEV-RG
 API_URL=https://stitch-db-demo-02.<region>.azurecontainerapps.io/api/v1
-ENTITY_LINKAGE_URL=https://stitch-entity-linkage-demo-02.<region>.azurecontainerapps.io/api/v1
 AUTH0_DOMAIN=rmi-spd.us.auth0.com
 AUTH0_CLIENT_ID=<public-client-id>
 AUTH_AUDIENCE=https://stitch-api.local
@@ -573,7 +562,6 @@ Example runtime config:
 {
   "appEnv": "preview",
   "apiUrl": "https://stitch-db-demo-02.<region>.azurecontainerapps.io/api/v1",
-  "entityLinkageUrl": "https://stitch-entity-linkage-demo-02.<region>.azurecontainerapps.io/api/v1",
   "auth0Domain": "rmi-spd.us.auth0.com",
   "auth0ClientId": "<public-client-id>",
   "auth0Audience": "https://stitch-api.local"

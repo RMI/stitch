@@ -35,7 +35,6 @@ truncated so that the name plus the longest Container App suffix (`-api`, `-llm`
 It builds Docker images for:
 
 - `api` (also used for DB migration)
-- `entity-linkage`
 - `stitch-llm`
 - `seed`
 
@@ -44,7 +43,6 @@ It then handles deployments for:
 - the database, assuming an existing Azure PostgreSQL flexible server
 - the API Container App, assuming an existing Container Apps environment
   (see "Log routing" below)
-- the entity-linkage Container App in the same environment
 - the stitch-llm Container App in the same environment
 - the ETL Container App (`etl`) in the same environment, on non-`development`
   lanes only (see below)
@@ -68,10 +66,10 @@ table schema stays uniform (the KQL in [`PERFORMANCE.md`](./PERFORMANCE.md) and
 the repo, so recreating an environment reverts it to `None` (a greyed-out Logs
 blade) — reconfigure it when that happens.
 
-### ETL pipelines (temporary POC wiring)
+### ETL pipelines (OGSI-specific)
 
 The single `etl` Container App is deployed from a pre-built image published by
-the separate `stitch-etl-poc` repository (`ghcr.io/rmi/stitch-etl-poc`). This
+the separate `stitch-etl-ogsi` repository (`ghcr.io/rmi/stitch-etl-ogsi`). This
 pipeline does **not** build it; it only deploys the tag named by the
 `ETL_IMAGE_TAG` variable (defaulting to `main`). The one app serves both
 datasets under `/api/v1/etl/gem/*` and `/api/v1/etl/wm/*`.
@@ -84,6 +82,9 @@ Seed and ETL are mutually exclusive per lane:
 
 - `development`: `seed` builds and runs; ETL deploy is skipped.
 - `staging` / `production`: ETL deploys; `seed` is skipped.
+
+A new `staging` database also starts as a copy of the newest production backup
+(see "Restoring from a backup" in `deployments/db/README.md`).
 
 Because the ETL image lives in another repo's GHCR, the Container App needs
 stored pull credentials. The ephemeral `GITHUB_TOKEN` cannot be used (it expires
@@ -216,9 +217,6 @@ than left to the action's defaults (~0.5 vCPU / 1 GiB). `deploy-container.yml`
 takes optional `cpu` / `memory` inputs and folds them into the same post-deploy
 `az containerapp update` that pins replicas. The `etl` app is unoptimized and
 needs more memory, so it passes `cpu: "2.0"` / `memory: "4.0Gi"`.
-`entity-linkage` used to as well, but is deliberately unpinned now: it is
-I/O-bound waiting on sequential API responses, so the extra CPU bought little
-while giving its batch pass 4x the CPU of the API it calls.
 
 On the default **Consumption** workload profile, CPU and memory are not
 independent — only fixed pairs are valid, with memory (Gi) = 2× vCPU. So **4.0Gi
@@ -241,7 +239,7 @@ exposes it as the `always-on` output:
 | `staging` lane PRs (into `production`, or from `demo/*`) | *(empty)* | cost |
 | `development` lane PRs | *(empty)* | throwaway preview, one per PR |
 
-The three long-running services — `api`, `entity-linkage`, `stitch-llm` — pass it
+The two long-running services — `api` and `stitch-llm` — pass it
 straight through:
 
 ```yaml
@@ -282,9 +280,9 @@ have to widen to cover it:
 - the environment banner says the server is waking up once a request has been in
   flight for more than a couple of seconds.
 
-entity-linkage and stitch-llm are deliberately left out. Waking them the same way
-was tried and set aside: the API is the one every session needs, and better
-options for the other two are still being explored.
+stitch-llm is deliberately left out. Waking it the same way was tried and set
+aside: the API is the one every session needs, and better options for
+stitch-llm are still being explored.
 
 This only affects the Container Apps. The frontend is an Azure Static Web App
 (always served, no hibernation), and the PostgreSQL flexible server's
@@ -296,7 +294,8 @@ The ETL wiring was consolidated from two apps (`etl-gem`, `etl-woodmac`, two
 images) to one (`etl`, one image). To migrate a lane safely:
 
 1. Merge the consolidation to `stitch-etl-poc` `main` first, so
-   `ghcr.io/rmi/stitch-etl-poc:main` is published before this repo references it.
+1. Merge the consolidation to `stitch-etl-ogsi` `main` first, so
+`ghcr.io/rmi/stitch-etl-ogsi:main` is published before this repo references it.
 2. On the lane's GitHub Environment, add `ETL_IMAGE_TAG` (`main`) and delete the
    old `ETL_GEM_IMAGE_TAG` / `ETL_WOODMAC_IMAGE_TAG` variables.
 3. Deploy this repo; confirm the new `<name>-etl` app is healthy
@@ -329,7 +328,15 @@ deployments, `pr-*`, `main` deploy to the same PostgreSQL instance, with
 separate logical DBs)
 
 It also handles running `db-migrations` (via Alembic in the `api` image) and
-`seed`, both directly from GH Actions (rather than starting on Azure).
+`seed`, both directly from GH Actions (rather than starting on Azure). After the
+API deploy, `rebuild-read-model` rebuilds the API's resource-state read model
+from the same `api` image; nothing waits on it, so a failure never blocks a
+deploy. `scheduled-rebuild-read-model.yml` also rebuilds it every 6 hours for the
+long-lived `main` and `production` deployments, using the API image tag each
+deploy pushes. Scheduled runs come from `main`, and the production environment
+only accepts deployments from the `production` branch, so the scheduled run
+starts the same workflow on `production` for that one. Either can also be run
+by hand from the Actions tab. See [`api/READ_MODEL.md`](./api/READ_MODEL.md).
 
 ### Custom domains (RMI hostnames)
 
@@ -535,9 +542,13 @@ named:
   storage above).
 - `ETL_IMAGE_TAG` (example: `main`) — optional; consolidated ETL image tag to
   deploy, defaults to `main`. Only used on `staging` / `production`.
+- `RESTORE_AZURE_CLIENT_ID` (example: the client ID of `stitch-restore-identity`)
+  — the read-only identity `deploy-db` signs in as to restore a backup into a
+  new staging database. Only needed on `staging`. See "Restoring from a backup"
+  in `deployments/db/README.md`.
 
-The two frontend URLs together define the single CORS origin the API,
-entity-linkage, and stitch-llm services will accept for a given deployment, so
+The two frontend URLs together define the single CORS origin the API and
+stitch-llm services will accept for a given deployment, so
 they have to match where the frontend actually lands:
 
 - A **pull request** always deploys to a Static Web App preview environment named
@@ -562,7 +573,7 @@ they have to match where the frontend actually lands:
   the app to boot (it validates every dataset at startup), so it must be set
   even though GEM does not use it. Only needed on `staging` / `production`.
 - `GHCR_ETL_PULL_TOKEN` — classic PAT with `read:packages` used to pull the ETL
-  image from the `stitch-etl-poc` GHCR. Only needed on `staging` /
+  image from the `stitch-etl-ogsi` GHCR. Only needed on `staging` /
   `production`.
 
 Current validation behavior:

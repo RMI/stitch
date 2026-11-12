@@ -38,7 +38,7 @@ from .model import (
     ResourceModel,
 )
 from .og_field_resource_actions import apply_resource_merge
-from .utils import coalesce_resources, coalesce_resources_with_sources
+from .utils import coalesce_resources_with_sources
 
 
 def _normalize_resource_ids(resource_ids: Sequence[int]) -> list[int]:
@@ -303,7 +303,7 @@ async def list_merge_candidates(
         status_counts[MergeCandidateStatus(status)] = count
 
     with named_query("merge_candidates.list.names"):
-        coalesced = await coalesce_resources(
+        coalesced = await coalesce_resources_with_sources(
             session, _name_resource_ids(candidates), licensed_sources
         )
 
@@ -319,6 +319,19 @@ async def list_merge_candidates(
         page_size=params.page_size,
         status_counts=status_counts,
     )
+
+
+async def existing_candidate_resource_sets(
+    session: AsyncSession,
+) -> set[frozenset[int]]:
+    """The resource set of every merge candidate, whatever its status."""
+    stmt = select(MergeCandidateModel).options(selectinload(MergeCandidateModel.items))
+    with named_query("merge_candidates.resource_sets"):
+        candidates = (await session.scalars(stmt)).all()
+    return {
+        frozenset(item.resource_id for item in candidate.items)
+        for candidate in candidates
+    }
 
 
 async def get_merge_candidate(
@@ -363,7 +376,7 @@ async def get_merge_candidate(
     if candidate.merged_resource_id is not None:
         with named_query("merge_candidates.detail.merged_name"):
             name_sources.update(
-                await coalesce_resources(
+                await coalesce_resources_with_sources(
                     session, [candidate.merged_resource_id], licensed_sources
                 )
             )
@@ -420,6 +433,33 @@ async def create_merge_candidate(
         await session.flush()
         await session.refresh(candidate, ["items"])
     return _candidate_to_view(candidate)
+
+
+async def create_merge_candidates_bulk(
+    session: AsyncSession,
+    user: CurrentUser,
+    groups: Sequence[Sequence[int]],
+) -> None:
+    with named_query("merge_candidates.bulk_create"):
+        candidates = [
+            MergeCandidateModel.create(created_by=user, fingerprint=_fingerprint(group))
+            for group in groups
+        ]
+        session.add_all(candidates)
+        await session.flush()
+
+        session.add_all(
+            [
+                MergeCandidateItemModel(
+                    merge_candidate_id=candidate.id,
+                    resource_id=resource_id,
+                    position=position,
+                )
+                for candidate, group in zip(candidates, groups)
+                for position, resource_id in enumerate(group)
+            ]
+        )
+        await session.flush()
 
 
 async def _reroute_pending_candidates(
