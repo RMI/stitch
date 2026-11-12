@@ -19,10 +19,6 @@ on:
         description: "Base API URL to inject into runtime config"
         required: true
         type: string
-      entity-linkage-url:
-        description: "Base entity linkage URL to inject into runtime config"
-        required: true
-        type: string
       stitch-llm-url:
         description: "Base stitch-llm URL to inject into runtime config"
         required: true
@@ -121,7 +117,6 @@ jobs:
           {
             "appEnv": "${{ inputs.deployment-name }}",
             "apiUrl": "${{ inputs.api-url }}",
-            "entityLinkageUrl": "${{ inputs.entity-linkage-url }}",
             "stitchLlmUrl": "${{ inputs.stitch-llm-url }}",
             "etlUrl": "${{ inputs.etl-url }}",
             "auth0Domain": "${{ inputs.auth0-domain }}",

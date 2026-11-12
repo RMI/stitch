@@ -41,7 +41,7 @@ const CCR_FIELDS = [
   },
 ];
 
-// Mirrors stitch-etl-poc's BcStartRequest (payload_limit + use_cached); the BC
+// Mirrors stitch-etl-ogsi's BcStartRequest (payload_limit + use_cached); the BC
 // ETL fetches live from the BCER API + reserves CSV, so there is no sheet input.
 const BC_FIELDS = [
   {

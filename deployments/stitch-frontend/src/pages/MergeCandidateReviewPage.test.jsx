@@ -784,6 +784,49 @@ describe("MergeCandidateReviewPage", () => {
       );
     });
 
+    it("clears the notes when paging moves the selection", async () => {
+      // No detail loaded, so the panel acts on the selected queue row.
+      vi.mocked(useMergeCandidate).mockReturnValue(defaultHookReturn);
+      const user = userEvent.setup();
+      mockQueue(manyPending(30));
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      await user.type(screen.getByLabelText("Decision notes"), "For field 1");
+      await user.click(screen.getByRole("button", { name: "Next page" }));
+
+      // Field 26 (id 125) is selected now; field 1's notes must not follow it.
+      expect(screen.getByLabelText("Decision notes")).toHaveValue("");
+      await user.click(screen.getByRole("button", { name: "Approve merge" }));
+      await waitFor(() => {
+        expect(reviewMergeCandidate).toHaveBeenCalledWith(
+          expect.any(Object),
+          125,
+          "approve",
+          expect.any(Function),
+          "oil-gas-fields",
+          "",
+        );
+      });
+    });
+
+    it("does not show a failed review's error on the next page's candidate", async () => {
+      // No detail loaded, so the panel acts on the selected queue row.
+      vi.mocked(useMergeCandidate).mockReturnValue(defaultHookReturn);
+      vi.mocked(reviewMergeCandidate).mockRejectedValue(
+        new Error("Review failed"),
+      );
+      const user = userEvent.setup();
+      mockQueue(manyPending(30));
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      await user.click(screen.getByRole("button", { name: "Approve merge" }));
+      expect(await screen.findByText("Review failed")).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Next page" }));
+
+      expect(screen.queryByText("Review failed")).not.toBeInTheDocument();
+    });
+
     it("steps back to the last page when the page is past the end", async () => {
       mockQueue(manyPending(3));
       renderWithQueryClient(<MergeCandidateReviewPage />, {
@@ -916,6 +959,103 @@ describe("MergeCandidateReviewPage", () => {
       expect(
         screen.queryByText("No merge candidates to review."),
       ).not.toBeInTheDocument();
+    });
+  });
+
+  describe("sorting the queue", () => {
+    // The API lists these newest first: 21, 22, 23.
+    const zubair = {
+      id: 21,
+      name: "Zubair",
+      status: "PENDING",
+      resource_ids: [601, 602],
+      merged_resource_id: null,
+    };
+    const abalos = {
+      id: 22,
+      name: "Ábalos",
+      status: "DENIED",
+      resource_ids: [603, 604],
+      merged_resource_id: null,
+    };
+    const burgan = {
+      id: 23,
+      name: "Burgan",
+      status: "PENDING",
+      resource_ids: [605, 606],
+      merged_resource_id: null,
+    };
+
+    beforeEach(() => {
+      mockQueue([zubair, abalos, burgan]);
+    });
+
+    function queue() {
+      return screen.getByRole("heading", { name: "Queue" }).closest("aside");
+    }
+
+    function sortControl() {
+      return within(queue()).getByLabelText("Sort candidates");
+    }
+
+    function queueOrder() {
+      return within(queue())
+        .queryAllByRole("button")
+        .filter((button) => button.hasAttribute("aria-pressed"))
+        .map((item) => item.textContent.replace(/CANDIDATE|DENIED/, "").trim());
+    }
+
+    it("offers a Sort control that starts on Newest first", () => {
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      expect(sortControl()).toHaveValue("newest");
+      expect(
+        within(sortControl())
+          .getAllByRole("option")
+          .map((option) => option.textContent),
+      ).toEqual([
+        "Newest first",
+        "Oldest first",
+        "Name A–Z",
+        "Name Z–A",
+        "Status",
+        "Recently reviewed",
+        "Earliest reviewed",
+      ]);
+    });
+
+    it("asks the API to sort by name", async () => {
+      const user = userEvent.setup();
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      await user.selectOptions(sortControl(), "name-asc");
+      expect(lastQueueRequest()).toMatchObject({
+        page: 1,
+        sort_by: "name",
+        sort_order: "asc",
+      });
+      // The API's order is shown as is: the page does not re-sort it.
+      expect(queueOrder()).toEqual(["Zubair", "Burgan"]);
+    });
+
+    it("asks the API to sort by status", async () => {
+      const user = userEvent.setup();
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      await user.selectOptions(sortControl(), "status");
+      expect(lastQueueRequest()).toMatchObject({
+        page: 1,
+        sort_by: "status",
+        sort_order: "asc",
+      });
+    });
+
+    it("opens with the sort a URL describes", () => {
+      renderWithQueryClient(<MergeCandidateReviewPage />, {
+        initialEntries: ["/?sort_by=name&sort_order=desc"],
+      });
+
+      expect(sortControl()).toHaveValue("name-desc");
     });
   });
 });

@@ -105,18 +105,6 @@ jobs:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
       container-app-name: ${{ format('{0}-api', needs.resolve-context.outputs.deployment-name) }}
 
-  delete-entity-linkage-container-app:
-    name: Delete entity-linkage container app
-    needs: [resolve-context]
-    uses: ./.github/workflows/delete-container-app.yml
-    secrets:
-      azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-      azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-      azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-    with:
-      deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      container-app-name: ${{ format('{0}-el', needs.resolve-context.outputs.deployment-name) }}
-
   delete-stitch-llm-container-app:
     name: Delete stitch-llm container app
     needs: [resolve-context]

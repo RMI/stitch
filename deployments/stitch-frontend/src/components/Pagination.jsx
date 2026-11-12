@@ -1,4 +1,5 @@
 import { PAGE_SIZE_OPTIONS } from "../queries/resources";
+import Select from "./Select";
 
 // Five-digit page numbers are wide enough that the usual window of nearby
 // pages overflows the control, so past this many pages the window narrows to
@@ -165,18 +166,17 @@ export default function Pagination({
         >
           Per page:
         </label>
-        <select
+        <Select
           id="page-size-select"
           value={pageSize}
           onChange={(e) => onPageSizeChange(Number(e.target.value))}
-          className="rounded-md border border-line bg-panel px-2 py-1 text-sm text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
         >
           {PAGE_SIZE_OPTIONS.map((size) => (
             <option key={size} value={size}>
               {size}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
     </div>
   );

@@ -2,13 +2,11 @@
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy.dialects import postgresql
 from sqlalchemy import event, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from stitch.api.db import og_field_resource_actions as resource_actions
-from stitch.api.db import utils
 from stitch.api.db.errors import (
     InvalidActionError,
     ResourceIntegrityError,
@@ -21,9 +19,11 @@ from stitch.api.db.model import (
     OilGasFieldSourceValueModel,
     ResourceModel,
 )
-from stitch.api.db.queries import filter_option_rows
+from stitch.api.db.read_model.permissions import PROFILES
+from stitch.api.db.read_model.state import refresh_resource_states
 from stitch.api.entities import (
     FILTER_OPTION_FIELDS,
+    OGFieldFilterParams,
     OGFieldQueryParams,
     User,
 )
@@ -32,6 +32,12 @@ from tests.utils import make_source_model
 
 
 _QueryParams = OGFieldQueryParams
+
+# Callers hold exactly one of the read model's profiles: every public source,
+# plus any of the restricted ones (wm, ccr). Licensing tests hide a restricted
+# source by leaving it out.
+_PUBLIC = PROFILES[0]
+_PUBLIC_AND_WM = PROFILES[2]
 
 
 async def _create_resource_with_sources(
@@ -64,6 +70,9 @@ async def _create_resource_with_sources(
         )
 
     await session.flush()
+    # Seeded directly, not through a write action: bring the read model the
+    # list reads from up to date, as the write actions do.
+    await refresh_resource_states(session, [resource.id])
     return resource.id
 
 
@@ -84,6 +93,7 @@ async def _add_source(session, user, rid: int, **attrs) -> int:
         )
     )
     await session.flush()
+    await refresh_resource_states(session, [rid])
     return source.id
 
 
@@ -116,6 +126,7 @@ async def _override(
         )
     )
     await session.flush()
+    await refresh_resource_states(session, [rid])
     return pk
 
 
@@ -657,11 +668,11 @@ class TestResourceQueryAction:
             seeded_integration_session,
             test_user,
             {
-                "source": "rmi",
-                "name": "RMI Name",
+                "source": "wm",
+                "name": "WM Name",
                 "country": "USA",
-                "owners": [{"name": "RMI Owner", "stake": 55.0}],
-                "operators": [{"name": "RMI Operator", "stake": 100.0}],
+                "owners": [{"name": "WM Owner", "stake": 55.0}],
+                "operators": [{"name": "WM Operator", "stake": 100.0}],
             },
             {
                 "source": "gem",
@@ -676,7 +687,7 @@ class TestResourceQueryAction:
         items, total = await resource_actions.query(
             seeded_integration_session,
             params,
-            licensed_sources=frozenset({"gem", "wm", "llm"}),
+            licensed_sources=_PUBLIC,
         )
 
         assert total == 1
@@ -709,7 +720,7 @@ class TestResourceQueryAction:
         items, total = await resource_actions.query(
             seeded_integration_session,
             params,
-            licensed_sources=frozenset({"rmi", "gem", "llm"}),
+            licensed_sources=_PUBLIC,
         )
 
         assert total == 1
@@ -1016,7 +1027,9 @@ class TestResourceFilterOptionsAction:
             {"source": "rmi", "country": None},
         )
 
-        options = await resource_actions.filter_options(seeded_integration_session)
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams()
+        )
 
         assert options["country"] == ["CAN", "USA"]
 
@@ -1029,18 +1042,19 @@ class TestResourceFilterOptionsAction:
         await _create_resource_with_sources(
             seeded_integration_session,
             test_user,
-            {"source": "rmi", "country": None},
+            {"source": "wm", "country": None},
             {"source": "gem", "country": "CAN"},
         )
         await _create_resource_with_sources(
             seeded_integration_session,
             test_user,
-            {"source": "rmi", "country": "USA"},
+            {"source": "wm", "country": "USA"},
         )
 
         options = await resource_actions.filter_options(
             seeded_integration_session,
-            licensed_sources=frozenset({"gem", "wm", "llm"}),
+            OGFieldFilterParams(),
+            licensed_sources=_PUBLIC,
         )
 
         assert options["country"] == ["CAN"]
@@ -1063,13 +1077,15 @@ class TestResourceFilterOptionsAction:
 
         with_wm = await resource_actions.filter_options(
             seeded_integration_session,
-            licensed_sources=frozenset({"gem", "wm"}),
+            OGFieldFilterParams(),
+            licensed_sources=_PUBLIC_AND_WM,
         )
         assert with_wm["country"] == ["USA"]
 
         without_wm = await resource_actions.filter_options(
             seeded_integration_session,
-            licensed_sources=frozenset({"gem"}),
+            OGFieldFilterParams(),
+            licensed_sources=_PUBLIC,
         )
         assert without_wm["country"] == ["CAN"]
 
@@ -1096,8 +1112,11 @@ class TestResourceFilterOptionsAction:
         assert inactive_membership is not None
         inactive_membership.status = MembershipStatus.INACTIVE
         await seeded_integration_session.flush()
+        await refresh_resource_states(seeded_integration_session, [inactive_id])
 
-        options = await resource_actions.filter_options(seeded_integration_session)
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams()
+        )
 
         assert options["country"] == ["USA"]
 
@@ -1113,7 +1132,9 @@ class TestResourceFilterOptionsAction:
             {"source": "rmi", "country": "USA"},
         )
 
-        options = await resource_actions.filter_options(seeded_integration_session)
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams()
+        )
 
         assert set(options.keys()) == set(FILTER_OPTION_FIELDS)
         assert options["country"] == ["USA"]
@@ -1148,30 +1169,14 @@ class TestResourceFilterOptionsAction:
             },
         )
 
-        options = await resource_actions.filter_options(seeded_integration_session)
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams()
+        )
 
         assert options["country"] == ["CAN", "USA"]
         assert options["state_province"] == ["Alberta", "Texas"]
         assert options["basin"] == ["Permian", "Texas"]
         assert options["region"] == ["North America"]
-
-    def test_postgres_distinct_query_orders_by_selected_columns(self):
-        """``filter_option_rows`` compiles on Postgres."""
-        stmt = filter_option_rows(
-            licensed_sources=frozenset({"gem", "wm", "rmi", "llm"}),
-        )
-
-        sql = str(
-            stmt.compile(
-                dialect=postgresql.dialect(),
-                compile_kwargs={"literal_binds": True},
-            )
-        )
-
-        assert "SELECT DISTINCT" in sql
-        assert "ORDER BY" in sql
-        ordered = sql[sql.index("ORDER BY") :]
-        assert "colname" in ordered and "value_text" in ordered
 
     @pytest.mark.anyio
     async def test_only_unlicensed_selected_sources_still_return_resource(
@@ -1189,7 +1194,7 @@ class TestResourceFilterOptionsAction:
         items, total = await resource_actions.query(
             seeded_integration_session,
             params,
-            licensed_sources=frozenset({"rmi", "gem", "llm"}),
+            licensed_sources=_PUBLIC,
         )
 
         assert total == 1
@@ -1213,7 +1218,7 @@ class TestResourceFilterOptionsAction:
             seeded_integration_session,
             test_user,
             {
-                "source": "rmi",
+                "source": "wm",
                 "name": "State Test",
                 "country": "USA",
                 "state_province": "New Mexico",
@@ -1235,7 +1240,7 @@ class TestResourceFilterOptionsAction:
         items, total = await resource_actions.query(
             seeded_integration_session,
             params,
-            licensed_sources=frozenset({"gem", "wm", "llm"}),
+            licensed_sources=_PUBLIC,
         )
 
         assert total == 1
@@ -1252,7 +1257,7 @@ class TestResourceFilterOptionsAction:
         await _create_resource_with_sources(
             seeded_integration_session,
             test_user,
-            {"source": "rmi", "name": "Hidden", "country": "USA"},
+            {"source": "wm", "name": "Hidden", "country": "USA"},
             {"source": "gem", "name": "Target Alpha", "country": "USA"},
         )
         await _create_resource_with_sources(
@@ -1270,7 +1275,7 @@ class TestResourceFilterOptionsAction:
         items, total = await resource_actions.query(
             seeded_integration_session,
             params,
-            licensed_sources=frozenset({"gem", "wm", "llm"}),
+            licensed_sources=_PUBLIC,
         )
 
         assert total == 2
@@ -1338,6 +1343,229 @@ class TestResourceFilterOptionsAction:
 
         assert total == 1
         assert [item.id for item in items] == [root_id]
+
+
+class TestResourceFilterOptionsCascade:
+    """Options offered for one field reflect the *other* fields' selections."""
+
+    async def _seed_two_countries(
+        self,
+        session: AsyncSession,
+        user: User,
+    ) -> None:
+        await _create_resource_with_sources(
+            session,
+            user,
+            {
+                "source": "gem",
+                "name": "Canadian field",
+                "country": "CAN",
+                "state_province": "Alberta",
+                "basin": "Western Canadian",
+            },
+        )
+        await _create_resource_with_sources(
+            session,
+            user,
+            {
+                "source": "gem",
+                "name": "American field",
+                "country": "USA",
+                "state_province": "Alaska",
+                "basin": "North Slope",
+            },
+        )
+
+    @pytest.mark.anyio
+    async def test_country_narrows_state_province(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        await self._seed_two_countries(seeded_integration_session, test_user)
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams(country=["CAN"])
+        )
+
+        assert options["state_province"] == ["Alberta"]
+        assert options["basin"] == ["Western Canadian"]
+
+    @pytest.mark.anyio
+    async def test_state_province_narrows_country(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """The reverse direction: picking a province narrows Country."""
+        await self._seed_two_countries(seeded_integration_session, test_user)
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session,
+            OGFieldFilterParams(state_province=["Alberta"]),
+        )
+
+        assert options["country"] == ["CAN"]
+
+    @pytest.mark.anyio
+    async def test_basin_spanning_two_countries_keeps_both(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """Narrowing is by reachability, not by a one-to-one hierarchy."""
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "country": "CAN", "basin": "Williston"},
+        )
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "country": "USA", "basin": "Williston"},
+        )
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "country": "NOR", "basin": "North Sea"},
+        )
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams(basin=["Williston"])
+        )
+
+        assert options["country"] == ["CAN", "USA"]
+
+    @pytest.mark.anyio
+    async def test_field_is_narrowed_by_its_own_selection(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """Every field answers for the query as given, its own selection included.
+
+        Keeping a multi-select's un-ticked values on offer is the frontend's job:
+        it holds the options from before the selection and compares them with
+        this response.
+        """
+        await self._seed_two_countries(seeded_integration_session, test_user)
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams(country=["CAN"])
+        )
+
+        assert options["country"] == ["CAN"]
+
+    @pytest.mark.anyio
+    async def test_multi_select_unions_the_other_fields(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """Two countries ticked -> the other fields offer both countries' values."""
+        await self._seed_two_countries(seeded_integration_session, test_user)
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session,
+            OGFieldFilterParams(country=["CAN", "USA"]),
+        )
+
+        assert options["state_province"] == ["Alaska", "Alberta"]
+
+    @pytest.mark.anyio
+    async def test_search_term_cascades_into_every_field(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        await self._seed_two_countries(seeded_integration_session, test_user)
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams(q="Canadian")
+        )
+
+        assert options["country"] == ["CAN"]
+        assert options["state_province"] == ["Alberta"]
+
+    @pytest.mark.anyio
+    async def test_search_term_is_not_self_excluded(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """``q`` is never a branch target, so it narrows even the fields it
+        matches on. ``basin`` is searchable, so a term matching only the Canadian
+        basin must still leave Basin showing that one value alone."""
+        await self._seed_two_countries(seeded_integration_session, test_user)
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams(q="Western Canadian")
+        )
+
+        assert options["basin"] == ["Western Canadian"]
+
+    @pytest.mark.anyio
+    async def test_unfiltered_params_offer_every_value(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """No filters set -> the pre-cascade behaviour, every reachable value."""
+        await self._seed_two_countries(seeded_integration_session, test_user)
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams()
+        )
+
+        assert options["country"] == ["CAN", "USA"]
+        assert options["state_province"] == ["Alaska", "Alberta"]
+
+    @pytest.mark.anyio
+    async def test_excludes_repointed_resources(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """A merged-away resource's values are not offered."""
+        root_id = await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "country": "USA"},
+        )
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "gem", "country": "CAN"},
+            repointed_to=root_id,
+        )
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session, OGFieldFilterParams()
+        )
+
+        assert options["country"] == ["USA"]
+
+    @pytest.mark.anyio
+    async def test_cascade_respects_licensed_sources(
+        self,
+        seeded_integration_session: AsyncSession,
+        test_user: User,
+    ):
+        """Filtering on an unlicensed source's value offers nothing elsewhere."""
+        await _create_resource_with_sources(
+            seeded_integration_session,
+            test_user,
+            {"source": "wm", "country": "USA", "basin": "Permian"},
+        )
+
+        options = await resource_actions.filter_options(
+            seeded_integration_session,
+            OGFieldFilterParams(country=["USA"]),
+            licensed_sources=_PUBLIC,
+        )
+
+        assert options["basin"] == []
+        assert options["country"] == []
 
 
 class TestResourcePriorityOverride:
@@ -1974,7 +2202,7 @@ class TestBatchedSourceData:
 
 
 class TestCoalescingEngineParity:
-    """Phase-1 (SQL) and phase-2/detail (Python) coalescing pick the same winner.
+    """The list (read model) and the detail view pick the same winner.
 
     Exercises all three tiebreak paths at once: an unlicensed higher-priority
     source (dropped), a per-resource priority override, and duplicate
@@ -1991,40 +2219,43 @@ class TestCoalescingEngineParity:
         rid = await _create_resource_with_sources(
             session,
             test_user,
-            # rmi has the top DEFAULT priority and would win the (priority=1,
-            # source-ASC) tie against the wm override -- but it is left unlicensed
-            # below, so it must fall through (the unlicensed-fallthrough path).
-            {"source": "rmi", "name": "RMI Name", "country": "MEX"},
+            {"source": "ccr", "name": "CCR Name", "country": "MEX"},
             {"source": "wm", "name": "WM First", "country": "USA"},
             {"source": "wm", "name": "WM Second", "country": "CAN"},
             {"source": "gem", "name": "GEM Name", "country": "BRA"},
         )
-        # Override: wm becomes top priority for the NAME field, both wm records
-        # curated in source_pk order (WM First < WM Second), so WM First wins.
-        for priority, pk in enumerate(await _source_pks(session, rid, "wm")):
+        # Overrides for the NAME field: ccr first (it would win if licensed),
+        # then both wm records in source_pk order (WM First < WM Second).
+        (ccr_pk,) = await _source_pks(session, rid, "ccr")
+        for priority, (source, pk) in enumerate(
+            [("ccr", ccr_pk)]
+            + [("wm", pk) for pk in await _source_pks(session, rid, "wm")]
+        ):
             session.add(
                 OGFieldResourceSourcePriority.create(
                     created_by=test_user,
                     resource_id=rid,
-                    source="wm",
+                    source=source,
                     source_pk=pk,
                     colname="name",
                     priority=priority,
                 )
             )
         await session.flush()
+        await refresh_resource_states(session, [rid])
 
-        # rmi unlicensed -> falls through; among licensed sources wm (override)
-        # wins, and the lowest source_pk among the duplicate wm records wins.
-        licensed = frozenset({"wm", "gem"})
+        # ccr unlicensed -> falls through; among licensed sources the wm
+        # override wins, and the lowest source_pk among the duplicate wm
+        # records wins.
+        licensed = _PUBLIC_AND_WM
 
         # Detail (Python) winner.
         detail = await resource_actions.get(session, rid, licensed_sources=licensed)
         assert detail.view.name == "WM First"
         assert detail.provenance["name"][1] == "wm"
 
-        # List/phase-1 (SQL): filtering on the detail winner's coalesced name must
-        # return the resource, and the hydrated (phase-2) value + provenance match.
+        # List (read model): filtering on the detail winner's coalesced name must
+        # return the resource, with the same value + provenance.
         params = _QueryParams(name=detail.view.name, page=1, page_size=10)
         items, total = await resource_actions.query(
             session, params, licensed_sources=licensed
@@ -2035,60 +2266,96 @@ class TestCoalescingEngineParity:
         assert items[0].provenance["name"] == detail.provenance["name"][1]
 
 
-class TestCoalesceResources:
-    """The shared SQL coalescing core used by detail + list.
+class TestMembershipUniqueness:
+    """(resource_id, source_pk) is unique; merge collapses a shared source."""
 
-    Produces the coalesced view + provenance; raw ``source_data`` is left empty
-    here and attached by the detail path (``resource_model_to_entity``).
-    """
+    @staticmethod
+    async def _resources_sharing_one_source(
+        session: AsyncSession, user: User
+    ) -> tuple[int, int, int]:
+        """Two resources, each with a membership on the same source record."""
+        rid_a = await _create_resource_with_sources(session, user)
+        rid_b = await _create_resource_with_sources(session, user)
+        source = make_source_model(
+            source="gem", created_by_id=user.id, name="Shared", country="USA"
+        )
+        session.add(source)
+        await session.flush()
+        # A source may belong to several different resources.
+        for rid in (rid_a, rid_b):
+            session.add(
+                MembershipModel.create(
+                    created_by=user, resource_id=rid, source="gem", source_pk=source.id
+                )
+            )
+        await session.flush()
+        return rid_a, rid_b, source.id
+
+    @staticmethod
+    async def _memberships(session: AsyncSession, rid: int, source_pk: int):
+        return (
+            await session.scalars(
+                select(MembershipModel).where(
+                    MembershipModel.resource_id == rid,
+                    MembershipModel.source_pk == source_pk,
+                )
+            )
+        ).all()
 
     @pytest.mark.anyio
-    async def test_entry_per_id_with_nullshell_for_empty(
-        self,
-        seeded_integration_session: AsyncSession,
-        test_user: User,
+    async def test_duplicate_membership_rejected(
+        self, seeded_integration_session: AsyncSession, test_user: User
     ):
         session = seeded_integration_session
         rid = await _create_resource_with_sources(
-            session, test_user, {"source": "gem", "name": "G", "country": "USA"}
+            session, test_user, {"source": "gem", "name": "X", "country": "USA"}
         )
-        empty = ResourceModel.create(created_by=test_user)
-        session.add(empty)
+        (pk,) = await _source_pks(session, rid, "gem")
+        session.add(
+            MembershipModel.create(
+                created_by=test_user,
+                resource_id=rid,
+                source="gem",
+                source_pk=pk,
+                status=MembershipStatus.INACTIVE,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await session.flush()
+
+    @pytest.mark.anyio
+    async def test_merge_collapses_source_shared_by_parents(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        rid_a, rid_b, pk = await self._resources_sharing_one_source(session, test_user)
+
+        merged = await resource_actions.apply_resource_merge(
+            session, test_user, [rid_a, rid_b]
+        )
         await session.flush()
 
-        out = await utils.coalesce_resources(session, [rid, empty.id])
-
-        res = out[rid]
-        assert res.view.name == "G"
-        assert res.provenance["name"][1] == "gem"
-        # coalesce_resources returns the coalesced view + provenance only; raw
-        # sources are attached separately by the detail path.
-        assert res.source_data == []
-
-        empty_res = out[empty.id]
-        assert empty_res.view.name is None
-        assert empty_res.provenance["name"] is None
-        assert empty_res.source_data == []
+        [target] = await self._memberships(session, merged.id, pk)
+        assert target.status == MembershipStatus.ACTIVE
+        for rid in (rid_a, rid_b):
+            [parent] = await self._memberships(session, rid, pk)
+            assert parent.status == MembershipStatus.INACTIVE
 
     @pytest.mark.anyio
-    async def test_repointed_resource_yields_nullshell(
-        self,
-        seeded_integration_session: AsyncSession,
-        test_user: User,
+    async def test_merge_target_active_if_any_parent_active(
+        self, seeded_integration_session: AsyncSession, test_user: User
     ):
         session = seeded_integration_session
-        target = await _create_resource_with_sources(
-            session, test_user, {"source": "wm", "name": "Target"}
+        rid_a, rid_b, pk = await self._resources_sharing_one_source(session, test_user)
+        # The earlier (lower id) membership is inactive, the later one active.
+        [first] = await self._memberships(session, rid_a, pk)
+        first.status = MembershipStatus.INACTIVE
+        await session.flush()
+
+        merged = await resource_actions.apply_resource_merge(
+            session, test_user, [rid_a, rid_b]
         )
-        rid = await _create_resource_with_sources(
-            session,
-            test_user,
-            {"source": "gem", "name": "G", "country": "USA"},
-            repointed_to=target,
-        )
-        # The source query filters repointed_id IS NULL, so a repointed resource
-        # returns no rows and coalesces to a null-shell.
-        out = await utils.coalesce_resources(session, [rid])
-        res = out[rid]
-        assert res.view.name is None
-        assert res.provenance["name"] is None
+        await session.flush()
+
+        [target] = await self._memberships(session, merged.id, pk)
+        assert target.status == MembershipStatus.ACTIVE

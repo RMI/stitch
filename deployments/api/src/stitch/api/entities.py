@@ -155,6 +155,13 @@ class MergeCandidateCreateRequest(BaseModel):
     resource_ids: list[int] = Field(..., min_length=2)
 
 
+class LinkAllResponse(BaseModel):
+    apply_merges: bool
+    match_groups: list[list[int]]
+    merge_candidates_created: int
+    merge_candidates_skipped: int
+
+
 class MergeCandidateReviewRequest(BaseModel):
     review_notes: str | None = None
 
@@ -189,8 +196,9 @@ class MergeCandidateListItemView(MergeCandidateView):
 
     ``name`` is the candidate's display name: the merged resource's name once
     the candidate is approved (its source resources are emptied by the merge),
-    otherwise the name from the best-ranked source across its resources. It is
-    null when no licensed source carries a name.
+    otherwise the name of its first resource that has one. Resources are only
+    grouped when their names already match, so in practice that is the name
+    they share. It is null when no licensed source carries a name.
     """
 
     name: str | None = None
@@ -212,8 +220,12 @@ class MergeCandidateFilterParams(BaseModel):
 
 class MergeCandidateSortParams(BaseModel):
     # `id` is always appended in the same direction as a tiebreak, so pages
-    # stay stable when candidates share a timestamp (bulk creation).
-    sort_by: Literal["created", "reviewed_at"] = "created"
+    # stay stable when candidates share a timestamp (bulk creation) or a name.
+    # `name` sorts by the candidate's display name as the caller sees it;
+    # candidates without one sort last, like unreviewed ones under
+    # `reviewed_at`. `status` puts work still to do first when ascending
+    # (pending, denied, approved), newest first within each status.
+    sort_by: Literal["created", "reviewed_at", "name", "status"] = "created"
     sort_order: Literal["asc", "desc"] = "desc"
 
 

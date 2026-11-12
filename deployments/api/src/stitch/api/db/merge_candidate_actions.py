@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Sequence
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, or_, select, union
+from sqlalchemy import ColumnElement, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -20,27 +20,28 @@ from stitch.api.entities import (
     MergeCandidateCreateRequest,
     MergeCandidateDetailView,
     MergeCandidateListItemView,
-    OGFieldQueryParams,
     MergeCandidatePage,
     MergeCandidateQueryParams,
     MergeCandidateReviewRequest,
     MergeCandidateStatus,
     MergeCandidateView,
+    OGFieldQueryParams,
 )
 from stitch.api.observability.context import named_query
-from stitch.ogsi.model import SOURCE_PRIORITY, OGFieldResource, OGFieldSource
+from stitch.ogsi.model import OGFieldSource
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
 
 from .model import (
     MergeCandidateItemModel,
     MergeCandidateModel,
+    OGFieldResourceState,
     OGFieldSourcePriority,
     ResourceModel,
 )
-from .og_field_resource_actions import apply_resource_merge
-from .queries import base_resource_query
-from .utils import coalesce_resources, coalesce_resources_with_sources
+from .og_field_resource_actions import apply_resource_merge, profile_mask
+from .queries import resource_state_query
+from .utils import coalesce_resources_with_sources
 
 
 def _normalize_resource_ids(resource_ids: Sequence[int]) -> list[int]:
@@ -85,9 +86,7 @@ def _fingerprint(resource_ids: Sequence[int]) -> str:
 def _candidate_to_view(model: MergeCandidateModel) -> MergeCandidateView:
     return MergeCandidateView(
         id=model.id,
-        resource_ids=[
-            item.resource_id for item in sorted(model.items, key=lambda i: i.position)
-        ],
+        resource_ids=_ordered_resource_ids(model),
         status=model.status,
         review_notes=model.review_notes,
         merged_resource_id=model.merged_resource_id,
@@ -181,49 +180,41 @@ def _ordered_resource_ids(model: MergeCandidateModel) -> list[int]:
     return [item.resource_id for item in sorted(model.items, key=lambda i: i.position)]
 
 
-def _source_rank(source: OGSISrcKey) -> int:
-    return (
-        SOURCE_PRIORITY.index(source)
-        if source in SOURCE_PRIORITY
-        else len(SOURCE_PRIORITY)
-    )
+def _candidate_name_column(permission_mask: int) -> ColumnElement[str | None]:
+    """A candidate's display name, as SQL over the resource-state read model, so
+    the list can both return and sort by it and the detail view names its
+    candidate the same way. See ``MergeCandidateListItemView.name``.
 
-
-def _candidate_name(
-    model: MergeCandidateModel, coalesced: Mapping[int, OGFieldResource]
-) -> str | None:
-    """Display name for a candidate; see ``MergeCandidateListItemView.name``.
-
-    ``coalesced`` must hold the candidate's resources and, once merged, its
-    merged resource. Source resources are ranked by the global
-    ``SOURCE_PRIORITY`` (the same rule the frontend used to apply), with ties
-    going to the earlier resource.
+    The merged resource's name wins once approved; otherwise the name of the
+    candidate's first resource (by position) that has one. Names come from the
+    caller's permission profile and only the read model's ``name`` column is
+    read. The read model only holds listable resources, so a merged-away
+    original has no row and the merged resource names its candidate.
     """
-    if model.merged_resource_id is not None:
-        merged = coalesced[model.merged_resource_id].view
-        if merged is not None and merged.name is not None:
-            return merged.name
-
-    best: tuple[int, str] | None = None
-    for resource_id in _ordered_resource_ids(model):
-        provenance = coalesced[resource_id].provenance.get("name")
-        if provenance is None:
-            continue
-        name, source, _source_pk = provenance
-        rank = _source_rank(source)
-        if best is None or rank < best[0]:
-            best = (rank, name)
-    return None if best is None else best[1]
-
-
-def _name_resource_ids(models: Sequence[MergeCandidateModel]) -> list[int]:
-    """Every resource ``_candidate_name`` reads for these candidates."""
-    ids: list[int] = []
-    for model in models:
-        ids.extend(_ordered_resource_ids(model))
-        if model.merged_resource_id is not None:
-            ids.append(model.merged_resource_id)
-    return list(dict.fromkeys(ids))
+    state = OGFieldResourceState
+    item = MergeCandidateItemModel
+    candidate = MergeCandidateModel
+    merged_name = (
+        select(state.name)
+        .where(
+            state.resource_id == candidate.merged_resource_id,
+            state.permission_mask == permission_mask,
+        )
+        .scalar_subquery()
+    )
+    first_resource_name = (
+        select(state.name)
+        .join(item, item.resource_id == state.resource_id)
+        .where(
+            item.merge_candidate_id == candidate.id,
+            state.permission_mask == permission_mask,
+            state.name.is_not(None),
+        )
+        .order_by(item.position)
+        .limit(1)
+        .scalar_subquery()
+    )
+    return func.coalesce(merged_name, first_resource_name)
 
 
 def _candidate_to_list_item_view(
@@ -263,43 +254,71 @@ async def _load_candidate_model(
     return model
 
 
+# Work still to do first: candidates awaiting review, then denied, then
+# approved.
+_STATUS_SORT_RANK = {
+    MergeCandidateStatus.PENDING: 0,
+    MergeCandidateStatus.DENIED: 1,
+    MergeCandidateStatus.APPROVED: 2,
+}
+
+
+def _list_order(
+    params: MergeCandidateQueryParams, name: ColumnElement[str | None]
+) -> tuple[ColumnElement[Any], ...]:
+    """ORDER BY for the list. ``id`` always ends it, so pages stay stable when
+    candidates share a sort value (bulk creation, equal names)."""
+    if params.sort_by == "status":
+        status_rank = case(_STATUS_SORT_RANK, value=MergeCandidateModel.status)
+        rank = status_rank.asc() if params.sort_order == "asc" else status_rank.desc()
+        # Newest first within each status, whichever way the groups run.
+        return (
+            rank,
+            MergeCandidateModel.created.desc(),
+            MergeCandidateModel.id.desc(),
+        )
+
+    sort_column = (
+        name
+        if params.sort_by == "name"
+        else getattr(MergeCandidateModel, params.sort_by)
+    )
+    if params.sort_order == "asc":
+        return (sort_column.asc().nulls_last(), MergeCandidateModel.id.asc())
+    return (sort_column.desc().nulls_last(), MergeCandidateModel.id.desc())
+
+
 # Postgres bigint; a longer digit string cannot be a resource id (and would
 # overflow the comparison).
 _MAX_RESOURCE_ID = 2**63 - 1
 
 
-async def _resource_ids_matching(
-    session: AsyncSession,
-    q: str,
-    licensed_sources: Collection[OGSISrcKey] | None,
-) -> list[int]:
-    """Ids of queue resources (candidate members and merged resources) that
-    match ``q``; see ``MergeCandidateFilterParams.q``."""
-    with named_query("merge_candidates.list.search_scope"):
-        queue_resource_ids = list(
-            await session.scalars(
-                union(
-                    select(MergeCandidateItemModel.resource_id),
-                    select(MergeCandidateModel.merged_resource_id).where(
-                        MergeCandidateModel.merged_resource_id.is_not(None)
-                    ),
-                )
-            )
-        )
+def _candidate_search_condition(q: str, permission_mask: int) -> ColumnElement[bool]:
+    """Candidates matching ``q``; see ``MergeCandidateFilterParams.q``.
 
-    # The resource list's own search, limited to the queue's resources. Sorting
-    # by id keeps it from pivoting a sort column it does not need.
-    text_match = base_resource_query(
-        OGFieldQueryParams(q=q, sort_by="id"),
-        licensed_sources,
-        resource_ids=queue_resource_ids,
+    Text matching is the field list's own ``q`` search over the read model, so
+    it sees the caller's permission profile. The read model only holds listable
+    resources, so an approved candidate's merged-away originals cannot match;
+    its merged resource can.
+    """
+    matching = (
+        resource_state_query(OGFieldQueryParams(q=q), permission_mask)
+        .order_by(None)
+        .scalar_subquery()
     )
-    with named_query("merge_candidates.list.search"):
-        matching = set(await session.scalars(text_match))
-
-    if q.isdigit() and int(q) <= _MAX_RESOURCE_ID and int(q) in queue_resource_ids:
-        matching.add(int(q))
-    return sorted(matching)
+    resource_match = [MergeCandidateItemModel.resource_id.in_(matching)]
+    merged_match = [MergeCandidateModel.merged_resource_id.in_(matching)]
+    if q.isdigit() and int(q) <= _MAX_RESOURCE_ID:
+        resource_match.append(MergeCandidateItemModel.resource_id == int(q))
+        merged_match.append(MergeCandidateModel.merged_resource_id == int(q))
+    return or_(
+        *merged_match,
+        MergeCandidateModel.id.in_(
+            select(MergeCandidateItemModel.merge_candidate_id).where(
+                or_(*resource_match)
+            )
+        ),
+    )
 
 
 async def list_merge_candidates(
@@ -308,43 +327,32 @@ async def list_merge_candidates(
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> MergeCandidatePage:
     """One page of merge candidates, with whole-queue counts by status."""
-    filtered = select(MergeCandidateModel.id)
+    mask = profile_mask(licensed_sources)
+    name = _candidate_name_column(mask).label("name")
+    conditions = []
     if params.status:
-        filtered = filtered.where(MergeCandidateModel.status.in_(params.status))
+        conditions.append(MergeCandidateModel.status.in_(params.status))
     q = (params.q or "").strip()
     if q:
-        matching = await _resource_ids_matching(session, q, licensed_sources)
-        filtered = filtered.where(
-            or_(
-                MergeCandidateModel.merged_resource_id.in_(matching),
-                MergeCandidateModel.id.in_(
-                    select(MergeCandidateItemModel.merge_candidate_id).where(
-                        MergeCandidateItemModel.resource_id.in_(matching)
-                    )
-                ),
-            )
-        )
+        conditions.append(_candidate_search_condition(q, mask))
 
     with named_query("merge_candidates.list.count"):
         total = (
-            await session.scalar(select(func.count()).select_from(filtered.subquery()))
+            await session.scalar(
+                select(func.count()).select_from(MergeCandidateModel).where(*conditions)
+            )
         ) or 0
 
-    sort_column = getattr(MergeCandidateModel, params.sort_by)
-    if params.sort_order == "asc":
-        order_by = (sort_column.asc().nulls_last(), MergeCandidateModel.id.asc())
-    else:
-        order_by = (sort_column.desc().nulls_last(), MergeCandidateModel.id.desc())
     stmt = (
-        select(MergeCandidateModel)
+        select(MergeCandidateModel, name)
         .options(selectinload(MergeCandidateModel.items))
-        .where(MergeCandidateModel.id.in_(filtered))
-        .order_by(*order_by)
+        .where(*conditions)
+        .order_by(*_list_order(params, name))
         .limit(params.limit)
         .offset(params.offset)
     )
     with named_query("merge_candidates.list"):
-        candidates = (await session.scalars(stmt)).all()
+        page_rows = (await session.execute(stmt)).all()
 
     with named_query("merge_candidates.list.status_counts"):
         rows = await session.execute(
@@ -356,17 +364,10 @@ async def list_merge_candidates(
     for status, count in rows.all():
         status_counts[MergeCandidateStatus(status)] = count
 
-    with named_query("merge_candidates.list.names"):
-        coalesced = await coalesce_resources(
-            session, _name_resource_ids(candidates), licensed_sources
-        )
-
     return MergeCandidatePage(
         items=[
-            _candidate_to_list_item_view(
-                candidate, _candidate_name(candidate, coalesced)
-            )
-            for candidate in candidates
+            _candidate_to_list_item_view(candidate, candidate_name)
+            for candidate, candidate_name in page_rows
         ],
         total_count=total,
         page=params.page,
@@ -375,11 +376,27 @@ async def list_merge_candidates(
     )
 
 
+async def existing_candidate_resource_sets(
+    session: AsyncSession,
+) -> set[frozenset[int]]:
+    """The resource set of every merge candidate, whatever its status."""
+    stmt = select(MergeCandidateModel).options(selectinload(MergeCandidateModel.items))
+    with named_query("merge_candidates.resource_sets"):
+        candidates = (await session.scalars(stmt)).all()
+    return {
+        frozenset(item.resource_id for item in candidate.items)
+        for candidate in candidates
+    }
+
+
 async def get_merge_candidate(
     session: AsyncSession,
     candidate_id: int,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> MergeCandidateDetailView:
+    # Resolved first, so a caller with no read-model profile is refused (403)
+    # before any work is done.
+    name_column = _candidate_name_column(profile_mask(licensed_sources))
     with named_query("merge_candidates.detail.load"):
         candidate = await _load_candidate_model(session, candidate_id)
 
@@ -413,18 +430,14 @@ async def get_merge_candidate(
     resource_views = [by_id[rid].view for rid in resource_ids]
     compare = _build_comparison(resource_views, sources_with_priority)
 
-    name_sources: dict[int, OGFieldResource] = dict(by_id)
-    if candidate.merged_resource_id is not None:
-        with named_query("merge_candidates.detail.merged_name"):
-            name_sources.update(
-                await coalesce_resources(
-                    session, [candidate.merged_resource_id], licensed_sources
-                )
-            )
+    with named_query("merge_candidates.detail.name"):
+        name = await session.scalar(
+            select(name_column)
+            .select_from(MergeCandidateModel)
+            .where(MergeCandidateModel.id == candidate.id)
+        )
 
-    return _candidate_to_detail_view(
-        candidate, _candidate_name(candidate, name_sources), compare
-    )
+    return _candidate_to_detail_view(candidate, name, compare)
 
 
 async def create_merge_candidate(
@@ -474,6 +487,33 @@ async def create_merge_candidate(
         await session.flush()
         await session.refresh(candidate, ["items"])
     return _candidate_to_view(candidate)
+
+
+async def create_merge_candidates_bulk(
+    session: AsyncSession,
+    user: CurrentUser,
+    groups: Sequence[Sequence[int]],
+) -> None:
+    with named_query("merge_candidates.bulk_create"):
+        candidates = [
+            MergeCandidateModel.create(created_by=user, fingerprint=_fingerprint(group))
+            for group in groups
+        ]
+        session.add_all(candidates)
+        await session.flush()
+
+        session.add_all(
+            [
+                MergeCandidateItemModel(
+                    merge_candidate_id=candidate.id,
+                    resource_id=resource_id,
+                    position=position,
+                )
+                for candidate, group in zip(candidates, groups)
+                for position, resource_id in enumerate(group)
+            ]
+        )
+        await session.flush()
 
 
 async def _reroute_pending_candidates(
@@ -575,9 +615,7 @@ async def approve_merge_candidate(
             f"Merge candidate {candidate_id} is not pending; current status={candidate.status}."
         )
 
-    resource_ids = [
-        item.resource_id for item in sorted(candidate.items, key=lambda i: i.position)
-    ]
+    resource_ids = _ordered_resource_ids(candidate)
     with named_query("merge_candidates.approve.load_resources"):
         await _load_mergeable_resources(session, resource_ids)
     merged_resource = await apply_resource_merge(

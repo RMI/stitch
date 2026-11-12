@@ -32,13 +32,18 @@ from stitch.api.db.model import (
     MembershipModel,
     MembershipStatus,
     OGFieldResourceSourcePriority,
+    OGFieldResourceState,
     OGFieldSourcePriority,
     OilGasFieldSourceModel,
     OilGasFieldSourceValueModel,
     ResourceModel,
 )
 from stitch.api.db.model.oil_gas_field_source_value import value_attr_for
-from stitch.api.entities import FILTER_OPTION_FIELDS, OGFieldQueryParams
+from stitch.api.entities import (
+    FILTER_OPTION_FIELDS,
+    OGFieldFilterParams,
+    OGFieldQueryParams,
+)
 from stitch.ogsi.model.types import OGSISrcKey
 
 # Single source of truth for the source-list field metadata. This is a shared
@@ -66,7 +71,7 @@ EXACT_MATCH_FIELDS: Final[tuple[str, ...]] = (
 _HEADER_SORT_FIELDS: Final[frozenset[str]] = frozenset({"id", "source", "resource_id"})
 
 
-def _filter_values(params: OGFieldQueryParams, field_name: str) -> list[Any]:
+def _filter_values(params: OGFieldFilterParams, field_name: str) -> list[Any]:
     """The values an exact-match filter is set to, as a list.
 
     Multi-select fields arrive as lists; the rest are scalars, returned as a
@@ -244,7 +249,8 @@ def coalesced_winner_rows(
     """Winning ``(value, source)`` per ``(resource, field)`` for given resources.
 
     One row per ``(resource_id, colname)`` that wins coalescing -- the same
-    priority ranking the list/filter path uses (``add_ranking``). The base CTE is
+    priority ranking the detail view uses (``add_ranking``). The read model's
+    rows are built from it (``read_model.state``). The base CTE is
     narrowed to ``resource_ids`` *before* ranking, so the window partitions cover
     only the requested resources rather than the whole table. Callers materialize
     the typed value and read the winning ``source``/``source_pk`` as provenance;
@@ -260,47 +266,6 @@ def coalesced_winner_rows(
         winners.c.value_json,
         winners.c.source,
         winners.c.source_pk,
-    )
-
-
-def filter_option_rows(
-    licensed_sources: Collection[OGSISrcKey] | None = None,
-) -> Select[tuple[str, str]]:
-    """Distinct winning ``(colname, value)`` pairs for every filterable field."""
-    m = MembershipModel
-    v = OilGasFieldSourceValueModel
-    p = OGFieldSourcePriority
-    o = OGFieldResourceSourcePriority
-
-    base = (
-        select(
-            m.resource_id.label("resource_id"),
-            m.source.label("source"),
-            m.source_pk.label("source_pk"),
-            o.priority.label("override_priority"),
-            p.priority.label("default_priority"),
-            v.colname.label("colname"),
-            v.value_text,
-        )
-        .select_from(m)
-        .join(v, v.source_pk == m.source_pk)
-        .join(p, p.source == m.source)
-        .outerjoin(o, _override_join(m.resource_id))
-        .where(
-            m.status == MembershipStatus.ACTIVE,
-            v.colname.in_(FILTER_OPTION_FIELDS),
-        )
-    )
-    if licensed_sources is not None:
-        base = base.where(m.source.in_(list(dict.fromkeys(licensed_sources))))
-
-    ranked = add_ranking(base.cte("filter_option_base")).cte("filter_option_ranked")
-    c = ranked.c
-    return (
-        select(c.colname, c.value_text)
-        .where(c.value_text.is_not(None))  # rn == 1 already applied by add_ranking
-        .distinct()
-        .order_by(c.colname, c.value_text)
     )
 
 
@@ -388,78 +353,92 @@ def coalesced_candidate_rows(
     )
 
 
-def _resource_universe(
-    resource_ids: Collection[int] | None = None,
-) -> Select[tuple[int]]:
+def resource_universe() -> Select[tuple[int]]:
     """Resources eligible to appear in a list: any non-repointed resource with an
     active membership. Membership-derived and ungated by licensing/source, so a
     resource whose licensed values are all absent still appears as a null-shell on
     an unfiltered list (and drops out once a field is filtered).
 
-    ``resource_ids`` narrows the universe to those resources."""
+    Also decides which resources get rows in the resource-state read model
+    (``read_model.state``)."""
     m = MembershipModel
     r = ResourceModel
-    stmt = (
+    return (
         select(r.id.label("resource_id"))
         .select_from(r)
         .join(m, m.resource_id == r.id)
         .where(r.repointed_id.is_(None), m.status == MembershipStatus.ACTIVE)
         .distinct()
     )
-    if resource_ids is not None:
-        stmt = stmt.where(r.id.in_(list(dict.fromkeys(resource_ids))))
-    return stmt
 
 
-def base_resource_query(
-    params: OGFieldQueryParams,
-    licensed_sources: Collection[OGSISrcKey] | None = None,
-    resource_ids: Collection[int] | None = None,
+def resource_state_query(
+    params: OGFieldQueryParams, permission_mask: int
 ) -> Select[tuple[int]]:
-    """Ids of the resources matching ``params``, in ``params``' sort order.
+    """The list's matching resource ids, in list order, for one profile.
 
-    ``resource_ids`` limits the search to those resources, so callers that only
-    care about a known subset (e.g. the merge queue's resources) do not pivot
-    and rank every resource in the table.
+    Filters, sort, and id ordering use the shared clause builders (the same ones
+    the source list uses) on the stored typed columns of one permission profile
+    -- no coalescing window. The table only holds listable resources, so it is
+    the universe.
     """
-    involved = _participating_columns(params)
-    universe = _resource_universe(resource_ids).cte("resource_universe")
-
-    if not involved:
-        # No value field filtered or sorted -> the universe alone (every active
-        # resource); only the id filter below can narrow it.
-        base = universe
-        conditions: list[ColumnElement[bool]] = []
-    else:
-        base_cte = construct_base_query_statement(licensed_sources, resource_ids)
-        ranked = add_ranking(base_cte).cte("ranked")
-        pivot = _add_pivot_columns(
-            select(ranked.c.resource_id.label("resource_id")),
-            involved,
-            ranked.c.colname,
-            lambda field_name: getattr(ranked.c, value_attr_for(field_name)),
-        )
-        pivot_cte = pivot.group_by(ranked.c.resource_id).cte("resource_pivot")
-
-        # LEFT JOIN the licensed/coalesced pivot onto the membership universe: a
-        # resource with no licensed values keeps its row (null-shell) but is
-        # dropped by any field filter below.
-        resource_base = select(universe.c.resource_id)
-        for field_name in involved:
-            resource_base = resource_base.add_columns(pivot_cte.c[field_name])
-        base = resource_base.select_from(
-            universe.outerjoin(
-                pivot_cte, pivot_cte.c.resource_id == universe.c.resource_id
-            )
-        ).cte("resource_base")
-        conditions = _build_field_conditions(base, params)
-
-    stmt = select(base.c.resource_id)
-    for cond in conditions:
+    state = OGFieldResourceState
+    profile = _resource_state_profile(permission_mask)
+    stmt = select(state.resource_id).where(state.permission_mask == permission_mask)
+    for cond in _build_field_conditions(profile, params):
         stmt = stmt.where(cond)
     if params.id is not None:
-        stmt = stmt.where(base.c.resource_id == params.id)
-    return stmt.order_by(*_build_sort_clauses(base, params, "resource_id"))
+        stmt = stmt.where(state.resource_id == params.id)
+    return stmt.order_by(*_build_sort_clauses(profile, params, "resource_id"))
+
+
+def resource_state_page_query(
+    params: OGFieldQueryParams, permission_mask: int
+) -> Select[Any]:
+    """One page of stored rows, chosen and read in a single statement.
+
+    The inner query picks the page's ids (``resource_state_query`` with the
+    page's limit/offset), which indexes can answer without touching skipped
+    rows; the outer query then reads just those rows, in the same order. Being
+    one statement, the page is chosen and read from one snapshot.
+    """
+    state = OGFieldResourceState
+    page = (
+        resource_state_query(params, permission_mask)
+        .limit(params.limit)
+        .offset(params.offset)
+        .subquery("page")
+    )
+    profile = _resource_state_profile(permission_mask)
+    return profile.join(page, page.c.resource_id == state.resource_id).order_by(
+        *_build_sort_clauses(profile, params, "resource_id")
+    )
+
+
+def _resource_state_profile(permission_mask: int) -> Select[Any]:
+    """Every stored row for one profile.
+
+    Also the column source for the shared clause builders: its columns are the
+    table's own, so conditions and sorts apply straight to the indexed table.
+    """
+    state = OGFieldResourceState
+    return select(state.__table__).where(state.permission_mask == permission_mask)
+
+
+def resource_state_filter_option_query(
+    permission_mask: int,
+    params: OGFieldFilterParams,
+) -> Select[tuple[Any, ...]]:
+    """Distinct stored values of every filterable field, for the rows ``params`` matches."""
+    state = OGFieldResourceState
+    stmt = select(*(getattr(state, field) for field in FILTER_OPTION_FIELDS)).where(
+        state.permission_mask == permission_mask
+    )
+    for cond in _build_field_conditions(
+        _resource_state_profile(permission_mask), params
+    ):
+        stmt = stmt.where(cond)
+    return stmt.distinct()
 
 
 def _add_pivot_columns(
@@ -503,7 +482,7 @@ def _require_column(cte: CTE | Select, field_name: str) -> ColumnElement[Any]:
 
 def _build_field_conditions(
     cte: CTE | Select,
-    params: OGFieldQueryParams,
+    params: OGFieldFilterParams,
 ) -> list[ColumnElement[bool]]:
     """Path-agnostic q-ILIKE + exact-match filters over the pivoted columns.
 

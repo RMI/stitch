@@ -236,9 +236,11 @@ describe("Pagination", () => {
         expect(button.className).toMatch(/(^|\s)shrink-0(\s|$)/);
       }
 
-      for (const span of container.querySelectorAll(
-        'span[aria-hidden="true"]',
-      )) {
+      const ellipses = [
+        ...container.querySelectorAll('span[aria-hidden="true"]'),
+      ].filter((span) => span.textContent === "…");
+      expect(ellipses.length).toBeGreaterThan(0);
+      for (const span of ellipses) {
         expect(span.className).toMatch(/(^|\s)shrink-0(\s|$)/);
       }
 

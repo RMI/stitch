@@ -4,7 +4,7 @@ const STATE_STYLES = {
   failed: "border-danger/25 bg-danger-soft text-danger",
 };
 
-// Shared job-state pill used by the ETL and entity-linkage batch-workflow pages.
+// Job-state pill used by the ETL batch-workflow page.
 export default function StateBadge({ state }) {
   if (!state) return null;
 

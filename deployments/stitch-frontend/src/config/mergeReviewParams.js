@@ -34,6 +34,9 @@ export const QUEUE_SORT_OPTIONS = [
     sortOrder: "desc",
   },
   { key: "oldest", label: "Oldest first", sortBy: "created", sortOrder: "asc" },
+  { key: "name-asc", label: "Name A–Z", sortBy: "name", sortOrder: "asc" },
+  { key: "name-desc", label: "Name Z–A", sortBy: "name", sortOrder: "desc" },
+  { key: "status", label: "Status", sortBy: "status", sortOrder: "asc" },
   {
     key: "recently-reviewed",
     label: "Recently reviewed",

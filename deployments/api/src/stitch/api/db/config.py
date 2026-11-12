@@ -88,4 +88,4 @@ EngineDep = Annotated[AsyncEngine, Depends(get_engine)]
 SessionFactoryDep = Annotated[
     async_sessionmaker[AsyncSession], Depends(get_session_factory)
 ]
-UnitOfWorkDep = Annotated[UnitOfWork, Depends(get_uow)]
+UnitOfWorkDep = Annotated[UnitOfWork, Depends(get_uow, scope="function")]

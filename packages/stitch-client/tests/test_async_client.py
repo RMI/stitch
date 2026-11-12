@@ -619,10 +619,40 @@ async def test_list_merge_candidates_page_sends_expected_request() -> None:
         "params": [
             ("page", "2"),
             ("page_size", "10"),
+            # Pinned oldest first, so a scan isn't shifted by new candidates.
+            ("sort_by", "created"),
+            ("sort_order", "asc"),
             ("status", "PENDING"),
             ("status", "DENIED"),
         ],
     }
+
+    await raw_client.aclose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("status", "error"),
+    [("PENDING", TypeError), (b"PENDING", TypeError), ([], ValueError)],
+)
+async def test_list_merge_candidates_page_rejects_a_bare_string_or_empty_status(
+    status: Any, error: type[Exception]
+) -> None:
+    """A bare string would be split into single letters, and an empty sequence
+    vanishes from the query string and would select every status, so both are
+    refused before the request goes out."""
+    called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(200, json={"items": [], "total_pages": 1})
+
+    client, raw_client = make_client(handler)
+
+    with pytest.raises(error):
+        await client.list_merge_candidates_page(status=status)
+    assert not called
 
     await raw_client.aclose()
 

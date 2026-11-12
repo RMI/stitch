@@ -6,6 +6,7 @@ import Input from "../components/Input";
 import MergeSourceComparison from "../components/MergeSourceComparison";
 import MergedResourceView from "../components/MergedResourceView";
 import Pagination from "../components/Pagination";
+import Select from "../components/Select";
 import {
   MERGE_STATUSES,
   QUEUE_SORT_OPTIONS,
@@ -181,18 +182,17 @@ function QueueControls({
       <label className="sr-only" htmlFor="queue-sort">
         Sort candidates
       </label>
-      <select
+      <Select
         id="queue-sort"
         value={sortKey}
         onChange={(event) => onSortKeyChange(event.target.value)}
-        className="min-h-9 rounded-md border border-line bg-panel px-2 py-1.5 text-sm text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
       >
         {QUEUE_SORT_OPTIONS.map((option) => (
           <option key={option.key} value={option.key}>
             {option.label}
           </option>
         ))}
-      </select>
+      </Select>
     </div>
   );
 }
@@ -536,6 +536,14 @@ export default function MergeCandidateReviewPage() {
   const viewState = useMergeReviewState();
   const [selectedId, setSelectedId] = useState(null);
   const [reviewNotes, setReviewNotes] = useState("");
+  // The candidate the notes were typed for. The selection also moves without a
+  // click (paging, filtering, sorting, advancing after a review), so the notes
+  // are cleared whenever it changes, never carried to another candidate.
+  const [notesCandidateId, setNotesCandidateId] = useState(selectedId);
+  if (notesCandidateId !== selectedId) {
+    setNotesCandidateId(selectedId);
+    setReviewNotes("");
+  }
   const selectedPanelRef = useRef(null);
 
   const reviewMutation = useReviewMergeCandidate(ENDPOINT);
@@ -543,9 +551,11 @@ export default function MergeCandidateReviewPage() {
   const activeReviewAction = reviewMutation.isPending
     ? reviewMutation.variables?.action
     : null;
-  const actionError = reviewMutation.error
-    ? reviewMutation.error.message || String(reviewMutation.error)
-    : null;
+  // Only shown on the candidate whose review failed.
+  const actionError =
+    reviewMutation.error && reviewMutation.variables?.id === selectedId
+      ? reviewMutation.error.message || String(reviewMutation.error)
+      : null;
 
   const {
     data: candidatePage,

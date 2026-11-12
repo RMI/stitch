@@ -52,7 +52,7 @@ describe("parseMergeReviewParams", () => {
   });
 
   it("falls back to defaults for malformed page, page_size and sort", () => {
-    expect(parse("page=0&page_size=7&sort_by=name&sort_order=asc")).toEqual(
+    expect(parse("page=0&page_size=7&sort_by=size&sort_order=asc")).toEqual(
       DEFAULT_STATE,
     );
     expect(parse("page=abc").page).toBe(1);
@@ -94,6 +94,15 @@ describe("toMergeReviewParams", () => {
     };
     expect(parse(serialize(state))).toEqual(state);
   });
+
+  it("writes the name and status sorts like the others", () => {
+    expect(serialize({ ...DEFAULT_STATE, sortKey: "name-desc" })).toBe(
+      "sort_by=name&sort_order=desc",
+    );
+    const state = { ...DEFAULT_STATE, sortKey: "status" };
+    expect(serialize(state)).toBe("sort_by=status&sort_order=asc");
+    expect(parse(serialize(state))).toEqual(state);
+  });
 });
 
 describe("toMergeCandidateQuery", () => {
@@ -124,5 +133,21 @@ describe("toMergeCandidateQuery", () => {
     expect(
       toMergeCandidateQuery({ ...DEFAULT_STATE, statuses: [] }).status,
     ).toBeUndefined();
+  });
+
+  it("sends a name sort to the API", () => {
+    const query = toMergeCandidateQuery({
+      ...DEFAULT_STATE,
+      sortKey: "name-desc",
+    });
+    expect([query.sort_by, query.sort_order]).toEqual(["name", "desc"]);
+  });
+
+  it("sends a status sort to the API", () => {
+    const query = toMergeCandidateQuery({
+      ...DEFAULT_STATE,
+      sortKey: "status",
+    });
+    expect([query.sort_by, query.sort_order]).toEqual(["status", "asc"]);
   });
 });
