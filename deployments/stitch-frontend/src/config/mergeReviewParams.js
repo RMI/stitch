@@ -25,9 +25,9 @@ const ALL_STATUSES = "all";
 export const DEFAULT_QUEUE_PAGE_SIZE = 25;
 
 // Each option is one sort_by + sort_order pair, labelled in plain language.
-// The first is the default. `pageOnly` sorts are not offered by the API yet:
+// The first is the default. A `pageOnly` sort is not offered by the API yet:
 // the page fetches the default order and re-orders just the rows it holds
-// (utils/candidateSort.js), so they sort within the current page.
+// (utils/candidateSort.js), so it sorts within the current page.
 export const QUEUE_SORT_OPTIONS = [
   {
     key: "newest",
@@ -41,14 +41,12 @@ export const QUEUE_SORT_OPTIONS = [
     label: "Name A–Z",
     sortBy: "name",
     sortOrder: "asc",
-    pageOnly: true,
   },
   {
     key: "name-desc",
     label: "Name Z–A",
     sortBy: "name",
     sortOrder: "desc",
-    pageOnly: true,
   },
   {
     key: "status",

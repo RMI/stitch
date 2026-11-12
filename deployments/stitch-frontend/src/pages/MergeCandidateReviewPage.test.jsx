@@ -910,22 +910,18 @@ describe("MergeCandidateReviewPage", () => {
       ]);
     });
 
-    it("orders the page by name, ignoring accents, without asking the API to", async () => {
+    it("asks the API to sort by name", async () => {
       const user = userEvent.setup();
-      renderWithQueryClient(<MergeCandidateReviewPage />, {
-        initialEntries: [ALL_STATUSES_URL],
-      });
-      expect(queueOrder()).toEqual(["Zubair", "Ábalos", "Burgan"]);
+      renderWithQueryClient(<MergeCandidateReviewPage />);
 
       await user.selectOptions(sortControl(), "name-asc");
-      expect(queueOrder()).toEqual(["Ábalos", "Burgan", "Zubair"]);
       expect(lastQueueRequest()).toMatchObject({
-        sort_by: "created",
-        sort_order: "desc",
+        page: 1,
+        sort_by: "name",
+        sort_order: "asc",
       });
-
-      await user.selectOptions(sortControl(), "name-desc");
-      expect(queueOrder()).toEqual(["Zubair", "Burgan", "Ábalos"]);
+      // The API's order is shown as is: the page does not re-sort it.
+      expect(queueOrder()).toEqual(["Zubair", "Burgan"]);
     });
 
     it("orders the page by status: candidates first, then denied, then approved", async () => {
@@ -944,12 +940,12 @@ describe("MergeCandidateReviewPage", () => {
       expect(statuses).toEqual(["CANDIDATE", "DENIED", "APPROVED"]);
     });
 
-    it("says a name sort covers only this page when there are more", async () => {
+    it("says the status sort covers only this page when there are more", async () => {
       const user = userEvent.setup();
       renderWithQueryClient(<MergeCandidateReviewPage />, {
         initialEntries: ["/?status=all&page_size=10"],
       });
-      await user.selectOptions(sortControl(), "name-asc");
+      await user.selectOptions(sortControl(), "status");
       // Three candidates fit on one page.
       expect(
         within(queue()).queryByText("Sorted within this page."),
@@ -962,31 +958,37 @@ describe("MergeCandidateReviewPage", () => {
           name: `Field ${i}`,
         })),
       );
-      await user.selectOptions(sortControl(), "name-desc");
+      await user.selectOptions(sortControl(), "newest");
+      await user.selectOptions(sortControl(), "status");
       expect(
         within(queue()).getByText("Sorted within this page."),
       ).toBeInTheDocument();
+      // A server sort covers the whole queue, so it needs no note.
+      await user.selectOptions(sortControl(), "name-asc");
+      expect(
+        within(queue()).queryByText("Sorted within this page."),
+      ).not.toBeInTheDocument();
     });
 
     it("selects, then moves on to, pending candidates in the displayed order", async () => {
-      // Name A–Z shows Burgan (23) before Zubair (21), so Burgan is selected
-      // first and Zubair comes next -- not the API's newest-first order.
+      // Status order shows the pending Zubair (21) and Burgan (23) before the
+      // denied Ábalos (22); after approving Zubair, Burgan is next.
       vi.mocked(useMergeCandidate).mockImplementation((_endpoint, id) => ({
         ...defaultHookReturn,
         data: id === burgan.id ? burgan : zubair,
       }));
       const user = userEvent.setup();
       renderWithQueryClient(<MergeCandidateReviewPage />, {
-        initialEntries: ["/?sort_by=name&sort_order=asc"],
+        initialEntries: ["/?status=all&sort_by=status&sort_order=asc"],
       });
       expect(
-        screen.getByRole("heading", { name: "Burgan" }),
+        screen.getByRole("heading", { name: "Zubair" }),
       ).toBeInTheDocument();
 
       await user.click(screen.getByRole("button", { name: "Approve merge" }));
 
       expect(
-        await screen.findByRole("heading", { name: "Zubair" }),
+        await screen.findByRole("heading", { name: "Burgan" }),
       ).toBeInTheDocument();
     });
 

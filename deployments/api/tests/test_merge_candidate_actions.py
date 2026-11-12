@@ -9,7 +9,6 @@ import pytest
 from stitch.api.entities import (
     MergeCandidateCreateRequest,
     MergeCandidateDetailView,
-    MergeCandidateQueryParams,
     MergeCandidateReviewRequest,
     MergeCandidateStatus,
 )
@@ -127,55 +126,6 @@ def _named(name: str | None, source: str = "rmi", source_pk: int = 1):
         view=OilGasFieldBase(name=name, country=None),
         provenance={"name": None if name is None else (name, source, source_pk)},
     )
-
-
-@pytest.mark.anyio
-async def test_list_merge_candidates_returns_page_with_names_and_counts(
-    monkeypatch,
-):
-    first = FakeCandidate(
-        id=2,
-        status=MergeCandidateStatus.PENDING,
-        items=[FakeItem(18, 0), FakeItem(19, 1)],
-    )
-    second = FakeCandidate(
-        id=1,
-        status=MergeCandidateStatus.APPROVED,
-        items=[FakeItem(20, 0), FakeItem(21, 1)],
-        merged_resource_id=30,
-    )
-    session = FakeSession(
-        scalar_result=7,
-        scalars_result=[first, second],
-        execute_rows=[("PENDING", 5), ("APPROVED", 2)],
-    )
-
-    async def fake_listed_names(session_arg, resource_ids, licensed):
-        assert resource_ids == [18, 19, 20, 21, 30]
-        assert licensed == ["rmi"]
-        # Merged-away originals (20, 21) have no read-model row, so no name;
-        # the merged resource names their candidate.
-        return {18: ("From WM", "wm"), 19: ("From RMI", "rmi"), 30: ("Merged", "rmi")}
-
-    monkeypatch.setattr(mca, "_listed_names", fake_listed_names)
-
-    page = await mca.list_merge_candidates(
-        session, MergeCandidateQueryParams(page=1, page_size=2), ["rmi"]
-    )
-
-    assert [view.id for view in page.items] == [2, 1]
-    assert page.items[0].resource_ids == [18, 19]
-    # Best-ranked source wins regardless of resource order.
-    assert page.items[0].name == "From RMI"
-    assert page.items[1].name == "Merged"
-    assert page.total_count == 7
-    assert page.total_pages == 4
-    # Every status is reported, including ones with no candidates.
-    assert page.status_counts == {
-        MergeCandidateStatus.PENDING: 5,
-        MergeCandidateStatus.APPROVED: 2,
-        MergeCandidateStatus.DENIED: 0,
-    }
 
 
 def test_candidate_name_breaks_rank_ties_by_resource_position():

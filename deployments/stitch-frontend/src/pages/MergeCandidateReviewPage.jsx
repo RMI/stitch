@@ -176,7 +176,7 @@ function QueuePanel({
           sortKey={viewState.sortKey}
           onSortKeyChange={viewState.setSortKey}
         />
-        {/* Name and status sorts re-order only the loaded page, so say so
+        {/* The status sort re-orders only the loaded page, so say so
             whenever there is more than one. */}
         {isPageOnlySort(viewState.sortKey) && candidatePage?.total_pages > 1 ? (
           <p className="mt-2 text-xs text-ink-muted">
@@ -496,9 +496,9 @@ export default function MergeCandidateReviewPage() {
   } = useMergeCandidates(ENDPOINT, toMergeCandidateQuery(viewState), true);
   const pageCandidates = candidatePage?.items;
   // The rows as displayed: the API's order, re-ordered on the page for the
-  // sorts the API does not offer (name, status).
+  // one sort the API does not offer yet (status).
   const visibleCandidates = pageCandidates
-    ? sortCandidates(pageCandidates, viewState.sortKey, candidateDisplayName)
+    ? sortCandidates(pageCandidates, viewState.sortKey)
     : pageCandidates;
 
   // Reviewing the last candidate on the last page (or a link to a page that no

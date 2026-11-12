@@ -237,7 +237,8 @@ Notes:
 
 - The queue shows pending candidates by default, so a bare `/merge-candidate-review` is the review work still to do. Clearing every status in the Status filter shows all of them, written as `status=all`.
 - The page size is not remembered between visits, unlike the resources list.
-- The `name` and `status` sorts are not done by the API yet: the page fetches the queue newest first and re-orders just the candidates on the current page, and says so when there is more than one page.
+- The `name` sort orders the whole queue by each candidate's display name, as the API names it for you; candidates without a name come last.
+- The `status` sort is not done by the API yet: the page fetches the queue newest first and re-orders just the candidates on the current page, and says so when there is more than one page.
 - Unknown statuses are dropped, and a malformed `page`, `page_size` or sort falls back to its default. A `page` past the end steps back to the last page.
 
 The schema lives in `src/config/mergeReviewParams.js`.

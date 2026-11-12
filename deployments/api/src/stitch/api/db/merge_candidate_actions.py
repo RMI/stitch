@@ -4,7 +4,7 @@ from collections.abc import Collection, Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -200,6 +200,9 @@ def _candidate_name(model: MergeCandidateModel, names: ResourceNames) -> str | N
     resource. The merged resource's name wins; otherwise source resources are
     ranked by the global ``SOURCE_PRIORITY`` (the same rule the frontend used
     to apply), with ties going to the earlier resource.
+
+    Used by the detail view. The list applies the same rule in SQL
+    (``_candidate_name_column``) so it can sort by it; change both together.
     """
     if model.merged_resource_id in names:
         return names[model.merged_resource_id][0]
@@ -226,40 +229,46 @@ def _names_from_coalesced(resources: Mapping[int, OGFieldResource]) -> ResourceN
     return names
 
 
-async def _listed_names(
-    session: AsyncSession,
-    resource_ids: Collection[int],
-    licensed_sources: Collection[OGSISrcKey] | None,
-) -> ResourceNames:
-    """``ResourceNames`` read from the resource-state read model, for the
-    caller's permission profile (403 if they have none, as for the field list).
+def _candidate_name_column(permission_mask: int) -> ColumnElement[str | None]:
+    """``_candidate_name``'s rule as SQL over the resource-state read model, so
+    the list can both return and sort by each candidate's name.
 
-    The read model only holds listable resources, so a merged-away original has
-    no row and no name; its candidate is named by the merged resource instead.
+    The merged resource's name wins once approved; otherwise the name whose
+    winning source ranks best in ``SOURCE_PRIORITY``, ties going to the earlier
+    resource. Names come from the caller's permission profile. The read model
+    only holds listable resources, so a merged-away original has no row and
+    the merged resource names its candidate. Change together with
+    ``_candidate_name``, which applies the rule for the detail view.
     """
-    mask = profile_mask(licensed_sources)
     state = OGFieldResourceState
-    rows = await session.execute(
-        select(state.resource_id, state.name, state.provenance).where(
-            state.permission_mask == mask,
-            state.resource_id.in_(list(resource_ids)),
+    item = MergeCandidateItemModel
+    candidate = MergeCandidateModel
+    merged_name = (
+        select(state.name)
+        .where(
+            state.resource_id == candidate.merged_resource_id,
+            state.permission_mask == permission_mask,
+        )
+        .scalar_subquery()
+    )
+    source_rank = case(
+        {source: rank for rank, source in enumerate(SOURCE_PRIORITY)},
+        value=state.provenance["name"].as_string(),
+        else_=len(SOURCE_PRIORITY),
+    )
+    best_source_name = (
+        select(state.name)
+        .join(item, item.resource_id == state.resource_id)
+        .where(
+            item.merge_candidate_id == candidate.id,
+            state.permission_mask == permission_mask,
             state.name.is_not(None),
         )
+        .order_by(source_rank, item.position)
+        .limit(1)
+        .scalar_subquery()
     )
-    return {
-        resource_id: (name, provenance["name"])
-        for resource_id, name, provenance in rows.all()
-    }
-
-
-def _name_resource_ids(models: Sequence[MergeCandidateModel]) -> list[int]:
-    """Every resource ``_candidate_name`` reads for these candidates."""
-    ids: list[int] = []
-    for model in models:
-        ids.extend(_ordered_resource_ids(model))
-        if model.merged_resource_id is not None:
-            ids.append(model.merged_resource_id)
-    return list(dict.fromkeys(ids))
+    return func.coalesce(merged_name, best_source_name)
 
 
 def _candidate_to_list_item_view(
@@ -305,6 +314,7 @@ async def list_merge_candidates(
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> MergeCandidatePage:
     """One page of merge candidates, with whole-queue counts by status."""
+    name = _candidate_name_column(profile_mask(licensed_sources)).label("name")
     filtered = select(MergeCandidateModel.id)
     if params.status:
         filtered = filtered.where(MergeCandidateModel.status.in_(params.status))
@@ -314,13 +324,17 @@ async def list_merge_candidates(
             await session.scalar(select(func.count()).select_from(filtered.subquery()))
         ) or 0
 
-    sort_column = getattr(MergeCandidateModel, params.sort_by)
+    sort_column = (
+        name
+        if params.sort_by == "name"
+        else getattr(MergeCandidateModel, params.sort_by)
+    )
     if params.sort_order == "asc":
         order_by = (sort_column.asc().nulls_last(), MergeCandidateModel.id.asc())
     else:
         order_by = (sort_column.desc().nulls_last(), MergeCandidateModel.id.desc())
     stmt = (
-        select(MergeCandidateModel)
+        select(MergeCandidateModel, name)
         .options(selectinload(MergeCandidateModel.items))
         .where(MergeCandidateModel.id.in_(filtered))
         .order_by(*order_by)
@@ -328,7 +342,7 @@ async def list_merge_candidates(
         .offset(params.offset)
     )
     with named_query("merge_candidates.list"):
-        candidates = (await session.scalars(stmt)).all()
+        page_rows = (await session.execute(stmt)).all()
 
     with named_query("merge_candidates.list.status_counts"):
         rows = await session.execute(
@@ -340,15 +354,10 @@ async def list_merge_candidates(
     for status, count in rows.all():
         status_counts[MergeCandidateStatus(status)] = count
 
-    with named_query("merge_candidates.list.names"):
-        names = await _listed_names(
-            session, _name_resource_ids(candidates), licensed_sources
-        )
-
     return MergeCandidatePage(
         items=[
-            _candidate_to_list_item_view(candidate, _candidate_name(candidate, names))
-            for candidate in candidates
+            _candidate_to_list_item_view(candidate, candidate_name)
+            for candidate, candidate_name in page_rows
         ],
         total_count=total,
         page=params.page,

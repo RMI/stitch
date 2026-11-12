@@ -683,6 +683,12 @@ class TestMergeCandidateListIntegration:
         (item,) = resp.json()["items"]
         # Same source on both resources: the tie goes to the first resource.
         assert item["name"] == "Ghawar"
+        # Every status is counted, including ones with no candidates.
+        assert resp.json()["status_counts"] == {
+            "PENDING": 1,
+            "APPROVED": 0,
+            "DENIED": 0,
+        }
 
         # After approval the originals are emptied; the merged resource names it.
         approve = await integration_client.post(
@@ -692,6 +698,70 @@ class TestMergeCandidateListIntegration:
         resp = await integration_client.get("/oil-gas-fields/merge-candidates")
         (item,) = resp.json()["items"]
         assert item["name"] == "Ghawar"
+
+    @pytest.mark.anyio
+    async def test_names_come_from_the_best_ranked_source(
+        self,
+        integration_client: AsyncClient,
+        og_field_resource_factory,
+        source_maker,
+    ):
+        # gem ranks below rmi, so the second resource names the candidate.
+        id_gem = await _create_resource_with_sources(
+            integration_client,
+            og_field_resource_factory,
+            [source_maker(source="gem", managed=False, name="From GEM")],
+        )
+        id_rmi = await _create_resource_with_sources(
+            integration_client,
+            og_field_resource_factory,
+            [source_maker(source="rmi", managed=False, name="From RMI")],
+        )
+        await _create_candidate(integration_client, [id_gem, id_rmi])
+
+        resp = await integration_client.get("/oil-gas-fields/merge-candidates")
+        assert resp.status_code == 200, resp.text
+        (item,) = resp.json()["items"]
+        assert item["name"] == "From RMI"
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("sort_order", "expected"),
+        [
+            ("asc", ["Burgan", "Ghawar", "Zubair"]),
+            ("desc", ["Zubair", "Ghawar", "Burgan"]),
+        ],
+    )
+    async def test_sorts_by_name_across_pages(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+        sort_order: str,
+        expected: list[str],
+    ):
+        # Created out of name order, so a created-order result can't pass.
+        for name in ["Ghawar", "Zubair", "Burgan"]:
+            first = await _create_resource(integration_client, og_create_res_fact, name)
+            second = await _create_resource(
+                integration_client, og_create_res_fact, f"{name} twin"
+            )
+            await _create_candidate(integration_client, [first, second])
+
+        names = []
+        for page in (1, 2):
+            resp = await integration_client.get(
+                "/oil-gas-fields/merge-candidates",
+                params={
+                    "sort_by": "name",
+                    "sort_order": sort_order,
+                    "page": page,
+                    "page_size": 2,
+                },
+            )
+            assert resp.status_code == 200, resp.text
+            names.extend(item["name"] for item in resp.json()["items"])
+
+        assert names == expected
 
     @pytest.mark.anyio
     async def test_refuses_callers_the_read_model_cannot_serve(
@@ -721,7 +791,7 @@ class TestMergeCandidateListIntegration:
         "params",
         [
             {"status": "MAYBE"},
-            {"sort_by": "name"},
+            {"sort_by": "size"},
             {"sort_order": "sideways"},
             {"page": 0},
             {"page_size": 201},

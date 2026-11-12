@@ -436,7 +436,6 @@ class TestActionCallSiteLabels:
                 "merge_candidates.list.count",
                 "merge_candidates.list",
                 "merge_candidates.list.status_counts",
-                "merge_candidates.list.names",
             },
         )
 

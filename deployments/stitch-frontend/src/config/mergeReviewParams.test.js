@@ -87,8 +87,8 @@ describe("toMergeReviewParams", () => {
   });
 
   it("keeps a page-only sort in the URL", () => {
-    const state = { ...DEFAULT_STATE, sortKey: "name-desc" };
-    expect(serialize(state)).toBe("sort_by=name&sort_order=desc");
+    const state = { ...DEFAULT_STATE, sortKey: "status" };
+    expect(serialize(state)).toBe("sort_by=status&sort_order=asc");
     expect(parse(serialize(state))).toEqual(state);
   });
 });
@@ -117,18 +117,27 @@ describe("toMergeCandidateQuery", () => {
     ).toBeUndefined();
   });
 
+  it("sends a name sort to the API", () => {
+    const query = toMergeCandidateQuery({
+      ...DEFAULT_STATE,
+      sortKey: "name-desc",
+    });
+    expect([query.sort_by, query.sort_order]).toEqual(["name", "desc"]);
+  });
+
   it("asks for the default order for a page-only sort", () => {
-    for (const sortKey of ["name-asc", "name-desc", "status"]) {
-      const query = toMergeCandidateQuery({ ...DEFAULT_STATE, sortKey });
-      expect([query.sort_by, query.sort_order]).toEqual(["created", "desc"]);
-    }
+    const query = toMergeCandidateQuery({
+      ...DEFAULT_STATE,
+      sortKey: "status",
+    });
+    expect([query.sort_by, query.sort_order]).toEqual(["created", "desc"]);
   });
 });
 
 describe("isPageOnlySort", () => {
   it("is true only for the sorts the API does not offer", () => {
-    expect(isPageOnlySort("name-asc")).toBe(true);
     expect(isPageOnlySort("status")).toBe(true);
+    expect(isPageOnlySort("name-asc")).toBe(false);
     expect(isPageOnlySort("oldest")).toBe(false);
     expect(isPageOnlySort("bogus")).toBe(false);
   });
