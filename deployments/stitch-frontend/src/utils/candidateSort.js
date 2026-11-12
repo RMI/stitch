@@ -1,12 +1,10 @@
 // Orders the Merge Review queue. Pure, so the page decides only *which* sort
-// and supplies the names it has resolved so far.
+// and supplies every candidate's display name.
 //
 // `candidates` arrive in the API's order, which is newest first, so "newest"
 // keeps it and "oldest" reverses it. The name sorts compare the queue's
 // display names the way the reviewer's browser language alphabetizes, and
-// break ties newest first. A candidate whose name has not loaded yet (absent
-// from `namesById`) cannot be placed, so those go at the end, newest first,
-// until their names arrive. "status" groups work still to do first --
+// break ties newest first. "status" groups work still to do first --
 // candidates, then denied, then approved -- newest first within each.
 
 // The browser's language (no locale given), so each reviewer gets their own
@@ -40,16 +38,9 @@ export function sortCandidates(candidates, sort, namesById) {
   );
 
   return [...candidates].sort((a, b) => {
-    const nameA = namesById.get(a.id);
-    const nameB = namesById.get(b.id);
-    const aLoaded = nameA != null;
-    const bLoaded = nameB != null;
-
-    if (aLoaded !== bLoaded) return aLoaded ? -1 : 1;
-    if (aLoaded) {
-      const byName = nameCollator.compare(nameA, nameB) * direction;
-      if (byName !== 0) return byName;
-    }
-    return apiOrder.get(a.id) - apiOrder.get(b.id);
+    const byName =
+      nameCollator.compare(namesById.get(a.id), namesById.get(b.id)) *
+      direction;
+    return byName || apiOrder.get(a.id) - apiOrder.get(b.id);
   });
 }

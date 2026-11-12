@@ -69,19 +69,6 @@ describe("sortCandidates", () => {
       expect(asc.indexOf(5)).toBeLessThan(asc.indexOf(2));
       expect(desc.indexOf(5)).toBeLessThan(desc.indexOf(2));
     });
-
-    it("puts candidates whose names have not loaded at the end, newest first", () => {
-      const partial = new Map([
-        [3, "Zubair"],
-        [1, "Abbott"],
-      ]);
-      expect(ids(sortCandidates(CANDIDATES, "name-asc", partial))).toEqual([
-        1, 3, 5, 4, 2,
-      ]);
-      expect(ids(sortCandidates(CANDIDATES, "name-desc", partial))).toEqual([
-        3, 1, 5, 4, 2,
-      ]);
-    });
   });
 });
 

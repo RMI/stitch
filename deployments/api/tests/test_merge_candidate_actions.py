@@ -52,6 +52,8 @@ class FakeMergedResource:
 class FakeSession:
     scalar_result: object | None = None
     scalars_result: list[object] = field(default_factory=list)
+    # One row list per execute() call, in call order; [] once exhausted.
+    execute_results: list[list[tuple]] = field(default_factory=list)
     added: list[object] = field(default_factory=list)
     added_all: list[object] = field(default_factory=list)
     deleted: list[object] = field(default_factory=list)
@@ -63,6 +65,10 @@ class FakeSession:
 
     async def scalars(self, _stmt):
         return SimpleNamespace(all=lambda: list(self.scalars_result))
+
+    async def execute(self, _stmt):
+        rows = self.execute_results.pop(0) if self.execute_results else []
+        return SimpleNamespace(all=lambda: list(rows))
 
     def add(self, obj):
         self.added.append(obj)
@@ -116,6 +122,50 @@ def test_candidate_to_view_sorts_items_by_position():
     assert view.id == 1
 
 
+_PRIORITY = {"rmi": 1, "wm": 2, "gem": 7}
+
+
+def _candidate(*resource_ids: int, merged: int | None = None) -> FakeCandidate:
+    return FakeCandidate(
+        id=1,
+        status=MergeCandidateStatus.APPROVED
+        if merged
+        else MergeCandidateStatus.PENDING,
+        items=[FakeItem(rid, pos) for pos, rid in enumerate(resource_ids)],
+        merged_resource_id=merged,
+    )
+
+
+def test_pick_display_name_prefers_best_ranked_source_across_resources():
+    names = {18: ("Gem Name", "gem"), 19: ("RMI Name", "rmi")}
+    assert mca._pick_display_name(_candidate(18, 19), names, _PRIORITY) == "RMI Name"
+
+
+def test_pick_display_name_breaks_ties_by_resource_position():
+    names = {18: ("Second", "gem"), 19: ("First", "gem")}
+    candidate = FakeCandidate(
+        id=1,
+        status=MergeCandidateStatus.PENDING,
+        items=[FakeItem(18, 1), FakeItem(19, 0)],
+    )
+    assert mca._pick_display_name(candidate, names, _PRIORITY) == "First"
+
+
+def test_pick_display_name_ranks_unknown_sources_last():
+    names = {18: ("Unranked", "zzz"), 19: ("Unknown source", None), 20: ("Gem", "gem")}
+    assert mca._pick_display_name(_candidate(18, 19, 20), names, _PRIORITY) == "Gem"
+
+
+def test_pick_display_name_uses_merged_resource_once_approved():
+    names = {18: ("Leftover", "rmi"), 30: ("Merged", "gem")}
+    candidate = _candidate(18, 19, merged=30)
+    assert mca._pick_display_name(candidate, names, _PRIORITY) == "Merged"
+
+
+def test_pick_display_name_is_none_without_any_name():
+    assert mca._pick_display_name(_candidate(18, 19), {}, _PRIORITY) is None
+
+
 @pytest.mark.anyio
 async def test_list_merge_candidates_returns_views_in_query_order():
     first = FakeCandidate(
@@ -128,13 +178,23 @@ async def test_list_merge_candidates_returns_views_in_query_order():
         status=MergeCandidateStatus.DENIED,
         items=[FakeItem(20, 0), FakeItem(21, 1)],
     )
-    session = FakeSession(scalars_result=[first, second])
+    session = FakeSession(
+        scalars_result=[first, second],
+        execute_results=[
+            # read-model names: (resource_id, name, provenance)
+            [(19, "Ghawar", {"name": "gem"}), (20, "Burgan", {"name": "rmi"})],
+            # default source priority: (source, priority)
+            [("rmi", 1), ("gem", 7)],
+        ],
+    )
 
     views = await mca.list_merge_candidates(session)
 
     assert [view.id for view in views] == [2, 1]
     assert views[0].resource_ids == [18, 19]
+    assert views[0].display_name == "Ghawar"
     assert views[1].status == MergeCandidateStatus.DENIED
+    assert views[1].display_name == "Burgan"
 
 
 @pytest.mark.anyio

@@ -61,8 +61,14 @@ from .utils import (
 _ALL_SOURCES: frozenset[OGSISrcKey] = frozenset(get_args(OGSISrcKey))
 
 
-def _profile_mask(licensed_sources: Collection[OGSISrcKey] | None) -> int:
+def profile_mask(
+    licensed_sources: Collection[OGSISrcKey] | None,
+    refused_action: str = "list oil & gas fields",
+) -> int:
     """The read-model profile to answer from, or 403 if the caller has none.
+
+    ``refused_action`` finishes the 403's "This account can't ..." sentence, so
+    each read-model reader can say what was refused.
 
     ``None`` comes only from internal callers and means every source, as it
     always has. Anyone else must hold exactly one of the stored profiles (see
@@ -80,7 +86,7 @@ def _profile_mask(licensed_sources: Collection[OGSISrcKey] | None) -> int:
         reason = "it holds read access to a source the list can't serve yet"
     raise HTTPException(
         status_code=HTTP_403_FORBIDDEN,
-        detail=f"This account can't list oil & gas fields: {reason}. "
+        detail=f"This account can't {refused_action}: {reason}. "
         "Ask an administrator to update its source permissions.",
     )
 
@@ -103,7 +109,7 @@ async def query(
             status_code=422,
             detail="sort_by=source is not supported for resource list queries.",
         )
-    mask = _profile_mask(licensed_sources)
+    mask = profile_mask(licensed_sources)
 
     # Count without the ORDER BY: Postgres would otherwise sort every matching
     # row just to count them (~40ms at 50K resources for a non-indexed sort).
@@ -140,7 +146,7 @@ async def filter_options(
     Read from the precomputed read model for the caller's permission profile;
     403 if they have none.
     """
-    mask = _profile_mask(licensed_sources)
+    mask = profile_mask(licensed_sources)
     options: dict[str, set[str]] = {field: set() for field in FILTER_OPTION_FIELDS}
     with named_query("resources.filter_options"):
         stmt = resource_state_filter_option_query(mask, params)

@@ -31,10 +31,11 @@ from stitch.ogsi.model.types import OGSISrcKey
 from .model import (
     MergeCandidateItemModel,
     MergeCandidateModel,
+    OGFieldResourceState,
     OGFieldSourcePriority,
     ResourceModel,
 )
-from .og_field_resource_actions import apply_resource_merge
+from .og_field_resource_actions import apply_resource_merge, profile_mask
 from .utils import coalesce_resources_with_sources
 
 
@@ -77,7 +78,9 @@ def _fingerprint(resource_ids: Sequence[int]) -> str:
     return ":".join(map(str, sorted(set(resource_ids))))
 
 
-def _candidate_to_view(model: MergeCandidateModel) -> MergeCandidateView:
+def _candidate_to_view(
+    model: MergeCandidateModel, display_name: str | None = None
+) -> MergeCandidateView:
     return MergeCandidateView(
         id=model.id,
         resource_ids=[
@@ -92,7 +95,65 @@ def _candidate_to_view(model: MergeCandidateModel) -> MergeCandidateView:
         last_updated_by_id=model.last_updated_by_id,
         reviewed_at=model.reviewed_at,
         reviewed_by_id=model.reviewed_by_id,
+        display_name=display_name,
     )
+
+
+# resource id -> (coalesced name, the source that name came from)
+NamedResources = dict[int, tuple[str, str | None]]
+
+
+def _pick_display_name(
+    model: MergeCandidateModel,
+    names: NamedResources,
+    source_priority: dict[str, int],
+) -> str | None:
+    """The name the Merge Review queue shows for one candidate.
+
+    Once merged, the source resources are emptied, so the merged resource's
+    name wins. Otherwise the name from the best-ranked source wins (lower
+    priority is better; unranked sources sort last), with ties going to the
+    earlier resource in the candidate. ``None`` when no resource has a name.
+    """
+    if model.merged_resource_id in names:
+        return names[model.merged_resource_id][0]
+    unranked = max(source_priority.values(), default=0) + 1
+    best: tuple[int, str] | None = None
+    for item in sorted(model.items, key=lambda i: i.position):
+        entry = names.get(item.resource_id)
+        if entry is None:
+            continue
+        name, source = entry
+        rank = source_priority.get(source, unranked) if source else unranked
+        if best is None or rank < best[0]:
+            best = (rank, name)
+    return best[1] if best else None
+
+
+async def _load_resource_names(
+    session: AsyncSession, resource_ids: Collection[int], mask: int
+) -> NamedResources:
+    """Each resource's coalesced name and its source, from the read model.
+
+    Resources with no name (or no row -- e.g. emptied by a merge) are left out.
+    """
+    if not resource_ids:
+        return {}
+    rows = await session.execute(
+        select(
+            OGFieldResourceState.resource_id,
+            OGFieldResourceState.name,
+            OGFieldResourceState.provenance,
+        ).where(
+            OGFieldResourceState.permission_mask == mask,
+            OGFieldResourceState.resource_id.in_(resource_ids),
+        )
+    )
+    return {
+        resource_id: (name, (provenance or {}).get("name"))
+        for resource_id, name, provenance in rows.all()
+        if name is not None
+    }
 
 
 def _comparison_status(resource_values: Sequence[Any]) -> str:
@@ -200,7 +261,18 @@ async def _load_candidate_model(
     return model
 
 
-async def list_merge_candidates(session: AsyncSession) -> list[MergeCandidateView]:
+async def list_merge_candidates(
+    session: AsyncSession,
+    licensed_sources: Collection[OGSISrcKey] | None = None,
+) -> list[MergeCandidateView]:
+    """Every merge candidate, newest first, each with its queue display name.
+
+    Names come from the precomputed read model for the caller's permission
+    profile (one query for the whole list), so the queue never has to load
+    each resource's details. 403 if the caller matches no profile, like the
+    oil & gas field list.
+    """
+    mask = profile_mask(licensed_sources, refused_action="list merge candidates")
     stmt = (
         select(MergeCandidateModel)
         .options(selectinload(MergeCandidateModel.items))
@@ -208,7 +280,18 @@ async def list_merge_candidates(session: AsyncSession) -> list[MergeCandidateVie
     )
     with named_query("merge_candidates.list"):
         candidates = (await session.scalars(stmt)).all()
-    return [_candidate_to_view(candidate) for candidate in candidates]
+
+    resource_ids = {item.resource_id for c in candidates for item in c.items} | {
+        c.merged_resource_id for c in candidates if c.merged_resource_id is not None
+    }
+    with named_query("merge_candidates.list.names"):
+        names = await _load_resource_names(session, resource_ids, mask)
+    with named_query("merge_candidates.list.default_priority"):
+        source_priority = await _default_source_priority(session) if names else {}
+    return [
+        _candidate_to_view(c, _pick_display_name(c, names, source_priority))
+        for c in candidates
+    ]
 
 
 async def get_merge_candidate(

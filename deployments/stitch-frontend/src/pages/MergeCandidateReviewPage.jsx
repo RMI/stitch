@@ -4,7 +4,6 @@ import Button from "../components/Button";
 import MergeSourceComparison from "../components/MergeSourceComparison";
 import MergedResourceView from "../components/MergedResourceView";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
-import { useMergeCandidateName } from "../hooks/useMergeCandidateName";
 import { useMergedResourceDetail } from "../hooks/useMergedResourceDetail";
 import { useMergeSourceDetails } from "../hooks/useMergeSourceDetails";
 import {
@@ -12,7 +11,6 @@ import {
   useMergeCandidate,
   useReviewMergeCandidate,
 } from "../hooks/useResources";
-import { useCandidateDisplayNames } from "../hooks/useCandidateDisplayNames";
 import { pickCompareName } from "../utils/candidateCompare";
 import { sortCandidates } from "../utils/candidateSort";
 import { candidateDisplayName } from "../utils/mergeCandidateName";
@@ -67,23 +65,9 @@ function candidateSourcesTitle(candidate) {
 }
 
 function CandidateQueueItem({ candidate, isSelected, onSelect }) {
-  const { data: sourceDetails } = useMergeSourceDetails(
-    ENDPOINT,
-    candidate.resource_ids,
-  );
-  // Post-merge, the source resources are null shells, so the merged resource
-  // is the authoritative name source. The hook is disabled until an id exists,
-  // so pending candidates skip the fetch.
-  const { data: mergedResource } = useMergedResourceDetail(
-    ENDPOINT,
-    candidate.merged_resource_id,
-  );
-  // The same helper the queue's name sort uses (useCandidateDisplayNames), so
-  // the order always matches the names shown.
-  const displayName = candidateDisplayName(candidate.id, {
-    sourceDetails,
-    mergedResource,
-  });
+  // The same helper the queue's name sort uses, so the order always matches
+  // the names shown.
+  const displayName = candidateDisplayName(candidate);
 
   return (
     <button
@@ -119,7 +103,6 @@ function QueuePanel({
   hasHiddenApproved,
   sort,
   onSortChange,
-  nameLoadProgress,
 }) {
   return (
     // From md up the queue sits in the left column as a sticky, viewport-tall
@@ -153,14 +136,6 @@ function QueuePanel({
             ))}
           </select>
         </label>
-        {/* Names load one candidate at a time, so until they all have, the
-            name order is incomplete: say so rather than look final. */}
-        {nameLoadProgress && (
-          <p role="status" className="mt-2 text-xs text-ink-muted">
-            Loading names… {nameLoadProgress.loaded} of {nameLoadProgress.total}
-            . Order will update.
-          </p>
-        )}
       </div>
 
       <div className="p-2 md:min-h-0 md:overflow-y-auto">
@@ -324,13 +299,11 @@ function CandidateDecisionPanel({
 
   const candidate = detailCandidate ?? listCandidate;
   // The compare-derived name is authoritative once the detail lands. Until
-  // then the queue's name stands in — it reads the same cached query the
-  // queue items already issued, so no extra requests — because falling back
-  // to the id would flash "Candidate #N" on first selection.
-  const queueName = useMergeCandidateName(ENDPOINT, candidate?.resource_ids);
+  // then the queue's name (from the list response) stands in, because falling
+  // back to the id would flash "Candidate #N" on first selection.
+  const queueName = listCandidate?.display_name ?? null;
   // The source resources' detail views, for the per-column source mix in the
-  // comparison. Same cache entry the name lookup above reads, so no extra
-  // requests.
+  // comparison. Fetched for the selected candidate only.
   const sourceDetails = useMergeSourceDetails(
     ENDPOINT,
     candidate?.resource_ids,
@@ -483,19 +456,13 @@ export default function MergeCandidateReviewPage() {
     (c) => showApproved || c.status !== "APPROVED",
   );
 
-  // Names come from the queue items' own cached lookups (no extra requests).
-  // Until every visible candidate's name has loaded, a name sort is
-  // incomplete, so the queue says so.
-  const isNameSort = sort === "name-asc" || sort === "name-desc";
-  const { namesById, loadedCount, total } = useCandidateDisplayNames(
-    ENDPOINT,
-    filteredCandidates,
+  // Names arrive with the list itself, so a name sort is complete at once.
+  const namesById = new Map(
+    (filteredCandidates ?? []).map((c) => [c.id, candidateDisplayName(c)]),
   );
   const visibleCandidates = filteredCandidates
     ? sortCandidates(filteredCandidates, sort, namesById)
     : filteredCandidates;
-  const nameLoadProgress =
-    isNameSort && loadedCount < total ? { loaded: loadedCount, total } : null;
 
   function handleSortChange(nextSort) {
     setSort(nextSort);
@@ -647,7 +614,6 @@ export default function MergeCandidateReviewPage() {
           }
           sort={sort}
           onSortChange={handleSortChange}
-          nameLoadProgress={nameLoadProgress}
         />
       </div>
     </div>

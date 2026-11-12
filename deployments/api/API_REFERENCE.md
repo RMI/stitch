@@ -90,7 +90,7 @@ Accepts the same filter and search parameters as `GET /api/v1/oil-gas-fields/` (
 
 ### `GET /api/v1/oil-gas-fields/merge-candidates`
 
-<!-- description -->
+Every merge candidate, newest first. Each one carries a `display_name` for the review queue: the merged resource's name once approved, otherwise the name from the best-ranked source among its resources (`null` when none has a name). Names are read from the precomputed field table for the caller's licensed sources, so, like `GET /api/v1/oil-gas-fields/`, an account whose source permissions match none of the supported profiles gets a `403`.
 
 **Response:** `200`
 
@@ -119,6 +119,7 @@ Accepts the same filter and search parameters as `GET /api/v1/oil-gas-fields/` (
 - `last_updated_by_id`: integer
 - `reviewed_at`: string | null
 - `reviewed_by_id`: integer | null
+- `display_name`: string | null
 
 ---
 
@@ -139,6 +140,7 @@ Accepts the same filter and search parameters as `GET /api/v1/oil-gas-fields/` (
 - `last_updated_by_id`: integer
 - `reviewed_at`: string | null
 - `reviewed_by_id`: integer | null
+- `display_name`: string | null
 - `compare`: array[FieldComparisonView]
 
 ---
@@ -182,6 +184,7 @@ skipped, so repeat runs are safe.
 - `last_updated_by_id`: integer
 - `reviewed_at`: string | null
 - `reviewed_by_id`: integer | null
+- `display_name`: string | null
 
 ---
 
@@ -204,6 +207,7 @@ skipped, so repeat runs are safe.
 - `last_updated_by_id`: integer
 - `reviewed_at`: string | null
 - `reviewed_by_id`: integer | null
+- `display_name`: string | null
 
 ---
 

@@ -189,6 +189,9 @@ class MergeCandidateView(BaseModel):
     last_updated_by_id: int
     reviewed_at: datetime | None = None
     reviewed_by_id: int | None = None
+    # The name the Merge Review queue shows. Set by the list endpoint only (read
+    # from the precomputed read model); ``None`` when no resource has a name.
+    display_name: str | None = None
 
 
 class ComparisonValueView(OGFieldSourceValueView):

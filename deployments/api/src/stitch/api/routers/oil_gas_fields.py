@@ -110,9 +110,11 @@ async def get_resource_filter_options(
     dependencies=[Depends(require_permissions(MERGE_CANDIDATE_READ))],
 )
 async def list_merge_candidates(
-    *, uow: UnitOfWorkDep, _user: CurrentUser
+    *, uow: UnitOfWorkDep, _user: CurrentUser, claims: Claims
 ) -> list[MergeCandidateView]:
-    return await merge_candidate_actions.list_merge_candidates(session=uow.session)
+    return await merge_candidate_actions.list_merge_candidates(
+        session=uow.session, licensed_sources=licensed_sources(claims)
+    )
 
 
 @router.get(

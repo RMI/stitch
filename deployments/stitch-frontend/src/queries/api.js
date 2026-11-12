@@ -214,7 +214,9 @@ export async function getMergeCandidates(
   const response = await fetcher(url);
 
   if (!response.ok) {
-    const error = new Error(`HTTP error! status: ${response.status}`);
+    // The API explains refusals in plain language (e.g. a 403 for an account
+    // whose source permissions this view can't serve), so show its reason.
+    const error = new Error(await getErrorDetail(response));
     error.status = response.status;
     throw error;
   }

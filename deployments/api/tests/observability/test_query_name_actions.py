@@ -429,7 +429,14 @@ class TestActionCallSiteLabels:
 
         captured_query_events.clear()
         await mca.list_merge_candidates(session)
-        _assert_labels(captured_query_events, {"merge_candidates.list"})
+        _assert_labels(
+            captured_query_events,
+            {
+                "merge_candidates.list",
+                "merge_candidates.list.names",
+                "merge_candidates.list.default_priority",
+            },
+        )
 
         captured_query_events.clear()
         await mca.get_merge_candidate(session, approved.id)

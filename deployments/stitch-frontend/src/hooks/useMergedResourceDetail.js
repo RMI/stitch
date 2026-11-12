@@ -2,9 +2,8 @@ import { useConfig } from "../config/useConfig";
 import { useAuthenticatedQuery } from "./useAuthenticatedQuery";
 import { getResourceDetail } from "../queries/api";
 
-// The cache key for a merged resource's detail. Exported so the queue's sort
-// (useCandidateDisplayNames) can read the same cache entry without fetching.
-export function mergedResourceDetailKey(endpoint, resourceId) {
+// The cache key for a merged resource's detail.
+function mergedResourceDetailKey(endpoint, resourceId) {
   return [endpoint, "merged-resource-detail", resourceId];
 }
 

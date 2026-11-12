@@ -46,12 +46,14 @@ const candidates = [
     status: "PENDING",
     resource_ids: [101, 102],
     merged_resource_id: null,
+    display_name: "Bergan",
   },
   {
     id: 12,
     status: "APPROVED",
     resource_ids: [201, 202],
     merged_resource_id: 301,
+    display_name: "Arabian Merged",
   },
 ];
 
@@ -61,6 +63,8 @@ const pendingCandidate = candidates[0];
 // heading must come from this, not from per-resource fetches.
 const pendingDetail = {
   ...pendingCandidate,
+  // Only the list endpoint names candidates.
+  display_name: null,
   compare: [
     {
       field: "name",
@@ -89,6 +93,7 @@ const nextPendingCandidate = {
   status: "PENDING",
   resource_ids: [301, 302],
   merged_resource_id: null,
+  display_name: "Arabian Merged",
 };
 
 const SHOW_APPROVED = "Show approved merges";
@@ -101,9 +106,8 @@ const defaultHookReturn = {
   refetch: vi.fn(),
 };
 
-// 101/102 are two spellings of the same field. "wm" outranks "gem" in
-// SOURCE_PRIORITY, so the resolved name is the wm spelling ("Bergan") even
-// though the gem resource comes first — priority wins over resource order.
+// Per-resource detail views, fetched only for the selected candidate (its
+// per-column source mix). Queue names come from the list's display_name.
 const resourceDetailsById = {
   101: { data: { name: "Burgan" }, provenance: { name: "gem" } },
   102: { data: { name: "Bergan" }, provenance: { name: "wm" } },
@@ -197,7 +201,7 @@ describe("MergeCandidateReviewPage", () => {
         .getByRole("heading", { name: "Queue" })
         .closest("aside");
       await user.click(
-        within(queue).getByRole("button", { name: /Candidate #13/ }),
+        within(queue).getByRole("button", { name: /Arabian Merged/ }),
       );
       return user;
     }
@@ -298,24 +302,36 @@ describe("MergeCandidateReviewPage", () => {
     expect(within(approvedItem).getByText("APPROVED")).toBeInTheDocument();
   });
 
-  it("resolves an approved queue item's name from the merged resource", async () => {
-    // Post-merge the source resources are null shells, so the queue must
-    // resolve the name from merged_resource_id, not from resource_ids.
-    vi.mocked(getResourceDetail).mockImplementation((_config, id) => {
-      if (id === 201 || id === 202) {
-        return Promise.resolve({ data: { name: null }, provenance: {} });
-      }
-      return Promise.resolve(resourceDetailsById[id]);
-    });
+  it("names queue items from the list without fetching their resources", async () => {
     renderWithQueryClient(<MergeCandidateReviewPage />);
     await userEvent.setup().click(screen.getByLabelText(SHOW_APPROVED));
 
     expect(
       await screen.findByRole("button", { name: /Arabian Merged/ }),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /Candidate #12/ }),
-    ).not.toBeInTheDocument();
+    // Only the selected candidate (11) loads its resources' details; the
+    // approved candidate's sources and merged resource are never fetched.
+    await waitFor(() =>
+      expect(
+        vi
+          .mocked(getResourceDetail)
+          .mock.calls.map(([, id]) => id)
+          .sort(),
+      ).toEqual([101, 102]),
+    );
+  });
+
+  it("explains why the queue can't load", () => {
+    vi.mocked(useMergeCandidates).mockReturnValue({
+      ...defaultHookReturn,
+      isError: true,
+      error: new Error(
+        "This account can't list merge candidates: it is missing read access to public source(s) ['nor']. Ask an administrator to update its source permissions.",
+      ),
+    });
+    renderWithQueryClient(<MergeCandidateReviewPage />);
+
+    expect(screen.getByText(/can't list merge candidates/)).toBeInTheDocument();
   });
 
   it("shows the compare-derived name in the detail panel heading", async () => {
@@ -340,8 +356,6 @@ describe("MergeCandidateReviewPage", () => {
   });
 
   it("gives the source comparison each resource's source details", async () => {
-    // The per-column source mix reads the same cached detail views the queue
-    // already loads for candidate names, so no extra requests are made.
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
     expect(
@@ -441,9 +455,7 @@ describe("MergeCandidateReviewPage", () => {
 
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
-    expect(
-      screen.getByRole("heading", { name: "Candidate #11" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Bergan" })).toBeInTheDocument();
     expect(
       screen.getByText("Source comparison for 101, 102 (loading)"),
     ).toBeInTheDocument();
@@ -453,7 +465,7 @@ describe("MergeCandidateReviewPage", () => {
     expect(screen.queryByText("Loading candidate…")).not.toBeInTheDocument();
   });
 
-  it("shows the queue-cached name while the detail query loads, not the id fallback", async () => {
+  it("shows the queue's name while the detail query loads, not the id fallback", async () => {
     vi.mocked(useMergeCandidate).mockReturnValue({
       ...defaultHookReturn,
       data: null,
@@ -503,9 +515,7 @@ describe("MergeCandidateReviewPage", () => {
 
     renderWithQueryClient(<MergeCandidateReviewPage />);
 
-    expect(
-      screen.getByRole("heading", { name: "Candidate #11" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Bergan" })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Approve merge" }),
     ).toBeInTheDocument();
@@ -620,9 +630,7 @@ describe("MergeCandidateReviewPage", () => {
         .textContent;
     }
 
-    // Item names resolve asynchronously, so absence-by-name is racy: a name
-    // that has not loaded yet looks the same as a filtered-out row. Counting
-    // the queue's buttons does not depend on name resolution.
+    // Counting the queue's buttons checks filtering independently of names.
     function queueItems() {
       const queue = screen
         .getByRole("heading", { name: "Queue" })
@@ -672,8 +680,7 @@ describe("MergeCandidateReviewPage", () => {
       // Pending + denied listed, approved filtered out.
       await waitFor(() => expect(queueItems()).toHaveLength(2));
 
-      // Revealing the approved row proves the count reflects filtering rather
-      // than a name that simply had not loaded yet.
+      // Revealing the approved row proves the count reflects filtering.
       await user.click(screen.getByLabelText(SHOW_APPROVED));
       await waitFor(() => expect(queueItems()).toHaveLength(3));
     });
@@ -729,9 +736,8 @@ describe("MergeCandidateReviewPage", () => {
   });
 
   describe("sorting the queue", () => {
-    // Two pending candidates. The API lists 11 first (newest). Their names
-    // resolve from the mocked resource details: 11 -> "Bergan" (wm outranks
-    // gem), 13 -> "Arabian Merged" (resource 301).
+    // Two pending candidates. The API lists 11 first (newest), named
+    // "Bergan"; 13 is "Arabian Merged".
     beforeEach(() => {
       vi.mocked(useMergeCandidates).mockReturnValue({
         ...defaultHookReturn,
@@ -771,7 +777,7 @@ describe("MergeCandidateReviewPage", () => {
       ]);
     });
 
-    it("orders the queue by name once the names have loaded", async () => {
+    it("orders the queue by name", async () => {
       const user = userEvent.setup();
       renderWithQueryClient(<MergeCandidateReviewPage />);
       await within(queue()).findByText("Arabian Merged");
@@ -827,54 +833,6 @@ describe("MergeCandidateReviewPage", () => {
         .getAllByRole("button")
         .map((item) => item.textContent.match(/CANDIDATE|DENIED|APPROVED/)[0]);
       expect(statuses).toEqual(["CANDIDATE", "DENIED", "APPROVED"]);
-      // Status needs no names, so there is nothing to wait for.
-      expect(
-        within(queue()).queryByText(/Loading names/),
-      ).not.toBeInTheDocument();
-    });
-
-    it("says the name order is not final while names are still loading", async () => {
-      // Resource details never arrive, so no names resolve.
-      vi.mocked(getResourceDetail).mockImplementation(
-        () => new Promise(() => {}),
-      );
-      const user = userEvent.setup();
-      renderWithQueryClient(<MergeCandidateReviewPage />);
-
-      await user.selectOptions(
-        within(queue()).getByRole("combobox", { name: "Sort" }),
-        "name-asc",
-      );
-
-      expect(
-        within(queue()).getByText("Loading names… 0 of 2. Order will update."),
-      ).toBeInTheDocument();
-    });
-
-    it("drops the loading note once every name has loaded", async () => {
-      const user = userEvent.setup();
-      renderWithQueryClient(<MergeCandidateReviewPage />);
-      await user.selectOptions(
-        within(queue()).getByRole("combobox", { name: "Sort" }),
-        "name-asc",
-      );
-
-      await waitFor(() => {
-        expect(
-          within(queue()).queryByText(/Loading names/),
-        ).not.toBeInTheDocument();
-      });
-    });
-
-    it("never shows the loading note for the date sorts", () => {
-      vi.mocked(getResourceDetail).mockImplementation(
-        () => new Promise(() => {}),
-      );
-      renderWithQueryClient(<MergeCandidateReviewPage />);
-
-      expect(
-        within(queue()).queryByText(/Loading names/),
-      ).not.toBeInTheDocument();
     });
 
     it("moves on to the next pending candidate in the displayed order after a review", async () => {

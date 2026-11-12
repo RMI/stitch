@@ -8,13 +8,20 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from stitch.auth import TokenClaims
-from stitch.auth.permissions import RESOURCE_READ, SOURCE_READ_GEM, SOURCE_READ_PREFIX
+from stitch.auth.permissions import (
+    MERGE_CANDIDATE_READ,
+    RESOURCE_READ,
+    SOURCE_READ_GEM,
+    SOURCE_READ_PREFIX,
+)
 
 from stitch.api.auth import get_current_user, get_token_claims
 from stitch.api.db.config import UnitOfWork, get_uow
 from stitch.api.db.model import (
     MembershipModel,
     MembershipStatus,
+    MergeCandidateItemModel,
+    MergeCandidateModel,
     OilGasFieldSourceModel,
     ResourceModel,
     UserModel,
@@ -200,6 +207,80 @@ async def _source_id_for(
             )
         ).scalar_one()
         return row.id
+
+
+async def _seed_merge_candidate(
+    session_factory: async_sessionmaker[AsyncSession],
+    user: User,
+    resource_ids: list[int],
+) -> int:
+    async with session_factory() as session:
+        candidate = MergeCandidateModel.create(
+            created_by=user, fingerprint=":".join(map(str, sorted(resource_ids)))
+        )
+        session.add(candidate)
+        await session.flush()
+        session.add_all(
+            MergeCandidateItemModel(
+                merge_candidate_id=candidate.id, resource_id=rid, position=pos
+            )
+            for pos, rid in enumerate(resource_ids)
+        )
+        await session.commit()
+        return candidate.id
+
+
+class TestMergeCandidateListLicensedSources:
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("extra_grants", "expected_name"),
+        [
+            # wm is unlicensed: resource B has no visible name, so A's names it.
+            pytest.param(set(), "GEM Name", id="public only"),
+            # wm licensed: B's wm name outranks A's gem name.
+            pytest.param({f"{SOURCE_READ_PREFIX}wm"}, "WM Name", id="public + wm"),
+        ],
+    )
+    async def test_display_name_uses_only_licensed_sources(
+        self,
+        client_with: ClientFactory,
+        integration_session_factory: async_sessionmaker[AsyncSession],
+        test_user: User,
+        extra_grants: set[str],
+        expected_name: str,
+    ):
+        id_a = await _seed_resource_with_sources(
+            integration_session_factory,
+            test_user,
+            {"source": "gem", "name": "GEM Name", "country": "CAN"},
+        )
+        id_b = await _seed_resource_with_sources(
+            integration_session_factory,
+            test_user,
+            {"source": "wm", "name": "WM Name", "country": "USA"},
+        )
+        await _seed_merge_candidate(
+            integration_session_factory, test_user, [id_a, id_b]
+        )
+
+        grants = {MERGE_CANDIDATE_READ, *_PUBLIC_SOURCE_READS, *extra_grants}
+        async with client_with(grants) as client:
+            response = await client.get("/oil-gas-fields/merge-candidates")
+
+        assert response.status_code == 200, response.text
+        [candidate] = response.json()
+        assert candidate["display_name"] == expected_name
+
+    @pytest.mark.anyio
+    async def test_callers_matching_no_profile_are_refused(
+        self,
+        client_with: ClientFactory,
+    ):
+        async with client_with({MERGE_CANDIDATE_READ, SOURCE_READ_GEM}) as client:
+            response = await client.get("/oil-gas-fields/merge-candidates")
+
+        assert response.status_code == 403
+        assert "can't list merge candidates" in response.json()["detail"]
 
 
 class TestOilGasFieldsLicensedSources:

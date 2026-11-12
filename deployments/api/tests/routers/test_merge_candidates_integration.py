@@ -105,6 +105,34 @@ class TestMergeCandidateDetailIntegration:
         assert {(id_a, "Ghawar"), (id_b, "Burgan")} <= rmi_by_resource
 
     @pytest.mark.anyio
+    async def test_list_names_candidates_and_switches_to_merged_name(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
+        candidate_id = await _create_candidate(integration_client, [id_a, id_b])
+
+        listed = await integration_client.get("/oil-gas-fields/merge-candidates")
+        assert listed.status_code == 200, listed.text
+        [pending] = listed.json()
+        assert pending["display_name"] in {"Ghawar", "Burgan"}
+
+        approved = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{candidate_id}/approve"
+        )
+        assert approved.status_code == 200, approved.text
+        merged_id = approved.json()["merged_resource_id"]
+        merged = await integration_client.get(f"/oil-gas-fields/{merged_id}")
+
+        listed = await integration_client.get("/oil-gas-fields/merge-candidates")
+        [after] = listed.json()
+        merged_name = merged.json()["name"]
+        assert merged_name in {"Ghawar", "Burgan"}
+        assert after["display_name"] == merged_name
+
+    @pytest.mark.anyio
     async def test_detail_after_approve_is_live_null_shell(
         self,
         integration_client: AsyncClient,
