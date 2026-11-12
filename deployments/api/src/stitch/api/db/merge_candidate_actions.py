@@ -293,15 +293,25 @@ async def list_merge_candidates(
 ) -> MergeCandidatePage:
     """One page of merge candidates, with whole-queue counts by status."""
     name = _candidate_name_column(profile_mask(licensed_sources)).label("name")
+    conditions = []
+    if params.status:
+        conditions.append(MergeCandidateModel.status.in_(params.status))
+
+    with named_query("merge_candidates.list.count"):
+        total = (
+            await session.scalar(
+                select(func.count()).select_from(MergeCandidateModel).where(*conditions)
+            )
+        ) or 0
+
     stmt = (
         select(MergeCandidateModel, name)
         .options(selectinload(MergeCandidateModel.items))
+        .where(*conditions)
         .order_by(*_list_order(params, name))
         .limit(params.limit)
         .offset(params.offset)
     )
-    if params.status:
-        stmt = stmt.where(MergeCandidateModel.status.in_(params.status))
     with named_query("merge_candidates.list"):
         page_rows = (await session.execute(stmt)).all()
 
@@ -314,13 +324,6 @@ async def list_merge_candidates(
     status_counts = dict.fromkeys(MergeCandidateStatus, 0)
     for status, count in rows.all():
         status_counts[MergeCandidateStatus(status)] = count
-    # The filtered total is a sum of the whole-queue counts, so it needs no
-    # query of its own.
-    total = sum(
-        count
-        for status, count in status_counts.items()
-        if not params.status or status in params.status
-    )
 
     return MergeCandidatePage(
         items=[
