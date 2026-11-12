@@ -196,8 +196,9 @@ class MergeCandidateListItemView(MergeCandidateView):
 
     ``name`` is the candidate's display name: the merged resource's name once
     the candidate is approved (its source resources are emptied by the merge),
-    otherwise the name from the best-ranked source across its resources. It is
-    null when no licensed source carries a name.
+    otherwise the name of its first resource that has one. Resources are only
+    grouped when their names already match, so in practice that is the name
+    they share. It is null when no licensed source carries a name.
     """
 
     name: str | None = None

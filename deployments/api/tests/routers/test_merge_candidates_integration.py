@@ -710,13 +710,14 @@ class TestMergeCandidateListIntegration:
         assert detail.json()["name"] == "Ghawar"
 
     @pytest.mark.anyio
-    async def test_names_come_from_the_best_ranked_source(
+    async def test_names_come_from_the_first_named_resource(
         self,
         integration_client: AsyncClient,
         og_field_resource_factory,
         source_maker,
     ):
-        # gem ranks below rmi, so the second resource names the candidate.
+        # Source rank doesn't matter: the first resource names the candidate,
+        # though rmi outranks gem.
         id_gem = await _create_resource_with_sources(
             integration_client,
             og_field_resource_factory,
@@ -732,11 +733,11 @@ class TestMergeCandidateListIntegration:
         resp = await integration_client.get("/oil-gas-fields/merge-candidates")
         assert resp.status_code == 200, resp.text
         (item,) = resp.json()["items"]
-        assert item["name"] == "From RMI"
+        assert item["name"] == "From GEM"
         detail = await integration_client.get(
             f"/oil-gas-fields/merge-candidates/{candidate_id}"
         )
-        assert detail.json()["name"] == "From RMI"
+        assert detail.json()["name"] == "From GEM"
 
     @pytest.mark.anyio
     @pytest.mark.parametrize(

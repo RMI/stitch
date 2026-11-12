@@ -27,7 +27,7 @@ from stitch.api.entities import (
     MergeCandidateView,
 )
 from stitch.api.observability.context import named_query
-from stitch.ogsi.model import SOURCE_PRIORITY, OGFieldSource
+from stitch.ogsi.model import OGFieldSource
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
 
@@ -185,11 +185,11 @@ def _candidate_name_column(permission_mask: int) -> ColumnElement[str | None]:
     the list can both return and sort by it and the detail view names its
     candidate the same way. See ``MergeCandidateListItemView.name``.
 
-    The merged resource's name wins once approved; otherwise the name whose
-    winning source ranks best in ``SOURCE_PRIORITY``, ties going to the earlier
-    resource. Names come from the caller's permission profile. The read model
-    only holds listable resources, so a merged-away original has no row and
-    the merged resource names its candidate.
+    The merged resource's name wins once approved; otherwise the name of the
+    candidate's first resource (by position) that has one. Names come from the
+    caller's permission profile and only the read model's ``name`` column is
+    read. The read model only holds listable resources, so a merged-away
+    original has no row and the merged resource names its candidate.
     """
     state = OGFieldResourceState
     item = MergeCandidateItemModel
@@ -202,12 +202,7 @@ def _candidate_name_column(permission_mask: int) -> ColumnElement[str | None]:
         )
         .scalar_subquery()
     )
-    source_rank = case(
-        {source: rank for rank, source in enumerate(SOURCE_PRIORITY)},
-        value=state.provenance["name"].as_string(),
-        else_=len(SOURCE_PRIORITY),
-    )
-    best_source_name = (
+    first_resource_name = (
         select(state.name)
         .join(item, item.resource_id == state.resource_id)
         .where(
@@ -215,11 +210,11 @@ def _candidate_name_column(permission_mask: int) -> ColumnElement[str | None]:
             state.permission_mask == permission_mask,
             state.name.is_not(None),
         )
-        .order_by(source_rank, item.position)
+        .order_by(item.position)
         .limit(1)
         .scalar_subquery()
     )
-    return func.coalesce(merged_name, best_source_name)
+    return func.coalesce(merged_name, first_resource_name)
 
 
 def _candidate_to_list_item_view(
