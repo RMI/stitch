@@ -49,9 +49,12 @@ async def test_names_follow_source_rank_and_sort_by_name(
     pg_session_factory: async_sessionmaker[AsyncSession], test_user: User
 ):
     async with pg_session_factory.begin() as session:
+        bravo_ids = await _candidate(
+            session, test_user, [("gem", "Zeta"), ("rmi", "Bravo")]
+        )
         resource_ids = [
             # rmi outranks gem, though gem's resource comes first.
-            *await _candidate(session, test_user, [("gem", "Zeta"), ("rmi", "Bravo")]),
+            *bravo_ids,
             # Same source: the earlier resource wins the tie.
             *await _candidate(
                 session, test_user, [("gem", "Alpha"), ("gem", "Alpha twin")]
@@ -70,6 +73,11 @@ async def test_names_follow_source_rank_and_sort_by_name(
                 session, MergeCandidateQueryParams(sort_by="name", sort_order=order)
             )
             names[order] = [item.name for item in page.items]
+        bravo = next(item for item in page.items if item.name == "Bravo")
+        detail = await mca.get_merge_candidate(session, bravo.id)
 
     assert names["asc"] == ["Alpha", "Bravo", "Delta"]
+    # The detail view names its candidate with the same SQL.
+    assert detail.name == "Bravo"
+    assert detail.resource_ids == bravo_ids
     assert names["desc"] == ["Delta", "Bravo", "Alpha"]

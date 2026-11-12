@@ -690,6 +690,12 @@ class TestMergeCandidateListIntegration:
             "DENIED": 0,
         }
 
+        # The detail view names it the same way.
+        detail = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_id}"
+        )
+        assert detail.json()["name"] == "Ghawar"
+
         # After approval the originals are emptied; the merged resource names it.
         approve = await integration_client.post(
             f"/oil-gas-fields/merge-candidates/{candidate_id}/approve"
@@ -698,6 +704,10 @@ class TestMergeCandidateListIntegration:
         resp = await integration_client.get("/oil-gas-fields/merge-candidates")
         (item,) = resp.json()["items"]
         assert item["name"] == "Ghawar"
+        detail = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_id}"
+        )
+        assert detail.json()["name"] == "Ghawar"
 
     @pytest.mark.anyio
     async def test_names_come_from_the_best_ranked_source(
@@ -717,12 +727,16 @@ class TestMergeCandidateListIntegration:
             og_field_resource_factory,
             [source_maker(source="rmi", managed=False, name="From RMI")],
         )
-        await _create_candidate(integration_client, [id_gem, id_rmi])
+        candidate_id = await _create_candidate(integration_client, [id_gem, id_rmi])
 
         resp = await integration_client.get("/oil-gas-fields/merge-candidates")
         assert resp.status_code == 200, resp.text
         (item,) = resp.json()["items"]
         assert item["name"] == "From RMI"
+        detail = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_id}"
+        )
+        assert detail.json()["name"] == "From RMI"
 
     @pytest.mark.anyio
     @pytest.mark.parametrize(
@@ -814,17 +828,20 @@ class TestMergeCandidateListIntegration:
         the field list does."""
         id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
         id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
-        await _create_candidate(integration_client, [id_a, id_b])
+        candidate_id = await _create_candidate(integration_client, [id_a, id_b])
 
         # Missing every public source but gem.
         app.dependency_overrides[get_token_claims] = lambda: TokenClaims(
             sub="test|user-1",
             permissions=frozenset({SOURCE_READ_GEM, MERGE_CANDIDATE_READ}),
         )
-        resp = await integration_client.get("/oil-gas-fields/merge-candidates")
-
-        assert resp.status_code == 403, resp.text
-        assert "missing read access to public source" in resp.json()["detail"]
+        for path in [
+            "/oil-gas-fields/merge-candidates",
+            f"/oil-gas-fields/merge-candidates/{candidate_id}",
+        ]:
+            resp = await integration_client.get(path)
+            assert resp.status_code == 403, resp.text
+            assert "missing read access to public source" in resp.json()["detail"]
 
     @pytest.mark.anyio
     @pytest.mark.parametrize(

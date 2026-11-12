@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Sequence
 from datetime import datetime, timezone
 from typing import Any
 
@@ -27,7 +27,7 @@ from stitch.api.entities import (
     MergeCandidateView,
 )
 from stitch.api.observability.context import named_query
-from stitch.ogsi.model import SOURCE_PRIORITY, OGFieldResource, OGFieldSource
+from stitch.ogsi.model import SOURCE_PRIORITY, OGFieldSource
 from stitch.ogsi.model.og_field import OilGasFieldBase
 from stitch.ogsi.model.types import OGSISrcKey
 
@@ -180,65 +180,16 @@ def _ordered_resource_ids(model: MergeCandidateModel) -> list[int]:
     return [item.resource_id for item in sorted(model.items, key=lambda i: i.position)]
 
 
-def _source_rank(source: OGSISrcKey) -> int:
-    return (
-        SOURCE_PRIORITY.index(source)
-        if source in SOURCE_PRIORITY
-        else len(SOURCE_PRIORITY)
-    )
-
-
-# resource id -> (coalesced name, the source it came from), for the resources
-# that have a name the caller may see.
-type ResourceNames = Mapping[int, tuple[str, OGSISrcKey]]
-
-
-def _candidate_name(model: MergeCandidateModel, names: ResourceNames) -> str | None:
-    """Display name for a candidate; see ``MergeCandidateListItemView.name``.
-
-    ``names`` covers the candidate's resources and, once merged, its merged
-    resource. The merged resource's name wins; otherwise source resources are
-    ranked by the global ``SOURCE_PRIORITY`` (the same rule the frontend used
-    to apply), with ties going to the earlier resource.
-
-    Used by the detail view. The list applies the same rule in SQL
-    (``_candidate_name_column``) so it can sort by it; change both together.
-    """
-    if model.merged_resource_id in names:
-        return names[model.merged_resource_id][0]
-
-    best: tuple[int, str] | None = None
-    for resource_id in _ordered_resource_ids(model):
-        if resource_id not in names:
-            continue
-        name, source = names[resource_id]
-        rank = _source_rank(source)
-        if best is None or rank < best[0]:
-            best = (rank, name)
-    return None if best is None else best[1]
-
-
-def _names_from_coalesced(resources: Mapping[int, OGFieldResource]) -> ResourceNames:
-    """``ResourceNames`` from coalesced resources (the detail view's path)."""
-    names: dict[int, tuple[str, OGSISrcKey]] = {}
-    for resource_id, resource in resources.items():
-        provenance = resource.provenance.get("name")
-        if provenance is not None:
-            name, source, _source_pk = provenance
-            names[resource_id] = (name, source)
-    return names
-
-
 def _candidate_name_column(permission_mask: int) -> ColumnElement[str | None]:
-    """``_candidate_name``'s rule as SQL over the resource-state read model, so
-    the list can both return and sort by each candidate's name.
+    """A candidate's display name, as SQL over the resource-state read model, so
+    the list can both return and sort by it and the detail view names its
+    candidate the same way. See ``MergeCandidateListItemView.name``.
 
     The merged resource's name wins once approved; otherwise the name whose
     winning source ranks best in ``SOURCE_PRIORITY``, ties going to the earlier
     resource. Names come from the caller's permission profile. The read model
     only holds listable resources, so a merged-away original has no row and
-    the merged resource names its candidate. Change together with
-    ``_candidate_name``, which applies the rule for the detail view.
+    the merged resource names its candidate.
     """
     state = OGFieldResourceState
     item = MergeCandidateItemModel
@@ -410,6 +361,9 @@ async def get_merge_candidate(
     candidate_id: int,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> MergeCandidateDetailView:
+    # Resolved first, so a caller with no read-model profile is refused (403)
+    # before any work is done.
+    name_column = _candidate_name_column(profile_mask(licensed_sources))
     with named_query("merge_candidates.detail.load"):
         candidate = await _load_candidate_model(session, candidate_id)
 
@@ -443,20 +397,14 @@ async def get_merge_candidate(
     resource_views = [by_id[rid].view for rid in resource_ids]
     compare = _build_comparison(resource_views, sources_with_priority)
 
-    name_sources: dict[int, OGFieldResource] = dict(by_id)
-    if candidate.merged_resource_id is not None:
-        with named_query("merge_candidates.detail.merged_name"):
-            name_sources.update(
-                await coalesce_resources_with_sources(
-                    session, [candidate.merged_resource_id], licensed_sources
-                )
-            )
+    with named_query("merge_candidates.detail.name"):
+        name = await session.scalar(
+            select(name_column)
+            .select_from(MergeCandidateModel)
+            .where(MergeCandidateModel.id == candidate.id)
+        )
 
-    return _candidate_to_detail_view(
-        candidate,
-        _candidate_name(candidate, _names_from_coalesced(name_sources)),
-        compare,
-    )
+    return _candidate_to_detail_view(candidate, name, compare)
 
 
 async def create_merge_candidate(

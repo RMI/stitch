@@ -451,6 +451,7 @@ class TestActionCallSiteLabels:
                 "merge_candidates.detail.load",
                 "merge_candidates.detail.coalesce",
                 "merge_candidates.detail.default_priority",
+                "merge_candidates.detail.name",
             },
         )
 

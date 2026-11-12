@@ -68,9 +68,10 @@ class OGFieldResourceState(Base):
     operators: Mapped[Any | None] = mapped_column(PORTABLE_JSON_NULL, nullable=True)
 
     # field -> winning source key (or None). Returned with list items. Never
-    # filtered on and not indexed. The one query that reads it is the
-    # merge-candidate list, which ranks provenance["name"] per row to name and
-    # sort candidates (merge_candidate_actions._candidate_name_column).
+    # filtered on and not indexed. Merge candidates' names are the one query
+    # that reads it: they rank provenance["name"] per row to name candidates
+    # in the list and detail, and to sort the list
+    # (merge_candidate_actions._candidate_name_column).
     provenance: Mapped[dict[str, Any]] = mapped_column(PORTABLE_JSON, nullable=False)
 
     __table_args__ = (

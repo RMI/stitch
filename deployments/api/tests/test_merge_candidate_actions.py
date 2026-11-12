@@ -14,6 +14,7 @@ from stitch.api.entities import (
 )
 from stitch.api.db.errors import InvalidActionError, ResourceNotFoundError
 from stitch.api.db import merge_candidate_actions as mca
+from stitch.api.db.read_model.permissions import PUBLIC_SOURCES
 from stitch.ogsi.model.og_field import OilGasFieldBase
 
 from datetime import datetime, timezone
@@ -118,34 +119,6 @@ def test_candidate_to_view_sorts_items_by_position():
     assert view.resource_ids == [18, 19]
     assert view.status == MergeCandidateStatus.PENDING
     assert view.id == 1
-
-
-def _named(name: str | None, source: str = "rmi", source_pk: int = 1):
-    """A coalesced resource whose only known field is ``name``."""
-    return SimpleNamespace(
-        view=OilGasFieldBase(name=name, country=None),
-        provenance={"name": None if name is None else (name, source, source_pk)},
-    )
-
-
-def test_candidate_name_breaks_rank_ties_by_resource_position():
-    candidate = FakeCandidate(
-        id=1,
-        status=MergeCandidateStatus.PENDING,
-        items=[FakeItem(19, 1), FakeItem(18, 0)],
-    )
-    names = {18: ("First", "rmi"), 19: ("Second", "rmi")}
-
-    assert mca._candidate_name(candidate, names) == "First"
-
-
-def test_candidate_name_is_none_without_a_licensed_name():
-    candidate = FakeCandidate(
-        id=1,
-        status=MergeCandidateStatus.PENDING,
-        items=[FakeItem(18, 0), FakeItem(19, 1)],
-    )
-    assert mca._candidate_name(candidate, {}) is None
 
 
 @pytest.mark.anyio
@@ -551,6 +524,7 @@ def test_build_comparison_keeps_present_values_and_matches_equal():
 
 @pytest.mark.anyio
 async def test_get_merge_candidate_returns_detail_view_in_item_order(monkeypatch):
+    licensed_sources = sorted(PUBLIC_SOURCES)
     candidate = FakeCandidate(
         id=1,
         status=MergeCandidateStatus.PENDING,
@@ -567,7 +541,7 @@ async def test_get_merge_candidate_returns_detail_view_in_item_order(monkeypatch
     async def fake_coalesce(session_arg, resource_ids, licensed):
         # ordered by item position
         assert resource_ids == [18, 19]
-        assert licensed == ["gem"]
+        assert licensed == licensed_sources
         return {
             rid: SimpleNamespace(
                 source_data=[SimpleNamespace(source="rmi", id=rid, name=f"name-{rid}")],
@@ -584,8 +558,11 @@ async def test_get_merge_candidate_returns_detail_view_in_item_order(monkeypatch
     monkeypatch.setattr(mca, "coalesce_resources_with_sources", fake_coalesce)
     monkeypatch.setattr(mca, "_default_source_priority", fake_default_priority)
 
+    session = AsyncMock()
+    # The name comes from one SQL query (covered by the integration tests).
+    session.scalar.return_value = "name-18"
     view = await mca.get_merge_candidate(
-        AsyncMock(), candidate_id=1, licensed_sources=["gem"]
+        session, candidate_id=1, licensed_sources=licensed_sources
     )
 
     assert isinstance(view, MergeCandidateDetailView)
@@ -618,9 +595,6 @@ async def test_get_merge_candidate_after_merge_yields_empty_compare(monkeypatch)
         return candidate
 
     async def fake_coalesce(session_arg, resource_ids, licensed):
-        # Called for the originals, then for the merged resource's name.
-        if resource_ids == [31]:
-            return {31: _named("Merged")}
         return {
             rid: SimpleNamespace(
                 source_data=[],
@@ -637,7 +611,9 @@ async def test_get_merge_candidate_after_merge_yields_empty_compare(monkeypatch)
     monkeypatch.setattr(mca, "coalesce_resources_with_sources", fake_coalesce)
     monkeypatch.setattr(mca, "_default_source_priority", fake_default_priority)
 
-    view = await mca.get_merge_candidate(AsyncMock(), candidate_id=2)
+    session = AsyncMock()
+    session.scalar.return_value = "Merged"
+    view = await mca.get_merge_candidate(session, candidate_id=2)
 
     assert view.merged_resource_id == 31
     assert view.name == "Merged"
