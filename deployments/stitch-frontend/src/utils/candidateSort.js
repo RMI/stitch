@@ -1,5 +1,6 @@
-// Orders the Merge Review queue. Pure, so the page decides only *which* sort
-// and supplies every candidate's display name.
+import { candidateDisplayName } from "./mergeCandidateName";
+
+// Orders the Merge Review queue. Pure, so the page decides only *which* sort.
 //
 // `candidates` arrive in the API's order, which is newest first, so "newest"
 // keeps it and "oldest" reverses it. The name sorts compare the queue's
@@ -21,7 +22,7 @@ function statusRank(status) {
   return index === -1 ? STATUS_ORDER.length : index;
 }
 
-export function sortCandidates(candidates, sort, namesById) {
+export function sortCandidates(candidates, sort) {
   if (sort === "oldest") return [...candidates].reverse();
   if (sort === "status") {
     // Array.prototype.sort is stable, so equal statuses keep the API's
@@ -39,7 +40,7 @@ export function sortCandidates(candidates, sort, namesById) {
 
   return [...candidates].sort((a, b) => {
     const byName =
-      nameCollator.compare(namesById.get(a.id), namesById.get(b.id)) *
+      nameCollator.compare(candidateDisplayName(a), candidateDisplayName(b)) *
       direction;
     return byName || apiOrder.get(a.id) - apiOrder.get(b.id);
   });

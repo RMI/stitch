@@ -456,12 +456,8 @@ export default function MergeCandidateReviewPage() {
     (c) => showApproved || c.status !== "APPROVED",
   );
 
-  // Names arrive with the list itself, so a name sort is complete at once.
-  const namesById = new Map(
-    (filteredCandidates ?? []).map((c) => [c.id, candidateDisplayName(c)]),
-  );
   const visibleCandidates = filteredCandidates
-    ? sortCandidates(filteredCandidates, sort, namesById)
+    ? sortCandidates(filteredCandidates, sort)
     : filteredCandidates;
 
   function handleSortChange(nextSort) {

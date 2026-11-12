@@ -7,20 +7,16 @@ const ids = (list) => list.map((candidate) => candidate.id);
 
 describe("sortCandidates", () => {
   it("keeps the API's newest-first order for 'newest'", () => {
-    expect(ids(sortCandidates(CANDIDATES, "newest", new Map()))).toEqual([
-      5, 4, 3, 2, 1,
-    ]);
+    expect(ids(sortCandidates(CANDIDATES, "newest"))).toEqual([5, 4, 3, 2, 1]);
   });
 
   it("reverses it for 'oldest'", () => {
-    expect(ids(sortCandidates(CANDIDATES, "oldest", new Map()))).toEqual([
-      1, 2, 3, 4, 5,
-    ]);
+    expect(ids(sortCandidates(CANDIDATES, "oldest"))).toEqual([1, 2, 3, 4, 5]);
   });
 
   it("does not modify the list it is given", () => {
     const list = [...CANDIDATES];
-    sortCandidates(list, "oldest", new Map());
+    sortCandidates(list, "oldest");
     expect(ids(list)).toEqual([5, 4, 3, 2, 1]);
   });
 
@@ -33,39 +29,33 @@ describe("sortCandidates", () => {
       { id: 2, status: "PENDING" },
       { id: 1, status: "DENIED" },
     ];
-    expect(ids(sortCandidates(mixed, "status", new Map()))).toEqual([
-      5, 2, 4, 1, 6, 3,
-    ]);
+    expect(ids(sortCandidates(mixed, "status"))).toEqual([5, 2, 4, 1, 6, 3]);
   });
 
   describe("by name", () => {
-    const names = new Map([
-      [5, "burgan"],
-      [4, "Ábalos"],
-      [3, "Abbott"],
-      [2, "Burgan"],
-      [1, "Zubair"],
-    ]);
+    const NAMED = [
+      { id: 5, display_name: "burgan" },
+      { id: 4, display_name: "Ábalos" },
+      { id: 3, display_name: "Abbott" },
+      { id: 2, display_name: "Burgan" },
+      { id: 1, display_name: "Zubair" },
+    ];
 
     // The test runs with an English default language, where base
     // sensitivity ignores case and accents.
     it("sorts A to Z, ignoring case and accents in English", () => {
       // "Ábalos" sorts with "Abalos", before "Abbott".
-      expect(ids(sortCandidates(CANDIDATES, "name-asc", names))).toEqual([
-        4, 3, 5, 2, 1,
-      ]);
+      expect(ids(sortCandidates(NAMED, "name-asc"))).toEqual([4, 3, 5, 2, 1]);
     });
 
     it("sorts Z to A", () => {
-      expect(ids(sortCandidates(CANDIDATES, "name-desc", names))).toEqual([
-        1, 5, 2, 3, 4,
-      ]);
+      expect(ids(sortCandidates(NAMED, "name-desc"))).toEqual([1, 5, 2, 3, 4]);
     });
 
     it("breaks ties between equal names newest first, in both directions", () => {
       // "burgan" (5) and "Burgan" (2) are equal ignoring case.
-      const asc = ids(sortCandidates(CANDIDATES, "name-asc", names));
-      const desc = ids(sortCandidates(CANDIDATES, "name-desc", names));
+      const asc = ids(sortCandidates(NAMED, "name-asc"));
+      const desc = ids(sortCandidates(NAMED, "name-desc"));
       expect(asc.indexOf(5)).toBeLessThan(asc.indexOf(2));
       expect(desc.indexOf(5)).toBeLessThan(desc.indexOf(2));
     });
@@ -93,15 +83,13 @@ describe("sortCandidates in a non-English browser", () => {
     const { sortCandidates: sortWithSwedishDefault } =
       await import("./candidateSort");
 
-    const names = new Map([
-      [3, "Zeta"],
-      [2, "Ägir"],
-      [1, "Alpha"],
-    ]);
     const sorted = sortWithSwedishDefault(
-      [{ id: 3 }, { id: 2 }, { id: 1 }],
+      [
+        { id: 3, display_name: "Zeta" },
+        { id: 2, display_name: "Ägir" },
+        { id: 1, display_name: "Alpha" },
+      ],
       "name-asc",
-      names,
     );
     // Swedish order: "Ägir" after "Zeta" (in English it would come first).
     expect(sorted.map((candidate) => candidate.id)).toEqual([1, 3, 2]);

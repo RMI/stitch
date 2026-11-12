@@ -99,15 +99,12 @@ def _candidate_to_view(
     )
 
 
-# resource id -> (coalesced name, the source that name came from)
-NamedResources = dict[int, tuple[str, str | None]]
+# resource id -> (coalesced name, default priority of the source it came from;
+# None when that source has no default priority)
+NamedResources = dict[int, tuple[str, int | None]]
 
 
-def _pick_display_name(
-    model: MergeCandidateModel,
-    names: NamedResources,
-    source_priority: dict[str, int],
-) -> str | None:
+def _pick_display_name(model: MergeCandidateModel, names: NamedResources) -> str | None:
     """The name the Merge Review queue shows for one candidate.
 
     Once merged, the source resources are emptied, so the merged resource's
@@ -117,22 +114,22 @@ def _pick_display_name(
     """
     if model.merged_resource_id in names:
         return names[model.merged_resource_id][0]
-    unranked = max(source_priority.values(), default=0) + 1
-    best: tuple[int, str] | None = None
+    best: tuple[tuple[bool, int], str] | None = None
     for item in sorted(model.items, key=lambda i: i.position):
         entry = names.get(item.resource_id)
         if entry is None:
             continue
-        name, source = entry
-        rank = source_priority.get(source, unranked) if source else unranked
+        name, priority = entry
+        rank = (priority is None, priority or 0)
         if best is None or rank < best[0]:
             best = (rank, name)
     return best[1] if best else None
 
 
 async def _load_resource_names(session: AsyncSession, mask: int) -> NamedResources:
-    """Coalesced name and its source, from the read model, for every resource
-    any merge candidate references (its items, or the resource it merged into).
+    """Coalesced name, and the default priority of the source it came from,
+    from the read model for every resource any merge candidate references (its
+    items, or the resource it merged into).
 
     The ids are selected inside the query rather than passed in, so the
     statement stays the same size however many candidates exist. Resources
@@ -140,7 +137,12 @@ async def _load_resource_names(session: AsyncSession, mask: int) -> NamedResourc
     """
     state = OGFieldResourceState
     rows = await session.execute(
-        select(state.resource_id, state.name, state.provenance).where(
+        select(state.resource_id, state.name, OGFieldSourcePriority.priority)
+        .outerjoin(
+            OGFieldSourcePriority,
+            OGFieldSourcePriority.source == state.provenance["name"].as_string(),
+        )
+        .where(
             state.permission_mask == mask,
             or_(
                 state.resource_id.in_(select(MergeCandidateItemModel.resource_id)),
@@ -153,8 +155,8 @@ async def _load_resource_names(session: AsyncSession, mask: int) -> NamedResourc
         )
     )
     return {
-        resource_id: (name, (provenance or {}).get("name"))
-        for resource_id, name, provenance in rows.all()
+        resource_id: (name, priority)
+        for resource_id, name, priority in rows.all()
         if name is not None
     }
 
@@ -286,12 +288,7 @@ async def list_merge_candidates(
 
     with named_query("merge_candidates.list.names"):
         names = await _load_resource_names(session, mask) if candidates else {}
-    with named_query("merge_candidates.list.default_priority"):
-        source_priority = await _default_source_priority(session) if names else {}
-    return [
-        _candidate_to_view(c, _pick_display_name(c, names, source_priority))
-        for c in candidates
-    ]
+    return [_candidate_to_view(c, _pick_display_name(c, names)) for c in candidates]
 
 
 async def get_merge_candidate(

@@ -83,7 +83,7 @@ def profile_mask(
     if missing := sorted(PUBLIC_SOURCES - frozenset(licensed_sources)):
         reason = f"it is missing read access to public source(s) {missing}"
     else:
-        reason = "it holds read access to a source the list can't serve yet"
+        reason = "it holds read access to a source this view can't serve yet"
     raise HTTPException(
         status_code=HTTP_403_FORBIDDEN,
         detail=f"This account can't {refused_action}: {reason}. "

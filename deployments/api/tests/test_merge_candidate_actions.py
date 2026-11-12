@@ -122,9 +122,6 @@ def test_candidate_to_view_sorts_items_by_position():
     assert view.id == 1
 
 
-_PRIORITY = {"rmi": 1, "wm": 2, "gem": 7}
-
-
 def _candidate(*resource_ids: int, merged: int | None = None) -> FakeCandidate:
     return FakeCandidate(
         id=1,
@@ -136,34 +133,35 @@ def _candidate(*resource_ids: int, merged: int | None = None) -> FakeCandidate:
     )
 
 
+# Names map resource id -> (name, default priority of its source; lower wins).
 def test_pick_display_name_prefers_best_ranked_source_across_resources():
-    names = {18: ("Gem Name", "gem"), 19: ("RMI Name", "rmi")}
-    assert mca._pick_display_name(_candidate(18, 19), names, _PRIORITY) == "RMI Name"
+    names = {18: ("Gem Name", 7), 19: ("RMI Name", 1)}
+    assert mca._pick_display_name(_candidate(18, 19), names) == "RMI Name"
 
 
 def test_pick_display_name_breaks_ties_by_resource_position():
-    names = {18: ("Second", "gem"), 19: ("First", "gem")}
+    names = {18: ("Second", 7), 19: ("First", 7)}
     candidate = FakeCandidate(
         id=1,
         status=MergeCandidateStatus.PENDING,
         items=[FakeItem(18, 1), FakeItem(19, 0)],
     )
-    assert mca._pick_display_name(candidate, names, _PRIORITY) == "First"
+    assert mca._pick_display_name(candidate, names) == "First"
 
 
-def test_pick_display_name_ranks_unknown_sources_last():
-    names = {18: ("Unranked", "zzz"), 19: ("Unknown source", None), 20: ("Gem", "gem")}
-    assert mca._pick_display_name(_candidate(18, 19, 20), names, _PRIORITY) == "Gem"
+def test_pick_display_name_ranks_unranked_sources_last():
+    names = {18: ("Unranked", None), 19: ("Gem", 7)}
+    assert mca._pick_display_name(_candidate(18, 19), names) == "Gem"
 
 
 def test_pick_display_name_uses_merged_resource_once_approved():
-    names = {18: ("Leftover", "rmi"), 30: ("Merged", "gem")}
+    names = {18: ("Leftover", 1), 30: ("Merged", 7)}
     candidate = _candidate(18, 19, merged=30)
-    assert mca._pick_display_name(candidate, names, _PRIORITY) == "Merged"
+    assert mca._pick_display_name(candidate, names) == "Merged"
 
 
 def test_pick_display_name_is_none_without_any_name():
-    assert mca._pick_display_name(_candidate(18, 19), {}, _PRIORITY) is None
+    assert mca._pick_display_name(_candidate(18, 19), {}) is None
 
 
 @pytest.mark.anyio
@@ -181,10 +179,8 @@ async def test_list_merge_candidates_returns_views_in_query_order():
     session = FakeSession(
         scalars_result=[first, second],
         execute_results=[
-            # read-model names: (resource_id, name, provenance)
-            [(19, "Ghawar", {"name": "gem"}), (20, "Burgan", {"name": "rmi"})],
-            # default source priority: (source, priority)
-            [("rmi", 1), ("gem", 7)],
+            # read-model names: (resource_id, name, source's default priority)
+            [(19, "Ghawar", 7), (20, "Burgan", 1)],
         ],
     )
 
