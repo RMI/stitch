@@ -4,7 +4,7 @@ from collections.abc import Collection, Sequence
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -130,23 +130,26 @@ def _pick_display_name(
     return best[1] if best else None
 
 
-async def _load_resource_names(
-    session: AsyncSession, resource_ids: Collection[int], mask: int
-) -> NamedResources:
-    """Each resource's coalesced name and its source, from the read model.
+async def _load_resource_names(session: AsyncSession, mask: int) -> NamedResources:
+    """Coalesced name and its source, from the read model, for every resource
+    any merge candidate references (its items, or the resource it merged into).
 
-    Resources with no name (or no row -- e.g. emptied by a merge) are left out.
+    The ids are selected inside the query rather than passed in, so the
+    statement stays the same size however many candidates exist. Resources
+    with no name (or no row -- e.g. emptied by a merge) are left out.
     """
-    if not resource_ids:
-        return {}
+    state = OGFieldResourceState
     rows = await session.execute(
-        select(
-            OGFieldResourceState.resource_id,
-            OGFieldResourceState.name,
-            OGFieldResourceState.provenance,
-        ).where(
-            OGFieldResourceState.permission_mask == mask,
-            OGFieldResourceState.resource_id.in_(resource_ids),
+        select(state.resource_id, state.name, state.provenance).where(
+            state.permission_mask == mask,
+            or_(
+                state.resource_id.in_(select(MergeCandidateItemModel.resource_id)),
+                state.resource_id.in_(
+                    select(MergeCandidateModel.merged_resource_id).where(
+                        MergeCandidateModel.merged_resource_id.is_not(None)
+                    )
+                ),
+            ),
         )
     )
     return {
@@ -281,11 +284,8 @@ async def list_merge_candidates(
     with named_query("merge_candidates.list"):
         candidates = (await session.scalars(stmt)).all()
 
-    resource_ids = {item.resource_id for c in candidates for item in c.items} | {
-        c.merged_resource_id for c in candidates if c.merged_resource_id is not None
-    }
     with named_query("merge_candidates.list.names"):
-        names = await _load_resource_names(session, resource_ids, mask)
+        names = await _load_resource_names(session, mask) if candidates else {}
     with named_query("merge_candidates.list.default_priority"):
         source_priority = await _default_source_priority(session) if names else {}
     return [
