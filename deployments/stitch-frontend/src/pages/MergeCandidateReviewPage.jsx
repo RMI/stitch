@@ -467,6 +467,14 @@ export default function MergeCandidateReviewPage() {
   const viewState = useMergeReviewState();
   const [selectedId, setSelectedId] = useState(null);
   const [reviewNotes, setReviewNotes] = useState("");
+  // The candidate the notes were typed for. The selection also moves without a
+  // click (paging, filtering, sorting, advancing after a review), so the notes
+  // are cleared whenever it changes, never carried to another candidate.
+  const [notesCandidateId, setNotesCandidateId] = useState(selectedId);
+  if (notesCandidateId !== selectedId) {
+    setNotesCandidateId(selectedId);
+    setReviewNotes("");
+  }
   const selectedPanelRef = useRef(null);
 
   const reviewMutation = useReviewMergeCandidate(ENDPOINT);
@@ -474,9 +482,11 @@ export default function MergeCandidateReviewPage() {
   const activeReviewAction = reviewMutation.isPending
     ? reviewMutation.variables?.action
     : null;
-  const actionError = reviewMutation.error
-    ? reviewMutation.error.message || String(reviewMutation.error)
-    : null;
+  // Only shown on the candidate whose review failed.
+  const actionError =
+    reviewMutation.error && reviewMutation.variables?.id === selectedId
+      ? reviewMutation.error.message || String(reviewMutation.error)
+      : null;
 
   const {
     data: candidatePage,

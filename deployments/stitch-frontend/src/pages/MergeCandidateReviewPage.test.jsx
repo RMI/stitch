@@ -784,6 +784,49 @@ describe("MergeCandidateReviewPage", () => {
       );
     });
 
+    it("clears the notes when paging moves the selection", async () => {
+      // No detail loaded, so the panel acts on the selected queue row.
+      vi.mocked(useMergeCandidate).mockReturnValue(defaultHookReturn);
+      const user = userEvent.setup();
+      mockQueue(manyPending(30));
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      await user.type(screen.getByLabelText("Decision notes"), "For field 1");
+      await user.click(screen.getByRole("button", { name: "Next page" }));
+
+      // Field 26 (id 125) is selected now; field 1's notes must not follow it.
+      expect(screen.getByLabelText("Decision notes")).toHaveValue("");
+      await user.click(screen.getByRole("button", { name: "Approve merge" }));
+      await waitFor(() => {
+        expect(reviewMergeCandidate).toHaveBeenCalledWith(
+          expect.any(Object),
+          125,
+          "approve",
+          expect.any(Function),
+          "oil-gas-fields",
+          "",
+        );
+      });
+    });
+
+    it("does not show a failed review's error on the next page's candidate", async () => {
+      // No detail loaded, so the panel acts on the selected queue row.
+      vi.mocked(useMergeCandidate).mockReturnValue(defaultHookReturn);
+      vi.mocked(reviewMergeCandidate).mockRejectedValue(
+        new Error("Review failed"),
+      );
+      const user = userEvent.setup();
+      mockQueue(manyPending(30));
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      await user.click(screen.getByRole("button", { name: "Approve merge" }));
+      expect(await screen.findByText("Review failed")).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Next page" }));
+
+      expect(screen.queryByText("Review failed")).not.toBeInTheDocument();
+    });
+
     it("steps back to the last page when the page is past the end", async () => {
       mockQueue(manyPending(3));
       renderWithQueryClient(<MergeCandidateReviewPage />, {
