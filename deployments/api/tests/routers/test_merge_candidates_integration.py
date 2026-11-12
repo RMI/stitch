@@ -764,6 +764,46 @@ class TestMergeCandidateListIntegration:
         assert names == expected
 
     @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("sort_order", "expected"),
+        [
+            # Work still to do first; newest first within each status.
+            ("asc", ["newer pending", "older pending", "denied", "approved"]),
+            ("desc", ["approved", "denied", "newer pending", "older pending"]),
+        ],
+    )
+    async def test_sorts_by_status(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+        sort_order: str,
+        expected: list[str],
+    ):
+        ids = {}
+        # Created oldest first, so creation order alone can't pass.
+        for label in ["approved", "older pending", "denied", "newer pending"]:
+            first = await _create_resource(
+                integration_client, og_create_res_fact, label
+            )
+            second = await _create_resource(
+                integration_client, og_create_res_fact, f"{label} twin"
+            )
+            ids[label] = await _create_candidate(integration_client, [first, second])
+        for label, action in [("approved", "approve"), ("denied", "deny")]:
+            resp = await integration_client.post(
+                f"/oil-gas-fields/merge-candidates/{ids[label]}/{action}"
+            )
+            assert resp.status_code == 200, resp.text
+
+        resp = await integration_client.get(
+            "/oil-gas-fields/merge-candidates",
+            params={"sort_by": "status", "sort_order": sort_order},
+        )
+        assert resp.status_code == 200, resp.text
+        label_by_id = {candidate_id: label for label, candidate_id in ids.items()}
+        assert [label_by_id[item["id"]] for item in resp.json()["items"]] == expected
+
+    @pytest.mark.anyio
     async def test_refuses_callers_the_read_model_cannot_serve(
         self,
         integration_client: AsyncClient,

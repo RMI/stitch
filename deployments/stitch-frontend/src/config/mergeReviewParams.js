@@ -24,10 +24,8 @@ const ALL_STATUSES = "all";
 
 export const DEFAULT_QUEUE_PAGE_SIZE = 25;
 
-// Each option is one sort_by + sort_order pair, labelled in plain language.
-// The first is the default. A `pageOnly` sort is not offered by the API yet:
-// the page fetches the default order and re-orders just the rows it holds
-// (utils/candidateSort.js), so it sorts within the current page.
+// Each option is one sort_by + sort_order pair the API accepts, labelled in
+// plain language. The first is the default.
 export const QUEUE_SORT_OPTIONS = [
   {
     key: "newest",
@@ -36,25 +34,9 @@ export const QUEUE_SORT_OPTIONS = [
     sortOrder: "desc",
   },
   { key: "oldest", label: "Oldest first", sortBy: "created", sortOrder: "asc" },
-  {
-    key: "name-asc",
-    label: "Name A–Z",
-    sortBy: "name",
-    sortOrder: "asc",
-  },
-  {
-    key: "name-desc",
-    label: "Name Z–A",
-    sortBy: "name",
-    sortOrder: "desc",
-  },
-  {
-    key: "status",
-    label: "Status",
-    sortBy: "status",
-    sortOrder: "asc",
-    pageOnly: true,
-  },
+  { key: "name-asc", label: "Name A–Z", sortBy: "name", sortOrder: "asc" },
+  { key: "name-desc", label: "Name Z–A", sortBy: "name", sortOrder: "desc" },
+  { key: "status", label: "Status", sortBy: "status", sortOrder: "asc" },
   {
     key: "recently-reviewed",
     label: "Recently reviewed",
@@ -144,18 +126,11 @@ export function toMergeReviewParams({ page, pageSize, statuses, sortKey }) {
   return params;
 }
 
-export function isPageOnlySort(sortKey) {
-  return Boolean(
-    QUEUE_SORT_OPTIONS.find((option) => option.key === sortKey)?.pageOnly,
-  );
-}
-
 // The list endpoint's query params for a parsed view. An empty status list
-// sends no status filter, which the API reads as every status. A page-only
-// sort asks for the default order, which the page then re-orders.
+// sends no status filter, which the API reads as every status.
 export function toMergeCandidateQuery({ page, pageSize, statuses, sortKey }) {
-  const chosen = QUEUE_SORT_OPTIONS.find((option) => option.key === sortKey);
-  const sort = chosen && !chosen.pageOnly ? chosen : DEFAULT_SORT;
+  const sort =
+    QUEUE_SORT_OPTIONS.find((option) => option.key === sortKey) ?? DEFAULT_SORT;
   return {
     page,
     page_size: pageSize,

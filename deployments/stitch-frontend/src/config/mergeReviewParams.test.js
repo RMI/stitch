@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  isPageOnlySort,
   parseMergeReviewParams,
   toMergeCandidateQuery,
   toMergeReviewParams,
@@ -86,7 +85,10 @@ describe("toMergeReviewParams", () => {
     expect(parse(serialize(state))).toEqual(state);
   });
 
-  it("keeps a page-only sort in the URL", () => {
+  it("writes the name and status sorts like the others", () => {
+    expect(serialize({ ...DEFAULT_STATE, sortKey: "name-desc" })).toBe(
+      "sort_by=name&sort_order=desc",
+    );
     const state = { ...DEFAULT_STATE, sortKey: "status" };
     expect(serialize(state)).toBe("sort_by=status&sort_order=asc");
     expect(parse(serialize(state))).toEqual(state);
@@ -125,20 +127,11 @@ describe("toMergeCandidateQuery", () => {
     expect([query.sort_by, query.sort_order]).toEqual(["name", "desc"]);
   });
 
-  it("asks for the default order for a page-only sort", () => {
+  it("sends a status sort to the API", () => {
     const query = toMergeCandidateQuery({
       ...DEFAULT_STATE,
       sortKey: "status",
     });
-    expect([query.sort_by, query.sort_order]).toEqual(["created", "desc"]);
-  });
-});
-
-describe("isPageOnlySort", () => {
-  it("is true only for the sorts the API does not offer", () => {
-    expect(isPageOnlySort("status")).toBe(true);
-    expect(isPageOnlySort("name-asc")).toBe(false);
-    expect(isPageOnlySort("oldest")).toBe(false);
-    expect(isPageOnlySort("bogus")).toBe(false);
+    expect([query.sort_by, query.sort_order]).toEqual(["status", "asc"]);
   });
 });

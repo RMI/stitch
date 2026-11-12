@@ -215,8 +215,9 @@ class MergeCandidateSortParams(BaseModel):
     # stay stable when candidates share a timestamp (bulk creation) or a name.
     # `name` sorts by the candidate's display name as the caller sees it;
     # candidates without one sort last, like unreviewed ones under
-    # `reviewed_at`.
-    sort_by: Literal["created", "reviewed_at", "name"] = "created"
+    # `reviewed_at`. `status` puts work still to do first when ascending
+    # (pending, denied, approved), newest first within each status.
+    sort_by: Literal["created", "reviewed_at", "name", "status"] = "created"
     sort_order: Literal["asc", "desc"] = "desc"
 
 

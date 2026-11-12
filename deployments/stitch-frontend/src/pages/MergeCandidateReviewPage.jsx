@@ -9,7 +9,6 @@ import Select from "../components/Select";
 import {
   MERGE_STATUSES,
   QUEUE_SORT_OPTIONS,
-  isPageOnlySort,
   toMergeCandidateQuery,
 } from "../config/mergeReviewParams";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
@@ -20,7 +19,6 @@ import {
   useMergeCandidate,
   useReviewMergeCandidate,
 } from "../hooks/useResources";
-import { sortCandidates } from "../utils/candidateSort";
 
 const ENDPOINT = "oil-gas-fields";
 // Tailwind's md breakpoint, where the queue moves beside the decision panel
@@ -140,7 +138,6 @@ function QueueControls({
 
 function QueuePanel({
   candidatePage,
-  candidates,
   isLoading,
   isError,
   error,
@@ -149,6 +146,7 @@ function QueuePanel({
   viewState,
 }) {
   const listRef = useRef(null);
+  const candidates = candidatePage?.items;
   const queueTotal = Object.values(candidatePage?.status_counts ?? {}).reduce(
     (sum, count) => sum + count,
     0,
@@ -176,13 +174,6 @@ function QueuePanel({
           sortKey={viewState.sortKey}
           onSortKeyChange={viewState.setSortKey}
         />
-        {/* The status sort re-orders only the loaded page, so say so
-            whenever there is more than one. */}
-        {isPageOnlySort(viewState.sortKey) && candidatePage?.total_pages > 1 ? (
-          <p className="mt-2 text-xs text-ink-muted">
-            Sorted within this page.
-          </p>
-        ) : null}
       </div>
 
       <div ref={listRef} className="p-2 md:min-h-0 md:overflow-y-auto">
@@ -495,11 +486,6 @@ export default function MergeCandidateReviewPage() {
     isPlaceholderData: listIsPlaceholder,
   } = useMergeCandidates(ENDPOINT, toMergeCandidateQuery(viewState), true);
   const pageCandidates = candidatePage?.items;
-  // The rows as displayed: the API's order, re-ordered on the page for the
-  // one sort the API does not offer yet (status).
-  const visibleCandidates = pageCandidates
-    ? sortCandidates(pageCandidates, viewState.sortKey)
-    : pageCandidates;
 
   // Reviewing the last candidate on the last page (or a link to a page that no
   // longer exists) leaves the page past the end; step back to the new last
@@ -523,12 +509,10 @@ export default function MergeCandidateReviewPage() {
   // An empty page clears the selection instead, so the panel never offers
   // review actions for a candidate the queue is not showing.
   const selectionOnPage = pageCandidates?.some((c) => c.id === selectedId);
-  if (visibleCandidates && !selectionOnPage && !listIsPlaceholder) {
-    if (visibleCandidates.length) {
-      const firstPending = visibleCandidates.find(
-        (c) => c.status === "PENDING",
-      );
-      setSelectedId(firstPending?.id ?? visibleCandidates[0].id);
+  if (pageCandidates && !selectionOnPage && !listIsPlaceholder) {
+    if (pageCandidates.length) {
+      const firstPending = pageCandidates.find((c) => c.status === "PENDING");
+      setSelectedId(firstPending?.id ?? pageCandidates[0].id);
     } else if (selectedId !== null) {
       setSelectedId(null);
     }
@@ -583,8 +567,7 @@ export default function MergeCandidateReviewPage() {
         // once the refreshed data is on its way. Failures surface via
         // `reviewMutation.error` and keep the current candidate selected.
         onSuccess: () => {
-          // Continue through the queue as displayed, in the chosen sort.
-          const nextPending = visibleCandidates?.find(
+          const nextPending = pageCandidates?.find(
             (item) => item.id !== candidate.id && item.status === "PENDING",
           );
           if (nextPending) {
@@ -659,7 +642,6 @@ export default function MergeCandidateReviewPage() {
 
         <QueuePanel
           candidatePage={candidatePage}
-          candidates={visibleCandidates}
           isLoading={listLoading}
           isError={listError}
           error={listErrorObj}

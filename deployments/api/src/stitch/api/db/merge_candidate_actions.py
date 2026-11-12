@@ -308,6 +308,40 @@ async def _load_candidate_model(
     return model
 
 
+# Work still to do first: candidates awaiting review, then denied, then
+# approved.
+_STATUS_SORT_RANK = {
+    MergeCandidateStatus.PENDING: 0,
+    MergeCandidateStatus.DENIED: 1,
+    MergeCandidateStatus.APPROVED: 2,
+}
+
+
+def _list_order(
+    params: MergeCandidateQueryParams, name: ColumnElement[str | None]
+) -> tuple[ColumnElement[Any], ...]:
+    """ORDER BY for the list. ``id`` always ends it, so pages stay stable when
+    candidates share a sort value (bulk creation, equal names)."""
+    if params.sort_by == "status":
+        status_rank = case(_STATUS_SORT_RANK, value=MergeCandidateModel.status)
+        rank = status_rank.asc() if params.sort_order == "asc" else status_rank.desc()
+        # Newest first within each status, whichever way the groups run.
+        return (
+            rank,
+            MergeCandidateModel.created.desc(),
+            MergeCandidateModel.id.desc(),
+        )
+
+    sort_column = (
+        name
+        if params.sort_by == "name"
+        else getattr(MergeCandidateModel, params.sort_by)
+    )
+    if params.sort_order == "asc":
+        return (sort_column.asc().nulls_last(), MergeCandidateModel.id.asc())
+    return (sort_column.desc().nulls_last(), MergeCandidateModel.id.desc())
+
+
 async def list_merge_candidates(
     session: AsyncSession,
     params: MergeCandidateQueryParams,
@@ -324,15 +358,7 @@ async def list_merge_candidates(
             await session.scalar(select(func.count()).select_from(filtered.subquery()))
         ) or 0
 
-    sort_column = (
-        name
-        if params.sort_by == "name"
-        else getattr(MergeCandidateModel, params.sort_by)
-    )
-    if params.sort_order == "asc":
-        order_by = (sort_column.asc().nulls_last(), MergeCandidateModel.id.asc())
-    else:
-        order_by = (sort_column.desc().nulls_last(), MergeCandidateModel.id.desc())
+    order_by = _list_order(params, name)
     stmt = (
         select(MergeCandidateModel, name)
         .options(selectinload(MergeCandidateModel.items))
