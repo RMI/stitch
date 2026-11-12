@@ -150,19 +150,14 @@ async def test_list_merge_candidates_returns_page_with_names_and_counts(
         execute_rows=[("PENDING", 5), ("APPROVED", 2)],
     )
 
-    async def fake_coalesce(session_arg, resource_ids, licensed):
+    async def fake_listed_names(session_arg, resource_ids, licensed):
         assert resource_ids == [18, 19, 20, 21, 30]
         assert licensed == ["rmi"]
-        return {
-            18: _named("From WM", source="wm"),
-            19: _named("From RMI", source="rmi"),
-            # Merged-away originals are null shells; the merged resource names it.
-            20: _named(None),
-            21: _named(None),
-            30: _named("Merged"),
-        }
+        # Merged-away originals (20, 21) have no read-model row, so no name;
+        # the merged resource names their candidate.
+        return {18: ("From WM", "wm"), 19: ("From RMI", "rmi"), 30: ("Merged", "rmi")}
 
-    monkeypatch.setattr(mca, "coalesce_resources_with_sources", fake_coalesce)
+    monkeypatch.setattr(mca, "_listed_names", fake_listed_names)
 
     page = await mca.list_merge_candidates(
         session, MergeCandidateQueryParams(page=1, page_size=2), ["rmi"]
@@ -189,9 +184,9 @@ def test_candidate_name_breaks_rank_ties_by_resource_position():
         status=MergeCandidateStatus.PENDING,
         items=[FakeItem(19, 1), FakeItem(18, 0)],
     )
-    coalesced = {18: _named("First"), 19: _named("Second")}
+    names = {18: ("First", "rmi"), 19: ("Second", "rmi")}
 
-    assert mca._candidate_name(candidate, coalesced) == "First"
+    assert mca._candidate_name(candidate, names) == "First"
 
 
 def test_candidate_name_is_none_without_a_licensed_name():
@@ -200,9 +195,7 @@ def test_candidate_name_is_none_without_a_licensed_name():
         status=MergeCandidateStatus.PENDING,
         items=[FakeItem(18, 0), FakeItem(19, 1)],
     )
-    coalesced = {18: _named(None), 19: _named(None)}
-
-    assert mca._candidate_name(candidate, coalesced) is None
+    assert mca._candidate_name(candidate, {}) is None
 
 
 @pytest.mark.anyio

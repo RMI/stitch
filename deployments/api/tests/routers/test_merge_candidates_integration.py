@@ -11,7 +11,11 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from stitch.auth import TokenClaims
-from stitch.auth.permissions import MERGE_CANDIDATE_CREATE, SOURCE_READ_GEM
+from stitch.auth.permissions import (
+    MERGE_CANDIDATE_CREATE,
+    MERGE_CANDIDATE_READ,
+    SOURCE_READ_GEM,
+)
 
 from tests.factories import ResourceCreateFactory
 from stitch.api.auth import get_token_claims
@@ -688,6 +692,29 @@ class TestMergeCandidateListIntegration:
         resp = await integration_client.get("/oil-gas-fields/merge-candidates")
         (item,) = resp.json()["items"]
         assert item["name"] == "Ghawar"
+
+    @pytest.mark.anyio
+    async def test_refuses_callers_the_read_model_cannot_serve(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        """Names come from the field list's precomputed rows, which exist only
+        for exact permission profiles, so the queue refuses the same callers
+        the field list does."""
+        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
+        await _create_candidate(integration_client, [id_a, id_b])
+
+        # Missing every public source but gem.
+        app.dependency_overrides[get_token_claims] = lambda: TokenClaims(
+            sub="test|user-1",
+            permissions=frozenset({SOURCE_READ_GEM, MERGE_CANDIDATE_READ}),
+        )
+        resp = await integration_client.get("/oil-gas-fields/merge-candidates")
+
+        assert resp.status_code == 403, resp.text
+        assert "missing read access to public source" in resp.json()["detail"]
 
     @pytest.mark.anyio
     @pytest.mark.parametrize(

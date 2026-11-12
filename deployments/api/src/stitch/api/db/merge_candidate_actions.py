@@ -34,10 +34,11 @@ from stitch.ogsi.model.types import OGSISrcKey
 from .model import (
     MergeCandidateItemModel,
     MergeCandidateModel,
+    OGFieldResourceState,
     OGFieldSourcePriority,
     ResourceModel,
 )
-from .og_field_resource_actions import apply_resource_merge
+from .og_field_resource_actions import apply_resource_merge, profile_mask
 from .utils import coalesce_resources_with_sources
 
 
@@ -187,31 +188,68 @@ def _source_rank(source: OGSISrcKey) -> int:
     )
 
 
-def _candidate_name(
-    model: MergeCandidateModel, coalesced: Mapping[int, OGFieldResource]
-) -> str | None:
+# resource id -> (coalesced name, the source it came from), for the resources
+# that have a name the caller may see.
+type ResourceNames = Mapping[int, tuple[str, OGSISrcKey]]
+
+
+def _candidate_name(model: MergeCandidateModel, names: ResourceNames) -> str | None:
     """Display name for a candidate; see ``MergeCandidateListItemView.name``.
 
-    ``coalesced`` must hold the candidate's resources and, once merged, its
-    merged resource. Source resources are ranked by the global
-    ``SOURCE_PRIORITY`` (the same rule the frontend used to apply), with ties
-    going to the earlier resource.
+    ``names`` covers the candidate's resources and, once merged, its merged
+    resource. The merged resource's name wins; otherwise source resources are
+    ranked by the global ``SOURCE_PRIORITY`` (the same rule the frontend used
+    to apply), with ties going to the earlier resource.
     """
-    if model.merged_resource_id is not None:
-        merged = coalesced[model.merged_resource_id].view
-        if merged is not None and merged.name is not None:
-            return merged.name
+    if model.merged_resource_id in names:
+        return names[model.merged_resource_id][0]
 
     best: tuple[int, str] | None = None
     for resource_id in _ordered_resource_ids(model):
-        provenance = coalesced[resource_id].provenance.get("name")
-        if provenance is None:
+        if resource_id not in names:
             continue
-        name, source, _source_pk = provenance
+        name, source = names[resource_id]
         rank = _source_rank(source)
         if best is None or rank < best[0]:
             best = (rank, name)
     return None if best is None else best[1]
+
+
+def _names_from_coalesced(resources: Mapping[int, OGFieldResource]) -> ResourceNames:
+    """``ResourceNames`` from coalesced resources (the detail view's path)."""
+    names: dict[int, tuple[str, OGSISrcKey]] = {}
+    for resource_id, resource in resources.items():
+        provenance = resource.provenance.get("name")
+        if provenance is not None:
+            name, source, _source_pk = provenance
+            names[resource_id] = (name, source)
+    return names
+
+
+async def _listed_names(
+    session: AsyncSession,
+    resource_ids: Collection[int],
+    licensed_sources: Collection[OGSISrcKey] | None,
+) -> ResourceNames:
+    """``ResourceNames`` read from the resource-state read model, for the
+    caller's permission profile (403 if they have none, as for the field list).
+
+    The read model only holds listable resources, so a merged-away original has
+    no row and no name; its candidate is named by the merged resource instead.
+    """
+    mask = profile_mask(licensed_sources)
+    state = OGFieldResourceState
+    rows = await session.execute(
+        select(state.resource_id, state.name, state.provenance).where(
+            state.permission_mask == mask,
+            state.resource_id.in_(list(resource_ids)),
+            state.name.is_not(None),
+        )
+    )
+    return {
+        resource_id: (name, provenance["name"])
+        for resource_id, name, provenance in rows.all()
+    }
 
 
 def _name_resource_ids(models: Sequence[MergeCandidateModel]) -> list[int]:
@@ -303,15 +341,13 @@ async def list_merge_candidates(
         status_counts[MergeCandidateStatus(status)] = count
 
     with named_query("merge_candidates.list.names"):
-        coalesced = await coalesce_resources_with_sources(
+        names = await _listed_names(
             session, _name_resource_ids(candidates), licensed_sources
         )
 
     return MergeCandidatePage(
         items=[
-            _candidate_to_list_item_view(
-                candidate, _candidate_name(candidate, coalesced)
-            )
+            _candidate_to_list_item_view(candidate, _candidate_name(candidate, names))
             for candidate in candidates
         ],
         total_count=total,
@@ -382,7 +418,9 @@ async def get_merge_candidate(
             )
 
     return _candidate_to_detail_view(
-        candidate, _candidate_name(candidate, name_sources), compare
+        candidate,
+        _candidate_name(candidate, _names_from_coalesced(name_sources)),
+        compare,
     )
 
 
