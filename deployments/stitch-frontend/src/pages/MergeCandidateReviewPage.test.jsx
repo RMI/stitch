@@ -937,14 +937,60 @@ describe("MergeCandidateReviewPage", () => {
         expect(lastQueueRequest().q).toBe("ghawar");
       });
 
+      // mockQueue ignores q, so these stand in for a search that matches
+      // nothing while the queue itself has candidates.
+      function mockEmptySearch(statusCounts) {
+        vi.mocked(useMergeCandidates).mockReturnValue({
+          ...defaultHookReturn,
+          data: {
+            items: [],
+            total_count: 0,
+            page: 1,
+            page_size: 25,
+            total_pages: 0,
+            status_counts: {
+              PENDING: 0,
+              APPROVED: 0,
+              DENIED: 0,
+              ...statusCounts,
+            },
+          },
+        });
+      }
+
       it("explains an empty queue caused by the search", () => {
-        mockQueue([]);
+        mockEmptySearch({ PENDING: 2 });
         renderWithQueryClient(<MergeCandidateReviewPage />, {
           initialEntries: ["/?q=nothing-matches"],
         });
 
         expect(
           screen.getByText(/No candidates match this search/),
+        ).toBeInTheDocument();
+      });
+
+      it("blames the Status filter, not the search, when the filter alone hides everything", () => {
+        mockEmptySearch({ DENIED: 1 });
+        renderWithQueryClient(<MergeCandidateReviewPage />, {
+          initialEntries: ["/?q=rumaila"],
+        });
+
+        expect(
+          screen.getByText(/No candidates match the selected statuses/),
+        ).toBeInTheDocument();
+        expect(
+          screen.queryByText(/No candidates match this search/),
+        ).not.toBeInTheDocument();
+      });
+
+      it("says the queue is empty when there are no candidates at all", () => {
+        mockEmptySearch({});
+        renderWithQueryClient(<MergeCandidateReviewPage />, {
+          initialEntries: ["/?q=rumaila"],
+        });
+
+        expect(
+          screen.getByText("No merge candidates to review."),
         ).toBeInTheDocument();
       });
     });

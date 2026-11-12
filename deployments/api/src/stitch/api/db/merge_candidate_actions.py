@@ -288,9 +288,22 @@ def _list_order(
     return (sort_column.desc().nulls_last(), MergeCandidateModel.id.desc())
 
 
-# Postgres bigint; a longer digit string cannot be a resource id (and would
-# overflow the comparison).
+# Postgres bigint; a larger number cannot be a resource id (and would overflow
+# the comparison).
 _MAX_RESOURCE_ID = 2**63 - 1
+
+
+def _as_resource_id(q: str) -> int | None:
+    """``q`` as a resource id, or ``None`` when it cannot be one.
+
+    Only ASCII digits count (``str.isdigit`` also accepts e.g. "²", which
+    ``int`` rejects), and the length check keeps ``int`` away from strings past
+    Python's integer-conversion limit.
+    """
+    if not (q.isascii() and q.isdigit()) or len(q) > len(str(_MAX_RESOURCE_ID)):
+        return None
+    value = int(q)
+    return value if value <= _MAX_RESOURCE_ID else None
 
 
 def _candidate_search_condition(q: str, permission_mask: int) -> ColumnElement[bool]:
@@ -308,9 +321,10 @@ def _candidate_search_condition(q: str, permission_mask: int) -> ColumnElement[b
     )
     resource_match = [MergeCandidateItemModel.resource_id.in_(matching)]
     merged_match = [MergeCandidateModel.merged_resource_id.in_(matching)]
-    if q.isdigit() and int(q) <= _MAX_RESOURCE_ID:
-        resource_match.append(MergeCandidateItemModel.resource_id == int(q))
-        merged_match.append(MergeCandidateModel.merged_resource_id == int(q))
+    resource_id = _as_resource_id(q)
+    if resource_id is not None:
+        resource_match.append(MergeCandidateItemModel.resource_id == resource_id)
+        merged_match.append(MergeCandidateModel.merged_resource_id == resource_id)
     return or_(
         *merged_match,
         MergeCandidateModel.id.in_(

@@ -208,10 +208,19 @@ function QueuePanel({
 }) {
   const listRef = useRef(null);
   const candidates = candidatePage?.items;
-  const queueTotal = Object.values(candidatePage?.status_counts ?? {}).reduce(
+  const statusCounts = candidatePage?.status_counts ?? {};
+  const queueTotal = Object.values(statusCounts).reduce(
     (sum, count) => sum + count,
     0,
   );
+  // Candidates the Status filter alone would show. When that is zero, the
+  // filter (not the search) is why the list is empty.
+  const statusTotal = viewState.statuses.length
+    ? viewState.statuses.reduce(
+        (sum, status) => sum + (statusCounts[status] ?? 0),
+        0,
+      )
+    : queueTotal;
 
   function handlePageChange(page) {
     viewState.setPage(page);
@@ -260,15 +269,15 @@ function QueuePanel({
               />
             ))}
           </div>
-        ) : viewState.q ? (
-          <p className="px-2 py-3 text-sm text-ink-muted">
-            No candidates match this search. Try a different name, or clear the
-            search.
-          </p>
-        ) : queueTotal > 0 ? (
+        ) : queueTotal > 0 && statusTotal === 0 ? (
           <p className="px-2 py-3 text-sm text-ink-muted">
             No candidates match the selected statuses. Change the Status filter
             to see the others.
+          </p>
+        ) : queueTotal > 0 && viewState.q ? (
+          <p className="px-2 py-3 text-sm text-ink-muted">
+            No candidates match this search. Try a different name, or clear the
+            search.
           </p>
         ) : (
           <p className="px-2 py-3 text-sm text-ink-muted">

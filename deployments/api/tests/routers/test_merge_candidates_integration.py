@@ -971,6 +971,10 @@ class TestMergeCandidateSearchIntegration:
         assert await self._search(integration_client, q="987654321") == []
         # Too long to be an id; still searched as text, without erroring.
         assert await self._search(integration_client, q="9" * 30) == []
+        # Past Python's int-conversion limit (4300 digits).
+        assert await self._search(integration_client, q="9" * 5000) == []
+        # Non-ASCII digits are text, not ids.
+        assert await self._search(integration_client, q="²") == []
 
     @pytest.mark.anyio
     async def test_numeric_q_also_matches_digits_in_text(
