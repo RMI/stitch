@@ -84,9 +84,7 @@ def _fingerprint(resource_ids: Sequence[int]) -> str:
 def _candidate_to_view(model: MergeCandidateModel) -> MergeCandidateView:
     return MergeCandidateView(
         id=model.id,
-        resource_ids=[
-            item.resource_id for item in sorted(model.items, key=lambda i: i.position)
-        ],
+        resource_ids=_ordered_resource_ids(model),
         status=model.status,
         review_notes=model.review_notes,
         merged_resource_id=model.merged_resource_id,
@@ -295,24 +293,15 @@ async def list_merge_candidates(
 ) -> MergeCandidatePage:
     """One page of merge candidates, with whole-queue counts by status."""
     name = _candidate_name_column(profile_mask(licensed_sources)).label("name")
-    filtered = select(MergeCandidateModel.id)
-    if params.status:
-        filtered = filtered.where(MergeCandidateModel.status.in_(params.status))
-
-    with named_query("merge_candidates.list.count"):
-        total = (
-            await session.scalar(select(func.count()).select_from(filtered.subquery()))
-        ) or 0
-
-    order_by = _list_order(params, name)
     stmt = (
         select(MergeCandidateModel, name)
         .options(selectinload(MergeCandidateModel.items))
-        .where(MergeCandidateModel.id.in_(filtered))
-        .order_by(*order_by)
+        .order_by(*_list_order(params, name))
         .limit(params.limit)
         .offset(params.offset)
     )
+    if params.status:
+        stmt = stmt.where(MergeCandidateModel.status.in_(params.status))
     with named_query("merge_candidates.list"):
         page_rows = (await session.execute(stmt)).all()
 
@@ -325,6 +314,13 @@ async def list_merge_candidates(
     status_counts = dict.fromkeys(MergeCandidateStatus, 0)
     for status, count in rows.all():
         status_counts[MergeCandidateStatus(status)] = count
+    # The filtered total is a sum of the whole-queue counts, so it needs no
+    # query of its own.
+    total = sum(
+        count
+        for status, count in status_counts.items()
+        if not params.status or status in params.status
+    )
 
     return MergeCandidatePage(
         items=[
@@ -577,9 +573,7 @@ async def approve_merge_candidate(
             f"Merge candidate {candidate_id} is not pending; current status={candidate.status}."
         )
 
-    resource_ids = [
-        item.resource_id for item in sorted(candidate.items, key=lambda i: i.position)
-    ]
+    resource_ids = _ordered_resource_ids(candidate)
     with named_query("merge_candidates.approve.load_resources"):
         await _load_mergeable_resources(session, resource_ids)
     merged_resource = await apply_resource_merge(

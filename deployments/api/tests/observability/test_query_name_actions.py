@@ -433,7 +433,6 @@ class TestActionCallSiteLabels:
         _assert_labels(
             captured_query_events,
             {
-                "merge_candidates.list.count",
                 "merge_candidates.list",
                 "merge_candidates.list.status_counts",
             },
