@@ -434,20 +434,45 @@ class AsyncStitchClient:
         page_size: int = 50,
         status: Sequence[str] | None = None,
     ) -> dict[str, Any]:
-        """One page of merge candidates, newest first.
+        """One page of merge candidates, oldest first.
 
         ``status`` limits the page to candidates in any of the given statuses
         (``PENDING``, ``APPROVED``, ``DENIED``); omitted, every status is
         returned.
 
         Raises:
-            ValueError: if ``page``/``page_size`` are out of range.
+            TypeError: if ``status`` is a bare string rather than a sequence.
+            ValueError: if ``page``/``page_size`` are out of range, or ``status``
+                is an empty sequence.
             StitchAPIError: on a non-2xx response.
         """
         self._validate_page_params(page, page_size)
-        params: dict[str, Any] = {"page": page, "page_size": page_size}
+        params: dict[str, Any] = {
+            "page": page,
+            "page_size": page_size,
+            # Stable forward scan, as for ``list_oil_gas_field_sources_page``.
+            # The route defaults to newest first, under which a candidate
+            # created mid-scan lands on page 1 and shifts every later page,
+            # repeating rows. Oldest first (ties broken by id) appends new
+            # candidates past the last page instead. Deliberately NOT
+            # overrideable.
+            "sort_by": "created",
+            "sort_order": "asc",
+        }
         if status is not None:
-            params["status"] = list(status)
+            if isinstance(status, (str, bytes)):
+                # list("PENDING") would send status=P&status=E&..., which the
+                # API rejects as invalid enum values, far from the actual typo.
+                raise TypeError(
+                    "status must be a sequence of statuses, not a bare "
+                    f"{type(status).__name__} (did you mean [{status!r}]?)"
+                )
+            statuses = list(status)
+            if not statuses:
+                # httpx drops an empty sequence from the query string, which
+                # the API reads as "no filter" -- every status.
+                raise ValueError("status must not be empty when provided")
+            params["status"] = statuses
         payload = await self._request_json(
             method="GET",
             path="/oil-gas-fields/merge-candidates",
