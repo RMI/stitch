@@ -74,13 +74,15 @@ def profile_mask(licensed_sources: Collection[OGSISrcKey] | None) -> int:
     mask = read_model_mask(licensed_sources)
     if mask is not None:
         return mask
+    # Worded for every page that reads the read model (the field list, its
+    # filter options, and the merge-candidate queue and detail).
     if missing := sorted(PUBLIC_SOURCES - frozenset(licensed_sources)):
         reason = f"it is missing read access to public source(s) {missing}"
     else:
-        reason = "it holds read access to a source the list can't serve yet"
+        reason = "it holds read access to a source that isn't supported yet"
     raise HTTPException(
         status_code=HTTP_403_FORBIDDEN,
-        detail=f"This account can't list oil & gas fields: {reason}. "
+        detail=f"This account can't view oil & gas field data: {reason}. "
         "Ask an administrator to update its source permissions.",
     )
 
