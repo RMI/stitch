@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useAuth0 } from "@auth0/auth0-react";
 import { auth0TestDefaults, renderWithQueryClient } from "../test/utils";
@@ -825,6 +825,57 @@ describe("MergeCandidateReviewPage", () => {
       await user.click(screen.getByRole("button", { name: "Next page" }));
 
       expect(screen.queryByText("Review failed")).not.toBeInTheDocument();
+    });
+
+    it("does not show a failed review's error again on returning to its candidate", async () => {
+      // No detail loaded, so the panel acts on the selected queue row.
+      vi.mocked(useMergeCandidate).mockReturnValue(defaultHookReturn);
+      vi.mocked(reviewMergeCandidate).mockRejectedValue(
+        new Error("Review failed"),
+      );
+      const user = userEvent.setup();
+      mockQueue(manyPending(30));
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      await user.click(screen.getByRole("button", { name: "Approve merge" }));
+      expect(await screen.findByText("Review failed")).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Next page" }));
+      await user.click(screen.getByRole("button", { name: "Previous page" }));
+
+      // Field 1 is selected again, but its review is over.
+      expect(
+        screen.getByRole("button", { name: /^Field 1(?!\d)/ }),
+      ).toHaveAttribute("aria-pressed", "true");
+      expect(screen.queryByText("Review failed")).not.toBeInTheDocument();
+    });
+
+    it("leaves the new page alone when a review finishes after paging", async () => {
+      // No detail loaded, so the panel acts on the selected queue row.
+      vi.mocked(useMergeCandidate).mockReturnValue(defaultHookReturn);
+      let finishReview;
+      vi.mocked(reviewMergeCandidate).mockReturnValue(
+        new Promise((resolve) => {
+          finishReview = resolve;
+        }),
+      );
+      const user = userEvent.setup();
+      mockQueue(manyPending(30));
+      renderWithQueryClient(<MergeCandidateReviewPage />);
+
+      await user.click(screen.getByRole("button", { name: "Approve merge" }));
+      await user.click(screen.getByRole("button", { name: "Next page" }));
+      await user.type(screen.getByLabelText("Decision notes"), "For field 26");
+
+      await act(async () => finishReview({}));
+
+      expect(screen.getByRole("button", { name: /Field 26/ })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(screen.getByLabelText("Decision notes")).toHaveValue(
+        "For field 26",
+      );
     });
 
     it("steps back to the last page when the page is past the end", async () => {

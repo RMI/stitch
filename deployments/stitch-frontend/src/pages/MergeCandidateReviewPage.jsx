@@ -484,6 +484,16 @@ export default function MergeCandidateReviewPage() {
   const activeReviewAction = reviewMutation.isPending
     ? reviewMutation.variables?.action
     : null;
+  // A review belongs to the candidate it was submitted for, so forget it
+  // whenever the selection moves, by a click or not. Its error then stays gone
+  // on returning to that candidate, and a review still saving no longer
+  // advances the selection or clears the notes when it finishes: reset()
+  // detaches the callbacks passed to mutate(). The queue still refreshes,
+  // since that runs in the mutation's own onSuccess.
+  const { reset: resetReview } = reviewMutation;
+  useEffect(() => {
+    resetReview();
+  }, [selectedId, resetReview]);
   // Only shown on the candidate whose review failed.
   const actionError =
     reviewMutation.error && reviewMutation.variables?.id === selectedId
