@@ -311,8 +311,12 @@ def _candidate_search_condition(q: str, permission_mask: int) -> ColumnElement[b
 
     Text matching is the field list's own ``q`` search over the read model, so
     it sees the caller's permission profile. The read model only holds listable
-    resources, so an approved candidate's merged-away originals cannot match;
-    its merged resource can.
+    resources, so an approved candidate's merged-away originals cannot match
+    by text; its merged resource can.
+
+    A numeric ``q`` matches the candidate's own resource ids directly, without
+    the read model, so it does find merged-away originals. That is deliberate:
+    searching an old resource id shows the candidate that merged it.
     """
     matching = (
         resource_state_query(OGFieldQueryParams(q=q), permission_mask)

@@ -269,19 +269,19 @@ function QueuePanel({
               />
             ))}
           </div>
-        ) : queueTotal > 0 && statusTotal === 0 ? (
+        ) : queueTotal === 0 ? (
           <p className="px-2 py-3 text-sm text-ink-muted">
-            No candidates match the selected statuses. Change the Status filter
-            to see the others.
+            No merge candidates to review.
           </p>
-        ) : queueTotal > 0 && viewState.q ? (
+        ) : viewState.q && statusTotal > 0 ? (
           <p className="px-2 py-3 text-sm text-ink-muted">
             No candidates match this search. Try a different name, or clear the
             search.
           </p>
         ) : (
           <p className="px-2 py-3 text-sm text-ink-muted">
-            No merge candidates to review.
+            No candidates match the selected statuses. Change the Status filter
+            to see the others.
           </p>
         )}
       </div>

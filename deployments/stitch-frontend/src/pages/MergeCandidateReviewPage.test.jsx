@@ -1082,6 +1082,16 @@ describe("MergeCandidateReviewPage", () => {
         ).not.toBeInTheDocument();
       });
 
+      it("never calls a queue with work empty, even when a page comes back empty", () => {
+        // e.g. a page past the end, before the step back lands.
+        mockEmptySearch({ PENDING: 2 });
+        renderWithQueryClient(<MergeCandidateReviewPage />);
+
+        expect(
+          screen.queryByText("No merge candidates to review."),
+        ).not.toBeInTheDocument();
+      });
+
       it("says the queue is empty when there are no candidates at all", () => {
         mockEmptySearch({});
         renderWithQueryClient(<MergeCandidateReviewPage />, {

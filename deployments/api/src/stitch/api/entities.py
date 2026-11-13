@@ -211,7 +211,9 @@ class MergeCandidateFilterParams(BaseModel):
     ``q`` matches a candidate when any of its resources -- or, once approved,
     its merged resource -- matches the resource list's ``q`` search (substring
     of the coalesced name, local name, basin, state/province or region). A
-    purely numeric ``q`` also matches those resources' ids.
+    purely numeric ``q`` also matches those resources' ids, including an
+    approved candidate's merged-away originals, so searching an old resource
+    id finds the candidate that merged it.
     """
 
     status: list[MergeCandidateStatus] | None = None

@@ -937,12 +937,10 @@ class TestMergeCandidateSearchIntegration:
     async def test_finds_an_approved_candidate_by_its_merged_resource(
         self, integration_client: AsyncClient, make_resource
     ):
+        original = await make_resource(name="Safaniya")
         candidate_id = await _create_candidate(
             integration_client,
-            [
-                await make_resource(name="Safaniya"),
-                await make_resource(name="Safaniya"),
-            ],
+            [original, await make_resource(name="Safaniya")],
         )
         approve = await integration_client.post(
             f"/oil-gas-fields/merge-candidates/{candidate_id}/approve"
@@ -952,6 +950,8 @@ class TestMergeCandidateSearchIntegration:
         # The originals are emptied by the merge; only the merged resource
         # still carries the name.
         assert await self._search(integration_client, q="safaniya") == [candidate_id]
+        # By id, a merged-away original still finds the candidate that merged it.
+        assert await self._search(integration_client, q=str(original)) == [candidate_id]
 
     @pytest.mark.anyio
     async def test_numeric_q_matches_resource_ids(
@@ -1036,13 +1036,16 @@ class TestMergeCandidateSearchIntegration:
     async def test_ignores_names_from_unlicensed_sources(
         self, integration_client: AsyncClient, make_resource
     ):
-        await _create_candidate(
+        candidate_id = await _create_candidate(
             integration_client,
             [
                 await make_resource(source="wm", name="Wmonly Field"),
                 await make_resource(source="wm", name="Wmonly Field"),
             ],
         )
+        # With every source, the name matches, so only licensing hides it below.
+        assert await self._search(integration_client, q="wmonly") == [candidate_id]
+
         # Public sources only: the read model serves this profile, without wm.
         app.dependency_overrides[get_token_claims] = lambda: TokenClaims(
             sub="test|public-only",

@@ -237,7 +237,7 @@ Example — approved and denied candidates, most recently reviewed first, page 2
 Notes:
 
 - The queue shows pending candidates by default, so a bare `/merge-candidate-review` is the review work still to do. Clearing every status in the Status filter shows all of them, written as `status=all`.
-- `q` finds a candidate when any of its resources matches the resources list search (name, local name, basin, state/province or region), or once approved, when its merged resource does. A number also matches the resource with that ID, so `q=2024` finds both "Block 2024" and resource 2024. Candidate IDs are not searched.
+- `q` finds a candidate when any of its resources matches the resources list search (name, local name, basin, state/province or region), or once approved, when its merged resource does. A number also matches the resource with that ID, so `q=2024` finds both "Block 2024" and resource 2024. That includes resources an approved candidate merged away, so searching an old resource ID finds the candidate that merged it. Candidate IDs are not searched.
 - The page size is not remembered between visits, unlike the resources list.
 - The `name` sort orders the whole queue by each candidate's display name, as the API names it for you; candidates without a name come last.
 - The `status` sort (`sort_order=asc`) puts work still to do first: pending, then denied, then approved, newest first within each.
