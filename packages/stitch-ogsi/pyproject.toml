@@ -8,6 +8,7 @@ requires-python = ">=3.12.12"
 dependencies = [
     "pydantic>=2.12.5",
     "pytest>=9.2.0",
+    "rmi-stitch-core>=0.2.0.dev2,<0.3.0",
     "stitch-models",
 ]
 
