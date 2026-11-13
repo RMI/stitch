@@ -316,7 +316,13 @@ def _candidate_search_condition(q: str, permission_mask: int) -> ColumnElement[b
 
     A numeric ``q`` matches the candidate's own resource ids directly, without
     the read model, so it does find merged-away originals. That is deliberate:
-    searching an old resource id shows the candidate that merged it.
+    searching an old resource id shows the candidate that merged it. Leading
+    zeros are ignored, so "0042" matches resource 42.
+
+    Known gap: text only reaches a candidate through resources that are still
+    listable. Once a later approval merges them away (an approved candidate's
+    merged resource merged again, or a denied candidate's resources merged by
+    another candidate), that candidate is found only by resource id.
     """
     matching = (
         resource_state_query(OGFieldQueryParams(q=q), permission_mask)
