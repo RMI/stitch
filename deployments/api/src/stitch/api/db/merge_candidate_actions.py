@@ -4,7 +4,7 @@ from collections.abc import Collection, Sequence
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import ColumnElement, case, func, select
+from sqlalchemy import ColumnElement, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -25,6 +25,7 @@ from stitch.api.entities import (
     MergeCandidateReviewRequest,
     MergeCandidateStatus,
     MergeCandidateView,
+    OGFieldQueryParams,
 )
 from stitch.api.observability.context import named_query
 from stitch.ogsi.model import OGFieldSource
@@ -39,6 +40,7 @@ from .model import (
     ResourceModel,
 )
 from .og_field_resource_actions import apply_resource_merge, profile_mask
+from .queries import resource_state_query
 from .utils import coalesce_resources_with_sources
 
 
@@ -286,16 +288,77 @@ def _list_order(
     return (sort_column.desc().nulls_last(), MergeCandidateModel.id.desc())
 
 
+# Postgres bigint; a larger number cannot be a resource id (and would overflow
+# the comparison).
+_MAX_RESOURCE_ID = 2**63 - 1
+
+
+def _as_resource_id(q: str) -> int | None:
+    """``q`` as a resource id, or ``None`` when it cannot be one.
+
+    Only ASCII digits count (``str.isdigit`` also accepts e.g. "²", which
+    ``int`` rejects), and the length check keeps ``int`` away from strings past
+    Python's integer-conversion limit.
+    """
+    if not (q.isascii() and q.isdigit()) or len(q) > len(str(_MAX_RESOURCE_ID)):
+        return None
+    value = int(q)
+    return value if value <= _MAX_RESOURCE_ID else None
+
+
+def _candidate_search_condition(q: str, permission_mask: int) -> ColumnElement[bool]:
+    """Candidates matching ``q``; see ``MergeCandidateFilterParams.q``.
+
+    Text matching is the field list's own ``q`` search over the read model, so
+    it sees the caller's permission profile. The read model only holds listable
+    resources, so an approved candidate's merged-away originals cannot match
+    by text; its merged resource can.
+
+    A numeric ``q`` matches the candidate's own resource ids directly, without
+    the read model, so it does find merged-away originals. That is deliberate:
+    searching an old resource id shows the candidate that merged it. Leading
+    zeros are ignored, so "0042" matches resource 42.
+
+    Known gap: text only reaches a candidate through resources that are still
+    listable. Once a later approval merges them away (an approved candidate's
+    merged resource merged again, or a denied candidate's resources merged by
+    another candidate), that candidate is found only by resource id.
+    """
+    matching = (
+        resource_state_query(OGFieldQueryParams(q=q), permission_mask)
+        .order_by(None)
+        .scalar_subquery()
+    )
+    resource_match = [MergeCandidateItemModel.resource_id.in_(matching)]
+    merged_match = [MergeCandidateModel.merged_resource_id.in_(matching)]
+    resource_id = _as_resource_id(q)
+    if resource_id is not None:
+        resource_match.append(MergeCandidateItemModel.resource_id == resource_id)
+        merged_match.append(MergeCandidateModel.merged_resource_id == resource_id)
+    return or_(
+        *merged_match,
+        MergeCandidateModel.id.in_(
+            select(MergeCandidateItemModel.merge_candidate_id).where(
+                or_(*resource_match)
+            )
+        ),
+    )
+
+
 async def list_merge_candidates(
     session: AsyncSession,
     params: MergeCandidateQueryParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> MergeCandidatePage:
     """One page of merge candidates, with whole-queue counts by status."""
-    name = _candidate_name_column(profile_mask(licensed_sources)).label("name")
+    mask = profile_mask(licensed_sources)
+    name = _candidate_name_column(mask).label("name")
     conditions = []
     if params.status:
         conditions.append(MergeCandidateModel.status.in_(params.status))
+    q = (params.q or "").strip()
+    if q:
+        conditions.append(_candidate_search_condition(q, mask))
 
     with named_query("merge_candidates.list.count"):
         total = (

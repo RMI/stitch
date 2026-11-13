@@ -206,9 +206,18 @@ class MergeCandidateListItemView(MergeCandidateView):
 
 class MergeCandidateFilterParams(BaseModel):
     """Repeat ``status`` once per value (``?status=PENDING&status=DENIED``) to
-    match any of them. Omitted, every status is returned."""
+    match any of them. Omitted, every status is returned.
+
+    ``q`` matches a candidate when any of its resources -- or, once approved,
+    its merged resource -- matches the resource list's ``q`` search (substring
+    of the coalesced name, local name, basin, state/province or region). A
+    purely numeric ``q`` also matches those resources' ids, including an
+    approved candidate's merged-away originals, so searching an old resource
+    id finds the candidate that merged it.
+    """
 
     status: list[MergeCandidateStatus] | None = None
+    q: str | None = None
 
 
 class MergeCandidateSortParams(BaseModel):

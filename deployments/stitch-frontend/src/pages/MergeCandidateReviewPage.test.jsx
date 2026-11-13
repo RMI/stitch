@@ -977,6 +977,133 @@ describe("MergeCandidateReviewPage", () => {
       );
     });
 
+    describe("search", () => {
+      function searchBox() {
+        return within(queue()).getByRole("searchbox", {
+          name: "Search candidates",
+        });
+      }
+
+      it("sends the trimmed search on submit and returns to page 1", async () => {
+        const user = userEvent.setup();
+        renderWithQueryClient(<MergeCandidateReviewPage />, {
+          initialEntries: ["/?page=2"],
+        });
+
+        await user.type(searchBox(), "  ghawar  ");
+        // Typing alone does not search.
+        expect(lastQueueRequest().q).toBeUndefined();
+
+        await user.click(
+          within(queue()).getByRole("button", { name: "Search" }),
+        );
+
+        expect(lastQueueRequest()).toMatchObject({ q: "ghawar", page: 1 });
+        expect(searchBox()).toHaveValue("ghawar");
+      });
+
+      it("searches on Enter", async () => {
+        const user = userEvent.setup();
+        renderWithQueryClient(<MergeCandidateReviewPage />);
+
+        await user.type(searchBox(), "12345{Enter}");
+
+        expect(lastQueueRequest().q).toBe("12345");
+      });
+
+      it("clears the search with the clear button or by emptying the box", async () => {
+        const user = userEvent.setup();
+        renderWithQueryClient(<MergeCandidateReviewPage />, {
+          initialEntries: ["/?q=ghawar"],
+        });
+
+        await user.click(screen.getByRole("button", { name: "Clear search" }));
+        expect(lastQueueRequest().q).toBeUndefined();
+        expect(searchBox()).toHaveValue("");
+
+        await user.type(searchBox(), "x{Enter}");
+        expect(lastQueueRequest().q).toBe("x");
+        await user.clear(searchBox());
+        expect(lastQueueRequest().q).toBeUndefined();
+      });
+
+      it("opens with the URL's search in the box", () => {
+        renderWithQueryClient(<MergeCandidateReviewPage />, {
+          initialEntries: ["/?q=ghawar"],
+        });
+
+        expect(searchBox()).toHaveValue("ghawar");
+        expect(lastQueueRequest().q).toBe("ghawar");
+      });
+
+      // mockQueue ignores q, so these stand in for a search that matches
+      // nothing while the queue itself has candidates.
+      function mockEmptySearch(statusCounts) {
+        vi.mocked(useMergeCandidates).mockReturnValue({
+          ...defaultHookReturn,
+          data: {
+            items: [],
+            total_count: 0,
+            page: 1,
+            page_size: 25,
+            total_pages: 0,
+            status_counts: {
+              PENDING: 0,
+              APPROVED: 0,
+              DENIED: 0,
+              ...statusCounts,
+            },
+          },
+        });
+      }
+
+      it("explains an empty queue caused by the search", () => {
+        mockEmptySearch({ PENDING: 2 });
+        renderWithQueryClient(<MergeCandidateReviewPage />, {
+          initialEntries: ["/?q=nothing-matches"],
+        });
+
+        expect(
+          screen.getByText(/No candidates match this search/),
+        ).toBeInTheDocument();
+      });
+
+      it("blames the Status filter, not the search, when the filter alone hides everything", () => {
+        mockEmptySearch({ DENIED: 1 });
+        renderWithQueryClient(<MergeCandidateReviewPage />, {
+          initialEntries: ["/?q=rumaila"],
+        });
+
+        expect(
+          screen.getByText(/No candidates match the selected statuses/),
+        ).toBeInTheDocument();
+        expect(
+          screen.queryByText(/No candidates match this search/),
+        ).not.toBeInTheDocument();
+      });
+
+      it("never calls a queue with work empty, even when a page comes back empty", () => {
+        // e.g. a page past the end, before the step back lands.
+        mockEmptySearch({ PENDING: 2 });
+        renderWithQueryClient(<MergeCandidateReviewPage />);
+
+        expect(
+          screen.queryByText("No merge candidates to review."),
+        ).not.toBeInTheDocument();
+      });
+
+      it("says the queue is empty when there are no candidates at all", () => {
+        mockEmptySearch({});
+        renderWithQueryClient(<MergeCandidateReviewPage />, {
+          initialEntries: ["/?q=rumaila"],
+        });
+
+        expect(
+          screen.getByText("No merge candidates to review."),
+        ).toBeInTheDocument();
+      });
+    });
+
     it("explains an empty queue caused by the filter", () => {
       mockQueue([approvedCandidate]);
       renderWithQueryClient(<MergeCandidateReviewPage />);

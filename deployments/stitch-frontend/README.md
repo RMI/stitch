@@ -224,6 +224,7 @@ The Merge Review queue (`/merge-candidate-review`) encodes its view the same way
 | ------------------------ | -------------------------------------------------------------------------------- | ----------------------------- |
 | `page`                   | integer ≥ 1                                                                      | page 1                        |
 | `page_size`              | 10, 25, 50, 100                                                                  | 25                            |
+| `q`                      | free text                                                                        | empty                         |
 | `status`                 | `PENDING`, `APPROVED`, `DENIED` (repeat per value), `all`                        | only `PENDING` is selected    |
 | `sort_by` + `sort_order` | `created`, `reviewed_at` or `name`, with `asc` or `desc`; or `status` with `asc` | newest first (`created desc`) |
 
@@ -236,6 +237,8 @@ Example — approved and denied candidates, most recently reviewed first, page 2
 Notes:
 
 - The queue shows pending candidates by default, so a bare `/merge-candidate-review` is the review work still to do. Clearing every status in the Status filter shows all of them, written as `status=all`.
+- `q` finds a candidate when any of its resources matches the resources list search (name, local name, basin, state/province or region), or once approved, when its merged resource does. A number also matches the resource with that ID, so `q=2024` finds both "Block 2024" and resource 2024. That includes resources an approved candidate merged away, so searching an old resource ID finds the candidate that merged it. Leading zeros are ignored, so `q=0042` also finds resource 42. Candidate IDs are not searched.
+- Searching by name only reaches a candidate through resources that still exist. If a later approval merges them away (say, an approved candidate's merged field is merged again), that older candidate is found only by resource ID.
 - The page size is not remembered between visits, unlike the resources list.
 - The `name` sort orders the whole queue by each candidate's display name, as the API names it for you; candidates without a name come last.
 - The `status` sort (`sort_order=asc`) puts work still to do first: pending, then denied, then approved, newest first within each.
