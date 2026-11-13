@@ -1602,14 +1602,14 @@ wheels = [
 
 [[package]]
 name = "rmi-stitch-core"
-version = "0.2.0.dev3"
+version = "0.2.0.dev4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/95/23/79e2e95dd40681ec690353e17b4bfcb26a7ffd65b773bd8fce48b04d777f/rmi_stitch_core-0.2.0.dev3.tar.gz", hash = "sha256:568138cfb2252b1a96e102a2211f36eb804ffe41cb7a2c200645b998a91eaa13", size = 3957, upload-time = "2026-11-13T17:53:14.477Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/60/a7/42baccb8a7fca620d7aae7d9d5299d263962c3e924c19c909afdb7deccb9/rmi_stitch_core-0.2.0.dev4.tar.gz", hash = "sha256:bfb056fa80b8f19acb67ec0500ac9fad0abfcbf95b8da2c746b7bae85a67bc26", size = 3926, upload-time = "2026-11-13T18:31:03.395Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0a/03/63179f7412be0d13f994667f71a5e5e2412d0288de58f7d1cfe87f6b182c/rmi_stitch_core-0.2.0.dev3-py3-none-any.whl", hash = "sha256:812fc49bb8e0b9d4a1efca014f5e5e5f2f8c66cf36c9b047606e8f4aef2be3e3", size = 5665, upload-time = "2026-11-13T17:53:13.442Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/96/776406af0f3afaff9aecd6bff8a6a88fd23606e899a9d08ca3923f600b55/rmi_stitch_core-0.2.0.dev4-py3-none-any.whl", hash = "sha256:f7319794ad653fe076636c02910aac9cfb8ddd8f4e83cb236d84c84d2d25227c", size = 5505, upload-time = "2026-11-13T18:31:02.108Z" },
 ]
 
 [[package]]
