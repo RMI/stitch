@@ -93,10 +93,10 @@ jobs:
               ;;
           esac
 
-      - name: Install psql client
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
+      # psql ships with the GitHub-hosted Ubuntu runner image. Installing it with
+      # apt made this job fail whenever the Ubuntu package mirrors were unreachable.
+      - name: Check psql client
+        run: psql --version
 
       - name: Normalize DB name
         id: normalize-name
