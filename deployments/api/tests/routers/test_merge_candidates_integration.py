@@ -105,32 +105,72 @@ class TestMergeCandidateDetailIntegration:
         assert {(id_a, "Ghawar"), (id_b, "Burgan")} <= rmi_by_resource
 
     @pytest.mark.anyio
-    async def test_list_names_candidates_and_switches_to_merged_name(
+    @pytest.mark.parametrize(
+        ("source_a", "source_b", "expected"),
+        [
+            # rmi outranks gem, so B's name wins despite coming second.
+            pytest.param("gem", "rmi", "Burgan", id="better-ranked-source-wins"),
+            # Same source: the tie goes to the earlier resource.
+            pytest.param("gem", "gem", "Ghawar", id="tie-goes-to-first-resource"),
+        ],
+    )
+    async def test_list_names_candidate_by_source_rank_then_position(
         self,
         integration_client: AsyncClient,
-        og_create_res_fact: ResourceCreateFactory,
+        og_field_resource_factory,
+        source_maker,
+        source_a: str,
+        source_b: str,
+        expected: str,
     ):
-        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
-        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
-        candidate_id = await _create_candidate(integration_client, [id_a, id_b])
+        id_a = await _create_resource_with_sources(
+            integration_client,
+            og_field_resource_factory,
+            [source_maker(source=source_a, managed=False, name="Ghawar")],
+        )
+        id_b = await _create_resource_with_sources(
+            integration_client,
+            og_field_resource_factory,
+            [source_maker(source=source_b, managed=False, name="Burgan")],
+        )
+        await _create_candidate(integration_client, [id_a, id_b])
 
         listed = await integration_client.get("/oil-gas-fields/merge-candidates")
+
         assert listed.status_code == 200, listed.text
-        [pending] = listed.json()
-        assert pending["display_name"] in {"Ghawar", "Burgan"}
+        [candidate] = listed.json()
+        assert candidate["display_name"] == expected
+
+    @pytest.mark.anyio
+    async def test_list_names_approved_candidate_from_merged_resource(
+        self,
+        integration_client: AsyncClient,
+        og_field_resource_factory,
+        source_maker,
+    ):
+        id_a = await _create_resource_with_sources(
+            integration_client,
+            og_field_resource_factory,
+            [source_maker(source="gem", managed=False, name="Ghawar")],
+        )
+        id_b = await _create_resource_with_sources(
+            integration_client,
+            og_field_resource_factory,
+            [source_maker(source="rmi", managed=False, name="Burgan")],
+        )
+        candidate_id = await _create_candidate(integration_client, [id_a, id_b])
 
         approved = await integration_client.post(
             f"/oil-gas-fields/merge-candidates/{candidate_id}/approve"
         )
         assert approved.status_code == 200, approved.text
-        merged_id = approved.json()["merged_resource_id"]
-        merged = await integration_client.get(f"/oil-gas-fields/{merged_id}")
 
+        # The originals are emptied by the merge; the merged resource coalesces
+        # both sources, and rmi's "Burgan" wins.
         listed = await integration_client.get("/oil-gas-fields/merge-candidates")
-        [after] = listed.json()
-        merged_name = merged.json()["name"]
-        assert merged_name in {"Ghawar", "Burgan"}
-        assert after["display_name"] == merged_name
+        [candidate] = listed.json()
+        assert candidate["merged_resource_id"] == approved.json()["merged_resource_id"]
+        assert candidate["display_name"] == "Burgan"
 
     @pytest.mark.anyio
     async def test_detail_after_approve_is_live_null_shell(
