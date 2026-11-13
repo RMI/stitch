@@ -210,9 +210,11 @@ function QueuePanel({
 
       {candidatePage?.total_count > 0 ? (
         <div className="shrink-0 border-t border-line px-3 pb-3">
+          {/* The URL names the page; the response may still be the previous
+              page's while the requested one loads. */}
           <Pagination
-            page={candidatePage.page}
-            pageSize={candidatePage.page_size}
+            page={viewState.page}
+            pageSize={viewState.pageSize}
             totalCount={candidatePage.total_count}
             totalPages={candidatePage.total_pages}
             onPageChange={handlePageChange}
@@ -494,6 +496,7 @@ export default function MergeCandidateReviewPage() {
     isError: listError,
     error: listErrorObj,
     isPlaceholderData: listIsPlaceholder,
+    isFetching: listIsFetching,
   } = useMergeCandidates(ENDPOINT, toMergeCandidateQuery(viewState), true);
   const pageCandidates = candidatePage?.items;
 
@@ -501,10 +504,15 @@ export default function MergeCandidateReviewPage() {
   // longer exists) leaves the page past the end; step back to the new last
   // page instead of showing an empty queue. An empty result has no pages, so
   // page 1 counts as its last. Replaces the history entry, since the empty
-  // page was never something the reviewer chose.
+  // page was never something the reviewer chose. Waits for the page's own,
+  // up-to-date response: neither the previous page's rows standing in nor a
+  // cached copy that is still refreshing, whose page count may be out of date.
   const lastPage = Math.max(candidatePage?.total_pages ?? 0, 1);
   const pastLastPage =
-    Boolean(candidatePage) && !listIsPlaceholder && viewState.page > lastPage;
+    Boolean(candidatePage) &&
+    !listIsPlaceholder &&
+    !listIsFetching &&
+    viewState.page > lastPage;
   const { setPage } = viewState;
   useEffect(() => {
     if (pastLastPage) setPage(lastPage, { replace: true });

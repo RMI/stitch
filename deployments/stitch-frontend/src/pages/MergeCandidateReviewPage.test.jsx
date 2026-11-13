@@ -846,6 +846,54 @@ describe("MergeCandidateReviewPage", () => {
       await waitFor(() => expect(lastQueueRequest().page).toBe(1));
     });
 
+    it("shows the requested page in the pager while it loads", () => {
+      // Page 2 is still loading, so the previous page's response stands in.
+      const pageOne = manyPending(30).slice(0, 25);
+      vi.mocked(useMergeCandidates).mockReturnValue({
+        ...defaultHookReturn,
+        data: {
+          items: pageOne,
+          total_count: 30,
+          page: 1,
+          page_size: 25,
+          total_pages: 2,
+          status_counts: { PENDING: 30, APPROVED: 0, DENIED: 0 },
+        },
+        isPlaceholderData: true,
+        isFetching: true,
+      });
+      renderWithQueryClient(<MergeCandidateReviewPage />, {
+        initialEntries: ["/?page=2"],
+      });
+
+      expect(
+        screen.getByRole("button", { name: "Previous page" }),
+      ).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
+    });
+
+    it("waits for a cached page to refresh before stepping back", () => {
+      // A cached copy from when page 2 was past the end; new candidates have
+      // arrived since, and the refresh is still in flight.
+      vi.mocked(useMergeCandidates).mockReturnValue({
+        ...defaultHookReturn,
+        data: {
+          items: [],
+          total_count: 10,
+          page: 2,
+          page_size: 10,
+          total_pages: 1,
+          status_counts: { PENDING: 10, APPROVED: 0, DENIED: 0 },
+        },
+        isFetching: true,
+      });
+      renderWithQueryClient(<MergeCandidateReviewPage />, {
+        initialEntries: ["/?page=2&page_size=10"],
+      });
+
+      expect(lastQueueRequest().page).toBe(2);
+    });
+
     it("clears the selection when the page comes back empty", async () => {
       const user = userEvent.setup();
       mockQueue([pendingCandidate, deniedCandidate]);
