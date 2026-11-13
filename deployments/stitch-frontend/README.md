@@ -12,6 +12,7 @@ React frontend application styled with Tailwind CSS and built with Vite.
 - [Testing](#testing)
 - [Queries](#queries)
 - [List view URLs](#list-view-urls)
+- [Merge review URLs](#merge-review-urls)
 - [Resource Detail View](#resource-detail-view)
 
 ## Tech Stack
@@ -214,6 +215,33 @@ Notes:
 - Filter _values_ are not checked against the API's allowed values: an unknown country or basin simply matches nothing, but an unknown `field_status` or `primary_hydrocarbon_group` is rejected by the API, so a hand-edited URL can show an error instead of an empty list.
 
 The schema lives in `src/config/listParams.js`.
+
+## Merge review URLs
+
+The Merge Review queue (`/merge-candidate-review`) encodes its view the same way, so a copied link opens the same page of the queue for everyone.
+
+| Param                    | Values                                                                           | Omitted when                  |
+| ------------------------ | -------------------------------------------------------------------------------- | ----------------------------- |
+| `page`                   | integer ≥ 1                                                                      | page 1                        |
+| `page_size`              | 10, 25, 50, 100                                                                  | 25                            |
+| `status`                 | `PENDING`, `APPROVED`, `DENIED` (repeat per value), `all`                        | only `PENDING` is selected    |
+| `sort_by` + `sort_order` | `created`, `reviewed_at` or `name`, with `asc` or `desc`; or `status` with `asc` | newest first (`created desc`) |
+
+Example — approved and denied candidates, most recently reviewed first, page 2:
+
+```
+/merge-candidate-review?page=2&status=APPROVED&status=DENIED&sort_by=reviewed_at&sort_order=desc
+```
+
+Notes:
+
+- The queue shows pending candidates by default, so a bare `/merge-candidate-review` is the review work still to do. Clearing every status in the Status filter shows all of them, written as `status=all`.
+- The page size is not remembered between visits, unlike the resources list.
+- The `name` sort orders the whole queue by each candidate's display name, as the API names it for you; candidates without a name come last.
+- The `status` sort (`sort_order=asc`) puts work still to do first: pending, then denied, then approved, newest first within each.
+- Unknown statuses are dropped, and a malformed `page`, `page_size` or sort falls back to its default. A `page` past the end steps back to the last page.
+
+The schema lives in `src/config/mergeReviewParams.js`.
 
 ## API
 

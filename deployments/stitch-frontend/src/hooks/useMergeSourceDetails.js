@@ -2,22 +2,15 @@ import { useConfig } from "../config/useConfig";
 import { useAuthenticatedQuery } from "./useAuthenticatedQuery";
 import { getResourceDetail } from "../queries/api";
 
-// The cache key for a candidate's source details. Exported so the queue's sort
-// (useCandidateDisplayNames) can read the same cache entries without fetching.
-export function mergeSourceDetailsKey(endpoint, resourceIds) {
-  return [endpoint, "merge-source-details", ...(resourceIds ?? [])];
-}
-
 // Fetches every source resource in a merge candidate as one aggregate query, so
-// all entries arrive (and error) together. Callers share a cache entry keyed by
-// endpoint + resource ids, so the source comparison table and the candidate
-// name lookup don't issue duplicate requests for the same candidate.
+// all entries arrive (and error) together. Cached by endpoint + resource ids, so
+// returning to a candidate reuses the earlier result.
 export function useMergeSourceDetails(endpoint, resourceIds, enabled = true) {
   const config = useConfig();
   const ids = resourceIds ?? [];
 
   return useAuthenticatedQuery({
-    queryKey: mergeSourceDetailsKey(endpoint, ids),
+    queryKey: [endpoint, "merge-source-details", ...ids],
     queryFn: (fetcher) =>
       Promise.all(
         ids.map((id) => getResourceDetail(config, id, fetcher, endpoint)),
