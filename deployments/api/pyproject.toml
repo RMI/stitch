@@ -21,6 +21,7 @@ dependencies = [
   "stitch-models",
   "stitch-observability[asgi]",
   "stitch-ogsi",
+  "rmi-stitch-core>=0.1.0,<0.3.0",
 ]
 
 [build-system]
