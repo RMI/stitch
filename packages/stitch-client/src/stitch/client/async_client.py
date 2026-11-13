@@ -490,6 +490,15 @@ class AsyncStitchClient:
         """Yield every merge candidate, fetching one page at a time.
 
         Page-termination logic mirrors ``iter_oil_gas_fields``.
+
+        Not safe to review while iterating: pages are fetched by offset, so a
+        candidate leaving an already-fetched page shifts later candidates
+        back, and one is skipped per candidate that left. A candidate leaves
+        when it is reviewed out of the ``status`` filter, or is deleted
+        because an approval made it redundant (which can happen with no
+        filter). Candidates added mid-scan are safe; they land past the last
+        page. To review in bulk, collect the candidates first, e.g.
+        ``[c async for c in client.iter_merge_candidates(...)]``, then review.
         """
         page = 1
         while True:
