@@ -94,7 +94,12 @@ Accepts the same filter and search parameters as `GET /api/v1/oil-gas-fields/` (
 
 **Response:** `200`
 
-- array[MergeCandidateView]
+- `items`: array[MergeCandidateListItemView]
+- `total_count`: integer
+- `page`: integer
+- `page_size`: integer
+- `status_counts`: object[string, integer]
+- `total_pages`: integer
 
 ---
 
@@ -139,6 +144,7 @@ Accepts the same filter and search parameters as `GET /api/v1/oil-gas-fields/` (
 - `last_updated_by_id`: integer
 - `reviewed_at`: string | null
 - `reviewed_by_id`: integer | null
+- `name`: string | null
 - `compare`: array[FieldComparisonView]
 
 ---
