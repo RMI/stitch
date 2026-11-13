@@ -1,7 +1,7 @@
 from typing import Any, Annotated, Final
 
 from pydantic import BaseModel, Field, TypeAdapter, field_validator
-from stitch.models import (
+from stitch.core.models import (
     Resource,
     Source,
     SourceView,
