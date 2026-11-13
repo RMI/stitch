@@ -18,10 +18,8 @@ dependencies = [
   "pydantic-settings>=2.12.0",
   "sqlalchemy>=2.0.44",
   "stitch-auth",
-  "stitch-models",
   "stitch-observability[asgi]",
   "stitch-ogsi",
-  "rmi-stitch-core>=0.2.0dev2,<0.3.0",
 ]
 
 [build-system]
@@ -49,6 +47,5 @@ addopts = ["-v", "--strict-markers", "--tb=short"]
 
 [tool.uv.sources]
 stitch-auth = { workspace = true }
-stitch-models = { workspace = true }
 stitch-observability = { workspace = true }
 stitch-ogsi = { workspace = true }

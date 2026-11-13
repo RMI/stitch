@@ -1761,10 +1761,8 @@ dependencies = [
     { name = "opentelemetry-sdk" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
-    { name = "rmi-stitch-core" },
     { name = "sqlalchemy" },
     { name = "stitch-auth" },
-    { name = "stitch-models" },
     { name = "stitch-observability", extra = ["asgi"] },
     { name = "stitch-ogsi" },
 ]
@@ -1786,10 +1784,8 @@ requires-dist = [
     { name = "opentelemetry-sdk", specifier = ">=1.30.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.6" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
-    { name = "rmi-stitch-core", specifier = ">=0.2.0.dev2,<0.3.0" },
     { name = "sqlalchemy", specifier = ">=2.0.44" },
     { name = "stitch-auth", editable = "packages/stitch-auth" },
-    { name = "stitch-models", editable = "packages/stitch-models" },
     { name = "stitch-observability", extras = ["asgi"], editable = "packages/stitch-observability" },
     { name = "stitch-ogsi", editable = "packages/stitch-ogsi" },
 ]
@@ -1869,7 +1865,6 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "stitch-auth" },
     { name = "stitch-client" },
-    { name = "stitch-models" },
     { name = "stitch-observability", extra = ["asgi"] },
     { name = "stitch-ogsi" },
 ]
@@ -1888,7 +1883,6 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.15.0" },
     { name = "stitch-auth", editable = "packages/stitch-auth" },
     { name = "stitch-client", editable = "packages/stitch-client" },
-    { name = "stitch-models", editable = "packages/stitch-models" },
     { name = "stitch-observability", extras = ["asgi"], editable = "packages/stitch-observability" },
     { name = "stitch-ogsi", editable = "packages/stitch-ogsi" },
 ]
@@ -1971,7 +1965,6 @@ dependencies = [
     { name = "pydantic" },
     { name = "pytest" },
     { name = "rmi-stitch-core" },
-    { name = "stitch-models" },
 ]
 
 [package.dev-dependencies]
@@ -1984,7 +1977,6 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pytest", specifier = ">=9.2.0" },
     { name = "rmi-stitch-core", specifier = ">=0.2.0.dev2,<0.3.0" },
-    { name = "stitch-models", editable = "packages/stitch-models" },
 ]
 
 [package.metadata.requires-dev]

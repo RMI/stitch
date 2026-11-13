@@ -9,11 +9,7 @@ dependencies = [
   "pydantic>=2.12.5",
   "pytest>=9.2.0",
   "rmi-stitch-core>=0.2.0.dev2,<0.3.0",
-  "stitch-models",
 ]
-
-[tool.uv.sources]
-stitch-models = { workspace = true }
 
 [build-system]
 requires = ["uv_build>=0.13.6,<0.14.0"]
