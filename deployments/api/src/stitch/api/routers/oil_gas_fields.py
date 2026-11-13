@@ -193,13 +193,9 @@ async def link_all_merge_candidates(
         session=uow.session,
         licensed_sources=licensed_sources(claims),
     )
-    existing = {
-        frozenset(candidate.resource_ids)
-        for candidate in await merge_candidate_actions.list_merge_candidates(
-            session=uow.session
-        )
-    }
-    new_groups = [group for group in groups if frozenset(group) not in existing]
+    new_groups = await merge_candidate_actions.groups_without_candidates(
+        session=uow.session, groups=groups
+    )
 
     if apply_merges:
         await merge_candidate_actions.create_merge_candidates_bulk(

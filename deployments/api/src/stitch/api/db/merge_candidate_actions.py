@@ -383,6 +383,22 @@ async def create_merge_candidate(
     return _candidate_to_view(candidate)
 
 
+async def groups_without_candidates(
+    session: AsyncSession, groups: Sequence[Sequence[int]]
+) -> list[Sequence[int]]:
+    """The groups that don't already have a merge candidate (any status).
+
+    Compares fingerprints (the sorted, de-duplicated resource ids), which every
+    write keeps in step with a candidate's items, so this reads one column
+    rather than loading every candidate and its items.
+    """
+    with named_query("merge_candidates.existing_fingerprints"):
+        existing = set(
+            (await session.scalars(select(MergeCandidateModel.fingerprint))).all()
+        )
+    return [group for group in groups if _fingerprint(group) not in existing]
+
+
 async def create_merge_candidates_bulk(
     session: AsyncSession,
     user: CurrentUser,

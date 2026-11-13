@@ -194,6 +194,18 @@ async def test_list_merge_candidates_returns_views_in_query_order():
 
 
 @pytest.mark.anyio
+async def test_groups_without_candidates_skips_groups_matching_a_fingerprint():
+    # Existing candidates' fingerprints: sorted, de-duplicated ids.
+    session = FakeSession(scalars_result=["18:19", "30:31:32"])
+
+    groups = [[19, 18], [20, 21], [32, 30, 31, 30], [18, 19, 20]]
+    remaining = await mca.groups_without_candidates(session, groups)
+
+    # Order and repeats don't matter; a superset is a different group.
+    assert remaining == [[20, 21], [18, 19, 20]]
+
+
+@pytest.mark.anyio
 async def test_get_merge_candidate_raises_when_missing():
     session = FakeSession(scalar_result=None)
 

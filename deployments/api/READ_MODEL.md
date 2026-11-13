@@ -5,9 +5,14 @@ precomputed table, `og_field_resource_state`, instead of working out every
 field's winning value on each request. At ~50K resources this takes typical list
 requests from ~2–3 s to under 10 ms (see [Performance](#performance-at-50k-resources)).
 
+The merge-candidate list (`GET /oil-gas-fields/merge-candidates`) also reads it,
+for each candidate's `display_name` in the Merge Review queue. A resource with
+no row there (e.g. after a restore, before a rebuild) shows as "Candidate #N".
+
 The table is derived data: everything in it can be rebuilt from the
 authoritative tables (sources, memberships, priorities) at any time. The detail
-endpoint (`GET /oil-gas-fields/{id}`) and the per-field source listings don't
+endpoint (`GET /oil-gas-fields/{id}`), the per-field source listings and a
+merge candidate's comparison (`GET /oil-gas-fields/merge-candidates/{id}`) don't
 use it; they coalesce on every request.
 
 ## How it works
@@ -17,7 +22,7 @@ use it; they coalesce on every request.
   four profiles: all six public sources, plus any combination of the two
   restricted sources (`wm`, `ccr`). See `db/read_model/permissions.py`.
 - **Who can list:** a caller whose licensed sources *exactly* match one of the
-  four profiles. Anyone else gets a **403** that names the problem: a caller
+  four profiles. This applies to the merge-candidate list too. Anyone else gets a **403** that names the problem: a caller
   missing a public source (including one with no source grants at all), or
   holding a source that isn't in any profile yet. A `source:read:<key>` grant
   for a key the code doesn't know is ignored before matching.
@@ -91,8 +96,9 @@ WHERE r.repointed_id IS NOT NULL;
 ```
 
 In the query timings (see `deployments/PERFORMANCE.md`), a list request runs
-`resources.count` and `resources.list_page`, and filter-options runs
-`resources.filter_options`. The cost the read model adds to writes (and to
+`resources.count` and `resources.list_page`, filter-options runs
+`resources.filter_options`, and the merge-candidate list reads names with
+`merge_candidates.list.names`. The cost the read model adds to writes (and to
 rebuild batches) is labeled `read_model.refresh`.
 
 ## Changing the code safely

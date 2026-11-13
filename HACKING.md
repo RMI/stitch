@@ -98,11 +98,12 @@ Depending on which entrypoint you use, these are the main local endpoints:
 
 ## The field list's precomputed table
 
-The oil & gas field list and filter-options read a precomputed table that the
-API's writes keep current, so data added through the API (including the seed)
-shows up straight away. Data that bypasses the API doesn't: after restoring a
-database dump, or editing sources, memberships, or priorities in SQL or Adminer,
-rebuild the table where the API runs:
+The oil & gas field list, filter-options and the Merge Review queue's names read
+a precomputed table that the API's writes keep current, so data added through
+the API (including the seed) shows up straight away. Data that bypasses the API
+doesn't: after restoring a database dump, or editing sources, memberships, or
+priorities in SQL or Adminer, rebuild the table where the API runs (until then,
+the Merge Review queue shows "Candidate #N" instead of names):
 
 - API in Docker (`make frontend-dev`, `make dev-docker`):
 
