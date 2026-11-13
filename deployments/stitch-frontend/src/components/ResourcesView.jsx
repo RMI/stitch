@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { useResources } from "../hooks/useResources";
+import { useNavigate } from "react-router";
+import { useResources, useCreateMergeCandidate } from "../hooks/useResources";
+import { useHasPermission } from "../hooks/usePermissions";
 import { useListState } from "../hooks/useListState";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import ResourcesTable from "./ResourcesTable";
@@ -126,6 +128,36 @@ export default function ResourcesView({ className = "", endpoint }) {
 
   const handleSortChange = (newSortConfig) => setSort(newSortConfig);
 
+  // Row-level multi-select feeds the "Propose merge" affordance below. Only
+  // rendered when the caller can create merge candidates; the backend enforces
+  // the same permission.
+  const canProposeMerge = useHasPermission("merge-candidate:create");
+  const navigate = useNavigate();
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const createMergeCandidate = useCreateMergeCandidate(endpoint);
+
+  // A merge candidate joins exactly two resources, so the selection caps at
+  // two. The backend accepts >=2, but surfacing larger groups here would
+  // promise more than the review page is designed to handle.
+  const MERGE_SELECTION_LIMIT = 2;
+
+  const handleToggleSelect = (id) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else if (next.size < MERGE_SELECTION_LIMIT) next.add(id);
+      return next;
+    });
+
+  const handleProposeMerge = () => {
+    createMergeCandidate.mutate([...selectedIds], {
+      onSuccess: () => {
+        setSelectedIds(new Set());
+        navigate("/merge-candidate-review");
+      },
+    });
+  };
+
   return (
     <div className={`mx-auto w-full max-w-6xl ${className}`}>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
@@ -235,11 +267,42 @@ export default function ResourcesView({ className = "", endpoint }) {
           No resources match the current search and filters.
         </p>
       )}
+      {canProposeMerge && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-ink-muted">
+          <span>
+            <span className="font-mono tabular-nums text-ink">
+              {selectedIds.size}
+            </span>
+            {" of "}
+            <span className="font-mono tabular-nums text-ink">
+              {MERGE_SELECTION_LIMIT}
+            </span>{" "}
+            selected for merge
+          </span>
+          <Button
+            onClick={handleProposeMerge}
+            disabled={
+              selectedIds.size !== MERGE_SELECTION_LIMIT ||
+              createMergeCandidate.isPending
+            }
+          >
+            {createMergeCandidate.isPending ? "Proposing..." : "Propose merge"}
+          </Button>
+          {createMergeCandidate.isError && (
+            <span className="text-danger">
+              {createMergeCandidate.error.message}
+            </span>
+          )}
+        </div>
+      )}
       <ResourcesTable
         resources={resources}
         sortConfig={sort}
         onSort={handleSortChange}
         isFetching={isFetching}
+        selectedIds={selectedIds}
+        onToggleSelect={canProposeMerge ? handleToggleSelect : undefined}
+        selectionAtLimit={selectedIds.size >= MERGE_SELECTION_LIMIT}
       />
       {data && totalCount > 0 && (
         <Pagination
