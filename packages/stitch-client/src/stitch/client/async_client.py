@@ -427,13 +427,104 @@ class AsyncStitchClient:
         )
         return self._expect_dict(payload, "POST /oil-gas-fields/merge-candidates")
 
-    async def list_merge_candidates(self) -> list[dict[str, Any]]:
+    async def list_merge_candidates_page(
+        self,
+        *,
+        page: int = 1,
+        page_size: int = 50,
+        status: Sequence[str] | None = None,
+    ) -> dict[str, Any]:
+        """One page of merge candidates, oldest first.
+
+        ``status`` limits the page to candidates in any of the given statuses
+        (``PENDING``, ``APPROVED``, ``DENIED``); omitted, every status is
+        returned.
+
+        Raises:
+            TypeError: if ``status`` is a bare string rather than a sequence.
+            ValueError: if ``page``/``page_size`` are out of range, or ``status``
+                is an empty sequence.
+            StitchAPIError: on a non-2xx response.
+        """
+        self._validate_page_params(page, page_size)
+        params: dict[str, Any] = {
+            "page": page,
+            "page_size": page_size,
+            # Stable forward scan, as for ``list_oil_gas_field_sources_page``.
+            # The route defaults to newest first, under which a candidate
+            # created mid-scan lands on page 1 and shifts every later page,
+            # repeating rows. Oldest first (ties broken by id) appends new
+            # candidates past the last page instead. Deliberately NOT
+            # overrideable.
+            "sort_by": "created",
+            "sort_order": "asc",
+        }
+        if status is not None:
+            if isinstance(status, (str, bytes)):
+                # list("PENDING") would send status=P&status=E&..., which the
+                # API rejects as invalid enum values, far from the actual typo.
+                raise TypeError(
+                    "status must be a sequence of statuses, not a bare "
+                    f"{type(status).__name__} (did you mean [{status!r}]?)"
+                )
+            statuses = list(status)
+            if not statuses:
+                # httpx drops an empty sequence from the query string, which
+                # the API reads as "no filter" -- every status.
+                raise ValueError("status must not be empty when provided")
+            params["status"] = statuses
         payload = await self._request_json(
             method="GET",
             path="/oil-gas-fields/merge-candidates",
             operation="GET /oil-gas-fields/merge-candidates",
+            params=params,
         )
-        return self._expect_list(payload, "GET /oil-gas-fields/merge-candidates")
+        return self._expect_dict(payload, "GET /oil-gas-fields/merge-candidates")
+
+    async def iter_merge_candidates(
+        self,
+        *,
+        page_size: int = MAX_PAGE_SIZE,
+        status: Sequence[str] | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Yield every merge candidate, fetching one page at a time.
+
+        Page-termination logic mirrors ``iter_oil_gas_fields``.
+
+        Not safe to review while iterating: pages are fetched by offset, so a
+        candidate leaving an already-fetched page shifts later candidates
+        back, and one is skipped per candidate that left. A candidate leaves
+        when it is reviewed out of the ``status`` filter, or is deleted
+        because an approval made it redundant (which can happen with no
+        filter). Candidates added mid-scan are safe; they land past the last
+        page. To review in bulk, collect the candidates first, e.g.
+        ``[c async for c in client.iter_merge_candidates(...)]``, then review.
+        """
+        page = 1
+        while True:
+            payload = await self.list_merge_candidates_page(
+                page=page, page_size=page_size, status=status
+            )
+            raw_item_count = self._item_count(payload)
+            page_items = self._extract_items(payload)
+
+            if raw_item_count == 0:
+                return
+
+            for item in page_items:
+                yield item
+
+            total_pages = payload.get("total_pages")
+            if isinstance(total_pages, int) and page >= total_pages:
+                return
+
+            if not isinstance(total_pages, int) and not page_items:
+                return
+
+            if raw_item_count < page_size:
+                return
+
+            page += 1
 
     def _headers(self) -> dict[str, str]:
         if self._headers_provider is None:
@@ -601,16 +692,6 @@ class AsyncStitchClient:
         if isinstance(payload, dict):
             return payload
         raise StitchAPIError(f"{operation} returned non-object JSON payload")
-
-    @staticmethod
-    def _expect_list(payload: Any, operation: str) -> list[dict[str, Any]]:
-        if not isinstance(payload, list):
-            raise StitchAPIError(f"{operation} returned non-array JSON payload")
-        if not all(isinstance(item, dict) for item in payload):
-            raise StitchAPIError(
-                f"{operation} returned an array with non-object elements"
-            )
-        return payload
 
     @staticmethod
     def _extract_items(payload: dict[str, Any]) -> list[dict[str, Any]]:

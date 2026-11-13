@@ -1,32 +1,35 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import Button from "../components/Button";
+import FilterDropdown from "../components/FilterDropdown";
+import Input from "../components/Input";
 import MergeSourceComparison from "../components/MergeSourceComparison";
 import MergedResourceView from "../components/MergedResourceView";
+import Pagination from "../components/Pagination";
+import Select from "../components/Select";
+import {
+  MERGE_STATUSES,
+  QUEUE_SORT_OPTIONS,
+  toMergeCandidateQuery,
+} from "../config/mergeReviewParams";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
-import { useMergeCandidateName } from "../hooks/useMergeCandidateName";
-import { useMergedResourceDetail } from "../hooks/useMergedResourceDetail";
+import { useMergeReviewState } from "../hooks/useMergeReviewState";
 import { useMergeSourceDetails } from "../hooks/useMergeSourceDetails";
 import {
   useMergeCandidates,
   useMergeCandidate,
   useReviewMergeCandidate,
 } from "../hooks/useResources";
-import { useCandidateDisplayNames } from "../hooks/useCandidateDisplayNames";
-import { pickCompareName } from "../utils/candidateCompare";
-import { sortCandidates } from "../utils/candidateSort";
-import { candidateDisplayName } from "../utils/mergeCandidateName";
-import { isEmptyValue } from "../utils/mergeComparison";
-import {
-  MERGE_REVIEW_SORT_OPTIONS,
-  getRememberedMergeReviewSort,
-  rememberMergeReviewSort,
-} from "../config/mergeReviewSortPreference";
 
 const ENDPOINT = "oil-gas-fields";
 // Tailwind's md breakpoint, where the queue moves beside the decision panel
 // (the md: grid classes in the page layout below).
 const TWO_COLUMN_LAYOUT_QUERY = "(min-width: 48rem)";
+const STATUS_FILTER_LABELS = {
+  PENDING: "Pending",
+  APPROVED: "Approved",
+  DENIED: "Denied",
+};
 
 function getStatusClasses(status) {
   if (status === "PENDING") {
@@ -66,24 +69,14 @@ function candidateSourcesTitle(candidate) {
   return parts.join(" · ");
 }
 
+// The API names each candidate (the merged resource's name once approved);
+// a candidate with no licensed name falls back to its id.
+function candidateDisplayName(candidate) {
+  return candidate.name ?? `Candidate #${candidate.id}`;
+}
+
 function CandidateQueueItem({ candidate, isSelected, onSelect }) {
-  const { data: sourceDetails } = useMergeSourceDetails(
-    ENDPOINT,
-    candidate.resource_ids,
-  );
-  // Post-merge, the source resources are null shells, so the merged resource
-  // is the authoritative name source. The hook is disabled until an id exists,
-  // so pending candidates skip the fetch.
-  const { data: mergedResource } = useMergedResourceDetail(
-    ENDPOINT,
-    candidate.merged_resource_id,
-  );
-  // The same helper the queue's name sort uses (useCandidateDisplayNames), so
-  // the order always matches the names shown.
-  const displayName = candidateDisplayName(candidate.id, {
-    sourceDetails,
-    mergedResource,
-  });
+  const displayName = candidateDisplayName(candidate);
 
   return (
     <button
@@ -107,20 +100,135 @@ function CandidateQueueItem({ candidate, isSelected, onSelect }) {
   );
 }
 
+// Mirrors the resources list search: the box holds its own text while you
+// type, and only submit and clear write to the URL, so typing neither rewrites
+// history nor refetches per keystroke. When the URL's q changes underneath it
+// (Back/Forward), the box is re-seeded to match.
+function QueueSearch({ q, onSearch }) {
+  const [searchText, setSearchText] = useState(q);
+  const [lastQ, setLastQ] = useState(q);
+  if (q !== lastQ) {
+    setLastQ(q);
+    setSearchText(q);
+  }
+
+  function handleChange(event) {
+    const newValue = event.target.value;
+    setSearchText(newValue);
+    // Emptying the box is a clear, not a search for nothing.
+    if (newValue === "" && q !== "") onSearch("");
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    const normalizedSearch = searchText.trim();
+    setSearchText(normalizedSearch);
+    onSearch(normalizedSearch);
+  }
+
+  function handleClear() {
+    setSearchText("");
+    onSearch("");
+  }
+
+  return (
+    <form onSubmit={handleSubmit} role="search" className="flex w-full gap-2">
+      <div className="relative min-w-0 flex-1">
+        <Input
+          type="search"
+          value={searchText}
+          onChange={handleChange}
+          placeholder="Name, basin or ID"
+          aria-label="Search candidates"
+          className="w-full pr-9"
+        />
+        {searchText && (
+          <button
+            type="button"
+            onClick={handleClear}
+            aria-label="Clear search"
+            className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-base leading-none text-ink-muted transition-colors hover:bg-rmiblue-100 hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-energy/60"
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        )}
+      </div>
+      <Button type="submit" variant="secondary">
+        Search
+      </Button>
+    </form>
+  );
+}
+
+function QueueControls({
+  statuses,
+  onStatusesChange,
+  sortKey,
+  onSortKeyChange,
+}) {
+  const statusOptions = MERGE_STATUSES.map((status) => ({
+    value: status,
+    label: STATUS_FILTER_LABELS[status],
+  }));
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <FilterDropdown
+        label="Status"
+        options={statusOptions}
+        selected={statuses}
+        onChange={onStatusesChange}
+      />
+      <label className="sr-only" htmlFor="queue-sort">
+        Sort candidates
+      </label>
+      <Select
+        id="queue-sort"
+        value={sortKey}
+        onChange={(event) => onSortKeyChange(event.target.value)}
+      >
+        {QUEUE_SORT_OPTIONS.map((option) => (
+          <option key={option.key} value={option.key}>
+            {option.label}
+          </option>
+        ))}
+      </Select>
+    </div>
+  );
+}
+
 function QueuePanel({
-  candidates,
+  candidatePage,
   isLoading,
   isError,
   error,
   selectedId,
   onSelect,
-  showApproved,
-  onShowApprovedChange,
-  hasHiddenApproved,
-  sort,
-  onSortChange,
-  nameLoadProgress,
+  viewState,
 }) {
+  const listRef = useRef(null);
+  const candidates = candidatePage?.items;
+  const statusCounts = candidatePage?.status_counts ?? {};
+  const queueTotal = Object.values(statusCounts).reduce(
+    (sum, count) => sum + count,
+    0,
+  );
+  // Candidates the Status filter alone would show. When that is zero, the
+  // filter (not the search) is why the list is empty.
+  const statusTotal = viewState.statuses.length
+    ? viewState.statuses.reduce(
+        (sum, status) => sum + (statusCounts[status] ?? 0),
+        0,
+      )
+    : queueTotal;
+
+  function handlePageChange(page) {
+    viewState.setPage(page);
+    // The list scrolls on its own, so a new page would otherwise open part
+    // way down.
+    listRef.current?.scrollTo?.({ top: 0 });
+  }
+
   return (
     // From md up the queue sits in the left column as a sticky, viewport-tall
     // box whose list scrolls on its own, so scrolling the candidates never
@@ -130,40 +238,18 @@ function QueuePanel({
     <aside className="min-w-0 rounded-md border border-line bg-panel md:sticky md:top-15 md:col-start-1 md:row-start-1 md:flex md:max-h-[calc(100vh-4.75rem)] md:flex-col md:self-start">
       <div className="shrink-0 border-b border-line px-4 py-3">
         <h2 className="text-base font-semibold text-ink">Queue</h2>
-        <label className="mt-2 flex items-center gap-2 text-sm text-ink-muted">
-          <input
-            type="checkbox"
-            checked={showApproved}
-            onChange={(event) => onShowApprovedChange(event.target.checked)}
-            className="accent-primary"
+        <div className="mt-2 space-y-2">
+          <QueueSearch q={viewState.q} onSearch={viewState.setSearch} />
+          <QueueControls
+            statuses={viewState.statuses}
+            onStatusesChange={viewState.setStatuses}
+            sortKey={viewState.sortKey}
+            onSortKeyChange={viewState.setSortKey}
           />
-          <span>Show approved merges</span>
-        </label>
-        <label className="mt-2 flex items-center gap-2 text-sm text-ink-muted">
-          <span>Sort</span>
-          <select
-            value={sort}
-            onChange={(event) => onSortChange(event.target.value)}
-            className="min-h-9 min-w-0 flex-1 rounded-md border border-line bg-panel px-2 py-1.5 text-sm text-ink transition-colors hover:border-line-strong focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-          >
-            {MERGE_REVIEW_SORT_OPTIONS.map(({ value, label }) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        {/* Names load one candidate at a time, so until they all have, the
-            name order is incomplete: say so rather than look final. */}
-        {nameLoadProgress && (
-          <p role="status" className="mt-2 text-xs text-ink-muted">
-            Loading names… {nameLoadProgress.loaded} of {nameLoadProgress.total}
-            . Order will update.
-          </p>
-        )}
+        </div>
       </div>
 
-      <div className="p-2 md:min-h-0 md:overflow-y-auto">
+      <div ref={listRef} className="p-2 md:min-h-0 md:overflow-y-auto">
         {isLoading ? (
           <p className="px-2 py-3 text-sm text-ink-muted">
             Loading candidates…
@@ -183,17 +269,38 @@ function QueuePanel({
               />
             ))}
           </div>
-        ) : hasHiddenApproved ? (
-          <p className="px-2 py-3 text-sm text-ink-muted">
-            Approved merges are hidden. Check &quot;Show approved merges&quot;
-            to see them.
-          </p>
-        ) : (
+        ) : queueTotal === 0 ? (
           <p className="px-2 py-3 text-sm text-ink-muted">
             No merge candidates to review.
           </p>
+        ) : viewState.q && statusTotal > 0 ? (
+          <p className="px-2 py-3 text-sm text-ink-muted">
+            No candidates match this search. Try a different name, or clear the
+            search.
+          </p>
+        ) : (
+          <p className="px-2 py-3 text-sm text-ink-muted">
+            No candidates match the selected statuses. Change the Status filter
+            to see the others.
+          </p>
         )}
       </div>
+
+      {candidatePage?.total_count > 0 ? (
+        <div className="shrink-0 border-t border-line px-3 pb-3">
+          {/* The URL names the page; the response may still be the previous
+              page's while the requested one loads. */}
+          <Pagination
+            page={viewState.page}
+            pageSize={viewState.pageSize}
+            totalCount={candidatePage.total_count}
+            totalPages={candidatePage.total_pages}
+            onPageChange={handlePageChange}
+            onPageSizeChange={viewState.setPageSize}
+            compact
+          />
+        </div>
+      ) : null}
     </aside>
   );
 }
@@ -323,31 +430,15 @@ function CandidateDecisionPanel({
   } = candidateQuery;
 
   const candidate = detailCandidate ?? listCandidate;
-  // The compare-derived name is authoritative once the detail lands. Until
-  // then the queue's name stands in — it reads the same cached query the
-  // queue items already issued, so no extra requests — because falling back
-  // to the id would flash "Candidate #N" on first selection.
-  const queueName = useMergeCandidateName(ENDPOINT, candidate?.resource_ids);
   // The source resources' detail views, for the per-column source mix in the
-  // comparison. Same cache entry the name lookup above reads, so no extra
-  // requests.
+  // comparison. Fetched for the selected candidate only (the queue no longer
+  // loads them, since the API names each candidate), and skipped once merged,
+  // when the merged resource is shown instead of the comparison.
   const sourceDetails = useMergeSourceDetails(
     ENDPOINT,
     candidate?.resource_ids,
+    !candidate?.merged_resource_id,
   );
-  // Post-merge, the source resources are null shells and compare carries no
-  // name, so the merged resource is the authoritative source. It shares the
-  // cache entry MergedResourceView fetches, so this adds no requests.
-  const { data: mergedResource } = useMergedResourceDetail(
-    ENDPOINT,
-    candidate?.merged_resource_id,
-  );
-  const mergedName = isEmptyValue(mergedResource?.data?.name)
-    ? null
-    : mergedResource.data.name;
-  const name =
-    mergedName ??
-    (detailCandidate ? pickCompareName(detailCandidate.compare) : queueName);
 
   if (!selectedId) {
     return (
@@ -391,7 +482,7 @@ function CandidateDecisionPanel({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="break-words text-2xl font-semibold text-ink">
-              {name ?? `Candidate #${candidate.id}`}
+              {candidateDisplayName(candidate)}
             </h2>
             <p className="mt-1 text-sm text-ink-muted">
               Decide whether these resources should become one curated record.
@@ -453,11 +544,17 @@ function CandidateDecisionPanel({
 
 export default function MergeCandidateReviewPage() {
   useDocumentTitle("Merge review");
+  const viewState = useMergeReviewState();
   const [selectedId, setSelectedId] = useState(null);
   const [reviewNotes, setReviewNotes] = useState("");
-  const [showApproved, setShowApproved] = useState(false);
-  // Remembered for the browser session, so leaving and returning keeps it.
-  const [sort, setSort] = useState(getRememberedMergeReviewSort);
+  // The candidate the notes were typed for. The selection also moves without a
+  // click (paging, filtering, sorting, advancing after a review), so the notes
+  // are cleared whenever it changes, never carried to another candidate.
+  const [notesCandidateId, setNotesCandidateId] = useState(selectedId);
+  if (notesCandidateId !== selectedId) {
+    setNotesCandidateId(selectedId);
+    setReviewNotes("");
+  }
   const selectedPanelRef = useRef(null);
 
   const reviewMutation = useReviewMergeCandidate(ENDPOINT);
@@ -465,51 +562,66 @@ export default function MergeCandidateReviewPage() {
   const activeReviewAction = reviewMutation.isPending
     ? reviewMutation.variables?.action
     : null;
-  const actionError = reviewMutation.error
-    ? reviewMutation.error.message || String(reviewMutation.error)
-    : null;
+  // A review belongs to the candidate it was submitted for, so forget it
+  // whenever the selection moves, by a click or not. Its error then stays gone
+  // on returning to that candidate, and a review still saving no longer
+  // advances the selection or clears the notes when it finishes: reset()
+  // detaches the callbacks passed to mutate(). The queue still refreshes,
+  // since that runs in the mutation's own onSuccess.
+  const { reset: resetReview } = reviewMutation;
+  useEffect(() => {
+    resetReview();
+  }, [selectedId, resetReview]);
+  // Only shown on the candidate whose review failed.
+  const actionError =
+    reviewMutation.error && reviewMutation.variables?.id === selectedId
+      ? reviewMutation.error.message || String(reviewMutation.error)
+      : null;
 
   const {
-    data: candidates,
+    data: candidatePage,
     isLoading: listLoading,
     isError: listError,
     error: listErrorObj,
-  } = useMergeCandidates(ENDPOINT, true);
+    isPlaceholderData: listIsPlaceholder,
+    isFetching: listIsFetching,
+  } = useMergeCandidates(ENDPOINT, toMergeCandidateQuery(viewState), true);
+  const pageCandidates = candidatePage?.items;
 
-  // Approved merges are finished work, so the queue hides them unless the
-  // reviewer opts in. Filtering here rather than in the API keeps the header
-  // counts below reporting on the whole workload, not just the visible rows.
-  const filteredCandidates = candidates?.filter(
-    (c) => showApproved || c.status !== "APPROVED",
-  );
+  // Reviewing the last candidate on the last page (or a link to a page that no
+  // longer exists) leaves the page past the end; step back to the new last
+  // page instead of showing an empty queue. An empty result has no pages, so
+  // page 1 counts as its last. Replaces the history entry, since the empty
+  // page was never something the reviewer chose. Waits for the page's own,
+  // up-to-date response: neither the previous page's rows standing in nor a
+  // cached copy that is still refreshing, whose page count may be out of date.
+  const lastPage = Math.max(candidatePage?.total_pages ?? 0, 1);
+  const pastLastPage =
+    Boolean(candidatePage) &&
+    !listIsPlaceholder &&
+    !listIsFetching &&
+    viewState.page > lastPage;
+  const { setPage } = viewState;
+  useEffect(() => {
+    if (pastLastPage) setPage(lastPage, { replace: true });
+  }, [pastLastPage, lastPage, setPage]);
 
-  // Names come from the queue items' own cached lookups (no extra requests).
-  // Until every visible candidate's name has loaded, a name sort is
-  // incomplete, so the queue says so.
-  const isNameSort = sort === "name-asc" || sort === "name-desc";
-  const { namesById, loadedCount, total } = useCandidateDisplayNames(
-    ENDPOINT,
-    filteredCandidates,
-  );
-  const visibleCandidates = filteredCandidates
-    ? sortCandidates(filteredCandidates, sort, namesById)
-    : filteredCandidates;
-  const nameLoadProgress =
-    isNameSort && loadedCount < total ? { loaded: loadedCount, total } : null;
-
-  function handleSortChange(nextSort) {
-    setSort(nextSort);
-    rememberMergeReviewSort(nextSort);
-  }
-
-  // Default to the first pending candidate once the list loads. Done during
-  // render (not in an effect) so the selection is set before the first paint
-  // and without triggering a cascading re-render. Chosen from the visible
-  // rows, in the chosen sort order, so the selection can never land on a
-  // filtered-out candidate.
-  if (!selectedId && visibleCandidates?.length) {
-    const firstPending = visibleCandidates.find((c) => c.status === "PENDING");
-    setSelectedId(firstPending?.id ?? visibleCandidates[0].id);
+  // Select the first pending candidate on the page whenever the selection is
+  // not on it: on first load, and after a page, filter or sort change. Done
+  // during render (not in an effect) so the selection is set before the first
+  // paint and without a cascading re-render. Skipped while the previous
+  // page's rows stand in for the next, so it never lands on a row that is
+  // about to disappear.
+  // An empty page clears the selection instead, so the panel never offers
+  // review actions for a candidate the queue is not showing.
+  const selectionOnPage = pageCandidates?.some((c) => c.id === selectedId);
+  if (pageCandidates && !selectionOnPage && !listIsPlaceholder) {
+    if (pageCandidates.length) {
+      const firstPending = pageCandidates.find((c) => c.status === "PENDING");
+      setSelectedId(firstPending?.id ?? pageCandidates[0].id);
+    } else if (selectedId !== null) {
+      setSelectedId(null);
+    }
   }
 
   const candidateQuery = useMergeCandidate(
@@ -522,14 +634,16 @@ export default function MergeCandidateReviewPage() {
   // until the detail query lands. Without this, review actions dead-click
   // while the detail is in flight.
   const listCandidate =
-    candidates?.find((item) => item.id === selectedId) ?? null;
+    pageCandidates?.find((item) => item.id === selectedId) ?? null;
   const candidate = candidateQuery.data ?? listCandidate;
 
-  const pendingCount =
-    candidates?.filter((c) => c.status === "PENDING").length ?? 0;
+  // The API counts the whole queue regardless of the status filter, so the
+  // header reports on the whole workload, not just the visible rows.
+  const statusCounts = candidatePage?.status_counts;
+  const pendingCount = statusCounts?.PENDING ?? 0;
   const reviewedCount =
-    candidates?.filter((c) => c.status === "APPROVED" || c.status === "DENIED")
-      .length ?? 0;
+    (statusCounts?.APPROVED ?? 0) + (statusCounts?.DENIED ?? 0);
+  const totalCount = pendingCount + reviewedCount;
 
   function handleSelect(id) {
     setSelectedId(id);
@@ -559,8 +673,7 @@ export default function MergeCandidateReviewPage() {
         // once the refreshed data is on its way. Failures surface via
         // `reviewMutation.error` and keep the current candidate selected.
         onSuccess: () => {
-          // Continue through the queue as displayed, in the chosen sort.
-          const nextPending = visibleCandidates?.find(
+          const nextPending = pageCandidates?.find(
             (item) => item.id !== candidate.id && item.status === "PENDING",
           );
           if (nextPending) {
@@ -600,7 +713,7 @@ export default function MergeCandidateReviewPage() {
             <div className="rounded-md border border-line bg-panel px-3 py-2">
               <dt className="text-xs text-ink-muted">Total</dt>
               <dd className="font-mono text-lg font-medium tabular-nums text-ink">
-                {candidates?.length ?? 0}
+                {totalCount}
               </dd>
             </div>
           </dl>
@@ -634,20 +747,13 @@ export default function MergeCandidateReviewPage() {
         </div>
 
         <QueuePanel
-          candidates={visibleCandidates}
+          candidatePage={candidatePage}
           isLoading={listLoading}
           isError={listError}
           error={listErrorObj}
           selectedId={selectedId}
           onSelect={handleSelect}
-          showApproved={showApproved}
-          onShowApprovedChange={setShowApproved}
-          hasHiddenApproved={
-            Boolean(candidates?.length) && !visibleCandidates?.length
-          }
-          sort={sort}
-          onSortChange={handleSortChange}
-          nameLoadProgress={nameLoadProgress}
+          viewState={viewState}
         />
       </div>
     </div>

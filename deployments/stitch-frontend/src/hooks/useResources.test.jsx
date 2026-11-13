@@ -9,6 +9,7 @@ import {
   useReviewMergeCandidate,
   useResource,
   useResourceDetail,
+  useResourceFilterOptions,
 } from "./useResources";
 
 function createWrapper() {
@@ -128,6 +129,65 @@ describe("read-hook enabled defaults", () => {
 
     await act(async () => {});
     expect(getResourceDetailSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("useResourceFilterOptions", () => {
+  const UNFILTERED = {
+    country: ["BRA", "CAN", "USA"],
+    field_status: ["producing", "shut-in"],
+  };
+  const FILTERED = {
+    country: ["CAN"],
+    field_status: ["producing"],
+  };
+
+  function hasSelection(filters = {}) {
+    return Object.values(filters).some((values) => values.length > 0);
+  }
+
+  function spyOnFilterOptions() {
+    return vi
+      .spyOn(apiModule, "getResourceFilterOptions")
+      .mockImplementation((_config, _fetcher, _endpoint, { filters } = {}) =>
+        Promise.resolve(hasSelection(filters) ? FILTERED : UNFILTERED),
+      );
+  }
+
+  it("keeps the unfiltered values for a field the user has selected in", async () => {
+    spyOnFilterOptions();
+    const { wrapper } = createWrapper();
+
+    const { result } = renderHook(
+      () =>
+        useResourceFilterOptions("oil-gas-fields", {
+          filters: { country: ["CAN"], field_status: [] },
+        }),
+      { wrapper },
+    );
+
+    await vi.waitFor(() =>
+      expect(result.current.data).toEqual({
+        country: UNFILTERED.country,
+        field_status: FILTERED.field_status,
+      }),
+    );
+  });
+
+  it("makes a single request while nothing is selected", async () => {
+    const spy = spyOnFilterOptions();
+    const { wrapper } = createWrapper();
+
+    const { result } = renderHook(
+      () =>
+        useResourceFilterOptions("oil-gas-fields", {
+          filters: { country: [], field_status: [] },
+        }),
+      { wrapper },
+    );
+    await vi.waitFor(() => expect(result.current.data).toEqual(UNFILTERED));
+
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 });
 

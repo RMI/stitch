@@ -12,6 +12,7 @@ React frontend application styled with Tailwind CSS and built with Vite.
 - [Testing](#testing)
 - [Queries](#queries)
 - [List view URLs](#list-view-urls)
+- [Merge review URLs](#merge-review-urls)
 - [Resource Detail View](#resource-detail-view)
 
 ## Tech Stack
@@ -37,7 +38,7 @@ stitch-frontend/
 │   ├── components/              # Shared UI components
 │   │   ├── FieldCard.jsx        # Field value card + FieldGrid layout
 │   │   ├── FilterBar.jsx        # Filter dropdown row + active chips
-│   │   ├── FilterDropdown.jsx   # Multi-select dropdown with counts
+│   │   ├── FilterDropdown.jsx   # Multi-select dropdown
 │   │   ├── ResourcesTable.jsx   # Sortable resources table
 │   │   ├── ResourcesView.jsx    # Resources list page section
 │   │   ├── ResourceView.jsx     # Single resource fetch section
@@ -214,6 +215,36 @@ Notes:
 - Filter _values_ are not checked against the API's allowed values: an unknown country or basin simply matches nothing, but an unknown `field_status` or `primary_hydrocarbon_group` is rejected by the API, so a hand-edited URL can show an error instead of an empty list.
 
 The schema lives in `src/config/listParams.js`.
+
+## Merge review URLs
+
+The Merge Review queue (`/merge-candidate-review`) encodes its view the same way, so a copied link opens the same page of the queue for everyone.
+
+| Param                    | Values                                                                           | Omitted when                  |
+| ------------------------ | -------------------------------------------------------------------------------- | ----------------------------- |
+| `page`                   | integer ≥ 1                                                                      | page 1                        |
+| `page_size`              | 10, 25, 50, 100                                                                  | 25                            |
+| `q`                      | free text                                                                        | empty                         |
+| `status`                 | `PENDING`, `APPROVED`, `DENIED` (repeat per value), `all`                        | only `PENDING` is selected    |
+| `sort_by` + `sort_order` | `created`, `reviewed_at` or `name`, with `asc` or `desc`; or `status` with `asc` | newest first (`created desc`) |
+
+Example — approved and denied candidates, most recently reviewed first, page 2:
+
+```
+/merge-candidate-review?page=2&status=APPROVED&status=DENIED&sort_by=reviewed_at&sort_order=desc
+```
+
+Notes:
+
+- The queue shows pending candidates by default, so a bare `/merge-candidate-review` is the review work still to do. Clearing every status in the Status filter shows all of them, written as `status=all`.
+- `q` finds a candidate when any of its resources matches the resources list search (name, local name, basin, state/province or region), or once approved, when its merged resource does. A number also matches the resource with that ID, so `q=2024` finds both "Block 2024" and resource 2024. That includes resources an approved candidate merged away, so searching an old resource ID finds the candidate that merged it. Leading zeros are ignored, so `q=0042` also finds resource 42. Candidate IDs are not searched.
+- Searching by name only reaches a candidate through resources that still exist. If a later approval merges them away (say, an approved candidate's merged field is merged again), that older candidate is found only by resource ID.
+- The page size is not remembered between visits, unlike the resources list.
+- The `name` sort orders the whole queue by each candidate's display name, as the API names it for you; candidates without a name come last.
+- The `status` sort (`sort_order=asc`) puts work still to do first: pending, then denied, then approved, newest first within each.
+- Unknown statuses are dropped, and a malformed `page`, `page_size` or sort falls back to its default. A `page` past the end steps back to the last page.
+
+The schema lives in `src/config/mergeReviewParams.js`.
 
 ## API
 
@@ -485,22 +516,13 @@ export function useMutateResource(id) {
 
 ## Filters
 
-The resources table supports multi-select filters with OR-within / AND-across logic (e.g. region = "Asia" OR "Europe", AND basin = "Arabian").
+The resources table supports multi-select filters with OR-within / AND-across logic (e.g. region = "Asia" OR "Europe", AND basin = "Arabian"). Selections are sent to the API as the list params described above; nothing is filtered in the browser.
 
-Filter fields are configured in one place:
+Dropdown options come from `GET /oil-gas-fields/filter-options`, which cascades. It returns only the values still reachable under the other active filters and the search term, so choosing a country narrows the state/province and basin lists. A field's own selection never narrows its own list, so you can always widen or change it. Options are requested from the settled (debounced) filters, so typing in the search box does not refetch them on every keystroke.
 
-```js
-// src/config/filters.js
-export const FILTER_FIELDS = [
-  { key: "region", label: "Region" },
-  { key: "state_province", label: "State/Province" },
-  { key: "basin", label: "Basin" },
-];
-```
+Filter fields are configured in `src/config/filters.js`. Add one by appending an entry to `FILTER_FIELDS`; the `key` must match the field name the API filters on.
 
-Add a new filter by appending an entry. The `key` must match the field name on the resource object. Option counts are computed statically from the full dataset on load.
-
-Active filter selections are displayed as removable chips beneath the dropdowns. Filters are applied client-side in `ResourcesView` via `applyFilters()`. This function is a pure utility designed to be lifted server-side when pagination is introduced.
+Active filter selections are displayed as removable chips beneath the dropdowns.
 
 ## Deployment: Azure Static Web Apps
 

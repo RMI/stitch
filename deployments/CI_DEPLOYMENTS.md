@@ -66,10 +66,10 @@ table schema stays uniform (the KQL in [`PERFORMANCE.md`](./PERFORMANCE.md) and
 the repo, so recreating an environment reverts it to `None` (a greyed-out Logs
 blade) — reconfigure it when that happens.
 
-### ETL pipelines (temporary POC wiring)
+### ETL pipelines (OGSI-specific)
 
 The single `etl` Container App is deployed from a pre-built image published by
-the separate `stitch-etl-poc` repository (`ghcr.io/rmi/stitch-etl-poc`). This
+the separate `stitch-etl-ogsi` repository (`ghcr.io/rmi/stitch-etl-ogsi`). This
 pipeline does **not** build it; it only deploys the tag named by the
 `ETL_IMAGE_TAG` variable (defaulting to `main`). The one app serves both
 datasets under `/api/v1/etl/gem/*` and `/api/v1/etl/wm/*`.
@@ -82,6 +82,9 @@ Seed and ETL are mutually exclusive per lane:
 
 - `development`: `seed` builds and runs; ETL deploy is skipped.
 - `staging` / `production`: ETL deploys; `seed` is skipped.
+
+A new `staging` database also starts as a copy of the newest production backup
+(see "Restoring from a backup" in `deployments/db/README.md`).
 
 Because the ETL image lives in another repo's GHCR, the Container App needs
 stored pull credentials. The ephemeral `GITHUB_TOKEN` cannot be used (it expires
@@ -291,7 +294,8 @@ The ETL wiring was consolidated from two apps (`etl-gem`, `etl-woodmac`, two
 images) to one (`etl`, one image). To migrate a lane safely:
 
 1. Merge the consolidation to `stitch-etl-poc` `main` first, so
-   `ghcr.io/rmi/stitch-etl-poc:main` is published before this repo references it.
+1. Merge the consolidation to `stitch-etl-ogsi` `main` first, so
+`ghcr.io/rmi/stitch-etl-ogsi:main` is published before this repo references it.
 2. On the lane's GitHub Environment, add `ETL_IMAGE_TAG` (`main`) and delete the
    old `ETL_GEM_IMAGE_TAG` / `ETL_WOODMAC_IMAGE_TAG` variables.
 3. Deploy this repo; confirm the new `<name>-etl` app is healthy
@@ -538,6 +542,10 @@ named:
   storage above).
 - `ETL_IMAGE_TAG` (example: `main`) — optional; consolidated ETL image tag to
   deploy, defaults to `main`. Only used on `staging` / `production`.
+- `RESTORE_AZURE_CLIENT_ID` (example: the client ID of `stitch-restore-identity`)
+  — the read-only identity `deploy-db` signs in as to restore a backup into a
+  new staging database. Only needed on `staging`. See "Restoring from a backup"
+  in `deployments/db/README.md`.
 
 The two frontend URLs together define the single CORS origin the API and
 stitch-llm services will accept for a given deployment, so
@@ -565,7 +573,7 @@ they have to match where the frontend actually lands:
   the app to boot (it validates every dataset at startup), so it must be set
   even though GEM does not use it. Only needed on `staging` / `production`.
 - `GHCR_ETL_PULL_TOKEN` — classic PAT with `read:packages` used to pull the ETL
-  image from the `stitch-etl-poc` GHCR. Only needed on `staging` /
+  image from the `stitch-etl-ogsi` GHCR. Only needed on `staging` /
   `production`.
 
 Current validation behavior:

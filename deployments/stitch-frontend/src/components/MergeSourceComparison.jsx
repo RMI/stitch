@@ -167,9 +167,9 @@ function ColumnHeader({ resourceId, sourceDetails, index }) {
 // The loaded layout with placeholders in the cells. Headers and field labels are
 // real: resourceIds is a prop and FIELD_META is static, so neither changes when
 // the data lands. The trailing bar stands in for the collapsed accordion summary.
-// Source mixes are real too once their own query has data -- usually already,
-// since the queue loads it for candidate names -- and the placeholder is the
-// same height, so showing them early causes no layout shift.
+// Source mixes are real too once their own query has data -- e.g. when
+// returning to a candidate whose details are cached -- and the placeholder is
+// the same height, so showing them early causes no layout shift.
 function ComparisonSkeleton({ resourceIds, sourceDetails }) {
   return (
     <div aria-hidden="true" className="space-y-4">

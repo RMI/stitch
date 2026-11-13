@@ -1,23 +1,35 @@
 """Integration tests for the merge-candidate endpoints (real SQLite)."""
 
 from collections.abc import Sequence
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from httpx import AsyncClient
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from stitch.auth import TokenClaims
-from stitch.auth.permissions import MERGE_CANDIDATE_CREATE, SOURCE_READ_GEM
+from stitch.auth.permissions import (
+    MERGE_CANDIDATE_CREATE,
+    MERGE_CANDIDATE_READ,
+    RESOURCE_READ,
+    SOURCE_READ_GEM,
+    SOURCE_READ_PREFIX,
+)
 
 from tests.factories import ResourceCreateFactory
 from stitch.api.auth import get_token_claims
 from stitch.api.db import link_actions
 from stitch.api.db.config import UnitOfWork
-from stitch.api.db.model import MembershipModel, OGFieldResourceSourcePriority
+from stitch.api.db.model import (
+    MembershipModel,
+    MergeCandidateModel,
+    OGFieldResourceSourcePriority,
+)
 from stitch.api.main import app
+from stitch.api.db.read_model.permissions import PUBLIC_SOURCES
 from stitch.ogsi.model import OGFieldResource, OGFieldSource
 
 
@@ -545,6 +557,507 @@ class TestMergeCandidateDetailIntegration:
         }
 
 
+async def _create_disjoint_candidates(
+    client: AsyncClient, fact: ResourceCreateFactory, count: int
+) -> list[int]:
+    """``count`` two-resource candidates sharing no resources, in creation order."""
+    candidate_ids = []
+    for i in range(count):
+        id_a = await _create_resource(client, fact, f"Field {i}")
+        id_b = await _create_resource(client, fact, f"Field {i} dup")
+        candidate_ids.append(await _create_candidate(client, [id_a, id_b]))
+    return candidate_ids
+
+
+class TestMergeCandidateListIntegration:
+    @pytest.mark.anyio
+    async def test_pages_are_stable_when_candidates_share_a_timestamp(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+        integration_session_factory: async_sessionmaker[AsyncSession],
+    ):
+        candidate_ids = await _create_disjoint_candidates(
+            integration_client, og_create_res_fact, 5
+        )
+        # Bulk creation can stamp many candidates with the same time; the id
+        # tiebreak must still give every candidate exactly one page.
+        async with integration_session_factory() as session:
+            await session.execute(
+                update(MergeCandidateModel).values(
+                    created=datetime(2026, 1, 1, tzinfo=timezone.utc)
+                )
+            )
+            await session.commit()
+
+        seen = []
+        for page in (1, 2, 3):
+            resp = await integration_client.get(
+                "/oil-gas-fields/merge-candidates",
+                params={"page": page, "page_size": 2},
+            )
+            assert resp.status_code == 200, resp.text
+            body = resp.json()
+            assert body["total_count"] == 5
+            assert body["total_pages"] == 3
+            seen.extend(item["id"] for item in body["items"])
+
+        assert seen == sorted(candidate_ids, reverse=True)
+
+    @pytest.mark.anyio
+    async def test_status_filter_narrows_items_but_not_counts(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        approved_id, denied_id, pending_id = await _create_disjoint_candidates(
+            integration_client, og_create_res_fact, 3
+        )
+        for candidate_id, action in ((approved_id, "approve"), (denied_id, "deny")):
+            resp = await integration_client.post(
+                f"/oil-gas-fields/merge-candidates/{candidate_id}/{action}"
+            )
+            assert resp.status_code == 200, resp.text
+
+        pending = await integration_client.get(
+            "/oil-gas-fields/merge-candidates", params={"status": "PENDING"}
+        )
+        assert pending.status_code == 200, pending.text
+        assert [item["id"] for item in pending.json()["items"]] == [pending_id]
+        assert pending.json()["total_count"] == 1
+        assert pending.json()["status_counts"] == {
+            "PENDING": 1,
+            "APPROVED": 1,
+            "DENIED": 1,
+        }
+
+        reviewed = await integration_client.get(
+            "/oil-gas-fields/merge-candidates",
+            params=[("status", "APPROVED"), ("status", "DENIED")],
+        )
+        assert {item["id"] for item in reviewed.json()["items"]} == {
+            approved_id,
+            denied_id,
+        }
+
+        unfiltered = await integration_client.get("/oil-gas-fields/merge-candidates")
+        assert unfiltered.json()["total_count"] == 3
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("sort_order", ["asc", "desc"])
+    async def test_sort_by_reviewed_at_puts_unreviewed_last(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+        sort_order: str,
+    ):
+        first, second, unreviewed = await _create_disjoint_candidates(
+            integration_client, og_create_res_fact, 3
+        )
+        for candidate_id in (first, second):
+            resp = await integration_client.post(
+                f"/oil-gas-fields/merge-candidates/{candidate_id}/deny"
+            )
+            assert resp.status_code == 200, resp.text
+
+        resp = await integration_client.get(
+            "/oil-gas-fields/merge-candidates",
+            params={"sort_by": "reviewed_at", "sort_order": sort_order},
+        )
+        assert resp.status_code == 200, resp.text
+        reviewed = [first, second] if sort_order == "asc" else [second, first]
+        assert [item["id"] for item in resp.json()["items"]] == [
+            *reviewed,
+            unreviewed,
+        ]
+
+    @pytest.mark.anyio
+    async def test_items_carry_display_names(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
+        candidate_id = await _create_candidate(integration_client, [id_a, id_b])
+
+        resp = await integration_client.get("/oil-gas-fields/merge-candidates")
+        assert resp.status_code == 200, resp.text
+        (item,) = resp.json()["items"]
+        # Same source on both resources: the tie goes to the first resource.
+        assert item["name"] == "Ghawar"
+        # Every status is counted, including ones with no candidates.
+        assert resp.json()["status_counts"] == {
+            "PENDING": 1,
+            "APPROVED": 0,
+            "DENIED": 0,
+        }
+
+        # The detail view names it the same way.
+        detail = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_id}"
+        )
+        assert detail.json()["name"] == "Ghawar"
+
+        # After approval the originals are emptied; the merged resource names it.
+        approve = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{candidate_id}/approve"
+        )
+        assert approve.status_code == 200, approve.text
+        resp = await integration_client.get("/oil-gas-fields/merge-candidates")
+        (item,) = resp.json()["items"]
+        assert item["name"] == "Ghawar"
+        detail = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_id}"
+        )
+        assert detail.json()["name"] == "Ghawar"
+
+    @pytest.mark.anyio
+    async def test_names_come_from_the_first_named_resource(
+        self,
+        integration_client: AsyncClient,
+        og_field_resource_factory,
+        source_maker,
+    ):
+        # Source rank doesn't matter: the first resource names the candidate,
+        # though rmi outranks gem.
+        id_gem = await _create_resource_with_sources(
+            integration_client,
+            og_field_resource_factory,
+            [source_maker(source="gem", managed=False, name="From GEM")],
+        )
+        id_rmi = await _create_resource_with_sources(
+            integration_client,
+            og_field_resource_factory,
+            [source_maker(source="rmi", managed=False, name="From RMI")],
+        )
+        candidate_id = await _create_candidate(integration_client, [id_gem, id_rmi])
+
+        resp = await integration_client.get("/oil-gas-fields/merge-candidates")
+        assert resp.status_code == 200, resp.text
+        (item,) = resp.json()["items"]
+        assert item["name"] == "From GEM"
+        detail = await integration_client.get(
+            f"/oil-gas-fields/merge-candidates/{candidate_id}"
+        )
+        assert detail.json()["name"] == "From GEM"
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("sort_order", "expected"),
+        [
+            ("asc", ["Burgan", "Ghawar", "Zubair"]),
+            ("desc", ["Zubair", "Ghawar", "Burgan"]),
+        ],
+    )
+    async def test_sorts_by_name_across_pages(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+        sort_order: str,
+        expected: list[str],
+    ):
+        # Created out of name order, so a created-order result can't pass.
+        for name in ["Ghawar", "Zubair", "Burgan"]:
+            first = await _create_resource(integration_client, og_create_res_fact, name)
+            second = await _create_resource(
+                integration_client, og_create_res_fact, f"{name} twin"
+            )
+            await _create_candidate(integration_client, [first, second])
+
+        names = []
+        for page in (1, 2):
+            resp = await integration_client.get(
+                "/oil-gas-fields/merge-candidates",
+                params={
+                    "sort_by": "name",
+                    "sort_order": sort_order,
+                    "page": page,
+                    "page_size": 2,
+                },
+            )
+            assert resp.status_code == 200, resp.text
+            names.extend(item["name"] for item in resp.json()["items"])
+
+        assert names == expected
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("sort_order", "expected"),
+        [
+            # Work still to do first; newest first within each status.
+            ("asc", ["newer pending", "older pending", "denied", "approved"]),
+            ("desc", ["approved", "denied", "newer pending", "older pending"]),
+        ],
+    )
+    async def test_sorts_by_status(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+        sort_order: str,
+        expected: list[str],
+    ):
+        ids = {}
+        # Created oldest first, so creation order alone can't pass.
+        for label in ["approved", "older pending", "denied", "newer pending"]:
+            first = await _create_resource(
+                integration_client, og_create_res_fact, label
+            )
+            second = await _create_resource(
+                integration_client, og_create_res_fact, f"{label} twin"
+            )
+            ids[label] = await _create_candidate(integration_client, [first, second])
+        for label, action in [("approved", "approve"), ("denied", "deny")]:
+            resp = await integration_client.post(
+                f"/oil-gas-fields/merge-candidates/{ids[label]}/{action}"
+            )
+            assert resp.status_code == 200, resp.text
+
+        resp = await integration_client.get(
+            "/oil-gas-fields/merge-candidates",
+            params={"sort_by": "status", "sort_order": sort_order},
+        )
+        assert resp.status_code == 200, resp.text
+        label_by_id = {candidate_id: label for label, candidate_id in ids.items()}
+        assert [label_by_id[item["id"]] for item in resp.json()["items"]] == expected
+
+    @pytest.mark.anyio
+    async def test_refuses_callers_the_read_model_cannot_serve(
+        self,
+        integration_client: AsyncClient,
+        og_create_res_fact: ResourceCreateFactory,
+    ):
+        """Names come from the field list's precomputed rows, which exist only
+        for exact permission profiles, so the queue refuses the same callers
+        the field list does."""
+        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
+        candidate_id = await _create_candidate(integration_client, [id_a, id_b])
+
+        # Missing every public source but gem.
+        app.dependency_overrides[get_token_claims] = lambda: TokenClaims(
+            sub="test|user-1",
+            permissions=frozenset({SOURCE_READ_GEM, MERGE_CANDIDATE_READ}),
+        )
+        for path in [
+            "/oil-gas-fields/merge-candidates",
+            f"/oil-gas-fields/merge-candidates/{candidate_id}",
+        ]:
+            resp = await integration_client.get(path)
+            assert resp.status_code == 403, resp.text
+            assert "missing read access to public source" in resp.json()["detail"]
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        "params",
+        [
+            {"status": "MAYBE"},
+            {"sort_by": "size"},
+            {"sort_order": "sideways"},
+            {"page": 0},
+            {"page_size": 201},
+        ],
+    )
+    async def test_rejects_invalid_params(
+        self, integration_client: AsyncClient, params: dict
+    ):
+        resp = await integration_client.get(
+            "/oil-gas-fields/merge-candidates", params=params
+        )
+        assert resp.status_code == 422, resp.text
+
+
+class TestMergeCandidateSearchIntegration:
+    """``q`` on the list: a candidate matches when any of its resources (or its
+    merged resource) matches the resource list's search, or a numeric ``q``
+    names one of those resources."""
+
+    @pytest.fixture
+    def make_resource(
+        self, integration_client, og_field_resource_factory, source_maker
+    ):
+        # The searchable fields default to blank, so only what a test sets can
+        # match (the factory would otherwise fill them with random text).
+        async def _make(*, source: str = "rmi", **fields) -> int:
+            searchable = {
+                "name_local": None,
+                "basin": None,
+                "state_province": None,
+                "region": None,
+            }
+            return await _create_resource_with_sources(
+                integration_client,
+                og_field_resource_factory,
+                [
+                    source_maker(
+                        source=source, managed=False, **{**searchable, **fields}
+                    )
+                ],
+            )
+
+        return _make
+
+    async def _search(self, client: AsyncClient, **params) -> list[int]:
+        resp = await client.get("/oil-gas-fields/merge-candidates", params=params)
+        assert resp.status_code == 200, resp.text
+        return [item["id"] for item in resp.json()["items"]]
+
+    @pytest.mark.anyio
+    async def test_matches_either_resource_by_name(
+        self, integration_client: AsyncClient, make_resource
+    ):
+        first = await make_resource(name="Zubair Main")
+        second = await make_resource(name="Zubayr Main")
+        candidate_id = await _create_candidate(integration_client, [first, second])
+        other = await _create_candidate(
+            integration_client,
+            [await make_resource(name="Ghawar"), await make_resource(name="Ghawar")],
+        )
+
+        # Case-insensitive substring, matching only the second resource.
+        assert await self._search(integration_client, q="zubayr") == [candidate_id]
+        assert await self._search(integration_client, q="Zub") == [candidate_id]
+        assert other not in await self._search(integration_client, q="zub")
+
+    @pytest.mark.anyio
+    async def test_matches_the_other_search_fields(
+        self, integration_client: AsyncClient, make_resource
+    ):
+        candidate_id = await _create_candidate(
+            integration_client,
+            [
+                await make_resource(name="Alpha", basin="Qwertian Basin"),
+                await make_resource(name="Alpha", region="Middle East"),
+            ],
+        )
+
+        assert await self._search(integration_client, q="qwertian") == [candidate_id]
+
+    @pytest.mark.anyio
+    async def test_finds_an_approved_candidate_by_its_merged_resource(
+        self, integration_client: AsyncClient, make_resource
+    ):
+        original = await make_resource(name="Safaniya")
+        candidate_id = await _create_candidate(
+            integration_client,
+            [original, await make_resource(name="Safaniya")],
+        )
+        approve = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{candidate_id}/approve"
+        )
+        assert approve.status_code == 200, approve.text
+
+        # The originals are emptied by the merge; only the merged resource
+        # still carries the name.
+        assert await self._search(integration_client, q="safaniya") == [candidate_id]
+        # By id, a merged-away original still finds the candidate that merged it.
+        assert await self._search(integration_client, q=str(original)) == [candidate_id]
+
+    @pytest.mark.anyio
+    async def test_numeric_q_matches_resource_ids(
+        self, integration_client: AsyncClient, make_resource
+    ):
+        target = await make_resource(name="Unrelated")
+        by_id = await _create_candidate(
+            integration_client, [target, await make_resource(name="Unrelated")]
+        )
+        await _create_candidate(
+            integration_client,
+            [await make_resource(name="Ghawar"), await make_resource(name="Ghawar")],
+        )
+
+        assert await self._search(integration_client, q=str(target)) == [by_id]
+        # Candidate ids are not searched: no resource has this id.
+        assert await self._search(integration_client, q="987654321") == []
+        # Too long to be an id; still searched as text, without erroring.
+        assert await self._search(integration_client, q="9" * 30) == []
+        # Past Python's int-conversion limit (4300 digits).
+        assert await self._search(integration_client, q="9" * 5000) == []
+        # Non-ASCII digits are text, not ids.
+        assert await self._search(integration_client, q="²") == []
+
+    @pytest.mark.anyio
+    async def test_numeric_q_also_matches_digits_in_text(
+        self, integration_client: AsyncClient, make_resource
+    ):
+        by_text = await _create_candidate(
+            integration_client,
+            [
+                await make_resource(name="Block 990077"),
+                await make_resource(name="Block 990077"),
+            ],
+        )
+
+        # Far above any resource id here, so only the name can match.
+        assert await self._search(integration_client, q="990077") == [by_text]
+
+    @pytest.mark.anyio
+    async def test_combines_with_status_and_leaves_counts_whole_queue(
+        self, integration_client: AsyncClient, make_resource
+    ):
+        pending = await _create_candidate(
+            integration_client,
+            [await make_resource(name="Rumaila"), await make_resource(name="Rumaila")],
+        )
+        denied = await _create_candidate(
+            integration_client,
+            [await make_resource(name="Rumaila"), await make_resource(name="Rumaila")],
+        )
+        await _create_candidate(
+            integration_client,
+            [await make_resource(name="Ghawar"), await make_resource(name="Ghawar")],
+        )
+        resp = await integration_client.post(
+            f"/oil-gas-fields/merge-candidates/{denied}/deny"
+        )
+        assert resp.status_code == 200, resp.text
+
+        resp = await integration_client.get(
+            "/oil-gas-fields/merge-candidates",
+            params={"q": "rumaila", "status": "PENDING"},
+        )
+        body = resp.json()
+        assert [item["id"] for item in body["items"]] == [pending]
+        assert body["total_count"] == 1
+        assert body["status_counts"] == {"PENDING": 2, "APPROVED": 0, "DENIED": 1}
+
+    @pytest.mark.anyio
+    async def test_blank_q_is_no_search(
+        self, integration_client: AsyncClient, make_resource
+    ):
+        candidate_id = await _create_candidate(
+            integration_client,
+            [await make_resource(name="Ghawar"), await make_resource(name="Ghawar")],
+        )
+
+        assert await self._search(integration_client, q="   ") == [candidate_id]
+
+    @pytest.mark.anyio
+    async def test_ignores_names_from_unlicensed_sources(
+        self, integration_client: AsyncClient, make_resource
+    ):
+        candidate_id = await _create_candidate(
+            integration_client,
+            [
+                await make_resource(source="wm", name="Wmonly Field"),
+                await make_resource(source="wm", name="Wmonly Field"),
+            ],
+        )
+        # With every source, the name matches, so only licensing hides it below.
+        assert await self._search(integration_client, q="wmonly") == [candidate_id]
+
+        # Public sources only: the read model serves this profile, without wm.
+        app.dependency_overrides[get_token_claims] = lambda: TokenClaims(
+            sub="test|public-only",
+            permissions=frozenset(
+                {RESOURCE_READ, MERGE_CANDIDATE_READ}
+                | {f"{SOURCE_READ_PREFIX}{source}" for source in PUBLIC_SOURCES}
+            ),
+        )
+
+        assert await self._search(integration_client, q="wmonly") == []
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     ("prior_candidates", "apply_merges", "expected_created", "expected_skipped"),
@@ -604,7 +1117,7 @@ async def test_link_all_counts_and_writes(
     listed = await integration_client.get("/oil-gas-fields/merge-candidates")
     assert listed.status_code == 200, listed.text
     assert {
-        frozenset(candidate["resource_ids"]) for candidate in listed.json()
+        frozenset(candidate["resource_ids"]) for candidate in listed.json()["items"]
     } == expected_persisted
 
 
@@ -634,7 +1147,7 @@ async def test_link_all_reports_a_failed_commit_instead_of_success(
 
     listed = await integration_client.get("/oil-gas-fields/merge-candidates")
     assert listed.status_code == 200, listed.text
-    assert listed.json() == []
+    assert listed.json()["items"] == []
 
 
 @pytest.mark.anyio
