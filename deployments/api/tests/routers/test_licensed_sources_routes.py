@@ -365,7 +365,7 @@ class TestOilGasFieldsLicensedSources:
             response = await client.get(path)
 
         assert response.status_code == 403
-        assert "a source the list can't serve yet" in response.json()["detail"]
+        assert "a source that isn't supported yet" in response.json()["detail"]
 
     @pytest.mark.anyio
     async def test_get_resource_redacts_unlicensed_source_data(

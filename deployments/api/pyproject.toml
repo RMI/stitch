@@ -7,9 +7,9 @@ authors = [{ name = "Michael Barlow", email = "mbarlow@rmi.org" }]
 requires-python = ">=3.12.12"
 dependencies = [
   "alembic>=1.19.1",
-  "fastapi[standard-no-fastapi-cloud-cli]>=0.141.1",
+  "fastapi[standard-no-fastapi-cloud-cli]>=0.162.0",
   "greenlet>=3.5.5",
-  "psycopg[binary]>=3.3.4",
+  "psycopg[binary]>=3.3.6",
   # opentelemetry-sdk stays: the API imports `opentelemetry.trace` directly
   # (request_logging) and its tests use opentelemetry.sdk. The OTLP exporter and
   # the FastAPI/SQLAlchemy instrumentors now come transitively via
@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.11.30,<0.12.0"]
+requires = ["uv_build>=0.13.6,<0.14.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
@@ -32,7 +32,7 @@ module-name = "stitch.api"
 
 [dependency-groups]
 dev = [
-  "pytest>=9.1.1",
+  "pytest>=9.2.0",
   "pytest-anyio>=0.0.0",
   "aiosqlite>=0.21.0",
   "httpx>=0.28.0",
