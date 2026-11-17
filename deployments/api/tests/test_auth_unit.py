@@ -9,6 +9,7 @@ from starlette.testclient import TestClient
 
 from stitch.api._auth import StaticAuthProvider, get_auth_provider
 from stitch.api._auth import TokenClaims as AuthTokenClaims
+from stitch.api._auth.impl import AuthSettings
 from stitch.api.auth import (
     get_token_claims,
     require_permissions,
@@ -40,6 +41,10 @@ def _make_oidc_settings(
     jwks_uri: str = "https://auth.example.com/jwks",
 ) -> OIDCSettings:
     return OIDCSettings(issuer=issuer, audience=audience, jwks_uri=jwks_uri)
+
+
+def _make_auth_settings() -> AuthSettings:
+    return AuthSettings(domain="example.us.auth0.com", audience="ex_aud")
 
 
 class TestValidateAuthConfigAtStartup:
@@ -103,11 +108,9 @@ class TestGetTokenClaims:
     def test_returns_dev_claims_when_disabled(self):
         """Returns _DEV_CLAIMS when auth is disabled."""
         settings = _make_settings(auth_disabled=True, environment="development")
-        oidc_settings = _make_oidc_settings()
 
         with (
-            patch("stitch.api.auth.get_settings", return_value=settings),
-            patch("stitch.api.auth.get_oidc_settings", return_value=oidc_settings),
+            patch("stitch.api._auth.impl.get_settings", return_value=settings),
         ):
             with TestClient(app) as client:
                 response = client.get("/api/v1/health")
@@ -212,7 +215,6 @@ class TestAuthMeEndpoint:
 
     def test_returns_existing_user_and_claims(self):
         settings = _make_settings(auth_disabled=False)
-        oidc_settings = _make_oidc_settings()
         claims = AuthTokenClaims(
             sub="auth0|claims-user",
             email="claims@example.com",
@@ -241,8 +243,11 @@ class TestAuthMeEndpoint:
         app.dependency_overrides[get_uow] = override_get_uow
 
         with (
-            patch("stitch.api.auth.get_settings", return_value=settings),
-            patch("stitch.api.auth.get_oidc_settings", return_value=oidc_settings),
+            patch("stitch.api._auth.impl.get_settings", return_value=settings),
+            patch(
+                "stitch.api._auth.impl.get_auth_settings",
+                return_value=_make_auth_settings(),
+            ),
         ):
             with TestClient(app) as client:
                 response = client.get("/api/v1/auth/me")
@@ -275,7 +280,6 @@ class TestAuthMeEndpoint:
 
     def test_returns_claims_when_user_not_in_table(self):
         settings = _make_settings(auth_disabled=False)
-        oidc_settings = _make_oidc_settings()
         claims = AuthTokenClaims(
             sub="auth0|claims-only",
             email=None,
@@ -298,8 +302,11 @@ class TestAuthMeEndpoint:
         app.dependency_overrides[get_uow] = override_get_uow
 
         with (
-            patch("stitch.api.auth.get_settings", return_value=settings),
-            patch("stitch.api.auth.get_oidc_settings", return_value=oidc_settings),
+            patch("stitch.api._auth.impl.get_settings", return_value=settings),
+            patch(
+                "stitch.api._auth.impl.get_auth_settings",
+                return_value=_make_auth_settings(),
+            ),
         ):
             with TestClient(app) as client:
                 response = client.get("/api/v1/auth/me")
