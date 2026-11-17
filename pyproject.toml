@@ -12,7 +12,6 @@ members = [
   "deployments/stitch-llm",
   "packages/stitch-auth",
   "packages/stitch-client",
-  "packages/stitch-models",
   "packages/stitch-observability",
   "packages/stitch-ogsi",
 ]

@@ -1,7 +1,7 @@
 """Smoke tests for stitch-ogsi compositional patterns.
 
 These tests verify that the domain-specific models compose correctly
-on top of stitch-models generics.  They also serve as usage examples.
+on top of the `stitch.core.models` generics.  They also serve as usage examples.
 """
 
 from __future__ import annotations
