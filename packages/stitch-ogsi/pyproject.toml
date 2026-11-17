@@ -6,9 +6,9 @@ readme = "README.md"
 authors = [{ name = "Michael Barlow", email = "mbarlow@rmi.org" }]
 requires-python = ">=3.12.12"
 dependencies = [
-    "pydantic>=2.12.5",
-    "pytest>=9.2.0",
-    "stitch-models",
+  "pydantic>=2.12.5",
+  "pytest>=9.2.0",
+  "rmi-stitch-core>=0.2.0.dev2,<0.3.0",
 ]
 
 [build-system]
@@ -17,9 +17,6 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-name = "stitch.ogsi"
-
-[tool.uv.sources]
-stitch-models = { workspace = true }
 
 [dependency-groups]
 dev = ["pytest>=9.2.0"]
