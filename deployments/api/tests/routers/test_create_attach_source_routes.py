@@ -7,16 +7,13 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from stitch.auth import TokenClaims
-from stitch.auth.permissions import (
+from stitch.api._auth import (
     RESOURCE_READ,
     RESOURCE_WRITE,
-    SOURCE_READ_GEM,
-    SOURCE_READ_LLM,
-    SOURCE_READ_RMI,
+    SOURCE_READ_PREFIX,
     SOURCE_WRITE,
+    TokenClaims,
 )
-
 from stitch.api.db.config import UnitOfWork, get_uow
 from stitch.api.db.model import (
     MembershipModel,
@@ -29,6 +26,10 @@ from stitch.api.entities import User
 from stitch.api.main import app
 from tests.auth_overrides import override_auth
 from tests.utils import make_source_model, make_source_record
+
+SOURCE_READ_GEM = f"{SOURCE_READ_PREFIX}gem"
+SOURCE_READ_LLM = f"{SOURCE_READ_PREFIX}llm"
+SOURCE_READ_RMI = f"{SOURCE_READ_PREFIX}rmi"
 
 
 def _writer_claims() -> TokenClaims:

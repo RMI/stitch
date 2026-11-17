@@ -1,8 +1,6 @@
-"""Tests for stitch.api.permissions.licensed_sources."""
+"""Tests for stitch.api._auth.licensed_sources."""
 
-from stitch.auth import TokenClaims
-
-from stitch.api.permissions import licensed_sources
+from stitch.api._auth import TokenClaims, licensed_sources
 
 
 def _claims(*permissions: str) -> TokenClaims:

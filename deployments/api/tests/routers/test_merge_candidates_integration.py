@@ -10,15 +10,13 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from stitch.auth.permissions import (
+from tests.factories import ResourceCreateFactory
+from stitch.api._auth import (
     MERGE_CANDIDATE_CREATE,
     MERGE_CANDIDATE_READ,
     RESOURCE_READ,
-    SOURCE_READ_GEM,
     SOURCE_READ_PREFIX,
 )
-
-from tests.factories import ResourceCreateFactory
 from stitch.api.db import link_actions
 from stitch.api.db.config import UnitOfWork
 from stitch.api.db.model import (
@@ -29,6 +27,8 @@ from stitch.api.db.model import (
 from stitch.api.db.read_model.permissions import PUBLIC_SOURCES
 from tests.auth_overrides import override_auth
 from stitch.ogsi.model import OGFieldResource, OGFieldSource
+
+SOURCE_READ_GEM = f"{SOURCE_READ_PREFIX}gem"
 
 
 async def _create_resource(

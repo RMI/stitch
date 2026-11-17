@@ -3,21 +3,22 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import AsyncClient
 
-from stitch.auth.permissions import (
+from stitch.api._auth import (
     MERGE_CANDIDATE_CREATE,
     MERGE_CANDIDATE_READ,
     MERGE_CANDIDATE_REVIEW,
     RESOURCE_READ,
     RESOURCE_WRITE,
-    SOURCE_READ_GEM,
     SOURCE_READ_PERMISSIONS,
+    SOURCE_READ_PREFIX,
     SOURCE_WRITE,
 )
-
 from stitch.api.db.config import get_uow
 from stitch.api.entities import MergeCandidatePage, MergeCandidateStatus
 from stitch.api.main import app
 from tests.auth_overrides import override_auth
+
+SOURCE_READ_GEM = f"{SOURCE_READ_PREFIX}gem"
 
 
 def _uow_override(mock_uow):

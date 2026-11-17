@@ -7,9 +7,11 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from stitch.auth import TokenClaims
-from stitch.auth.permissions import RESOURCE_READ, SOURCE_READ_GEM, SOURCE_READ_PREFIX
-
+from stitch.api._auth import (
+    RESOURCE_READ,
+    SOURCE_READ_PREFIX,
+    TokenClaims,
+)
 from stitch.api.db.config import UnitOfWork, get_uow
 from stitch.api.db.model import (
     MembershipModel,
@@ -25,6 +27,8 @@ from stitch.api.entities import User
 from stitch.api.main import app
 from tests.auth_overrides import override_auth
 from tests.utils import make_source_model, make_source_record
+
+SOURCE_READ_GEM = f"{SOURCE_READ_PREFIX}gem"
 
 
 def _gem_only_claims() -> TokenClaims:

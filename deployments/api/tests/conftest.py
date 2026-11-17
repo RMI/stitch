@@ -100,11 +100,8 @@ def reset_dependency_overrides():
     """Reset FastAPI dependency overrides and auth caches after each test."""
     yield
     app.dependency_overrides = {}
-    from stitch.api.auth import get_oidc_settings, get_jwt_validator
     from stitch.api.settings import get_settings
 
-    get_oidc_settings.cache_clear()
-    get_jwt_validator.cache_clear()
     _auth.get_auth_provider.cache_clear()
     get_settings.cache_clear()
 
