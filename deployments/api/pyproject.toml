@@ -20,6 +20,7 @@ dependencies = [
   "stitch-auth",
   "stitch-observability[asgi]",
   "stitch-ogsi",
+  "stitch-core-llm",
 ]
 
 [build-system]
@@ -49,3 +50,4 @@ addopts = ["-v", "--strict-markers", "--tb=short"]
 stitch-auth = { workspace = true }
 stitch-observability = { workspace = true }
 stitch-ogsi = { workspace = true }
+stitch-core-llm = { workspace = true }
