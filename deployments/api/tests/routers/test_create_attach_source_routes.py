@@ -28,6 +28,7 @@ from stitch.api.db.model import (
 )
 from stitch.api.entities import User
 from stitch.api.main import app
+from tests.auth_overrides import override_auth
 from tests.utils import make_source_model, make_source_record
 
 
@@ -73,6 +74,7 @@ async def writer_client(
     app.dependency_overrides[get_uow] = override_get_uow
     app.dependency_overrides[get_current_user] = override_get_current_user
     app.dependency_overrides[get_token_claims] = override_get_token_claims
+    override_auth(_writer_claims().permissions, integration_session_factory)
 
     async with AsyncClient(
         transport=ASGITransport(app=app),

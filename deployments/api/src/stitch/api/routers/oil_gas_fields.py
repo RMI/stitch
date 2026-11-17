@@ -2,15 +2,6 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from stitch.auth.permissions import (
-    MERGE_CANDIDATE_CREATE,
-    MERGE_CANDIDATE_READ,
-    MERGE_CANDIDATE_REVIEW,
-    RESOURCE_READ,
-    RESOURCE_WRITE,
-    SOURCE_READ_PERMISSIONS,
-    SOURCE_WRITE,
-)
 
 from stitch.api.entities import (
     LinkAllResponse,
@@ -38,12 +29,22 @@ from stitch.api.db.errors import (
     ResourceIntegrityError,
     SourceIntegrityError,
 )
-from stitch.api.auth import Claims, CurrentUser, require_permissions
+from stitch.api._auth import (
+    MERGE_CANDIDATE_CREATE,
+    MERGE_CANDIDATE_READ,
+    MERGE_CANDIDATE_REVIEW,
+    RESOURCE_READ,
+    RESOURCE_WRITE,
+    SOURCE_READ_PERMISSIONS,
+    SOURCE_WRITE,
+    AuthenticatedUser,
+    licensed_sources,
+    require_user,
+)
 from stitch.api.db.utils import (
     resource_to_view,
     resource_to_detail_view,
 )
-from stitch.api.permissions import licensed_sources
 
 from stitch.ogsi.model import (
     OGFieldDetailView,
@@ -67,18 +68,17 @@ router = APIRouter(
 )
 
 
-@router.get("/", dependencies=[Depends(require_permissions(RESOURCE_READ))])
+@router.get("/")
 async def get_all_resources(
     *,
     uow: UnitOfWorkDep,
-    _user: CurrentUser,
-    claims: Claims,
+    user: Annotated[AuthenticatedUser, Depends(require_user(RESOURCE_READ))],
     params: Annotated[OGFieldQueryParams, Query()],
 ) -> PaginatedResponse[OGFieldListItemView]:
     items, total_count = await resource_actions.query(
         session=uow.session,
         params=params,
-        licensed_sources=licensed_sources(claims),
+        licensed_sources=licensed_sources(user.claims),
     )
     return PaginatedResponse(
         items=items,
@@ -94,14 +94,13 @@ async def get_all_resources(
 async def get_resource_filter_options(
     *,
     uow: UnitOfWorkDep,
-    _user: CurrentUser,
-    claims: Claims,
+    user: Annotated[AuthenticatedUser, Depends(require_user())],
     params: Annotated[OGFieldFilterParams, Query()],
 ) -> OGFieldFilterOptionsResponse:
     opts = await resource_actions.filter_options(
         session=uow.session,
         params=params,
-        licensed_sources=licensed_sources(claims),
+        licensed_sources=licensed_sources(user.claims),
     )
     return OGFieldFilterOptionsResponse(**opts)
 
@@ -109,35 +108,35 @@ async def get_resource_filter_options(
 @router.get(
     "/merge-candidates",
     response_model=MergeCandidatePage,
-    dependencies=[Depends(require_permissions(MERGE_CANDIDATE_READ))],
 )
 async def list_merge_candidates(
     *,
     uow: UnitOfWorkDep,
-    _user: CurrentUser,
-    claims: Claims,
+    user: Annotated[AuthenticatedUser, Depends(require_user(MERGE_CANDIDATE_READ))],
     params: Annotated[MergeCandidateQueryParams, Query()],
 ) -> MergeCandidatePage:
     return await merge_candidate_actions.list_merge_candidates(
         session=uow.session,
         params=params,
-        licensed_sources=licensed_sources(claims),
+        licensed_sources=licensed_sources(user.claims),
     )
 
 
 @router.get(
     "/merge-candidates/{id}",
     response_model=MergeCandidateDetailView,
-    dependencies=[Depends(require_permissions(MERGE_CANDIDATE_READ))],
 )
 async def get_merge_candidate(
-    *, uow: UnitOfWorkDep, _user: CurrentUser, claims: Claims, id: int
+    *,
+    uow: UnitOfWorkDep,
+    user: Annotated[AuthenticatedUser, Depends(require_user(MERGE_CANDIDATE_READ))],
+    id: int,
 ) -> MergeCandidateDetailView:
     try:
         return await merge_candidate_actions.get_merge_candidate(
             session=uow.session,
             candidate_id=id,
-            licensed_sources=licensed_sources(claims),
+            licensed_sources=licensed_sources(user.claims),
         )
     except ResourceNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -146,12 +145,11 @@ async def get_merge_candidate(
 @router.post(
     "/merge-candidates",
     response_model=MergeCandidateView,
-    dependencies=[Depends(require_permissions(MERGE_CANDIDATE_CREATE))],
 )
 async def create_merge_candidate(
     *,
     uow: UnitOfWorkDep,
-    user: CurrentUser,
+    user: Annotated[AuthenticatedUser, Depends(require_user(MERGE_CANDIDATE_CREATE))],
     request: MergeCandidateCreateRequest,
 ) -> MergeCandidateView:
     logger.info(
@@ -187,19 +185,17 @@ async def create_merge_candidate(
 @router.post(
     "/merge-candidates/link-all",
     response_model=LinkAllResponse,
-    dependencies=[Depends(require_permissions(MERGE_CANDIDATE_CREATE))],
 )
 async def link_all_merge_candidates(
     *,
     uow: UnitOfWorkDep,
-    user: CurrentUser,
-    claims: Claims,
+    user: Annotated[AuthenticatedUser, Depends(require_user(MERGE_CANDIDATE_CREATE))],
     apply_merges: bool = True,
 ) -> LinkAllResponse:
     """Queue every group of duplicate resources for review."""
     groups = await link_actions.match(
         session=uow.session,
-        licensed_sources=licensed_sources(claims),
+        licensed_sources=licensed_sources(user.claims),
     )
     existing = await merge_candidate_actions.existing_candidate_resource_sets(
         session=uow.session
@@ -225,12 +221,11 @@ async def link_all_merge_candidates(
 @router.post(
     "/merge-candidates/{id}/approve",
     response_model=MergeCandidateView,
-    dependencies=[Depends(require_permissions(MERGE_CANDIDATE_REVIEW))],
 )
 async def approve_merge_candidate(
     *,
     uow: UnitOfWorkDep,
-    user: CurrentUser,
+    user: Annotated[AuthenticatedUser, Depends(require_user(MERGE_CANDIDATE_REVIEW))],
     id: int,
     request: MergeCandidateReviewRequest | None = None,
 ) -> MergeCandidateView:
@@ -258,12 +253,11 @@ async def approve_merge_candidate(
 @router.post(
     "/merge-candidates/{id}/deny",
     response_model=MergeCandidateView,
-    dependencies=[Depends(require_permissions(MERGE_CANDIDATE_REVIEW))],
 )
 async def deny_merge_candidate(
     *,
     uow: UnitOfWorkDep,
-    user: CurrentUser,
+    user: Annotated[AuthenticatedUser, Depends(require_user(MERGE_CANDIDATE_REVIEW))],
     id: int,
     request: MergeCandidateReviewRequest | None = None,
 ) -> MergeCandidateView:
@@ -297,13 +291,15 @@ def _requested_resource_id(requested_id: int, resolved: OGFieldResource) -> int 
 @router.get(
     "/{id}",
     response_model=OGFieldView,
-    dependencies=[Depends(require_permissions(RESOURCE_READ))],
 )
 async def get_resource(
-    *, uow: UnitOfWorkDep, user: CurrentUser, claims: Claims, id: int
+    *,
+    uow: UnitOfWorkDep,
+    user: Annotated[AuthenticatedUser, Depends(require_user(RESOURCE_READ))],
+    id: int,
 ) -> OGFieldView:
     res: OGFieldResource = await resource_actions.get_resolved(
-        session=uow.session, id=id, licensed_sources=licensed_sources(claims)
+        session=uow.session, id=id, licensed_sources=licensed_sources(user.claims)
     )
     return resource_to_view(
         resource=res, requested_resource_id=_requested_resource_id(id, res)
@@ -313,13 +309,15 @@ async def get_resource(
 @router.get(
     "/{id}/detail",
     response_model=OGFieldDetailView,
-    dependencies=[Depends(require_permissions(RESOURCE_READ))],
 )
 async def get_resource_detail(
-    *, uow: UnitOfWorkDep, user: CurrentUser, claims: Claims, id: int
+    *,
+    uow: UnitOfWorkDep,
+    user: Annotated[AuthenticatedUser, Depends(require_user(RESOURCE_READ))],
+    id: int,
 ) -> OGFieldDetailView:
     res: OGFieldResource = await resource_actions.get_resolved(
-        session=uow.session, id=id, licensed_sources=licensed_sources(claims)
+        session=uow.session, id=id, licensed_sources=licensed_sources(user.claims)
     )
     return resource_to_detail_view(
         resource=res, requested_resource_id=_requested_resource_id(id, res)
@@ -329,13 +327,11 @@ async def get_resource_detail(
 @router.get(
     "/{id}/fields/{field}/sources",
     response_model=list[OGFieldSourceValueView],
-    dependencies=[Depends(require_permissions(RESOURCE_READ))],
 )
 async def get_field_source_values(
     *,
     uow: UnitOfWorkDep,
-    user: CurrentUser,
-    claims: Claims,
+    user: Annotated[AuthenticatedUser, Depends(require_user(RESOURCE_READ))],
     id: int,
     field: OGFieldName,
 ) -> list[OGFieldSourceValueView]:
@@ -343,7 +339,7 @@ async def get_field_source_values(
         session=uow.session,
         id=id,
         field=field,
-        licensed_sources=licensed_sources(claims),
+        licensed_sources=licensed_sources(user.claims),
     )
 
 
@@ -355,15 +351,14 @@ async def get_field_source_values(
 @router.put(
     "/{id}/fields/{field}/sources/priority",
     response_model=list[OGFieldSourceValueView],
-    dependencies=[
-        Depends(require_permissions(RESOURCE_WRITE, *SOURCE_READ_PERMISSIONS))
-    ],
 )
 async def set_field_source_priority(
     *,
     uow: UnitOfWorkDep,
-    user: CurrentUser,
-    claims: Claims,
+    user: Annotated[
+        AuthenticatedUser,
+        Depends(require_user(RESOURCE_WRITE, *SOURCE_READ_PERMISSIONS)),
+    ],
     id: int,
     field: OGFieldName,
     request: SetFieldPriorityRequest,
@@ -375,7 +370,7 @@ async def set_field_source_priority(
             id=id,
             field=field,
             ordered_source_pks=request.ordered_source_pks,
-            licensed_sources=licensed_sources(claims),
+            licensed_sources=licensed_sources(user.claims),
         )
     except (InvalidActionError, ResourceIntegrityError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -399,10 +394,12 @@ async def set_field_source_priority(
 @router.post(
     "/",
     response_model=OGFieldResourceView,
-    dependencies=[Depends(require_permissions(RESOURCE_WRITE))],
 )
 async def create_resource(
-    *, uow: UnitOfWorkDep, user: CurrentUser, resource_in: OGFieldResource
+    *,
+    uow: UnitOfWorkDep,
+    user: Annotated[AuthenticatedUser, Depends(require_user(RESOURCE_WRITE))],
+    resource_in: OGFieldResource,
 ) -> OGFieldResourceView:
     return await resource_actions.create(
         session=uow.session, user=user, resource=resource_in
@@ -412,10 +409,15 @@ async def create_resource(
 @router.post(
     "/{id}/sources",
     response_model=OGFieldSourceView,
-    dependencies=[Depends(require_permissions(RESOURCE_WRITE, SOURCE_WRITE))],
 )
 async def create_and_attach_source(
-    *, uow: UnitOfWorkDep, user: CurrentUser, id: int, source: OGFieldSource
+    *,
+    uow: UnitOfWorkDep,
+    user: Annotated[
+        AuthenticatedUser, Depends(require_user(RESOURCE_WRITE, SOURCE_WRITE))
+    ],
+    id: int,
+    source: OGFieldSource,
 ) -> OGFieldSourceView:
     """Create a new source and attach it to resource ``id`` in one step.
 

@@ -20,10 +20,12 @@ from stitch.api.db.model import (
     StitchBase,
     UserModel,
 )
+from stitch.api import _auth
 from stitch.api.auth import get_current_user, get_token_claims
 from stitch.api.entities import User
 from stitch.api.main import app
 from stitch.api.settings import PostgresConfig, Settings, SqliteConfig, get_settings
+from .auth_overrides import override_auth
 from .factories import OGFieldBaseFactory, ResourceFactory
 from .utils import make_create_resource, make_resource, make_source
 
@@ -114,11 +116,15 @@ def reset_dependency_overrides():
 
     get_oidc_settings.cache_clear()
     get_jwt_validator.cache_clear()
+    _auth.get_auth_provider.cache_clear()
     get_settings.cache_clear()
 
 
 @pytest.fixture
-async def async_client(test_user: User) -> AsyncIterator[AsyncClient]:
+async def async_client(
+    test_user: User,
+    integration_session_factory: async_sessionmaker[AsyncSession],
+) -> AsyncIterator[AsyncClient]:
     """AsyncClient for testing FastAPI routes with mocked user."""
 
     def override_get_current_user() -> User:
@@ -129,6 +135,7 @@ async def async_client(test_user: User) -> AsyncIterator[AsyncClient]:
 
     app.dependency_overrides[get_current_user] = override_get_current_user
     app.dependency_overrides[get_token_claims] = override_get_token_claims
+    override_auth(_auth.ALL_PERMISSIONS, integration_session_factory)
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -226,6 +233,7 @@ async def integration_client(
     app.dependency_overrides[get_uow] = override_get_uow
     app.dependency_overrides[get_current_user] = override_get_current_user
     app.dependency_overrides[get_token_claims] = override_get_token_claims
+    override_auth(_auth.ALL_PERMISSIONS, integration_session_factory)
 
     async with AsyncClient(
         transport=ASGITransport(app=app),

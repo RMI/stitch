@@ -10,7 +10,6 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from stitch.auth import TokenClaims
 from stitch.auth.permissions import (
     MERGE_CANDIDATE_CREATE,
     MERGE_CANDIDATE_READ,
@@ -20,7 +19,6 @@ from stitch.auth.permissions import (
 )
 
 from tests.factories import ResourceCreateFactory
-from stitch.api.auth import get_token_claims
 from stitch.api.db import link_actions
 from stitch.api.db.config import UnitOfWork
 from stitch.api.db.model import (
@@ -28,8 +26,8 @@ from stitch.api.db.model import (
     MergeCandidateModel,
     OGFieldResourceSourcePriority,
 )
-from stitch.api.main import app
 from stitch.api.db.read_model.permissions import PUBLIC_SOURCES
+from tests.auth_overrides import override_auth
 from stitch.ogsi.model import OGFieldResource, OGFieldSource
 
 
@@ -825,6 +823,7 @@ class TestMergeCandidateListIntegration:
     async def test_refuses_callers_the_read_model_cannot_serve(
         self,
         integration_client: AsyncClient,
+        integration_session_factory: async_sessionmaker[AsyncSession],
         og_create_res_fact: ResourceCreateFactory,
     ):
         """Names come from the field list's precomputed rows, which exist only
@@ -835,9 +834,8 @@ class TestMergeCandidateListIntegration:
         candidate_id = await _create_candidate(integration_client, [id_a, id_b])
 
         # Missing every public source but gem.
-        app.dependency_overrides[get_token_claims] = lambda: TokenClaims(
-            sub="test|user-1",
-            permissions=frozenset({SOURCE_READ_GEM, MERGE_CANDIDATE_READ}),
+        override_auth(
+            {SOURCE_READ_GEM, MERGE_CANDIDATE_READ}, integration_session_factory
         )
         for path in [
             "/oil-gas-fields/merge-candidates",
@@ -1034,7 +1032,10 @@ class TestMergeCandidateSearchIntegration:
 
     @pytest.mark.anyio
     async def test_ignores_names_from_unlicensed_sources(
-        self, integration_client: AsyncClient, make_resource
+        self,
+        integration_client: AsyncClient,
+        integration_session_factory: async_sessionmaker[AsyncSession],
+        make_resource,
     ):
         candidate_id = await _create_candidate(
             integration_client,
@@ -1047,12 +1048,11 @@ class TestMergeCandidateSearchIntegration:
         assert await self._search(integration_client, q="wmonly") == [candidate_id]
 
         # Public sources only: the read model serves this profile, without wm.
-        app.dependency_overrides[get_token_claims] = lambda: TokenClaims(
+        override_auth(
+            {RESOURCE_READ, MERGE_CANDIDATE_READ}
+            | {f"{SOURCE_READ_PREFIX}{source}" for source in PUBLIC_SOURCES},
+            integration_session_factory,
             sub="test|public-only",
-            permissions=frozenset(
-                {RESOURCE_READ, MERGE_CANDIDATE_READ}
-                | {f"{SOURCE_READ_PREFIX}{source}" for source in PUBLIC_SOURCES}
-            ),
         )
 
         assert await self._search(integration_client, q="wmonly") == []
@@ -1153,10 +1153,10 @@ async def test_link_all_reports_a_failed_commit_instead_of_success(
 @pytest.mark.anyio
 async def test_link_all_matches_only_the_callers_licensed_sources(
     integration_client: AsyncClient,
+    integration_session_factory: async_sessionmaker[AsyncSession],
 ):
-    app.dependency_overrides[get_token_claims] = lambda: TokenClaims(
-        sub="test|user-1",
-        permissions=frozenset({SOURCE_READ_GEM, MERGE_CANDIDATE_CREATE}),
+    override_auth(
+        {SOURCE_READ_GEM, MERGE_CANDIDATE_CREATE}, integration_session_factory
     )
 
     with patch.object(link_actions, "match", autospec=True) as match:

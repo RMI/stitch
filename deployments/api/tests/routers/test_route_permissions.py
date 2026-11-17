@@ -19,6 +19,7 @@ from stitch.api.auth import get_token_claims
 from stitch.api.db.config import get_uow
 from stitch.api.entities import MergeCandidatePage, MergeCandidateStatus
 from stitch.api.main import app
+from tests.auth_overrides import override_auth
 
 
 def _claims(*permissions: str) -> TokenClaims:
@@ -127,6 +128,7 @@ def _source_payload() -> dict:
 )
 async def test_route_returns_403_when_required_permission_missing(
     async_client: AsyncClient,
+    integration_session_factory,
     mock_uow,
     method: str,
     path: str,
@@ -135,6 +137,7 @@ async def test_route_returns_403_when_required_permission_missing(
     json_body: dict | None,
 ):
     app.dependency_overrides[get_token_claims] = lambda: _claims(*permissions)
+    override_auth(permissions, integration_session_factory)
     app.dependency_overrides[get_uow] = _uow_override(mock_uow)
 
     response = await async_client.request(method, path, json=json_body)

@@ -19,11 +19,12 @@ from stitch.api.db.model import (
     ResourceModel,
     UserModel,
 )
-from stitch.api import permissions as api_permissions
+from stitch.api._auth import permissions as auth_permissions
 from stitch.api.db.read_model.permissions import PUBLIC_SOURCES
 from stitch.api.db.read_model.state import refresh_resource_states
 from stitch.api.entities import User
 from stitch.api.main import app
+from tests.auth_overrides import override_auth
 from tests.utils import make_source_model, make_source_record
 
 
@@ -78,6 +79,7 @@ async def client_with(
         app.dependency_overrides[get_uow] = override_get_uow
         app.dependency_overrides[get_current_user] = lambda: test_user
         app.dependency_overrides[get_token_claims] = lambda: claims
+        override_auth(permissions, integration_session_factory)
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test/api/v1"
         ) as ac:
@@ -110,6 +112,7 @@ async def gem_only_client(
     app.dependency_overrides[get_uow] = override_get_uow
     app.dependency_overrides[get_current_user] = override_get_current_user
     app.dependency_overrides[get_token_claims] = override_get_token_claims
+    override_auth(_gem_only_claims().permissions, integration_session_factory)
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -346,9 +349,9 @@ class TestOilGasFieldsLicensedSources:
         """A source added to the code but not yet classified as public or
         restricted (``read_model.permissions``) matches no stored profile."""
         monkeypatch.setattr(
-            api_permissions,
-            "_VALID_SOURCES",
-            api_permissions._VALID_SOURCES | {"foo"},
+            auth_permissions,
+            "SOURCE_READ_PERMISSIONS",
+            auth_permissions.SOURCE_READ_PERMISSIONS | {f"{SOURCE_READ_PREFIX}foo"},
         )
         await _seed_resource_with_sources(
             integration_session_factory,
