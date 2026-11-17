@@ -4,8 +4,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+from starlette.requests import Request
 from starlette.testclient import TestClient
 
+from stitch.api._auth import StaticAuthProvider, get_auth_provider
+from stitch.api._auth import TokenClaims as AuthTokenClaims
 from stitch.api.auth import (
     get_token_claims,
     require_permissions,
@@ -111,40 +114,33 @@ class TestGetTokenClaims:
 
             assert response.status_code == 200
 
-    def test_raises_401_missing_auth_header(self):
+    @pytest.mark.anyio
+    async def test_raises_401_missing_auth_header(self):
         """401 when no Authorization header and auth is enabled."""
         settings = _make_settings(auth_disabled=False)
-        oidc_settings = _make_oidc_settings()
+        request = Request({"type": "http", "headers": []})
 
-        with (
-            patch("stitch.api.auth.get_settings", return_value=settings),
-            patch("stitch.api.auth.get_oidc_settings", return_value=oidc_settings),
-        ):
-            with TestClient(app, raise_server_exceptions=False) as client:
-                response = client.get(
-                    "/api/v1/auth/me",
-                )
+        with patch("stitch.api.auth.get_settings", return_value=settings):
+            with pytest.raises(HTTPException) as exc_info:
+                await get_token_claims(request)
 
-            assert response.status_code == 401
-            assert response.json()["detail"] == "Missing Authorization header"
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "Missing Authorization header"
 
-    def test_raises_401_invalid_header_format(self):
+    @pytest.mark.anyio
+    async def test_raises_401_invalid_header_format(self):
         """401 for malformed Authorization header."""
         settings = _make_settings(auth_disabled=False)
-        oidc_settings = _make_oidc_settings()
+        request = Request(
+            {"type": "http", "headers": [(b"authorization", b"NotBearer sometoken")]}
+        )
 
-        with (
-            patch("stitch.api.auth.get_settings", return_value=settings),
-            patch("stitch.api.auth.get_oidc_settings", return_value=oidc_settings),
-        ):
-            with TestClient(app, raise_server_exceptions=False) as client:
-                response = client.get(
-                    "/api/v1/auth/me",
-                    headers={"Authorization": "NotBearer sometoken"},
-                )
+        with patch("stitch.api.auth.get_settings", return_value=settings):
+            with pytest.raises(HTTPException) as exc_info:
+                await get_token_claims(request)
 
-            assert response.status_code == 401
-            assert response.json()["detail"] == "Invalid Authorization header format"
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "Invalid Authorization header format"
 
 
 class TestRequirePermissions:
@@ -217,7 +213,7 @@ class TestAuthMeEndpoint:
     def test_returns_existing_user_and_claims(self):
         settings = _make_settings(auth_disabled=False)
         oidc_settings = _make_oidc_settings()
-        claims = TokenClaims(
+        claims = AuthTokenClaims(
             sub="auth0|claims-user",
             email="claims@example.com",
             name="Claims User",
@@ -231,9 +227,6 @@ class TestAuthMeEndpoint:
             name="Claims User",
         )
 
-        def override_get_token_claims() -> TokenClaims:
-            return claims
-
         result = MagicMock()
         result.scalar_one_or_none.return_value = user
         session = MagicMock()
@@ -244,7 +237,7 @@ class TestAuthMeEndpoint:
         async def override_get_uow():
             yield uow
 
-        app.dependency_overrides[get_token_claims] = override_get_token_claims
+        app.dependency_overrides[get_auth_provider] = lambda: StaticAuthProvider(claims)
         app.dependency_overrides[get_uow] = override_get_uow
 
         with (
@@ -283,16 +276,13 @@ class TestAuthMeEndpoint:
     def test_returns_claims_when_user_not_in_table(self):
         settings = _make_settings(auth_disabled=False)
         oidc_settings = _make_oidc_settings()
-        claims = TokenClaims(
+        claims = AuthTokenClaims(
             sub="auth0|claims-only",
             email=None,
             name=None,
             permissions=frozenset({RESOURCE_READ}),
             raw={"permissions": [RESOURCE_READ]},
         )
-
-        def override_get_token_claims() -> TokenClaims:
-            return claims
 
         result = MagicMock()
         result.scalar_one_or_none.return_value = None
@@ -304,7 +294,7 @@ class TestAuthMeEndpoint:
         async def override_get_uow():
             yield uow
 
-        app.dependency_overrides[get_token_claims] = override_get_token_claims
+        app.dependency_overrides[get_auth_provider] = lambda: StaticAuthProvider(claims)
         app.dependency_overrides[get_uow] = override_get_uow
 
         with (

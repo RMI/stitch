@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import AsyncClient
 
-from stitch.auth import TokenClaims
 from stitch.auth.permissions import (
     MERGE_CANDIDATE_CREATE,
     MERGE_CANDIDATE_READ,
@@ -15,15 +14,10 @@ from stitch.auth.permissions import (
     SOURCE_WRITE,
 )
 
-from stitch.api.auth import get_token_claims
 from stitch.api.db.config import get_uow
 from stitch.api.entities import MergeCandidatePage, MergeCandidateStatus
 from stitch.api.main import app
 from tests.auth_overrides import override_auth
-
-
-def _claims(*permissions: str) -> TokenClaims:
-    return TokenClaims(sub="test|user-1", permissions=frozenset(permissions))
 
 
 def _uow_override(mock_uow):
@@ -136,7 +130,6 @@ async def test_route_returns_403_when_required_permission_missing(
     missing_permission: str,
     json_body: dict | None,
 ):
-    app.dependency_overrides[get_token_claims] = lambda: _claims(*permissions)
     override_auth(permissions, integration_session_factory)
     app.dependency_overrides[get_uow] = _uow_override(mock_uow)
 
@@ -149,9 +142,10 @@ async def test_route_returns_403_when_required_permission_missing(
 @pytest.mark.anyio
 async def test_merge_candidate_read_permission_allows_list_route(
     async_client: AsyncClient,
+    integration_session_factory,
     mock_uow,
 ):
-    app.dependency_overrides[get_token_claims] = lambda: _claims(MERGE_CANDIDATE_READ)
+    override_auth({MERGE_CANDIDATE_READ}, integration_session_factory)
     app.dependency_overrides[get_uow] = _uow_override(mock_uow)
 
     with patch("stitch.api.routers.oil_gas_fields.merge_candidate_actions") as actions:

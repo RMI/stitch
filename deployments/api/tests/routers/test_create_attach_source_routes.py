@@ -17,7 +17,6 @@ from stitch.auth.permissions import (
     SOURCE_WRITE,
 )
 
-from stitch.api.auth import get_current_user, get_token_claims
 from stitch.api.db.config import UnitOfWork, get_uow
 from stitch.api.db.model import (
     MembershipModel,
@@ -65,15 +64,7 @@ async def writer_client(
         async with UnitOfWork(integration_session_factory) as uow:
             yield uow
 
-    def override_get_current_user() -> User:
-        return test_user
-
-    def override_get_token_claims() -> TokenClaims:
-        return _writer_claims()
-
     app.dependency_overrides[get_uow] = override_get_uow
-    app.dependency_overrides[get_current_user] = override_get_current_user
-    app.dependency_overrides[get_token_claims] = override_get_token_claims
     override_auth(_writer_claims().permissions, integration_session_factory)
 
     async with AsyncClient(

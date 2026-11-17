@@ -3,13 +3,14 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from stitch.auth.permissions import SOURCE_READ_PERMISSIONS, SOURCE_WRITE
 from stitch.ogsi.model import OGFieldSource, OGFieldSourceView
 
-from stitch.api.auth import (
-    Claims,
-    CurrentUser,
-    require_permissions,
+from stitch.api._auth import (
+    SOURCE_READ_ANY,
+    SOURCE_WRITE,
+    AuthenticatedUser,
+    licensed_sources,
+    require_user,
 )
 from stitch.api.db import og_field_source_actions
 from stitch.api.db.config import UnitOfWorkDep
@@ -18,7 +19,6 @@ from stitch.api.entities import (
     OGFieldQueryParams,
     PaginatedResponse,
 )
-from stitch.api.permissions import licensed_sources
 
 router = APIRouter(prefix="/oil-gas-field-sources", tags=["oil_gas_field_sources"])
 
@@ -26,13 +26,12 @@ router = APIRouter(prefix="/oil-gas-field-sources", tags=["oil_gas_field_sources
 @router.post(
     "/",
     response_model=OGFieldSourceView,
-    dependencies=[Depends(require_permissions(SOURCE_WRITE))],
     deprecated=True,
 )
 async def create_oil_gas_field_source(
     source: OGFieldSource,
     uow: UnitOfWorkDep,
-    user: CurrentUser,
+    user: Annotated[AuthenticatedUser, Depends(require_user(SOURCE_WRITE))],
 ) -> OGFieldSourceView:
     """Create and return a bare Oil & Gas Field Source. Does not create memberships or associated resource.
 
@@ -58,18 +57,16 @@ async def create_oil_gas_field_source(
 
 @router.get(
     "/",
-    dependencies=[Depends(require_permissions(*SOURCE_READ_PERMISSIONS, check="any"))],
 )
 async def query_oil_gas_field_sources(
     uow: UnitOfWorkDep,
-    user: CurrentUser,
-    claims: Claims,
+    user: Annotated[AuthenticatedUser, Depends(require_user(SOURCE_READ_ANY))],
     params: Annotated[OGFieldQueryParams, Query()],
 ) -> PaginatedResponse[OGFieldSourceView]:
     items, total_count = await og_field_source_actions.query(
         session=uow.session,
         params=params,
-        licensed_sources=licensed_sources(claims),
+        licensed_sources=licensed_sources(user.claims),
     )
     return PaginatedResponse(
         items=list(items),
@@ -82,16 +79,17 @@ async def query_oil_gas_field_sources(
 @router.get(
     "/{id}",
     response_model=OGFieldSourceView,
-    dependencies=[Depends(require_permissions(*SOURCE_READ_PERMISSIONS, check="any"))],
 )
 async def get_oil_gas_field(
-    id: int, uow: UnitOfWorkDep, user: CurrentUser, claims: Claims
+    id: int,
+    uow: UnitOfWorkDep,
+    user: Annotated[AuthenticatedUser, Depends(require_user(SOURCE_READ_ANY))],
 ) -> OGFieldSourceView:
     try:
         return await og_field_source_actions.get_source(
             session=uow.session,
             id=id,
-            licensed_sources=licensed_sources(claims),
+            licensed_sources=licensed_sources(user.claims),
         )
     except SourceNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -99,16 +97,17 @@ async def get_oil_gas_field(
 
 @router.get(
     "/{id}/detail",
-    dependencies=[Depends(require_permissions(*SOURCE_READ_PERMISSIONS, check="any"))],
 )
 async def get_oil_gas_field_detail(
-    id: int, uow: UnitOfWorkDep, user: CurrentUser, claims: Claims
+    id: int,
+    uow: UnitOfWorkDep,
+    user: Annotated[AuthenticatedUser, Depends(require_user(SOURCE_READ_ANY))],
 ) -> OGFieldSource:
     try:
         return await og_field_source_actions.get_source_detail(
             session=uow.session,
             id=id,
-            licensed_sources=licensed_sources(claims),
+            licensed_sources=licensed_sources(user.claims),
         )
     except SourceNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

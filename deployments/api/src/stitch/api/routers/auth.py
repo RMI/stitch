@@ -1,7 +1,9 @@
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 
-from stitch.api.auth import Claims
+from stitch.api._auth import TokenClaims, require_auth
 from stitch.api.db.config import UnitOfWorkDep
 from stitch.api.db.model.user import User as UserModel
 from stitch.api.entities import AuthMeView, TokenClaimsView
@@ -13,7 +15,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.get("/me", response_model=AuthMeView)
 async def get_auth_me(
     *,
-    claims: Claims,
+    claims: Annotated[TokenClaims, Depends(require_auth())],
     uow: UnitOfWorkDep,
 ) -> AuthMeView:
     user_model = (
