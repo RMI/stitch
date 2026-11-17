@@ -1,7 +1,7 @@
 from typing import ClassVar, Literal, get_args
 from pydantic import BaseModel, ConfigDict, Field
 
-from stitch.models.types import (
+from stitch.core.models import (
     CountryCodeAlpha3,
     Latitude,
     Longitude,

@@ -92,13 +92,6 @@ pkg-test-client:
 pkg-test-exact-client:
 	$(MAKE) uv-test-target-exact PKG=stitch-client TEST_PATH=packages/stitch-client
 
-pkg-build-models:
-	$(UV) build --package stitch-models
-pkg-test-models:
-	$(MAKE) uv-test-target PKG=stitch-models TEST_PATH=packages/stitch-models
-pkg-test-exact-models:
-	$(MAKE) uv-test-target-exact PKG=stitch-models TEST_PATH=packages/stitch-models
-
 pkg-build-ogsi:
 	$(UV) build --package stitch-ogsi
 pkg-test-ogsi:
