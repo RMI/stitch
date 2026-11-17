@@ -7,8 +7,6 @@ from fastapi import HTTPException
 from starlette.status import HTTP_404_NOT_FOUND
 from stitch.ogsi.model import OGFieldListItemView, OilGasFieldBase
 
-from stitch.api.db.config import get_uow
-from stitch.api.main import app
 
 from tests.factories import ResourceCreateFactory, SourceFactory
 
@@ -19,7 +17,7 @@ class TestGetResourceUnit:
     @pytest.mark.anyio
     async def test_returns_resource_when_found(
         self,
-        async_client,
+        client,
         mock_uow,
         og_res_fact: ResourceCreateFactory,
         source_maker: SourceFactory,
@@ -31,15 +29,10 @@ class TestGetResourceUnit:
             view=OilGasFieldBase(name="Found Resource", country="USA"),
         )
 
-        async def override_get_uow():
-            yield mock_uow
-
-        app.dependency_overrides[get_uow] = override_get_uow
-
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.get_resolved = AsyncMock(return_value=expected)
 
-            response = await async_client.get("/oil-gas-fields/42")
+            response = await client.get("/oil-gas-fields/42")
 
         assert response.status_code == 200
         view_data = response.json()
@@ -49,13 +42,8 @@ class TestGetResourceUnit:
         assert view_data["requested_resource_id"] is None
 
     @pytest.mark.anyio
-    async def test_returns_404_when_not_found(self, async_client, mock_uow):
+    async def test_returns_404_when_not_found(self, client, mock_uow):
         """GET /resources/{id} returns 404 when resource not found."""
-
-        async def override_get_uow():
-            yield mock_uow
-
-        app.dependency_overrides[get_uow] = override_get_uow
 
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.get_resolved = AsyncMock(
@@ -65,7 +53,7 @@ class TestGetResourceUnit:
                 )
             )
 
-            response = await async_client.get("/oil-gas-fields/999")
+            response = await client.get("/oil-gas-fields/999")
 
         assert response.status_code == 404
         assert "999" in response.json()["detail"]
@@ -77,7 +65,7 @@ class TestCreateResourceUnit:
     @pytest.mark.anyio
     async def test_creates_resource_with_user(
         self,
-        async_client,
+        client,
         mock_uow,
         test_user,
         og_res_fact: ResourceCreateFactory,
@@ -89,15 +77,10 @@ class TestCreateResourceUnit:
         in_src = source_maker(source="wm", name="New Resource")
         resource_in = og_res_fact(empty=True, source_data=[in_src])
 
-        async def override_get_uow():
-            yield mock_uow
-
-        app.dependency_overrides[get_uow] = override_get_uow
-
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.create = AsyncMock(return_value=expected)
 
-            response = await async_client.post(
+            response = await client.post(
                 "/oil-gas-fields/", json=resource_in.model_dump(mode="json")
             )
 
@@ -111,7 +94,7 @@ class TestCreateResourceUnit:
     @pytest.mark.anyio
     async def test_returns_created_resource(
         self,
-        async_client,
+        client,
         mock_uow,
         source_maker: SourceFactory,
         og_res_fact: ResourceCreateFactory,
@@ -122,15 +105,10 @@ class TestCreateResourceUnit:
         src_in = source_maker(managed=False, source="wm", name="Created Resource")
         resource_in = og_res_fact(empty=True, source_data=[src_in])
 
-        async def override_get_uow():
-            yield mock_uow
-
-        app.dependency_overrides[get_uow] = override_get_uow
-
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.create = AsyncMock(return_value=expected)
 
-            response = await async_client.post(
+            response = await client.post(
                 "/oil-gas-fields/", json=resource_in.model_dump(mode="json")
             )
 
@@ -143,15 +121,10 @@ class TestCreateResourceUnit:
         assert "source_record" not in source_data[0]
 
     @pytest.mark.anyio
-    async def test_validates_request_body(self, async_client, mock_uow):
+    async def test_validates_request_body(self, client, mock_uow):
         """POST /resources/ returns 422 for invalid request body with bad source_data."""
 
-        async def override_get_uow():
-            yield mock_uow
-
-        app.dependency_overrides[get_uow] = override_get_uow
-
-        response = await async_client.post("/oil-gas-fields/", json={"label": 123})
+        response = await client.post("/oil-gas-fields/", json={"label": 123})
 
         assert response.status_code == 422
 
@@ -162,7 +135,7 @@ class TestGetAllResourcesUnit:
     @pytest.mark.anyio
     async def test_returns_paginated_response(
         self,
-        async_client,
+        client,
         mock_uow,
     ):
         """GET /oil-gas-fields/ returns envelope with items and metadata."""
@@ -175,15 +148,10 @@ class TestGetAllResourcesUnit:
             for i in range(10, 13)
         ]
 
-        async def override_get_uow():
-            yield mock_uow
-
-        app.dependency_overrides[get_uow] = override_get_uow
-
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.query = AsyncMock(return_value=(list_items, 3))
 
-            response = await async_client.get("/oil-gas-fields/")
+            response = await client.get("/oil-gas-fields/")
 
         assert response.status_code == 200
         data = response.json()
@@ -195,20 +163,15 @@ class TestGetAllResourcesUnit:
     @pytest.mark.anyio
     async def test_passes_pagination_params(
         self,
-        async_client,
+        client,
         mock_uow,
     ):
         """GET /oil-gas-fields/?page=2&page_size=10 passes params to query."""
 
-        async def override_get_uow():
-            yield mock_uow
-
-        app.dependency_overrides[get_uow] = override_get_uow
-
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.query = AsyncMock(return_value=([], 0))
 
-            response = await async_client.get("/oil-gas-fields/?page=2&page_size=10")
+            response = await client.get("/oil-gas-fields/?page=2&page_size=10")
 
         assert response.status_code == 200
         mock_repo.query.assert_awaited_once()
@@ -222,38 +185,24 @@ class TestListResourcesMultiValueFiltersUnit:
     """A repeated filter param must reach the query as every value, not the last."""
 
     @pytest.mark.anyio
-    async def test_repeated_filter_param_keeps_every_value(
-        self, async_client, mock_uow
-    ):
-        async def override_get_uow():
-            yield mock_uow
-
-        app.dependency_overrides[get_uow] = override_get_uow
-
+    async def test_repeated_filter_param_keeps_every_value(self, client, mock_uow):
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.query = AsyncMock(return_value=([], 0))
 
-            response = await async_client.get(
-                "/oil-gas-fields/?country=NOR&country=SAU"
-            )
+            response = await client.get("/oil-gas-fields/?country=NOR&country=SAU")
 
         assert response.status_code == 200
         params = mock_repo.query.call_args.kwargs["params"]
         assert params.country == ["NOR", "SAU"]
 
     @pytest.mark.anyio
-    async def test_single_filter_param_still_works(self, async_client, mock_uow):
+    async def test_single_filter_param_still_works(self, client, mock_uow):
         """Old single-valued URLs and bookmarks keep working."""
-
-        async def override_get_uow():
-            yield mock_uow
-
-        app.dependency_overrides[get_uow] = override_get_uow
 
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.query = AsyncMock(return_value=([], 0))
 
-            response = await async_client.get("/oil-gas-fields/?country=NOR")
+            response = await client.get("/oil-gas-fields/?country=NOR")
 
         assert response.status_code == 200
         assert mock_repo.query.call_args.kwargs["params"].country == ["NOR"]
@@ -263,12 +212,7 @@ class TestGetResourceFilterOptionsUnit:
     """Unit tests for GET /oil-gas-fields/filter-options endpoint."""
 
     @pytest.mark.anyio
-    async def test_returns_filter_options(self, async_client, mock_uow):
-        async def override_get_uow():
-            yield mock_uow
-
-        app.dependency_overrides[get_uow] = override_get_uow
-
+    async def test_returns_filter_options(self, client, mock_uow):
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.filter_options = AsyncMock(
                 return_value=dict(
@@ -281,7 +225,7 @@ class TestGetResourceFilterOptionsUnit:
                 )
             )
 
-            response = await async_client.get("/oil-gas-fields/filter-options")
+            response = await client.get("/oil-gas-fields/filter-options")
 
         assert response.status_code == 200
         assert response.json() == {
@@ -296,14 +240,9 @@ class TestGetResourceFilterOptionsUnit:
     @pytest.mark.anyio
     async def test_passes_licensed_sources(
         self,
-        async_client,
+        client,
         mock_uow,
     ):
-        async def override_get_uow():
-            yield mock_uow
-
-        app.dependency_overrides[get_uow] = override_get_uow
-
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.filter_options = AsyncMock(
                 return_value=dict(
@@ -316,7 +255,7 @@ class TestGetResourceFilterOptionsUnit:
                 )
             )
 
-            response = await async_client.get("/oil-gas-fields/filter-options")
+            response = await client.get("/oil-gas-fields/filter-options")
 
         assert response.status_code == 200
         mock_repo.filter_options.assert_awaited_once()
@@ -326,13 +265,8 @@ class TestGetResourceFilterOptionsUnit:
         )
 
     @pytest.mark.anyio
-    async def test_passes_filter_params(self, async_client, mock_uow):
+    async def test_passes_filter_params(self, client, mock_uow):
         """The current selections reach the action, so options can cascade."""
-
-        async def override_get_uow():
-            yield mock_uow
-
-        app.dependency_overrides[get_uow] = override_get_uow
 
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.filter_options = AsyncMock(
@@ -346,7 +280,7 @@ class TestGetResourceFilterOptionsUnit:
                 )
             )
 
-            response = await async_client.get(
+            response = await client.get(
                 "/oil-gas-fields/filter-options"
                 "?country=NOR&country=SAU&state_province=Alberta&q=ghawar"
             )
@@ -358,13 +292,8 @@ class TestGetResourceFilterOptionsUnit:
         assert params.q == "ghawar"
 
     @pytest.mark.anyio
-    async def test_no_query_string_still_works(self, async_client, mock_uow):
+    async def test_no_query_string_still_works(self, client, mock_uow):
         """Every param is optional: callers that send none are unaffected."""
-
-        async def override_get_uow():
-            yield mock_uow
-
-        app.dependency_overrides[get_uow] = override_get_uow
 
         with patch("stitch.api.routers.oil_gas_fields.resource_actions") as mock_repo:
             mock_repo.filter_options = AsyncMock(
@@ -378,7 +307,7 @@ class TestGetResourceFilterOptionsUnit:
                 )
             )
 
-            response = await async_client.get("/oil-gas-fields/filter-options")
+            response = await client.get("/oil-gas-fields/filter-options")
 
         assert response.status_code == 200
         params = mock_repo.filter_options.call_args.kwargs["params"]

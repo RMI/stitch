@@ -5,8 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from stitch.ogsi.model import GemSource
 
-from stitch.api.db.config import get_uow
-from stitch.api.main import app
+from stitch.api.db.errors import SourceNotFoundError
 from tests.utils import make_source_record
 
 
@@ -14,18 +13,13 @@ class TestQuerySourcesUnit:
     """Unit tests for GET /oil-gas-field-sources/ paginated endpoint."""
 
     @pytest.mark.anyio
-    async def test_returns_paginated_response(self, async_client, mock_uow):
-        async def override_get_uow():
-            yield mock_uow
-
-        app.dependency_overrides[get_uow] = override_get_uow
-
+    async def test_returns_paginated_response(self, client, mock_uow):
         with patch(
             "stitch.api.routers.oil_gas_field_sources.og_field_source_actions"
         ) as mock_repo:
             mock_repo.query = AsyncMock(return_value=([], 0))
 
-            response = await async_client.get("/oil-gas-field-sources/")
+            response = await client.get("/oil-gas-field-sources/")
 
         assert response.status_code == 200
         data = response.json()
@@ -37,12 +31,7 @@ class TestQuerySourcesUnit:
 
 class TestSourceDetailUnit:
     @pytest.mark.anyio
-    async def test_get_detail_returns_source_record(self, async_client, mock_uow):
-        async def override_get_uow():
-            yield mock_uow
-
-        app.dependency_overrides[get_uow] = override_get_uow
-
+    async def test_get_detail_returns_source_record(self, client, mock_uow):
         source = GemSource(
             id=1,
             name="Alpha",
@@ -55,23 +44,38 @@ class TestSourceDetailUnit:
         ) as mock_repo:
             mock_repo.get_source_detail = AsyncMock(return_value=source)
 
-            response = await async_client.get("/oil-gas-field-sources/1/detail")
+            response = await client.get("/oil-gas-field-sources/1/detail")
 
         assert response.status_code == 200
         data = response.json()
         assert data["source"] == "gem"
         assert data["source_record"]["producer"] == "test-producer"
 
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("path", "action"),
+        [
+            ("/oil-gas-field-sources/1", "get_source"),
+            ("/oil-gas-field-sources/1/detail", "get_source_detail"),
+        ],
+    )
+    async def test_hidden_or_missing_source_returns_404(
+        self, client, mock_uow, path, action
+    ):
+        with patch(
+            "stitch.api.routers.oil_gas_field_sources.og_field_source_actions"
+        ) as mock_repo:
+            setattr(mock_repo, action, AsyncMock(side_effect=SourceNotFoundError("x")))
+
+            response = await client.get(path)
+
+        assert response.status_code == 404
+
 
 class TestCreateSourceUnit:
     @pytest.mark.anyio
-    async def test_create_rejects_missing_source_record(self, async_client, mock_uow):
-        async def override_get_uow():
-            yield mock_uow
-
-        app.dependency_overrides[get_uow] = override_get_uow
-
-        response = await async_client.post(
+    async def test_create_rejects_missing_source_record(self, client, mock_uow):
+        response = await client.post(
             "/oil-gas-field-sources/",
             json={
                 "source": "gem",

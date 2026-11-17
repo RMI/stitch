@@ -6,6 +6,7 @@ from sqlalchemy import event, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from stitch.api.db import merge_candidate_actions
 from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db.errors import (
     InvalidActionError,
@@ -19,10 +20,15 @@ from stitch.api.db.model import (
     OilGasFieldSourceValueModel,
     ResourceModel,
 )
-from stitch.api.db.read_model.permissions import PROFILES
+from stitch.api.db.read_model.permissions import (
+    PERMISSION_MASKS,
+    PROFILES,
+    PUBLIC_SOURCES,
+)
 from stitch.api.db.read_model.state import refresh_resource_states
 from stitch.api.entities import (
     FILTER_OPTION_FIELDS,
+    MergeCandidateQueryParams,
     OGFieldFilterParams,
     OGFieldQueryParams,
     User,
@@ -2045,6 +2051,7 @@ class TestResourceDetailCoalescing:
 
         assert result.view.name == "GEM Name"
         assert result.provenance["name"][1] == "gem"
+        assert {s.source for s in result.source_data} == {"gem"}
 
     @pytest.mark.anyio
     async def test_json_owners_operators_coalesced_in_detail(
@@ -2359,3 +2366,49 @@ class TestMembershipUniqueness:
 
         [target] = await self._memberships(session, merged.id, pk)
         assert target.status == MembershipStatus.ACTIVE
+
+
+class TestProfileMask:
+    """Callers must hold exactly one stored read-model profile."""
+
+    @pytest.mark.parametrize(
+        ("sources", "reason"),
+        [
+            (frozenset(), "missing read access to public source"),
+            (PUBLIC_SOURCES - {"rmi"}, "missing read access to public source"),
+            (PUBLIC_SOURCES | {"foo"}, "a source that isn't supported yet"),
+        ],
+    )
+    def test_refuses_callers_without_a_profile(self, sources, reason):
+        with pytest.raises(HTTPException) as exc_info:
+            resource_actions.profile_mask(sources)
+        assert exc_info.value.status_code == 403
+        assert reason in exc_info.value.detail
+
+    @pytest.mark.parametrize("mask", PERMISSION_MASKS)
+    def test_accepts_each_stored_profile(self, mask):
+        assert resource_actions.profile_mask(PROFILES[mask]) == mask
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda s, src: resource_actions.query(s, _QueryParams(), src),
+            lambda s, src: resource_actions.filter_options(
+                s, OGFieldFilterParams(), src
+            ),
+            lambda s, src: merge_candidate_actions.list_merge_candidates(
+                s, MergeCandidateQueryParams(), licensed_sources=src
+            ),
+            lambda s, src: merge_candidate_actions.get_merge_candidate(
+                s, 1, licensed_sources=src
+            ),
+        ],
+        ids=["query", "filter_options", "list_merge_candidates", "get_merge_candidate"],
+    )
+    async def test_read_model_actions_refuse_callers_without_a_profile(
+        self, seeded_integration_session: AsyncSession, call
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await call(seeded_integration_session, frozenset({"gem"}))
+        assert exc_info.value.status_code == 403
