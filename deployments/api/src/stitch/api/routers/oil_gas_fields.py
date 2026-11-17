@@ -1,7 +1,38 @@
 import logging
 from typing import Annotated
 
+import stitch.api.llm as llm
 from fastapi import APIRouter, Depends, HTTPException, Query
+from stitch.api.auth import Claims, CurrentUser, require_permissions
+from stitch.api.db import link_actions, merge_candidate_actions, og_field_source_actions
+from stitch.api.db import og_field_resource_actions as resource_actions
+from stitch.api.db.config import UnitOfWorkDep
+from stitch.api.db.errors import (
+    InvalidActionError,
+    ResourceIntegrityError,
+    ResourceNotFoundError,
+    SourceIntegrityError,
+)
+from stitch.api.db.utils import (
+    resource_to_detail_view,
+    resource_to_view,
+)
+from stitch.api.entities import (
+    LinkAllResponse,
+    MergeCandidateCreateRequest,
+    MergeCandidateDetailView,
+    MergeCandidatePage,
+    MergeCandidateQueryParams,
+    MergeCandidateReviewRequest,
+    MergeCandidateView,
+    OGFieldFilterOptionsResponse,
+    OGFieldFilterParams,
+    OGFieldQueryParams,
+    PaginatedResponse,
+    SetFieldPriorityRequest,
+)
+from stitch.api.permissions import licensed_sources
+from stitch.auth import SERVICE_LLM_SUGGEST
 from stitch.auth.permissions import (
     MERGE_CANDIDATE_CREATE,
     MERGE_CANDIDATE_READ,
@@ -11,40 +42,6 @@ from stitch.auth.permissions import (
     SOURCE_READ_PERMISSIONS,
     SOURCE_WRITE,
 )
-
-from stitch.api.entities import (
-    LinkAllResponse,
-    OGFieldFilterOptionsResponse,
-    MergeCandidateCreateRequest,
-    MergeCandidateDetailView,
-    MergeCandidatePage,
-    MergeCandidateQueryParams,
-    MergeCandidateReviewRequest,
-    MergeCandidateView,
-    OGFieldFilterParams,
-    OGFieldQueryParams,
-    PaginatedResponse,
-    SetFieldPriorityRequest,
-)
-
-from stitch.api.db import link_actions
-from stitch.api.db import og_field_resource_actions as resource_actions
-from stitch.api.db import merge_candidate_actions
-from stitch.api.db import og_field_source_actions
-from stitch.api.db.config import UnitOfWorkDep
-from stitch.api.db.errors import (
-    InvalidActionError,
-    ResourceNotFoundError,
-    ResourceIntegrityError,
-    SourceIntegrityError,
-)
-from stitch.api.auth import Claims, CurrentUser, require_permissions
-from stitch.api.db.utils import (
-    resource_to_view,
-    resource_to_detail_view,
-)
-from stitch.api.permissions import licensed_sources
-
 from stitch.ogsi.model import (
     OGFieldDetailView,
     OGFieldListItemView,
@@ -56,7 +53,13 @@ from stitch.ogsi.model import (
     OGFieldSourceView,
     OGFieldView,
 )
-
+from stitch_core_llm.errors import (
+    AzureResponsesError,
+    LLMConfigurationError,
+    ModelOutputError,
+)
+from stitch_core_llm.model import FieldSuggestion
+from stitch_core_llm.typings import AllowedSuggestionField
 
 logger = logging.getLogger(__name__)
 
@@ -324,6 +327,38 @@ async def get_resource_detail(
     return resource_to_detail_view(
         resource=res, requested_resource_id=_requested_resource_id(id, res)
     )
+
+
+@router.get(
+    "/{id}/suggest",
+    response_model=FieldSuggestion,
+    dependencies=[Depends(require_permissions(RESOURCE_READ, SERVICE_LLM_SUGGEST))],
+)
+async def suggest_field_value(
+    *,
+    uow: UnitOfWorkDep,
+    user: CurrentUser,
+    claims: Claims,
+    id: int,
+    field: Annotated[AllowedSuggestionField, Query()],
+) -> FieldSuggestion:
+    try:
+        suggestions = await llm.og_suggest_missing_field_values(
+            session=uow.session,
+            resource_id=id,
+            fields=[field],
+            licensed_sources=licensed_sources(claims),
+        )
+    except LLMConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except (AzureResponsesError, ModelOutputError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    if not suggestions:
+        raise HTTPException(
+            status_code=404, detail=f"`{field}` already has a value on this resource."
+        )
+    return suggestions[0]
 
 
 @router.get(
