@@ -21,6 +21,7 @@ dependencies = [
   "stitch-models",
   "stitch-observability[asgi]",
   "stitch-ogsi",
+  "auth0-fastapi-api>=1.0.0b9",
 ]
 
 [build-system]
