@@ -2,7 +2,6 @@ import asyncio
 from collections.abc import Collection
 from datetime import datetime, UTC
 from pydantic import ValidationError
-from pydantic.fields import FieldInfo
 import json
 from functools import lru_cache
 
@@ -41,14 +40,13 @@ async def _suggest(
     field: str,
     detail_view: AISuggestable,
     observed_at: datetime,
-    info: dict[str, FieldInfo] | None = None,
 ) -> FieldSuggestion:
-    description = info[field].description if info is not None else field
+    field_info = type(detail_view.data).model_fields[field]
+    description = field_info.description or field
     coalesced = json.dumps(detail_view.data.model_dump(mode="json"))
     sources = json.dumps(
         [source.model_dump(mode="json") for source in detail_view.source_data]
     )
-    field_info = type(detail_view.data).model_fields[field]
     try:
         response = await client.responses.parse(
             model=get_llm_settings().azure_openai_model or "",

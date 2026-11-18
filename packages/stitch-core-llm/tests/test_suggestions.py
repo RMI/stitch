@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 import pytest
 from openai import AsyncOpenAI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import stitch_core_llm
 from stitch_core_llm import (
@@ -32,7 +32,7 @@ AZURE_ENV_VARS = (
 
 class Record(BaseModel):
     name: str | None = None
-    basin: str | None = None
+    basin: str | None = Field(default=None, description="The geological basin.")
     country: str | None = None
 
 
@@ -170,6 +170,7 @@ async def test_suggest_returns_cited_value(monkeypatch: pytest.MonkeyPatch) -> N
     assert captured[0]["model"] == "test-model"
     assert captured[0]["tools"] == [{"type": "web_search"}]
     assert captured[0]["store"] is False
+    assert "The geological basin." in captured[0]["instructions"]
 
 
 @pytest.mark.anyio
