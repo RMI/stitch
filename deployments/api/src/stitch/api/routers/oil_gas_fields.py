@@ -1,3 +1,4 @@
+from stitch.api.llm import AllowedSuggestionField
 import logging
 from typing import Annotated
 
@@ -59,7 +60,6 @@ from stitch_core_llm.errors import (
     ModelOutputError,
 )
 from stitch_core_llm.model import FieldSuggestion
-from stitch_core_llm.typings import AllowedSuggestionField
 
 logger = logging.getLogger(__name__)
 

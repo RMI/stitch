@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Literal, get_args
 
 from collections.abc import Collection
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +8,34 @@ from stitch.api.db.utils import resource_to_detail_view
 from stitch.ogsi.model import OGFieldDetailView, OGSISrcKey
 from stitch_core_llm import suggest_missing_field_values
 from stitch_core_llm.model import FieldSuggestion
-from stitch_core_llm.typings import ALL_SUGGESTION_FIELDS, AllowedSuggestionField
+
+AllowedSuggestionField = Literal[
+    "name",
+    "name_local",
+    "country",
+    "basin",
+    "region",
+    "state_province",
+    "reservoir_formation",
+    "discovery_year",
+    "fid_year",
+    "production_start_year",
+    "location_type",
+    "field_status",
+    "primary_hydrocarbon_group",
+    "production_conventionality",
+]
+
+
+ALL_SUGGESTION_FIELDS: tuple[AllowedSuggestionField, ...] = get_args(
+    AllowedSuggestionField
+)
+
+
+class OGFieldSuggestable(OGFieldDetailView):
+    @property
+    def suggestable_fields(self) -> tuple[AllowedSuggestionField, ...]:
+        return ALL_SUGGESTION_FIELDS
 
 
 async def _load_suggestion_context(
@@ -15,11 +43,12 @@ async def _load_suggestion_context(
     session: AsyncSession,
     resource_id: int,
     licensed_sources: Collection[OGSISrcKey] | None = None,
-) -> OGFieldDetailView:
+) -> OGFieldSuggestable:
     resource = await og_field_resource_actions.get_resolved(
         session=session, id=resource_id, licensed_sources=licensed_sources
     )
-    return resource_to_detail_view(resource)
+    dv = resource_to_detail_view(resource)
+    return OGFieldSuggestable(**dv.model_dump())
 
 
 async def og_suggest_missing_field_values(

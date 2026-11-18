@@ -11,7 +11,7 @@ from openai import AsyncOpenAI, OpenAIError
 from .errors import LLMConfigurationError, AzureResponsesError, ModelOutputError
 from .model import FieldSuggestion, SuggestedValue
 from .settings import LLMSettings
-from .typings import AllowedSuggestionField, AnyDetailView, ALL_SUGGESTION_FIELDS
+from .typings import AISuggestable
 
 
 @lru_cache
@@ -38,8 +38,8 @@ async def _suggest(
     *,
     client: AsyncOpenAI,
     resource_id: int,
-    field: AllowedSuggestionField,
-    detail_view: AnyDetailView,
+    field: str,
+    detail_view: AISuggestable,
     observed_at: datetime,
     info: dict[str, FieldInfo] | None = None,
 ) -> FieldSuggestion:
@@ -90,14 +90,14 @@ async def _suggest(
 async def suggest_missing_field_values(
     *,
     resource_id: int,
-    detail_view: AnyDetailView,
-    fields: Collection[AllowedSuggestionField] = ALL_SUGGESTION_FIELDS,
+    detail_view: AISuggestable,
+    fields: Collection[str],
 ) -> list[FieldSuggestion]:
 
     requested = set(fields)
     targets = [
         field
-        for field in ALL_SUGGESTION_FIELDS
+        for field in detail_view.suggestable_fields
         if field in requested and getattr(detail_view.data, field) is None
     ]
     if not targets:
