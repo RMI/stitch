@@ -48,6 +48,7 @@ async def _suggest(
     sources = json.dumps(
         [source.model_dump(mode="json") for source in detail_view.source_data]
     )
+    field_info = type(detail_view.data).model_fields[field]
     try:
         response = await client.responses.parse(
             model=get_llm_settings().azure_openai_model or "",
@@ -62,7 +63,7 @@ async def _suggest(
                 f"Source records behind it:\n{sources}"
             ),
             tools=[{"type": "web_search"}],
-            text_format=SuggestedValue[FieldInfo],
+            text_format=SuggestedValue[field_info.annotation],
             store=False,
         )
     except OpenAIError as exc:
