@@ -148,7 +148,10 @@ async def refresh_resource_states(
         )
         if listable:
             await session.execute(
-                insert(OGFieldResourceState),
+                # Keep empty fields as explicit NULLs. Otherwise the ORM leaves
+                # them out of each row, and rows that differ in which fields are
+                # empty go out as separate INSERTs: about one round trip per row.
+                insert(OGFieldResourceState).execution_options(render_nulls=True),
                 await _compute_state_rows(session, listable),
             )
     return listable

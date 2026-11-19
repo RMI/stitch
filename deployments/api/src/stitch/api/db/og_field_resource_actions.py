@@ -16,6 +16,7 @@ from stitch.api.auth import CurrentUser
 from stitch.api.observability.context import named_query
 from stitch.api.entities import (
     FILTER_OPTION_FIELDS,
+    OGFieldFilterParams,
     OGFieldQueryParams,
 )
 from stitch.api.db.og_field_source_actions import (
@@ -60,7 +61,7 @@ from .utils import (
 _ALL_SOURCES: frozenset[OGSISrcKey] = frozenset(get_args(OGSISrcKey))
 
 
-def _profile_mask(licensed_sources: Collection[OGSISrcKey] | None) -> int:
+def profile_mask(licensed_sources: Collection[OGSISrcKey] | None) -> int:
     """The read-model profile to answer from, or 403 if the caller has none.
 
     ``None`` comes only from internal callers and means every source, as it
@@ -73,13 +74,15 @@ def _profile_mask(licensed_sources: Collection[OGSISrcKey] | None) -> int:
     mask = read_model_mask(licensed_sources)
     if mask is not None:
         return mask
+    # Worded for every page that reads the read model (the field list, its
+    # filter options, and the merge-candidate queue and detail).
     if missing := sorted(PUBLIC_SOURCES - frozenset(licensed_sources)):
         reason = f"it is missing read access to public source(s) {missing}"
     else:
-        reason = "it holds read access to a source the list can't serve yet"
+        reason = "it holds read access to a source that isn't supported yet"
     raise HTTPException(
         status_code=HTTP_403_FORBIDDEN,
-        detail=f"This account can't list oil & gas fields: {reason}. "
+        detail=f"This account can't view oil & gas field data: {reason}. "
         "Ask an administrator to update its source permissions.",
     )
 
@@ -102,7 +105,7 @@ async def query(
             status_code=422,
             detail="sort_by=source is not supported for resource list queries.",
         )
-    mask = _profile_mask(licensed_sources)
+    mask = profile_mask(licensed_sources)
 
     # Count without the ORDER BY: Postgres would otherwise sort every matching
     # row just to count them (~40ms at 50K resources for a non-indexed sort).
@@ -131,6 +134,7 @@ def _state_row_to_list_item_view(row: Any) -> OGFieldListItemView:
 
 async def filter_options(
     session: AsyncSession,
+    params: OGFieldFilterParams,
     licensed_sources: Collection[OGSISrcKey] | None = None,
 ) -> dict[str, list[str]]:
     """Distinct coalesced values for every filterable field.
@@ -138,18 +142,16 @@ async def filter_options(
     Read from the precomputed read model for the caller's permission profile;
     403 if they have none.
     """
-    mask = _profile_mask(licensed_sources)
-    # One DISTINCT per field, each answered from its (permission_mask, field)
-    # index. A single UNION ALL of all six was measured slower at 50K resources
-    # (the cost is the index scans, not round trips); that the six statements
-    # may see slightly different moments only affects dropdown suggestions,
-    # transiently.
-    options: dict[str, list[str]] = {}
+    mask = profile_mask(licensed_sources)
+    options: dict[str, set[str]] = {field: set() for field in FILTER_OPTION_FIELDS}
     with named_query("resources.filter_options"):
-        for field in FILTER_OPTION_FIELDS:
-            stmt = resource_state_filter_option_query(field, mask)
-            options[field] = list((await session.scalars(stmt)).all())
-    return options
+        stmt = resource_state_filter_option_query(mask, params)
+        for row in await session.execute(stmt):
+            for field, values in options.items():
+                value = getattr(row, field)
+                if value is not None:
+                    values.add(value)
+    return {field: sorted(values) for field, values in options.items()}
 
 
 async def get(

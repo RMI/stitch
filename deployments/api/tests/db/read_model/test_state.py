@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import delete, insert, update
+from sqlalchemy import delete, event, insert, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -211,6 +211,33 @@ class TestTargetedRefresh:
         await session.commit()
 
         assert not any(rid == rebuilt.delta for rid, _ in await dump_state(session))
+
+    async def test_writes_all_rows_in_one_insert(
+        self, seeded_integration_session: AsyncSession, dataset: Dataset
+    ):
+        # Resources leave different fields empty. If the empty fields were left
+        # out of each row, rows would stop sharing columns and go out as one
+        # INSERT (one database round trip) each, which made production rebuilds
+        # take hours.
+        session = seeded_integration_session
+        inserts: list[str] = []
+
+        def _record(conn, cursor, statement, parameters, context, executemany):
+            if statement.startswith("INSERT INTO og_field_resource_state"):
+                inserts.append(statement)
+
+        sync_engine = session.bind.sync_engine
+        event.listen(sync_engine, "before_cursor_execute", _record)
+        try:
+            await refresh_resource_states(session, dataset.listable)
+        finally:
+            event.remove(sync_engine, "before_cursor_execute", _record)
+        await session.commit()
+
+        assert len(inserts) == 1
+        assert len(await dump_state(session)) == len(dataset.listable) * len(
+            PERMISSION_MASKS
+        )
 
     async def test_unlisted_and_unknown_ids_get_no_rows(
         self, seeded_integration_session: AsyncSession, dataset: Dataset

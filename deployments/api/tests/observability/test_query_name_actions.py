@@ -27,7 +27,9 @@ from stitch.api.db.model import MembershipModel, MembershipStatus, ResourceModel
 from stitch.api.db.model.oil_gas_field_source_value import ATTRIBUTE_NAMES
 from stitch.api.entities import (
     MergeCandidateCreateRequest,
+    MergeCandidateQueryParams,
     MergeCandidateReviewRequest,
+    OGFieldFilterParams,
     OGFieldQueryParams,
     User,
 )
@@ -182,7 +184,7 @@ class TestActionCallSiteLabels:
         )
 
         captured_query_events.clear()
-        await resource_actions.filter_options(session)
+        await resource_actions.filter_options(session, OGFieldFilterParams())
         _assert_labels(captured_query_events, {"resources.filter_options"})
 
         captured_query_events.clear()
@@ -427,8 +429,30 @@ class TestActionCallSiteLabels:
         )
 
         captured_query_events.clear()
-        await mca.list_merge_candidates(session)
-        _assert_labels(captured_query_events, {"merge_candidates.list"})
+        await mca.list_merge_candidates(session, MergeCandidateQueryParams())
+        _assert_labels(
+            captured_query_events,
+            {
+                "merge_candidates.list",
+                "merge_candidates.list.count",
+                "merge_candidates.list.status_counts",
+            },
+        )
+
+        captured_query_events.clear()
+        await mca.list_merge_candidates(session, MergeCandidateQueryParams(q="Cand"))
+        _assert_labels(
+            captured_query_events,
+            {
+                "merge_candidates.list",
+                "merge_candidates.list.count",
+                "merge_candidates.list.status_counts",
+            },
+        )
+
+        captured_query_events.clear()
+        await mca.existing_candidate_resource_sets(session)
+        _assert_labels(captured_query_events, {"merge_candidates.resource_sets"})
 
         captured_query_events.clear()
         await mca.get_merge_candidate(session, approved.id)
@@ -438,6 +462,7 @@ class TestActionCallSiteLabels:
                 "merge_candidates.detail.load",
                 "merge_candidates.detail.coalesce",
                 "merge_candidates.detail.default_priority",
+                "merge_candidates.detail.name",
             },
         )
 

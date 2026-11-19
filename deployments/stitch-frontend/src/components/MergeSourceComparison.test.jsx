@@ -260,10 +260,10 @@ describe("source mix per resource column", () => {
   });
 
   it("shows cached source mixes even while the comparison itself loads", () => {
-    // The queue loads these details for candidate names, so they are usually
-    // cached before the comparison arrives. Showing them early costs no
-    // layout shift (the placeholder is the same height). The loading layout
-    // is hidden from screen readers, hence { hidden: true }.
+    // The details can be cached before the comparison arrives (e.g. when
+    // returning to a candidate). Showing them early costs no layout shift
+    // (the placeholder is the same height). The loading layout is hidden from
+    // screen readers, hence { hidden: true }.
     renderComparison({ compare: undefined, isLoading: true, sourceDetails });
 
     expect(
