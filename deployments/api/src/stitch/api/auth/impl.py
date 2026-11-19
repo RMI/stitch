@@ -39,13 +39,7 @@ def get_auth_settings() -> AuthSettings:
     return AuthSettings()
 
 
-def _as_list(scopes: str | list[str] | None) -> list[str]:
-    if scopes is None:
-        return []
-    return [scopes] if isinstance(scopes, str) else list(scopes)
-
-
-def check_scopes(granted: frozenset[str], required: Iterable[str]) -> None:
+def check_permissions(granted: frozenset[str], required: Iterable[str]) -> None:
     missing = sorted(
         pattern
         for pattern in required
@@ -59,42 +53,23 @@ def check_scopes(granted: frozenset[str], required: Iterable[str]) -> None:
 
 
 class Auth0AuthProvider(Auth0FastAPI):
-    def require_auth(
-        self, scopes: str | list[str] | None = None
-    ) -> Callable[[Request], Awaitable[TokenClaims]]:
-        verify = super().require_auth()
-        required = _as_list(scopes)
-
-        async def dependency(request: Request) -> TokenClaims:
-            raw: dict[str, Any] = await verify(request)
-            permissions = frozenset(raw.get("permissions", []))
-            claims = TokenClaims(
-                sub=raw["sub"],
-                email=raw.get("email", raw.get("preferred_username")),
-                name=raw.get("name"),
-                permissions=permissions,
-                raw=raw,
-            )
-            check_scopes(claims.permissions, required)
-            return claims
-
-        return dependency
+    async def authenticate(self, request: Request) -> TokenClaims:
+        raw: dict[str, Any] = await self.require_auth()(request)
+        return TokenClaims(
+            sub=raw["sub"],
+            email=raw.get("email", raw.get("preferred_username")),
+            name=raw.get("name"),
+            permissions=frozenset(raw.get("permissions", [])),
+            raw=raw,
+        )
 
 
 class StaticAuthProvider:
     def __init__(self, claims: TokenClaims) -> None:
         self._claims = claims
 
-    def require_auth(
-        self, scopes: str | list[str] | None = None
-    ) -> Callable[[Request], Awaitable[TokenClaims]]:
-        required = _as_list(scopes)
-
-        async def dependency(request: Request) -> TokenClaims:
-            check_scopes(self._claims.permissions, required)
-            return self._claims
-
-        return dependency
+    async def authenticate(self, request: Request) -> TokenClaims:
+        return self._claims
 
 
 DEV_CLAIMS = TokenClaims(
@@ -123,19 +98,21 @@ AuthProviderDep = Annotated[AuthProvider, Depends(get_auth_provider)]
 
 
 def require_auth(
-    *scopes: str,
+    *permissions: str,
 ) -> Callable[[Request, AuthProvider], Awaitable[TokenClaims]]:
     async def dependency(request: Request, provider: AuthProviderDep) -> TokenClaims:
-        return await provider.require_auth(list(scopes))(request)
+        claims = await provider.authenticate(request)
+        check_permissions(claims.permissions, permissions)
+        return claims
 
     return dependency
 
 
 def require_user(
-    *scopes: str,
+    *permissions: str,
 ) -> Callable[..., Awaitable[AuthenticatedUser]]:
     async def dependency(
-        claims: Annotated[TokenClaims, Depends(require_auth(*scopes))],
+        claims: Annotated[TokenClaims, Depends(require_auth(*permissions))],
         session_factory: SessionFactoryDep,
     ) -> AuthenticatedUser:
         return await _provision_user(claims, session_factory)

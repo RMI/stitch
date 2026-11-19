@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from starlette.testclient import TestClient
 
 from stitch.api.auth import (
@@ -15,7 +15,7 @@ from stitch.api.auth import (
     TokenClaims,
     get_auth_provider,
 )
-from stitch.api.auth.impl import Auth0AuthProvider, AuthSettings, check_scopes
+from stitch.api.auth.impl import Auth0AuthProvider, AuthSettings, check_permissions
 from stitch.api.db.config import get_uow
 from stitch.api.entities import User
 from stitch.api.main import app
@@ -103,7 +103,7 @@ class TestCheckScopes:
 
     def test_passes_when_all_permissions_granted(self):
         assert (
-            check_scopes(
+            check_permissions(
                 frozenset({RESOURCE_READ, RESOURCE_WRITE}),
                 [RESOURCE_READ, RESOURCE_WRITE],
             )
@@ -112,11 +112,42 @@ class TestCheckScopes:
 
     def test_raises_403_for_missing_permission(self):
         with pytest.raises(HTTPException) as exc_info:
-            check_scopes(frozenset({RESOURCE_READ}), [RESOURCE_READ, RESOURCE_WRITE])
+            check_permissions(
+                frozenset({RESOURCE_READ}), [RESOURCE_READ, RESOURCE_WRITE]
+            )
 
         assert exc_info.value.status_code == 403
         assert exc_info.value.detail == (
             "Missing required permission(s): resource:write"
+        )
+
+
+class TestAuth0AuthProvider:
+    @pytest.mark.anyio
+    async def test_maps_verified_token_to_claims(self):
+        raw = {
+            "sub": "auth0|user-1",
+            "email": "user@example.com",
+            "name": "Test User",
+            "permissions": [RESOURCE_READ, SOURCE_READ_WM],
+            "scope": f"openid {RESOURCE_WRITE}",
+        }
+        provider = Auth0AuthProvider(**_make_auth_settings().model_dump())
+        request = Request(
+            {"type": "http", "method": "GET", "path": "/", "headers": [], "app": app}
+        )
+
+        with patch.object(
+            provider.api_client, "verify_request", AsyncMock(return_value=raw)
+        ):
+            claims = await provider.authenticate(request)
+
+        assert claims == TokenClaims(
+            sub="auth0|user-1",
+            email="user@example.com",
+            name="Test User",
+            permissions=frozenset({RESOURCE_READ, SOURCE_READ_WM}),
+            raw=raw,
         )
 
 
