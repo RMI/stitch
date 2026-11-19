@@ -7,12 +7,12 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from stitch.api.auth import (
+from stitch.api.auth import TokenClaims
+from stitch.api.auth.permissions import (
     RESOURCE_READ,
     RESOURCE_WRITE,
     SOURCE_READ_PREFIX,
     SOURCE_WRITE,
-    TokenClaims,
 )
 from stitch.api.db.config import UnitOfWork, get_uow
 from stitch.api.db.model import (

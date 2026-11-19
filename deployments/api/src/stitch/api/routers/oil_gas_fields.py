@@ -2,34 +2,12 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-
-from stitch.api.entities import (
-    LinkAllResponse,
-    OGFieldFilterOptionsResponse,
-    MergeCandidateCreateRequest,
-    MergeCandidateDetailView,
-    MergeCandidatePage,
-    MergeCandidateQueryParams,
-    MergeCandidateReviewRequest,
-    MergeCandidateView,
-    OGFieldFilterParams,
-    OGFieldQueryParams,
-    PaginatedResponse,
-    SetFieldPriorityRequest,
-)
-
-from stitch.api.db import link_actions
-from stitch.api.db import og_field_resource_actions as resource_actions
-from stitch.api.db import merge_candidate_actions
-from stitch.api.db import og_field_source_actions
-from stitch.api.db.config import UnitOfWorkDep
-from stitch.api.db.errors import (
-    InvalidActionError,
-    ResourceNotFoundError,
-    ResourceIntegrityError,
-    SourceIntegrityError,
-)
 from stitch.api.auth import (
+    AuthenticatedUser,
+    licensed_sources,
+    require_user,
+)
+from stitch.api.auth.permissions import (
     MERGE_CANDIDATE_CREATE,
     MERGE_CANDIDATE_READ,
     MERGE_CANDIDATE_REVIEW,
@@ -37,15 +15,34 @@ from stitch.api.auth import (
     RESOURCE_WRITE,
     SOURCE_READ_PERMISSIONS,
     SOURCE_WRITE,
-    AuthenticatedUser,
-    licensed_sources,
-    require_user,
+)
+from stitch.api.db import link_actions, merge_candidate_actions, og_field_source_actions
+from stitch.api.db import og_field_resource_actions as resource_actions
+from stitch.api.db.config import UnitOfWorkDep
+from stitch.api.db.errors import (
+    InvalidActionError,
+    ResourceIntegrityError,
+    ResourceNotFoundError,
+    SourceIntegrityError,
 )
 from stitch.api.db.utils import (
-    resource_to_view,
     resource_to_detail_view,
+    resource_to_view,
 )
-
+from stitch.api.entities import (
+    LinkAllResponse,
+    MergeCandidateCreateRequest,
+    MergeCandidateDetailView,
+    MergeCandidatePage,
+    MergeCandidateQueryParams,
+    MergeCandidateReviewRequest,
+    MergeCandidateView,
+    OGFieldFilterOptionsResponse,
+    OGFieldFilterParams,
+    OGFieldQueryParams,
+    PaginatedResponse,
+    SetFieldPriorityRequest,
+)
 from stitch.ogsi.model import (
     OGFieldDetailView,
     OGFieldListItemView,
@@ -57,7 +54,6 @@ from stitch.ogsi.model import (
     OGFieldSourceView,
     OGFieldView,
 )
-
 
 logger = logging.getLogger(__name__)
 

@@ -112,7 +112,7 @@ async def async_client(
 ) -> AsyncIterator[AsyncClient]:
     """AsyncClient for testing FastAPI routes with mocked user."""
 
-    override_auth(auth.ALL_PERMISSIONS, integration_session_factory)
+    override_auth(auth.permissions.ALL_PERMISSIONS, integration_session_factory)
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -201,7 +201,7 @@ async def integration_client(
             yield uow
 
     app.dependency_overrides[get_uow] = override_get_uow
-    override_auth(auth.ALL_PERMISSIONS, integration_session_factory)
+    override_auth(auth.permissions.ALL_PERMISSIONS, integration_session_factory)
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
