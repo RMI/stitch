@@ -59,7 +59,7 @@ class Auth0AuthProvider(Auth0FastAPI):
             sub=raw["sub"],
             email=raw.get("email", raw.get("preferred_username")),
             name=raw.get("name"),
-            permissions=frozenset(raw.get("permissions", [])),
+            permissions=frozenset(raw.get("permissions") or []),
             raw=raw,
         )
 

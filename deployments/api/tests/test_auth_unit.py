@@ -9,6 +9,7 @@ from starlette.testclient import TestClient
 from stitch.api.auth import (
     RESOURCE_READ,
     RESOURCE_WRITE,
+    SOURCE_READ_ANY,
     SOURCE_READ_PREFIX,
     AuthProvider,
     StaticAuthProvider,
@@ -101,36 +102,54 @@ class TestGetAuthProvider:
 class TestCheckScopes:
     """Unit tests for the permission check used by every provider."""
 
-    def test_passes_when_all_permissions_granted(self):
-        assert (
-            check_permissions(
-                frozenset({RESOURCE_READ, RESOURCE_WRITE}),
-                [RESOURCE_READ, RESOURCE_WRITE],
-            )
-            is None
-        )
+    @pytest.mark.parametrize(
+        ("granted", "required"),
+        [
+            ({RESOURCE_READ, RESOURCE_WRITE}, [RESOURCE_READ, RESOURCE_WRITE]),
+            ({SOURCE_READ_WM}, [SOURCE_READ_ANY]),
+        ],
+        ids=["exact", "wildcard"],
+    )
+    def test_passes_when_all_permissions_granted(self, granted, required):
+        assert check_permissions(frozenset(granted), required) is None
 
-    def test_raises_403_for_missing_permission(self):
+    @pytest.mark.parametrize(
+        ("granted", "required", "missing"),
+        [
+            ({RESOURCE_READ}, [RESOURCE_READ, RESOURCE_WRITE], "resource:write"),
+            ({RESOURCE_READ}, [SOURCE_READ_ANY], "source:read:*"),
+        ],
+        ids=["exact", "wildcard"],
+    )
+    def test_raises_403_for_missing_permission(self, granted, required, missing):
         with pytest.raises(HTTPException) as exc_info:
-            check_permissions(
-                frozenset({RESOURCE_READ}), [RESOURCE_READ, RESOURCE_WRITE]
-            )
+            check_permissions(frozenset(granted), required)
 
         assert exc_info.value.status_code == 403
-        assert exc_info.value.detail == (
-            "Missing required permission(s): resource:write"
-        )
+        assert exc_info.value.detail == f"Missing required permission(s): {missing}"
 
 
 class TestAuth0AuthProvider:
     @pytest.mark.anyio
-    async def test_maps_verified_token_to_claims(self):
+    @pytest.mark.parametrize(
+        ("permissions_claim", "expected"),
+        [
+            (
+                {"permissions": [RESOURCE_READ, SOURCE_READ_WM]},
+                {RESOURCE_READ, SOURCE_READ_WM},
+            ),
+            ({}, set()),
+            ({"permissions": None}, set()),
+        ],
+        ids=["listed", "missing", "null"],
+    )
+    async def test_maps_verified_token_to_claims(self, permissions_claim, expected):
         raw = {
             "sub": "auth0|user-1",
             "email": "user@example.com",
             "name": "Test User",
-            "permissions": [RESOURCE_READ, SOURCE_READ_WM],
             "scope": f"openid {RESOURCE_WRITE}",
+            **permissions_claim,
         }
         provider = Auth0AuthProvider(**_make_auth_settings().model_dump())
         request = Request(
@@ -146,7 +165,7 @@ class TestAuth0AuthProvider:
             sub="auth0|user-1",
             email="user@example.com",
             name="Test User",
-            permissions=frozenset({RESOURCE_READ, SOURCE_READ_WM}),
+            permissions=frozenset(expected),
             raw=raw,
         )
 
