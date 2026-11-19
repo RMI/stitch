@@ -67,9 +67,7 @@ class Auth0AuthProvider(Auth0FastAPI):
 
         async def dependency(request: Request) -> TokenClaims:
             raw: dict[str, Any] = await verify(request)
-            permissions = frozenset(
-                [*raw.get("permissions", []), *raw.get("scope", "").split()]
-            )
+            permissions = frozenset(raw.get("permissions", []))
             claims = TokenClaims(
                 sub=raw["sub"],
                 email=raw.get("email", raw.get("preferred_username")),
