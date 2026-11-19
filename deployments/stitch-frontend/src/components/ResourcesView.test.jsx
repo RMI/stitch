@@ -3,11 +3,17 @@ import { screen, within, fireEvent, act } from "@testing-library/react";
 import { useNavigate } from "react-router";
 import { renderWithQueryClient } from "../test/utils";
 import ResourcesView from "./ResourcesView";
-import { useResourceFilterOptions, useResources } from "../hooks/useResources";
+import {
+  useCreateMergeCandidate,
+  useResourceFilterOptions,
+  useResources,
+} from "../hooks/useResources";
+import { useHasPermission } from "../hooks/usePermissions";
 import { DEFAULT_PAGE_SIZE, DEFAULT_PAGE } from "../queries/resources";
 import { DEFAULT_DEBOUNCE_MS } from "../hooks/useDebouncedValue";
 
 vi.mock("../hooks/useResources");
+vi.mock("../hooks/usePermissions");
 
 const mockItems = [
   {
@@ -982,6 +988,163 @@ describe("ResourcesView", () => {
 
       expect(screen.getByRole("table")).not.toHaveAttribute("aria-busy");
       expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("proposing a merge", () => {
+    let mutation;
+
+    beforeEach(() => {
+      vi.mocked(useHasPermission).mockReturnValue(true);
+      mutation = {
+        mutate: vi.fn(),
+        reset: vi.fn(),
+        isPending: false,
+        isSuccess: false,
+        error: null,
+      };
+      vi.mocked(useCreateMergeCandidate).mockImplementation(() => mutation);
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: mockResourceData,
+      });
+    });
+
+    function selectBoth() {
+      fireEvent.click(screen.getByLabelText("Select Burgan Field for merge"));
+      fireEvent.click(screen.getByLabelText("Select Ghawar Field for merge"));
+    }
+
+    it("hides the selection boxes without permission", () => {
+      vi.mocked(useHasPermission).mockReturnValue(false);
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      expect(
+        screen.queryByLabelText("Select Burgan Field for merge"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows the merge bar only once a field is picked", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      expect(
+        screen.queryByRole("region", { name: "Merge selection" }),
+      ).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByLabelText("Select Burgan Field for merge"));
+
+      const bar = screen.getByRole("region", { name: "Merge selection" });
+      expect(within(bar).getByText("Burgan Field")).toBeInTheDocument();
+      expect(within(bar).getByText("· Norway")).toBeInTheDocument();
+      expect(within(bar).getByText("Pick one more field")).toBeInTheDocument();
+      expect(
+        within(bar).getByRole("button", { name: "Propose merge" }),
+      ).toBeDisabled();
+    });
+
+    it("blocks a third pick until one is removed", () => {
+      vi.mocked(useResources).mockReturnValue({
+        ...defaultHookReturn,
+        data: {
+          ...mockResourceData,
+          items: [
+            ...mockItems,
+            { id: 3, data: { name: "Prudhoe Bay" }, provenance: {} },
+          ],
+        },
+      });
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      selectBoth();
+      expect(
+        screen.getByLabelText("Select Prudhoe Bay for merge"),
+      ).toBeDisabled();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Remove Burgan Field from merge" }),
+      );
+      expect(
+        screen.getByLabelText("Select Prudhoe Bay for merge"),
+      ).not.toBeDisabled();
+    });
+
+    it("keeps the selection when leaving the list and coming back", () => {
+      const { unmount } = renderWithQueryClient(
+        <ResourcesView endpoint={ENDPOINT} />,
+      );
+      fireEvent.click(screen.getByLabelText("Select Burgan Field for merge"));
+      unmount();
+
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+
+      expect(
+        screen.getByLabelText("Select Burgan Field for merge"),
+      ).toBeChecked();
+      expect(
+        within(
+          screen.getByRole("region", { name: "Merge selection" }),
+        ).getByText("Burgan Field"),
+      ).toBeInTheDocument();
+    });
+
+    it("clears the selection", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+      selectBoth();
+
+      fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+
+      expect(
+        screen.queryByRole("region", { name: "Merge selection" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByLabelText("Select Burgan Field for merge"),
+      ).not.toBeChecked();
+    });
+
+    it("proposes the picked pair and stays on the list", () => {
+      mutation.mutate.mockImplementation((ids, { onSuccess }) => {
+        mutation.isSuccess = true;
+        onSuccess();
+      });
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+      selectBoth();
+
+      fireEvent.click(screen.getByRole("button", { name: "Propose merge" }));
+
+      expect(mutation.mutate).toHaveBeenCalledWith([1, 2], expect.any(Object));
+      expect(screen.getByText("Merge proposed.")).toBeInTheDocument();
+      expect(
+        screen.getByRole("link", { name: "Review now →" }),
+      ).toHaveAttribute("href", "/merge-candidate-review");
+      expect(screen.getByText("Burgan Field")).toBeInTheDocument();
+    });
+
+    it("explains a pair that is already waiting for review", () => {
+      mutation.error = Object.assign(
+        new Error(
+          "A pending merge candidate already exists for resources [1, 2].",
+        ),
+        { status: 400 },
+      );
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+      selectBoth();
+
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "These two fields are already waiting for review.",
+      );
+    });
+
+    it("clears a stale error when the selection changes", () => {
+      renderWithQueryClient(<ResourcesView endpoint={ENDPOINT} />);
+      selectBoth();
+      mutation.reset.mockClear();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Remove Ghawar Field from merge" }),
+      );
+
+      expect(mutation.reset).toHaveBeenCalled();
     });
   });
 });

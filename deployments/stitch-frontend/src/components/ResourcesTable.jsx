@@ -110,6 +110,11 @@ export default function ResourcesTable({
             {sorted.map((resource) => {
               const resourceHref = `/oil-gas-fields/${resource.id}`;
 
+              const isSelected = selectable && selectedIds.has(resource.id);
+              const isSelectionBlocked = selectionAtLimit && !isSelected;
+              const resourceName =
+                getResourceField(resource, "name") ?? `resource ${resource.id}`;
+
               return (
                 // Each cell carries its own overlay so the whole row stays
                 // clickable. The overlays are deliberately anchored to the <td>s
@@ -119,19 +124,30 @@ export default function ResourcesTable({
                 // entire table (STIT-737).
                 <tr
                   key={resource.id}
-                  className="group border-b border-line/70 transition-colors hover:bg-surface"
+                  className={`group border-b border-line/70 transition-colors ${isSelected ? "bg-primary-soft/40 hover:bg-primary-soft/60" : "hover:bg-surface"}`}
                 >
                   {selectable && (
-                    <td className="w-10 px-3 py-2.5">
-                      <input
-                        type="checkbox"
-                        aria-label={`Select resource ${resource.id} for merge`}
-                        checked={selectedIds.has(resource.id)}
-                        disabled={
-                          selectionAtLimit && !selectedIds.has(resource.id)
+                    // The label fills the cell, so a click that just misses
+                    // the box still toggles it rather than falling through to
+                    // the row link and leaving the list.
+                    <td className="w-10 p-0">
+                      <label
+                        className={`flex items-center justify-center px-3 py-2.5 ${isSelectionBlocked ? "cursor-not-allowed" : "cursor-pointer"}`}
+                        title={
+                          isSelectionBlocked
+                            ? "A merge combines exactly two fields. Remove one to pick another."
+                            : undefined
                         }
-                        onChange={() => onToggleSelect(resource.id)}
-                      />
+                      >
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${resourceName} for merge`}
+                          checked={isSelected}
+                          disabled={isSelectionBlocked}
+                          onChange={() => onToggleSelect(resource)}
+                          className="h-4 w-4 cursor-[inherit] accent-bluespruce"
+                        />
+                      </label>
                     </td>
                   )}
                   {COLUMNS.map((col) => {
