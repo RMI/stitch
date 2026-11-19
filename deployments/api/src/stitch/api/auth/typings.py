@@ -1,4 +1,3 @@
-from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
 from fastapi import Request
@@ -20,6 +19,4 @@ class AuthenticatedUser(User):
 
 
 class AuthProvider(Protocol):
-    def require_auth(
-        self, scopes: str | list[str] | None = None
-    ) -> Callable[[Request], Awaitable[TokenClaims]]: ...
+    async def authenticate(self, request: Request) -> TokenClaims: ...

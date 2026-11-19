@@ -18,12 +18,8 @@ from stitch.api.db.model import (
     StitchBase,
     UserModel,
 )
-from stitch.api._auth import (
-    ALL_PERMISSIONS,
-    StaticAuthProvider,
-    TokenClaims,
-    get_auth_provider,
-)
+from stitch.api.auth import StaticAuthProvider, TokenClaims, get_auth_provider
+from stitch.api.auth.permissions import ALL_PERMISSIONS
 from stitch.api.entities import User
 from stitch.api.main import app
 from stitch.api.settings import PostgresConfig, Settings, SqliteConfig, get_settings

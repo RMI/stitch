@@ -4,7 +4,7 @@ import inspect
 
 from fastapi.dependencies.models import Dependant
 
-from stitch.api._auth import (
+from stitch.api.auth.permissions import (
     MERGE_CANDIDATE_CREATE as MC_CREATE,
     MERGE_CANDIDATE_READ as MC_READ,
     MERGE_CANDIDATE_REVIEW as MC_REVIEW,
@@ -46,11 +46,11 @@ EXPECTED: dict[tuple[str, str], frozenset[str] | None] = {
 }
 
 
-def _required_scopes(dependant: Dependant) -> frozenset[str] | None:
+def _required_permissions(dependant: Dependant) -> frozenset[str] | None:
     for sub in dependant.dependencies:
         if getattr(sub.call, "__qualname__", "") == "require_auth.<locals>.dependency":
-            return frozenset(inspect.getclosurevars(sub.call).nonlocals["scopes"])
-        found = _required_scopes(sub)
+            return frozenset(inspect.getclosurevars(sub.call).nonlocals["permissions"])
+        found = _required_permissions(sub)
         if found is not None:
             return found
     return None
@@ -58,7 +58,7 @@ def _required_scopes(dependant: Dependant) -> frozenset[str] | None:
 
 def test_every_route_requires_its_expected_permissions():
     actual = {
-        (method, route.path_format): _required_scopes(route.dependant)
+        (method, route.path_format): _required_permissions(route.dependant)
         for module in (auth, health, oil_gas_fields, oil_gas_field_sources)
         for route in module.router.routes
         for method in route.methods

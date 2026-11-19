@@ -11,7 +11,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.factories import ResourceCreateFactory
-from stitch.api._auth import (
+from stitch.api.auth.permissions import (
     MERGE_CANDIDATE_READ,
     RESOURCE_READ,
     SOURCE_READ_PREFIX,

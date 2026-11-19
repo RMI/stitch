@@ -5,12 +5,14 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from stitch.ogsi.model import OGFieldSource, OGFieldSourceView
 
-from stitch.api._auth import (
-    SOURCE_READ_ANY,
-    SOURCE_WRITE,
+from stitch.api.auth import (
     AuthenticatedUser,
     licensed_sources,
     require_user,
+)
+from stitch.api.auth.permissions import (
+    SOURCE_READ_ANY,
+    SOURCE_WRITE,
 )
 from stitch.api.db import og_field_source_actions
 from stitch.api.db.config import UnitOfWorkDep

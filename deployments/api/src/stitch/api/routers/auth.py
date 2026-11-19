@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 
-from stitch.api._auth import TokenClaims, require_auth
+from stitch.api.auth import TokenClaims, require_auth
 from stitch.api.db.config import UnitOfWorkDep
 from stitch.api.db.model.user import User as UserModel
 from stitch.api.entities import AuthMeView, TokenClaimsView

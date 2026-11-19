@@ -1,4 +1,4 @@
-"""Unit tests for the _auth package and the /auth/me route."""
+"""Unit tests for the auth package and the /auth/me route."""
 
 from unittest.mock import patch
 
@@ -7,19 +7,24 @@ from fastapi import HTTPException
 from fastapi_plugin import Auth0FastAPI
 from starlette.testclient import TestClient
 
-from stitch.api._auth import (
+from stitch.api.auth import (
+    Auth0AuthProvider,
+    AuthProvider,
+    AuthSettings,
+    StaticAuthProvider,
+    TokenClaims,
+    check_permissions,
+    get_auth_provider,
+    licensed_sources,
+    require_auth,
+)
+from stitch.api.auth.permissions import (
     ALL_PERMISSIONS,
     RESOURCE_READ,
     RESOURCE_WRITE,
     SOURCE_READ_ANY,
     SOURCE_WRITE,
-    AuthProvider,
-    StaticAuthProvider,
-    TokenClaims,
-    get_auth_provider,
-    licensed_sources,
 )
-from stitch.api._auth.impl import Auth0AuthProvider, AuthSettings, check_scopes
 from stitch.api.main import app
 from stitch.api.settings import Settings
 
@@ -27,9 +32,9 @@ from stitch.api.settings import Settings
 def _build_provider(settings: Settings) -> AuthProvider:
     get_auth_provider.cache_clear()
     with (
-        patch("stitch.api._auth.impl.get_settings", return_value=settings),
+        patch("stitch.api.auth.get_settings", return_value=settings),
         patch(
-            "stitch.api._auth.impl.get_auth_settings",
+            "stitch.api.auth.get_auth_settings",
             return_value=AuthSettings(domain="example.us.auth0.com", audience="aud"),
         ),
     ):
@@ -55,7 +60,7 @@ def test_get_auth_provider_selects_provider(auth_disabled, environment, expected
 
 def test_startup_fails_when_auth_disabled_in_production():
     settings = Settings(auth_disabled=True, environment="production")
-    with patch("stitch.api._auth.impl.get_settings", return_value=settings):
+    with patch("stitch.api.auth.get_settings", return_value=settings):
         with pytest.raises(RuntimeError), TestClient(app):
             pass
 
@@ -69,18 +74,18 @@ def test_startup_fails_when_auth_disabled_in_production():
         ({SOURCE_READ_ANY}, ["source:read:wm"], False),
     ],
 )
-def test_check_scopes(granted, required, allowed):
+def test_check_permissions(granted, required, allowed):
     if allowed:
-        check_scopes(frozenset(granted), required)
+        check_permissions(frozenset(granted), required)
     else:
         with pytest.raises(HTTPException) as exc_info:
-            check_scopes(frozenset(granted), required)
+            check_permissions(frozenset(granted), required)
         assert exc_info.value.status_code == 403
 
 
-def test_check_scopes_names_missing_permissions():
+def test_check_permissions_names_missing_permissions():
     with pytest.raises(HTTPException) as exc_info:
-        check_scopes(frozenset({RESOURCE_READ}), [RESOURCE_READ, RESOURCE_WRITE])
+        check_permissions(frozenset({RESOURCE_READ}), [RESOURCE_READ, RESOURCE_WRITE])
     assert exc_info.value.detail == "Missing required permission(s): resource:write"
 
 
@@ -110,9 +115,9 @@ async def test_auth0_provider_maps_claims(monkeypatch, identity, email):
     }
     provider = _auth0_provider(monkeypatch, raw)
 
-    claims = await provider.require_auth([RESOURCE_READ, SOURCE_READ_ANY])(None)
+    claims = await provider.authenticate(None)
 
-    assert claims.permissions == {RESOURCE_READ, "openid", "source:read:wm"}
+    assert claims.permissions == {RESOURCE_READ}
     assert (claims.sub, claims.name, claims.email, claims.raw) == (
         "auth0|1",
         "U",
@@ -122,10 +127,20 @@ async def test_auth0_provider_maps_claims(monkeypatch, identity, email):
 
 
 @pytest.mark.anyio
-async def test_auth0_provider_enforces_scopes(monkeypatch):
+@pytest.mark.parametrize("token", [{}, {"permissions": None}], ids=["missing", "null"])
+async def test_auth0_provider_defaults_to_no_permissions(monkeypatch, token):
+    provider = _auth0_provider(monkeypatch, {"sub": "auth0|1", **token})
+
+    claims = await provider.authenticate(None)
+
+    assert claims.permissions == frozenset()
+
+
+@pytest.mark.anyio
+async def test_require_auth_enforces_permissions(monkeypatch):
     provider = _auth0_provider(monkeypatch, {"sub": "auth0|1"})
     with pytest.raises(HTTPException) as exc_info:
-        await provider.require_auth([RESOURCE_READ])(None)
+        await require_auth(RESOURCE_READ)(None, provider)
     assert exc_info.value.status_code == 403
 
 
