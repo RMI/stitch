@@ -29,7 +29,7 @@ from stitch.api.db.errors import (
     ResourceIntegrityError,
     SourceIntegrityError,
 )
-from stitch.api._auth import (
+from stitch.api.auth import (
     MERGE_CANDIDATE_CREATE,
     MERGE_CANDIDATE_READ,
     MERGE_CANDIDATE_REVIEW,

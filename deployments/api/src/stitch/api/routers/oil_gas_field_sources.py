@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from stitch.ogsi.model import OGFieldSource, OGFieldSourceView
 
-from stitch.api._auth import (
+from stitch.api.auth import (
     SOURCE_READ_ANY,
     SOURCE_WRITE,
     AuthenticatedUser,

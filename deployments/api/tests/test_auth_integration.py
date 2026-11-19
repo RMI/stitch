@@ -3,7 +3,7 @@
 import pytest
 from sqlalchemy import select
 
-from stitch.api._auth import TokenClaims, require_user
+from stitch.api.auth import TokenClaims, require_user
 from stitch.api.db.config import UnitOfWork
 from stitch.api.db.model.user import User as UserModel
 

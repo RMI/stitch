@@ -2,7 +2,7 @@ from collections.abc import Collection
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from stitch.api._auth import StaticAuthProvider, TokenClaims, get_auth_provider
+from stitch.api.auth import StaticAuthProvider, TokenClaims, get_auth_provider
 from stitch.api.db.config import get_session_factory
 from stitch.api.main import app
 

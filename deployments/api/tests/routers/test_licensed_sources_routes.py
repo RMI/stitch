@@ -7,7 +7,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from stitch.api._auth import (
+from stitch.api.auth import (
     RESOURCE_READ,
     SOURCE_READ_PREFIX,
     TokenClaims,
@@ -20,7 +20,7 @@ from stitch.api.db.model import (
     ResourceModel,
     UserModel,
 )
-from stitch.api._auth import permissions as auth_permissions
+from stitch.api.auth import permissions as auth_permissions
 from stitch.api.db.read_model.permissions import PUBLIC_SOURCES
 from stitch.api.db.read_model.state import refresh_resource_states
 from stitch.api.entities import User

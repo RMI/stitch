@@ -6,7 +6,7 @@ import pytest
 from fastapi import HTTPException
 from starlette.testclient import TestClient
 
-from stitch.api._auth import (
+from stitch.api.auth import (
     RESOURCE_READ,
     RESOURCE_WRITE,
     SOURCE_READ_PREFIX,
@@ -15,7 +15,7 @@ from stitch.api._auth import (
     TokenClaims,
     get_auth_provider,
 )
-from stitch.api._auth.impl import Auth0AuthProvider, AuthSettings, check_scopes
+from stitch.api.auth.impl import Auth0AuthProvider, AuthSettings, check_scopes
 from stitch.api.db.config import get_uow
 from stitch.api.entities import User
 from stitch.api.main import app
@@ -40,7 +40,7 @@ def _make_auth_settings() -> AuthSettings:
 
 def _build_provider(settings: Settings) -> AuthProvider:
     get_auth_provider.cache_clear()
-    with patch("stitch.api._auth.impl.get_settings", return_value=settings):
+    with patch("stitch.api.auth.impl.get_settings", return_value=settings):
         return get_auth_provider()
 
 
@@ -80,7 +80,7 @@ class TestGetAuthProvider:
         """Reads the Auth0 settings when auth is enabled, to fail fast."""
         settings = _make_settings(auth_disabled=False)
         with patch(
-            "stitch.api._auth.impl.get_auth_settings",
+            "stitch.api.auth.impl.get_auth_settings",
             return_value=_make_auth_settings(),
         ) as mock_auth_settings:
             provider = _build_provider(settings)
@@ -91,7 +91,7 @@ class TestGetAuthProvider:
         """The app starts and serves requests when auth is disabled."""
         settings = _make_settings(auth_disabled=True, environment="development")
 
-        with patch("stitch.api._auth.impl.get_settings", return_value=settings):
+        with patch("stitch.api.auth.impl.get_settings", return_value=settings):
             with TestClient(app) as client:
                 response = client.get("/api/v1/health")
 
@@ -153,9 +153,9 @@ class TestAuthMeEndpoint:
         app.dependency_overrides[get_uow] = override_get_uow
 
         with (
-            patch("stitch.api._auth.impl.get_settings", return_value=settings),
+            patch("stitch.api.auth.impl.get_settings", return_value=settings),
             patch(
-                "stitch.api._auth.impl.get_auth_settings",
+                "stitch.api.auth.impl.get_auth_settings",
                 return_value=_make_auth_settings(),
             ),
         ):
@@ -212,9 +212,9 @@ class TestAuthMeEndpoint:
         app.dependency_overrides[get_uow] = override_get_uow
 
         with (
-            patch("stitch.api._auth.impl.get_settings", return_value=settings),
+            patch("stitch.api.auth.impl.get_settings", return_value=settings),
             patch(
-                "stitch.api._auth.impl.get_auth_settings",
+                "stitch.api.auth.impl.get_auth_settings",
                 return_value=_make_auth_settings(),
             ),
         ):

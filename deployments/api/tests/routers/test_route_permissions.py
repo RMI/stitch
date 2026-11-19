@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import AsyncClient
 
-from stitch.api._auth import (
+from stitch.api.auth import (
     MERGE_CANDIDATE_CREATE,
     MERGE_CANDIDATE_READ,
     MERGE_CANDIDATE_REVIEW,

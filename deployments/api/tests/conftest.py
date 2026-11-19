@@ -18,7 +18,7 @@ from stitch.api.db.model import (
     StitchBase,
     UserModel,
 )
-from stitch.api import _auth
+from stitch.api import auth
 from stitch.api.entities import User
 from stitch.api.main import app
 from stitch.api.settings import PostgresConfig, Settings, SqliteConfig, get_settings
@@ -102,7 +102,7 @@ def reset_dependency_overrides():
     app.dependency_overrides = {}
     from stitch.api.settings import get_settings
 
-    _auth.get_auth_provider.cache_clear()
+    auth.get_auth_provider.cache_clear()
     get_settings.cache_clear()
 
 
@@ -112,7 +112,7 @@ async def async_client(
 ) -> AsyncIterator[AsyncClient]:
     """AsyncClient for testing FastAPI routes with mocked user."""
 
-    override_auth(_auth.ALL_PERMISSIONS, integration_session_factory)
+    override_auth(auth.ALL_PERMISSIONS, integration_session_factory)
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -201,7 +201,7 @@ async def integration_client(
             yield uow
 
     app.dependency_overrides[get_uow] = override_get_uow
-    override_auth(_auth.ALL_PERMISSIONS, integration_session_factory)
+    override_auth(auth.ALL_PERMISSIONS, integration_session_factory)
 
     async with AsyncClient(
         transport=ASGITransport(app=app),

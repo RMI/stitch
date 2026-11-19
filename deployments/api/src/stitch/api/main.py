@@ -16,7 +16,7 @@ from stitch.observability import (
 )
 from .middleware import register_middlewares
 from .db.config import dispose_engine
-from ._auth import get_auth_provider
+from .auth import get_auth_provider
 from .settings import Settings, get_settings
 
 from .routers.auth import router as auth_router
