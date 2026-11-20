@@ -7,7 +7,7 @@ RUN npm ci
 
 # Copy source and build. `public/config.json` is the checked-in local default;
 # preview/prod deployments are expected to overwrite the served config file.
-COPY index.html vite.config.js ./
+COPY index.html guide.html vite.config.js ./
 COPY public/ ./public/
 COPY src/ ./src/
 

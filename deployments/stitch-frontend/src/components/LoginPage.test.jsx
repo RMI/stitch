@@ -15,6 +15,14 @@ describe("LoginPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("links to the user guide", () => {
+    render(<LoginPage />);
+
+    expect(
+      screen.getByRole("link", { name: /read the user guide/i }),
+    ).toHaveAttribute("href", "/guide.html");
+  });
+
   it("calls loginWithRedirect on button click", async () => {
     const loginWithRedirect = vi.fn();
     vi.mocked(useAuth0).mockReturnValue({
