@@ -13,7 +13,6 @@ members = [
     "stitch-api",
     "stitch-auth",
     "stitch-client",
-    "stitch-core-llm",
     "stitch-llm",
     "stitch-observability",
     "stitch-ogsi",
@@ -1975,35 +1974,6 @@ dev = [
 requires-dist = [
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "stitch-ogsi", editable = "packages/stitch-ogsi" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=9.2.0" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-]
-
-[[package]]
-name = "stitch-core-llm"
-version = "0.1.0"
-source = { editable = "packages/stitch-core-llm" }
-dependencies = [
-    { name = "openai" },
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-anyio" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "openai", specifier = ">=3.53.0" },
-    { name = "pydantic", specifier = ">=2.14.3" },
-    { name = "pydantic-settings", specifier = ">=2.16.2" },
 ]
 
 [package.metadata.requires-dev]

@@ -155,6 +155,28 @@ export async function createLLMSuggestion(
   return await response.json();
 }
 
+export async function getApiLLMSuggestion(
+  config,
+  id,
+  field,
+  fetcher,
+  endpoint = "oil-gas-fields",
+  { signal } = {},
+) {
+  const url = new URL(`${config.apiBaseUrl}/${endpoint}/${id}/suggest`);
+  url.searchParams.set("field", field);
+  const response = await fetcher(url, { method: "GET", signal });
+
+  if (!response.ok) {
+    const detail = await getErrorDetail(response);
+    const error = new Error(detail);
+    error.status = response.status;
+    throw error;
+  }
+
+  return await response.json();
+}
+
 function formatApiErrorDetail(detail, fallbackStatus) {
   if (typeof detail === "string" && detail) return detail;
   if (Array.isArray(detail) || (detail && typeof detail === "object")) {
