@@ -9,7 +9,7 @@ import {
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { createAuthenticatedFetcher } from "../auth/api";
 import { useConfig } from "../config/useConfig";
-import { createLLMSuggestion, getApiLLMSuggestion } from "../queries/api";
+import { createLLMSuggestion } from "../queries/api";
 import { usePermissions } from "../hooks/usePermissions";
 import SourceMixBar from "../components/SourceMixBar";
 import SectionHeader from "../components/SectionHeader";
@@ -235,7 +235,7 @@ function SuggestionCard({
   );
 }
 
-function AISuggestionPanel({ title, fetchSuggestion, endpoint, resourceId }) {
+function AISuggestionPanel({ endpoint, resourceId }) {
   const config = useConfig();
   const { getAccessTokenSilently } = useAuth0();
   const fetcher = createAuthenticatedFetcher(config, getAccessTokenSilently);
@@ -297,7 +297,7 @@ function AISuggestionPanel({ title, fetchSuggestion, endpoint, resourceId }) {
       return next;
     });
     try {
-      const suggestion = await fetchSuggestion(
+      const suggestion = await createLLMSuggestion(
         config,
         resourceId,
         fieldKey,
@@ -429,7 +429,7 @@ function AISuggestionPanel({ title, fetchSuggestion, endpoint, resourceId }) {
 
   return (
     <section>
-      <SectionHeader title={title} />
+      <SectionHeader title="AI suggestion" />
       <div className="space-y-4 rounded-md border border-line bg-surface p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <label className="flex-1 text-sm text-ink">
@@ -832,20 +832,7 @@ export default function ResourceDetailPage() {
             </FieldGrid>
           </section>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <AISuggestionPanel
-              title="AI suggestion (stitch-llm)"
-              fetchSuggestion={createLLMSuggestion}
-              endpoint={endpoint}
-              resourceId={numericId}
-            />
-            <AISuggestionPanel
-              title="AI suggestion (stitch-api)"
-              fetchSuggestion={getApiLLMSuggestion}
-              endpoint={endpoint}
-              resourceId={numericId}
-            />
-          </div>
+          <AISuggestionPanel endpoint={endpoint} resourceId={numericId} />
 
           <SourcesSection sources={detailView.source_data} />
         </div>
