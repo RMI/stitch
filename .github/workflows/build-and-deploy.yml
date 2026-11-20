@@ -282,7 +282,14 @@ jobs:
   # changes to how answers are computed, and a failure never blocks a deploy.
   rebuild-read-model:
     name: "Rebuild Read Model"
-    needs: [resolve-context, build-api-docker-image, deploy-db, run-db-migrations, deploy-api]
+    needs:
+      [
+        resolve-context,
+        build-api-docker-image,
+        deploy-db,
+        run-db-migrations,
+        deploy-api,
+      ]
     uses: ./.github/workflows/rebuild-read-model.yml
     secrets:
       stitch-app-password: ${{ secrets.STITCH_APP_PASSWORD }}
@@ -293,7 +300,8 @@ jobs:
 
   check-db-migrations-live:
     name: "Check DB Migrations (live)"
-    needs: [resolve-context, build-api-docker-image, deploy-db, run-db-migrations]
+    needs:
+      [resolve-context, build-api-docker-image, deploy-db, run-db-migrations]
     uses: ./.github/workflows/check-alembic.yml
     permissions:
       contents: read
@@ -310,7 +318,14 @@ jobs:
 
   deploy-api:
     name: "Deploy API"
-    needs: [resolve-context, lane-config-validate, build-api-docker-image, deploy-db, run-db-migrations]
+    needs:
+      [
+        resolve-context,
+        lane-config-validate,
+        build-api-docker-image,
+        deploy-db,
+        run-db-migrations,
+      ]
     uses: ./.github/workflows/deploy-container.yml
     secrets:
       azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -343,7 +358,13 @@ jobs:
 
   deploy-stitch-llm:
     name: "Deploy stitch-llm"
-    needs: [resolve-context, lane-config-validate, build-stitch-llm-docker-image, deploy-api]
+    needs:
+      [
+        resolve-context,
+        lane-config-validate,
+        build-stitch-llm-docker-image,
+        deploy-api,
+      ]
     uses: ./.github/workflows/deploy-container.yml
     secrets:
       azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -387,7 +408,7 @@ jobs:
       registry-password: ${{ secrets.GHCR_ETL_PULL_TOKEN }}
     with:
       deployment-lane: ${{ needs.resolve-context.outputs.deployment-lane }}
-      full-image-name: ghcr.io/rmi/stitch-etl-ogsi:${{ vars.ETL_IMAGE_TAG || 'main' }}
+      full-image-name: ghcr.io/rmi/stitch-etl-ogsi:${{ vars.ETL_IMAGE_TAG || 'pr-40' }}
       container-app-name: ${{ format('{0}-etl', needs.resolve-context.outputs.deployment-name) }}
       registry-server: ghcr.io
       registry-username: ${{ needs.lane-config-validate.outputs.ghcr-etl-pull-username }}
@@ -437,7 +458,15 @@ jobs:
       || (github.event.pull_request.head.repo.full_name == github.repository
       && github.event.pull_request.user.type == 'User'
       && !contains(github.event.pull_request.labels.*.name, 'no-deploy'))) }}
-    needs: [resolve-context, lane-config-validate, build-frontend, deploy-api, deploy-stitch-llm, deploy-etl]
+    needs:
+      [
+        resolve-context,
+        lane-config-validate,
+        build-frontend,
+        deploy-api,
+        deploy-stitch-llm,
+        deploy-etl,
+      ]
     uses: ./.github/workflows/azure-static-web-apps.yml
     secrets:
       azure-static-web-apps-deploy-token: ${{ secrets.AZURE_STATIC_WEB_APPS_DEPLOY_TOKEN }}
@@ -469,4 +498,17 @@ jobs:
       && !contains(github.event.pull_request.labels.*.name, 'no-deploy') }}
     uses: ./.github/workflows/comment-pr-summary.yml
     secrets: inherit
-    needs: [resolve-context, build-api-docker-image, build-stitch-llm-docker-image, build-seed-docker-image, deploy-db, run-db-migrations, deploy-api, deploy-stitch-llm, deploy-etl, run-seed, deploy-frontend]
+    needs:
+      [
+        resolve-context,
+        build-api-docker-image,
+        build-stitch-llm-docker-image,
+        build-seed-docker-image,
+        deploy-db,
+        run-db-migrations,
+        deploy-api,
+        deploy-stitch-llm,
+        deploy-etl,
+        run-seed,
+        deploy-frontend,
+      ]
