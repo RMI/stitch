@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { useResources } from "../hooks/useResources";
+import { Link } from "react-router";
+import { useResources, useCreateMergeCandidate } from "../hooks/useResources";
+import { useHasPermission } from "../hooks/usePermissions";
 import { useListState } from "../hooks/useListState";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import ResourcesTable from "./ResourcesTable";
@@ -8,6 +10,12 @@ import Pagination from "./Pagination";
 import Button from "./Button";
 import Input from "./Input";
 import { useConfig } from "../config/useConfig";
+import {
+  getRememberedMergeSelection,
+  rememberMergeSelection,
+} from "../config/mergeSelection";
+import { getResourceField } from "../utils/resourceDisplay";
+import { getCountryName } from "../constants/countries";
 
 const COLUMN_LABELS = {
   name: "Name",
@@ -18,6 +26,134 @@ const COLUMN_LABELS = {
   field_status: "Field status",
   primary_hydrocarbon_group: "Primary hydrocarbon group",
 };
+
+// A merge candidate joins exactly two resources, so the selection caps at
+// two. The backend accepts >=2, but surfacing larger groups here would
+// promise more than the review page is designed to handle.
+const MERGE_SELECTION_LIMIT = 2;
+
+const MERGE_REVIEW_PATH = "/merge-candidate-review";
+
+// The API answers a rejected proposal with a developer-facing sentence (e.g.
+// "A pending merge candidate already exists for resources [3, 7]."), so the
+// cases a user can hit by picking a pair are reworded here. Matching on the
+// message is the only signal the API gives; anything unrecognised falls back
+// to the API's own text.
+function getProposeMergeErrorMessage(error) {
+  const message = error?.message ?? "";
+  if (/pending merge candidate already exists/i.test(message)) {
+    return "These two fields are already waiting for review.";
+  }
+  if (/approved merge candidate already exists/i.test(message)) {
+    return "These two fields have already been merged.";
+  }
+  if (/denied merge candidate already exists/i.test(message)) {
+    return "A reviewer has already decided these two fields are not the same.";
+  }
+  if (/already been merged/i.test(message)) {
+    return "One of these fields has already been merged into another. Remove it and pick again.";
+  }
+  if (error?.status === 404) {
+    return "One of these fields no longer exists. Remove it and pick again.";
+  }
+  return `Could not propose the merge: ${message || "unknown error"}`;
+}
+
+// Floats at the bottom of the screen while a merge is being picked, naming the
+// picked fields so they stay visible when they are on another page or
+// filtered out. After a successful proposal it confirms and links to review.
+function MergeSelectionBar({
+  selection,
+  onRemove,
+  onClear,
+  onPropose,
+  onDismissProposed,
+  isProposing,
+  proposeError,
+  wasProposed,
+}) {
+  if (!selection.length && !wasProposed) return null;
+
+  const barClassName =
+    "sticky bottom-4 z-10 mt-4 rounded-md border border-line-strong/40 bg-panel p-3 text-sm shadow-lg";
+
+  if (!selection.length) {
+    return (
+      <div
+        role="status"
+        className={`${barClassName} flex flex-wrap items-center gap-3`}
+      >
+        <span className="font-semibold text-ink">Merge proposed.</span>
+        <Link
+          to={MERGE_REVIEW_PATH}
+          className="font-semibold text-primary underline underline-offset-4"
+        >
+          Review now →
+        </Link>
+        <Button
+          variant="ghost"
+          onClick={onDismissProposed}
+          className="ml-auto"
+          aria-label="Dismiss"
+        >
+          <span aria-hidden="true">×</span>
+        </Button>
+      </div>
+    );
+  }
+
+  const isComplete = selection.length === MERGE_SELECTION_LIMIT;
+
+  return (
+    <section aria-label="Merge selection" className={barClassName}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-semibold text-ink">Merge</span>
+        <ul className="flex flex-wrap items-center gap-2">
+          {selection.map((entry) => {
+            const name = entry.name ?? `Unnamed field ${entry.id}`;
+            return (
+              <li
+                key={entry.id}
+                className="flex items-center gap-1 rounded-full border border-line bg-primary-soft/40 py-0.5 pl-3 pr-1"
+              >
+                <span className="text-ink">{name}</span>
+                {entry.country && (
+                  <span className="text-ink-muted">· {entry.country}</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onRemove(entry.id)}
+                  aria-label={`Remove ${name} from merge`}
+                  className="flex h-6 w-6 items-center justify-center rounded-full text-ink-muted hover:bg-rmiblue-100 hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-energy/60"
+                >
+                  <span aria-hidden="true">×</span>
+                </button>
+              </li>
+            );
+          })}
+          {!isComplete && (
+            <li className="rounded-full border border-dashed border-line-strong/60 px-3 py-0.5 text-ink-muted">
+              Pick one more field
+            </li>
+          )}
+        </ul>
+        <div className="ml-auto flex items-center gap-2">
+          <Button variant="ghost" onClick={onClear}>
+            Clear
+          </Button>
+          <Button onClick={onPropose} disabled={!isComplete || isProposing}>
+            {isProposing ? "Proposing..." : "Propose merge"}
+          </Button>
+        </div>
+      </div>
+      {proposeError && (
+        <p role="alert" className="mt-2 text-danger">
+          {getProposeMergeErrorMessage(proposeError)}
+        </p>
+      )}
+    </section>
+  );
+}
 
 function getSortLabel(sortConfig) {
   if (!sortConfig.column) return "Name";
@@ -125,6 +261,61 @@ export default function ResourcesView({ className = "", endpoint }) {
   const handleFiltersChange = (newFilters) => setFilters(newFilters);
 
   const handleSortChange = (newSortConfig) => setSort(newSortConfig);
+
+  // Row-level multi-select feeds the merge bar below. Only rendered when the
+  // caller can create merge candidates; the backend enforces the same
+  // permission. The selection is remembered for the session so it survives
+  // opening a resource to check it and coming back.
+  const canProposeMerge = useHasPermission("merge-candidate:create");
+  const [mergeSelection, setMergeSelection] = useState(() =>
+    getRememberedMergeSelection(endpoint),
+  );
+  const selectedIds = new Set(mergeSelection.map((entry) => entry.id));
+  const createMergeCandidate = useCreateMergeCandidate(endpoint);
+
+  const saveMergeSelection = (next) => {
+    setMergeSelection(next);
+    rememberMergeSelection(endpoint, next);
+  };
+
+  // Any change to the picked pair makes the last proposal's outcome (an error
+  // or the "proposed" confirmation) stale, so it is cleared alongside.
+  const changeMergeSelection = (next) => {
+    createMergeCandidate.reset();
+    saveMergeSelection(next);
+  };
+
+  const handleToggleSelect = (resource) => {
+    if (selectedIds.has(resource.id)) {
+      changeMergeSelection(
+        mergeSelection.filter((entry) => entry.id !== resource.id),
+      );
+    } else if (mergeSelection.length < MERGE_SELECTION_LIMIT) {
+      const country = getResourceField(resource, "country");
+      changeMergeSelection([
+        ...mergeSelection,
+        {
+          id: resource.id,
+          name: getResourceField(resource, "name"),
+          country: country != null ? getCountryName(country) : null,
+        },
+      ]);
+    }
+  };
+
+  const handleRemoveFromMerge = (id) =>
+    changeMergeSelection(mergeSelection.filter((entry) => entry.id !== id));
+
+  const handleClearMergeSelection = () => changeMergeSelection([]);
+
+  // Stays on the list so the user can keep working through it; the bar then
+  // confirms the proposal and links to the review queue.
+  const handleProposeMerge = () => {
+    createMergeCandidate.mutate(
+      mergeSelection.map((entry) => entry.id),
+      { onSuccess: () => saveMergeSelection([]) },
+    );
+  };
 
   return (
     <div className={`mx-auto w-full max-w-6xl ${className}`}>
@@ -240,6 +431,9 @@ export default function ResourcesView({ className = "", endpoint }) {
         sortConfig={sort}
         onSort={handleSortChange}
         isFetching={isFetching}
+        selectedIds={selectedIds}
+        onToggleSelect={canProposeMerge ? handleToggleSelect : undefined}
+        selectionAtLimit={selectedIds.size >= MERGE_SELECTION_LIMIT}
       />
       {data && totalCount > 0 && (
         <Pagination
@@ -249,6 +443,18 @@ export default function ResourcesView({ className = "", endpoint }) {
           totalPages={totalPages}
           onPageChange={handlePageChange}
           onPageSizeChange={handlePageSizeChange}
+        />
+      )}
+      {canProposeMerge && (
+        <MergeSelectionBar
+          selection={mergeSelection}
+          onRemove={handleRemoveFromMerge}
+          onClear={handleClearMergeSelection}
+          onPropose={handleProposeMerge}
+          onDismissProposed={() => createMergeCandidate.reset()}
+          isProposing={createMergeCandidate.isPending}
+          proposeError={createMergeCandidate.error}
+          wasProposed={createMergeCandidate.isSuccess}
         />
       )}
 

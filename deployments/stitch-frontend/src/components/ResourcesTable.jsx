@@ -41,7 +41,11 @@ export default function ResourcesTable({
   sortConfig,
   onSort,
   isFetching,
+  selectedIds,
+  onToggleSelect,
+  selectionAtLimit = false,
 }) {
+  const selectable = Boolean(onToggleSelect);
   if (!resources?.length) return null;
 
   function handleSort(key) {
@@ -67,6 +71,11 @@ export default function ResourcesTable({
         >
           <thead className="bg-surface">
             <tr className="border-b border-line text-left text-xs font-semibold tracking-wide text-ink-muted">
+              {selectable && (
+                <th className="w-10 px-3 py-2">
+                  <span className="sr-only">Select for merge</span>
+                </th>
+              )}
               {COLUMNS.map((col) =>
                 col.sortable ? (
                   <th
@@ -101,6 +110,11 @@ export default function ResourcesTable({
             {sorted.map((resource) => {
               const resourceHref = `/oil-gas-fields/${resource.id}`;
 
+              const isSelected = selectable && selectedIds.has(resource.id);
+              const isSelectionBlocked = selectionAtLimit && !isSelected;
+              const resourceName =
+                getResourceField(resource, "name") ?? `resource ${resource.id}`;
+
               return (
                 // Each cell carries its own overlay so the whole row stays
                 // clickable. The overlays are deliberately anchored to the <td>s
@@ -110,8 +124,32 @@ export default function ResourcesTable({
                 // entire table (STIT-737).
                 <tr
                   key={resource.id}
-                  className="group border-b border-line/70 transition-colors hover:bg-surface"
+                  className={`group border-b border-line/70 transition-colors ${isSelected ? "bg-primary-soft/40 hover:bg-primary-soft/60" : "hover:bg-surface"}`}
                 >
+                  {selectable && (
+                    // The label fills the cell, so a click that just misses
+                    // the box still toggles it rather than falling through to
+                    // the row link and leaving the list.
+                    <td className="w-10 p-0">
+                      <label
+                        className={`flex items-center justify-center px-3 py-2.5 ${isSelectionBlocked ? "cursor-not-allowed" : "cursor-pointer"}`}
+                        title={
+                          isSelectionBlocked
+                            ? "A merge combines exactly two fields. Remove one to pick another."
+                            : undefined
+                        }
+                      >
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${resourceName} for merge`}
+                          checked={isSelected}
+                          disabled={isSelectionBlocked}
+                          onChange={() => onToggleSelect(resource)}
+                          className="h-4 w-4 cursor-[inherit] accent-bluespruce"
+                        />
+                      </label>
+                    </td>
+                  )}
                   {COLUMNS.map((col) => {
                     const rawValue = getResourceField(resource, col.key);
                     const value =
