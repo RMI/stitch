@@ -5,6 +5,7 @@ from functools import lru_cache
 from typing import Annotated, Any, ClassVar
 
 from fastapi import Depends, HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi_plugin import Auth0FastAPI
 from pydantic import HttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -112,11 +113,19 @@ def get_auth_provider() -> AuthProvider:
 
 AuthProviderDep = Annotated[AuthProvider, Depends(get_auth_provider)]
 
+_bearer_scheme = HTTPBearer(auto_error=False)
+
 
 def require_auth(
     *permissions: str,
 ) -> Callable[[Request, AuthProvider], Awaitable[TokenClaims]]:
-    async def dependency(request: Request, provider: AuthProviderDep) -> TokenClaims:
+    async def dependency(
+        request: Request,
+        provider: AuthProviderDep,
+        _credentials: Annotated[
+            HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)
+        ] = None,
+    ) -> TokenClaims:
         claims = await provider.authenticate(request)
         check_permissions(claims.permissions, permissions)
         return claims
