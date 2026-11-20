@@ -6,8 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from stitch.api.db import og_field_resource_actions
 from stitch.api.db.utils import resource_to_detail_view
 from stitch.ogsi.model import OGFieldDetailView, OGSISrcKey
-from stitch_core_llm import suggest_missing_field_values
-from stitch_core_llm.model import FieldSuggestion
+from stitch.core.llm import suggest_missing_field_values, FieldSuggestion
 
 AllowedSuggestionField = Literal[
     "name",

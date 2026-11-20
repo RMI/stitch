@@ -14,7 +14,6 @@ members = [
   "packages/stitch-client",
   "packages/stitch-observability",
   "packages/stitch-ogsi",
-  "packages/stitch-core-llm",
 ]
 
 [tool.uv.sources]

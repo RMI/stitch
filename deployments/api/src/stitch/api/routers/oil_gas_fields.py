@@ -54,12 +54,12 @@ from stitch.ogsi.model import (
     OGFieldSourceView,
     OGFieldView,
 )
-from stitch_core_llm.errors import (
+from stitch.core.llm import (
     AzureResponsesError,
     LLMConfigurationError,
     ModelOutputError,
+    FieldSuggestion,
 )
-from stitch_core_llm.model import FieldSuggestion
 
 logger = logging.getLogger(__name__)
 
