@@ -10,7 +10,7 @@ from fastapi_plugin import Auth0FastAPI
 from pydantic import HttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import select
-from starlette.status import HTTP_403_FORBIDDEN
+from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_403_FORBIDDEN
 from stitch.api.db.config import SessionFactoryDep
 from stitch.api.db.model.user import User as UserModel
 from stitch.api.settings import get_settings
@@ -69,6 +69,12 @@ def check_permissions(granted: frozenset[str], required: Iterable[str]) -> None:
 
 class Auth0AuthProvider(Auth0FastAPI):
     async def authenticate(self, request: Request) -> TokenClaims:
+        if not request.headers.get("Authorization"):
+            raise HTTPException(
+                status_code=HTTP_401_UNAUTHORIZED,
+                detail="Missing Authorization header",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         raw: dict[str, Any] = await self.require_auth()(request)
         return TokenClaims(
             sub=raw["sub"],
