@@ -47,6 +47,15 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3000,
     },
+    build: {
+      // The public user guide is a second page sharing the app's stylesheet.
+      rolldownOptions: {
+        input: {
+          main: resolve(import.meta.dirname, "index.html"),
+          guide: resolve(import.meta.dirname, "guide.html"),
+        },
+      },
+    },
     define: Object.fromEntries(
       Object.entries(buildMeta).map(([key, value]) => [
         `import.meta.env.${key}`,
