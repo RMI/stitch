@@ -35,7 +35,9 @@ def _build_provider(settings: Settings) -> AuthProvider:
         patch("stitch.api.auth.get_settings", return_value=settings),
         patch(
             "stitch.api.auth.get_auth_settings",
-            return_value=AuthSettings(domain="example.us.auth0.com", audience="aud"),
+            return_value=AuthSettings(
+                issuer="https://example.us.auth0.com/", audience="aud"
+            ),
         ),
     ):
         return get_auth_provider()
@@ -56,6 +58,11 @@ def test_get_auth_provider_selects_provider(auth_disabled, environment, expected
             _build_provider(settings)
     else:
         assert isinstance(_build_provider(settings), expected)
+
+
+def test_auth0_provider_domain_comes_from_issuer():
+    provider = _build_provider(Settings(auth_disabled=False, environment="production"))
+    assert provider.api_client.options.domain == "example.us.auth0.com"
 
 
 def test_startup_fails_when_auth_disabled_in_production():
