@@ -20,6 +20,7 @@ dependencies = [
   "stitch-auth",
   "stitch-observability[asgi]",
   "stitch-ogsi",
+  "rmi-stitch-core>=0.2.0.dev4",
 ]
 
 [build-system]

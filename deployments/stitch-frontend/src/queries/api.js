@@ -138,7 +138,7 @@ export async function createLLMSuggestion(
   endpoint = "resources",
   { signal } = {},
 ) {
-  const url = new URL(`${config.stitchLlmBaseUrl}/${endpoint}/${id}`);
+  const url = new URL(`${config.apiBaseUrl}/${endpoint}/${id}/suggest`);
   url.searchParams.set("field", field);
   const response = await fetcher(url, {
     method: "GET",

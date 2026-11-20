@@ -256,7 +256,7 @@ describe("API Functions", () => {
   });
 
   describe("createLLMSuggestion", () => {
-    it("calls the stitch-llm GET endpoint with the requested field", async () => {
+    it("calls the stitch-api suggest endpoint with the requested field", async () => {
       mockFetcher.mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -282,7 +282,9 @@ describe("API Functions", () => {
       );
 
       expect(mockFetcher).toHaveBeenCalledWith(
-        new URL("http://localhost:8002/api/v1/oil-gas-fields/42?field=basin"),
+        new URL(
+          "http://localhost:8000/api/v1/oil-gas-fields/42/suggest?field=basin",
+        ),
         { method: "GET" },
       );
       expect(result.value).toBe("Songliao Basin");
