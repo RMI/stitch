@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.factories import ResourceCreateFactory
 from stitch.api.auth.permissions import (
-    MERGE_CANDIDATE_CREATE,
     MERGE_CANDIDATE_READ,
     RESOURCE_READ,
     SOURCE_READ_PREFIX,
@@ -25,10 +24,7 @@ from stitch.api.db.model import (
     OGFieldResourceSourcePriority,
 )
 from stitch.api.db.read_model.permissions import PUBLIC_SOURCES
-from tests.auth_overrides import override_auth
 from stitch.ogsi.model import OGFieldResource, OGFieldSource
-
-SOURCE_READ_GEM = f"{SOURCE_READ_PREFIX}gem"
 
 
 async def _create_resource(
@@ -72,16 +68,14 @@ class TestMergeCandidateDetailIntegration:
     @pytest.mark.anyio
     async def test_detail_includes_compare_tagged_with_resource_ids(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
     ):
-        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
-        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
-        candidate_id = await _create_candidate(integration_client, [id_a, id_b])
+        id_a = await _create_resource(client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(client, og_create_res_fact, "Burgan")
+        candidate_id = await _create_candidate(client, [id_a, id_b])
 
-        resp = await integration_client.get(
-            f"/oil-gas-fields/merge-candidates/{candidate_id}"
-        )
+        resp = await client.get(f"/oil-gas-fields/merge-candidates/{candidate_id}")
         assert resp.status_code == 200, resp.text
         body = resp.json()
 
@@ -117,23 +111,21 @@ class TestMergeCandidateDetailIntegration:
     @pytest.mark.anyio
     async def test_detail_after_approve_is_live_null_shell(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
     ):
-        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
-        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
-        candidate_id = await _create_candidate(integration_client, [id_a, id_b])
+        id_a = await _create_resource(client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(client, og_create_res_fact, "Burgan")
+        candidate_id = await _create_candidate(client, [id_a, id_b])
 
-        approve = await integration_client.post(
+        approve = await client.post(
             f"/oil-gas-fields/merge-candidates/{candidate_id}/approve",
             json={"review_notes": "ok"},
         )
         assert approve.status_code == 200, approve.text
         assert approve.json()["merged_resource_id"] is not None
 
-        resp = await integration_client.get(
-            f"/oil-gas-fields/merge-candidates/{candidate_id}"
-        )
+        resp = await client.get(f"/oil-gas-fields/merge-candidates/{candidate_id}")
         assert resp.status_code == 200, resp.text
         body = resp.json()
 
@@ -151,14 +143,14 @@ class TestMergeCandidateDetailIntegration:
     @pytest.mark.anyio
     async def test_per_resource_override_is_reverted_by_merge(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         integration_session_factory: async_sessionmaker[AsyncSession],
         og_field_resource_factory,
         source_maker,
     ):
         # Resource A carries RMI "RMI-name" (default winner) and GEM "GEM-name".
         id_a = await _create_resource_with_sources(
-            integration_client,
+            client,
             og_field_resource_factory,
             [
                 source_maker(source="rmi", managed=False, name="RMI-name"),
@@ -166,7 +158,7 @@ class TestMergeCandidateDetailIntegration:
             ],
         )
         id_b = await _create_resource_with_sources(
-            integration_client,
+            client,
             og_field_resource_factory,
             [source_maker(source="rmi", managed=False, name="B-name")],
         )
@@ -195,14 +187,12 @@ class TestMergeCandidateDetailIntegration:
             await session.commit()
 
         # A's coalesced value reflects the override: its name resolves to GEM's.
-        detail_a = await integration_client.get(f"/oil-gas-fields/{id_a}/detail")
+        detail_a = await client.get(f"/oil-gas-fields/{id_a}/detail")
         assert detail_a.status_code == 200, detail_a.text
         assert detail_a.json()["data"]["name"] == "GEM-name"  # override in effect
 
-        candidate_id = await _create_candidate(integration_client, [id_a, id_b])
-        resp = await integration_client.get(
-            f"/oil-gas-fields/merge-candidates/{candidate_id}"
-        )
+        candidate_id = await _create_candidate(client, [id_a, id_b])
+        resp = await client.get(f"/oil-gas-fields/merge-candidates/{candidate_id}")
         assert resp.status_code == 200, resp.text
         body = resp.json()
 
@@ -221,14 +211,14 @@ class TestMergeCandidateDetailIntegration:
 
         # Approving materializes the reset: the merged resource has no override
         # rows and resolves `name` in default order (RMI), dropping the override.
-        approve = await integration_client.post(
+        approve = await client.post(
             f"/oil-gas-fields/merge-candidates/{candidate_id}/approve",
         )
         assert approve.status_code == 200, approve.text
         merged_id = approve.json()["merged_resource_id"]
         assert merged_id is not None
 
-        merged = await integration_client.get(f"/oil-gas-fields/{merged_id}/detail")
+        merged = await client.get(f"/oil-gas-fields/{merged_id}/detail")
         assert merged.status_code == 200, merged.text
         assert merged.json()["data"]["name"] == "RMI-name"
 
@@ -245,21 +235,19 @@ class TestMergeCandidateDetailIntegration:
     @pytest.mark.anyio
     async def test_overlapping_approval_reroutes_pending_candidate(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
     ):
         # Two overlapping candidates share resource A. Approving A+B -> D must
         # repoint the pending A+C to D+C: it stays PENDING and its comparison now
         # shows D's live values (STIT-418 AC 3).
-        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
-        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
-        id_c = await _create_resource(
-            integration_client, og_create_res_fact, "Safaniya"
-        )
-        candidate_ab = await _create_candidate(integration_client, [id_a, id_b])
-        candidate_ac = await _create_candidate(integration_client, [id_a, id_c])
+        id_a = await _create_resource(client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(client, og_create_res_fact, "Burgan")
+        id_c = await _create_resource(client, og_create_res_fact, "Safaniya")
+        candidate_ab = await _create_candidate(client, [id_a, id_b])
+        candidate_ac = await _create_candidate(client, [id_a, id_c])
 
-        approve = await integration_client.post(
+        approve = await client.post(
             f"/oil-gas-fields/merge-candidates/{candidate_ab}/approve",
             json={"review_notes": "ok"},
         )
@@ -267,9 +255,7 @@ class TestMergeCandidateDetailIntegration:
         merged_d = approve.json()["merged_resource_id"]
         assert merged_d is not None
 
-        resp = await integration_client.get(
-            f"/oil-gas-fields/merge-candidates/{candidate_ac}"
-        )
+        resp = await client.get(f"/oil-gas-fields/merge-candidates/{candidate_ac}")
         assert resp.status_code == 200, resp.text
         body = resp.json()
 
@@ -289,7 +275,7 @@ class TestMergeCandidateDetailIntegration:
         }
 
         # The re-routed candidate is now approvable (no already-merged 400).
-        approve_ac = await integration_client.post(
+        approve_ac = await client.post(
             f"/oil-gas-fields/merge-candidates/{candidate_ac}/approve",
         )
         assert approve_ac.status_code == 200, approve_ac.text
@@ -298,25 +284,23 @@ class TestMergeCandidateDetailIntegration:
     @pytest.mark.anyio
     async def test_already_merged_error_names_ids_not_repr(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
     ):
         # Once A is merged away, referencing it again is rejected with an id-based
         # message -- no ORM repr() leak (`object at 0x...`).
-        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
-        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
-        id_c = await _create_resource(
-            integration_client, og_create_res_fact, "Safaniya"
-        )
-        candidate_ab = await _create_candidate(integration_client, [id_a, id_b])
+        id_a = await _create_resource(client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(client, og_create_res_fact, "Burgan")
+        id_c = await _create_resource(client, og_create_res_fact, "Safaniya")
+        candidate_ab = await _create_candidate(client, [id_a, id_b])
 
-        approve = await integration_client.post(
+        approve = await client.post(
             f"/oil-gas-fields/merge-candidates/{candidate_ab}/approve",
         )
         assert approve.status_code == 200, approve.text
         merged_d = approve.json()["merged_resource_id"]
 
-        resp = await integration_client.post(
+        resp = await client.post(
             "/oil-gas-fields/merge-candidates",
             json={"resource_ids": [id_a, id_c]},
         )
@@ -328,85 +312,73 @@ class TestMergeCandidateDetailIntegration:
     @pytest.mark.anyio
     async def test_two_overlapping_candidates_collapse_to_one(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
     ):
         # A+C and B+C both re-route to D+C when A+B is approved. They become the
         # same proposal, so exactly one survives (the earlier-created candidate).
-        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
-        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
-        id_c = await _create_resource(
-            integration_client, og_create_res_fact, "Safaniya"
-        )
-        candidate_ac = await _create_candidate(integration_client, [id_a, id_c])
-        candidate_bc = await _create_candidate(integration_client, [id_b, id_c])
-        candidate_ab = await _create_candidate(integration_client, [id_a, id_b])
+        id_a = await _create_resource(client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(client, og_create_res_fact, "Burgan")
+        id_c = await _create_resource(client, og_create_res_fact, "Safaniya")
+        candidate_ac = await _create_candidate(client, [id_a, id_c])
+        candidate_bc = await _create_candidate(client, [id_b, id_c])
+        candidate_ab = await _create_candidate(client, [id_a, id_b])
 
-        approve = await integration_client.post(
+        approve = await client.post(
             f"/oil-gas-fields/merge-candidates/{candidate_ab}/approve",
         )
         assert approve.status_code == 200, approve.text
         merged_d = approve.json()["merged_resource_id"]
 
-        survivor = await integration_client.get(
-            f"/oil-gas-fields/merge-candidates/{candidate_ac}"
-        )
+        survivor = await client.get(f"/oil-gas-fields/merge-candidates/{candidate_ac}")
         assert survivor.status_code == 200, survivor.text
         assert survivor.json()["status"] == "PENDING"
         assert survivor.json()["resource_ids"] == [merged_d, id_c]
 
-        dropped = await integration_client.get(
-            f"/oil-gas-fields/merge-candidates/{candidate_bc}"
-        )
+        dropped = await client.get(f"/oil-gas-fields/merge-candidates/{candidate_bc}")
         assert dropped.status_code == 404, dropped.text
 
     @pytest.mark.anyio
     async def test_pairwise_triangle_collapses_over_sequential_merges(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
     ):
         # Entity linkage emits pairwise candidates, so a 3-cluster {A,B,C} yields
         # A+B, B+C, and A+C. Merging the cluster edge by edge must collapse the
         # redundant third candidate rather than leave it as a stale dead end.
-        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
-        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
-        id_c = await _create_resource(
-            integration_client, og_create_res_fact, "Safaniya"
-        )
-        candidate_ab = await _create_candidate(integration_client, [id_a, id_b])
-        candidate_bc = await _create_candidate(integration_client, [id_b, id_c])
-        candidate_ac = await _create_candidate(integration_client, [id_a, id_c])
+        id_a = await _create_resource(client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(client, og_create_res_fact, "Burgan")
+        id_c = await _create_resource(client, og_create_res_fact, "Safaniya")
+        candidate_ab = await _create_candidate(client, [id_a, id_b])
+        candidate_bc = await _create_candidate(client, [id_b, id_c])
+        candidate_ac = await _create_candidate(client, [id_a, id_c])
 
         # Merge A+B -> D. Both B+C and A+C re-route to D+C (the same proposal), so
         # the later-created A+C is dropped and B+C survives.
-        approve_ab = await integration_client.post(
+        approve_ab = await client.post(
             f"/oil-gas-fields/merge-candidates/{candidate_ab}/approve",
         )
         assert approve_ab.status_code == 200, approve_ab.text
         merged_d = approve_ab.json()["merged_resource_id"]
 
-        dropped = await integration_client.get(
-            f"/oil-gas-fields/merge-candidates/{candidate_ac}"
-        )
+        dropped = await client.get(f"/oil-gas-fields/merge-candidates/{candidate_ac}")
         assert dropped.status_code == 404, dropped.text
 
-        survivor = await integration_client.get(
-            f"/oil-gas-fields/merge-candidates/{candidate_bc}"
-        )
+        survivor = await client.get(f"/oil-gas-fields/merge-candidates/{candidate_bc}")
         assert survivor.status_code == 200, survivor.text
         assert survivor.json()["status"] == "PENDING"
         assert survivor.json()["resource_ids"] == [merged_d, id_c]
 
         # Merge the surviving edge (now D+C) to finish the 3-way. A+C stays gone --
         # no stale candidate resurfaces.
-        approve_bc = await integration_client.post(
+        approve_bc = await client.post(
             f"/oil-gas-fields/merge-candidates/{candidate_bc}/approve",
         )
         assert approve_bc.status_code == 200, approve_bc.text
         assert approve_bc.json()["merged_resource_id"] is not None
 
-        still_dropped = await integration_client.get(
+        still_dropped = await client.get(
             f"/oil-gas-fields/merge-candidates/{candidate_ac}"
         )
         assert still_dropped.status_code == 404, still_dropped.text
@@ -414,98 +386,84 @@ class TestMergeCandidateDetailIntegration:
     @pytest.mark.anyio
     async def test_three_way_candidate_that_also_collides_is_dropped(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
     ):
         # Edge: a candidate that both dedupes an item (3-way A+B+C -> D+C) AND
         # collides with an earlier-rerouted candidate (A+C -> D+C). The 3-way is
         # processed second, so it both removes an orphan item and is deleted in the
         # same flush -- this must not error.
-        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
-        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
-        id_c = await _create_resource(
-            integration_client, og_create_res_fact, "Safaniya"
-        )
-        candidate_ac = await _create_candidate(integration_client, [id_a, id_c])
-        candidate_abc = await _create_candidate(integration_client, [id_a, id_b, id_c])
-        candidate_ab = await _create_candidate(integration_client, [id_a, id_b])
+        id_a = await _create_resource(client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(client, og_create_res_fact, "Burgan")
+        id_c = await _create_resource(client, og_create_res_fact, "Safaniya")
+        candidate_ac = await _create_candidate(client, [id_a, id_c])
+        candidate_abc = await _create_candidate(client, [id_a, id_b, id_c])
+        candidate_ab = await _create_candidate(client, [id_a, id_b])
 
-        approve = await integration_client.post(
+        approve = await client.post(
             f"/oil-gas-fields/merge-candidates/{candidate_ab}/approve",
         )
         assert approve.status_code == 200, approve.text
         merged_d = approve.json()["merged_resource_id"]
 
-        survivor = await integration_client.get(
-            f"/oil-gas-fields/merge-candidates/{candidate_ac}"
-        )
+        survivor = await client.get(f"/oil-gas-fields/merge-candidates/{candidate_ac}")
         assert survivor.status_code == 200, survivor.text
         assert survivor.json()["resource_ids"] == [merged_d, id_c]
 
-        dropped = await integration_client.get(
-            f"/oil-gas-fields/merge-candidates/{candidate_abc}"
-        )
+        dropped = await client.get(f"/oil-gas-fields/merge-candidates/{candidate_abc}")
         assert dropped.status_code == 404, dropped.text
 
     @pytest.mark.anyio
     async def test_subset_candidate_is_dropped_when_superset_is_approved(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
     ):
         # Approving the 3-way A+B+C -> D fully subsumes a pending A+B: it would
         # collapse to a single member [D], which can never be approved. It must be
         # deleted, not left as a PENDING dead end.
-        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
-        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
-        id_c = await _create_resource(
-            integration_client, og_create_res_fact, "Safaniya"
-        )
-        candidate_ab = await _create_candidate(integration_client, [id_a, id_b])
-        candidate_abc = await _create_candidate(integration_client, [id_a, id_b, id_c])
+        id_a = await _create_resource(client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(client, og_create_res_fact, "Burgan")
+        id_c = await _create_resource(client, og_create_res_fact, "Safaniya")
+        candidate_ab = await _create_candidate(client, [id_a, id_b])
+        candidate_abc = await _create_candidate(client, [id_a, id_b, id_c])
 
-        approve = await integration_client.post(
+        approve = await client.post(
             f"/oil-gas-fields/merge-candidates/{candidate_abc}/approve",
         )
         assert approve.status_code == 200, approve.text
 
-        dropped = await integration_client.get(
-            f"/oil-gas-fields/merge-candidates/{candidate_ab}"
-        )
+        dropped = await client.get(f"/oil-gas-fields/merge-candidates/{candidate_ab}")
         assert dropped.status_code == 404, dropped.text
 
     @pytest.mark.anyio
     async def test_three_way_candidate_dedupes_merged_members(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
     ):
         # A 3-way A+B+C where A+B is approved: A and B both collapse to D, so the
         # candidate must dedupe to D+C without tripping the
         # (merge_candidate_id, resource_id) unique constraint, and stay approvable.
-        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
-        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
-        id_c = await _create_resource(
-            integration_client, og_create_res_fact, "Safaniya"
-        )
-        candidate_abc = await _create_candidate(integration_client, [id_a, id_b, id_c])
-        candidate_ab = await _create_candidate(integration_client, [id_a, id_b])
+        id_a = await _create_resource(client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(client, og_create_res_fact, "Burgan")
+        id_c = await _create_resource(client, og_create_res_fact, "Safaniya")
+        candidate_abc = await _create_candidate(client, [id_a, id_b, id_c])
+        candidate_ab = await _create_candidate(client, [id_a, id_b])
 
-        approve = await integration_client.post(
+        approve = await client.post(
             f"/oil-gas-fields/merge-candidates/{candidate_ab}/approve",
         )
         assert approve.status_code == 200, approve.text
         merged_d = approve.json()["merged_resource_id"]
 
-        resp = await integration_client.get(
-            f"/oil-gas-fields/merge-candidates/{candidate_abc}"
-        )
+        resp = await client.get(f"/oil-gas-fields/merge-candidates/{candidate_abc}")
         assert resp.status_code == 200, resp.text
         # A and B collapsed to a single D member; C is preserved.
         assert resp.json()["status"] == "PENDING"
         assert resp.json()["resource_ids"] == [merged_d, id_c]
 
-        approve_abc = await integration_client.post(
+        approve_abc = await client.post(
             f"/oil-gas-fields/merge-candidates/{candidate_abc}/approve",
         )
         assert approve_abc.status_code == 200, approve_abc.text
@@ -514,14 +472,14 @@ class TestMergeCandidateDetailIntegration:
     @pytest.mark.anyio
     async def test_composite_resource_matches_when_winners_agree(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_field_resource_factory,
         source_maker,
     ):
         # Resource A is "composite": two basin sources, RMI (winner) = "Foo" and
         # GEM = "Bar", so A resolves basin to "Foo".
         id_a = await _create_resource_with_sources(
-            integration_client,
+            client,
             og_field_resource_factory,
             [
                 source_maker(source="rmi", managed=False, basin="Foo"),
@@ -530,15 +488,13 @@ class TestMergeCandidateDetailIntegration:
         )
         # Resource B has a single basin source = "Foo".
         id_b = await _create_resource_with_sources(
-            integration_client,
+            client,
             og_field_resource_factory,
             [source_maker(source="rmi", managed=False, basin="Foo")],
         )
 
-        candidate_id = await _create_candidate(integration_client, [id_a, id_b])
-        resp = await integration_client.get(
-            f"/oil-gas-fields/merge-candidates/{candidate_id}"
-        )
+        candidate_id = await _create_candidate(client, [id_a, id_b])
+        resp = await client.get(f"/oil-gas-fields/merge-candidates/{candidate_id}")
         assert resp.status_code == 200, resp.text
         body = resp.json()
 
@@ -571,13 +527,11 @@ class TestMergeCandidateListIntegration:
     @pytest.mark.anyio
     async def test_pages_are_stable_when_candidates_share_a_timestamp(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
         integration_session_factory: async_sessionmaker[AsyncSession],
     ):
-        candidate_ids = await _create_disjoint_candidates(
-            integration_client, og_create_res_fact, 5
-        )
+        candidate_ids = await _create_disjoint_candidates(client, og_create_res_fact, 5)
         # Bulk creation can stamp many candidates with the same time; the id
         # tiebreak must still give every candidate exactly one page.
         async with integration_session_factory() as session:
@@ -590,7 +544,7 @@ class TestMergeCandidateListIntegration:
 
         seen = []
         for page in (1, 2, 3):
-            resp = await integration_client.get(
+            resp = await client.get(
                 "/oil-gas-fields/merge-candidates",
                 params={"page": page, "page_size": 2},
             )
@@ -605,19 +559,19 @@ class TestMergeCandidateListIntegration:
     @pytest.mark.anyio
     async def test_status_filter_narrows_items_but_not_counts(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
     ):
         approved_id, denied_id, pending_id = await _create_disjoint_candidates(
-            integration_client, og_create_res_fact, 3
+            client, og_create_res_fact, 3
         )
         for candidate_id, action in ((approved_id, "approve"), (denied_id, "deny")):
-            resp = await integration_client.post(
+            resp = await client.post(
                 f"/oil-gas-fields/merge-candidates/{candidate_id}/{action}"
             )
             assert resp.status_code == 200, resp.text
 
-        pending = await integration_client.get(
+        pending = await client.get(
             "/oil-gas-fields/merge-candidates", params={"status": "PENDING"}
         )
         assert pending.status_code == 200, pending.text
@@ -629,7 +583,7 @@ class TestMergeCandidateListIntegration:
             "DENIED": 1,
         }
 
-        reviewed = await integration_client.get(
+        reviewed = await client.get(
             "/oil-gas-fields/merge-candidates",
             params=[("status", "APPROVED"), ("status", "DENIED")],
         )
@@ -638,27 +592,27 @@ class TestMergeCandidateListIntegration:
             denied_id,
         }
 
-        unfiltered = await integration_client.get("/oil-gas-fields/merge-candidates")
+        unfiltered = await client.get("/oil-gas-fields/merge-candidates")
         assert unfiltered.json()["total_count"] == 3
 
     @pytest.mark.anyio
     @pytest.mark.parametrize("sort_order", ["asc", "desc"])
     async def test_sort_by_reviewed_at_puts_unreviewed_last(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
         sort_order: str,
     ):
         first, second, unreviewed = await _create_disjoint_candidates(
-            integration_client, og_create_res_fact, 3
+            client, og_create_res_fact, 3
         )
         for candidate_id in (first, second):
-            resp = await integration_client.post(
+            resp = await client.post(
                 f"/oil-gas-fields/merge-candidates/{candidate_id}/deny"
             )
             assert resp.status_code == 200, resp.text
 
-        resp = await integration_client.get(
+        resp = await client.get(
             "/oil-gas-fields/merge-candidates",
             params={"sort_by": "reviewed_at", "sort_order": sort_order},
         )
@@ -672,14 +626,14 @@ class TestMergeCandidateListIntegration:
     @pytest.mark.anyio
     async def test_items_carry_display_names(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
     ):
-        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
-        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
-        candidate_id = await _create_candidate(integration_client, [id_a, id_b])
+        id_a = await _create_resource(client, og_create_res_fact, "Ghawar")
+        id_b = await _create_resource(client, og_create_res_fact, "Burgan")
+        candidate_id = await _create_candidate(client, [id_a, id_b])
 
-        resp = await integration_client.get("/oil-gas-fields/merge-candidates")
+        resp = await client.get("/oil-gas-fields/merge-candidates")
         assert resp.status_code == 200, resp.text
         (item,) = resp.json()["items"]
         # Same source on both resources: the tie goes to the first resource.
@@ -692,52 +646,46 @@ class TestMergeCandidateListIntegration:
         }
 
         # The detail view names it the same way.
-        detail = await integration_client.get(
-            f"/oil-gas-fields/merge-candidates/{candidate_id}"
-        )
+        detail = await client.get(f"/oil-gas-fields/merge-candidates/{candidate_id}")
         assert detail.json()["name"] == "Ghawar"
 
         # After approval the originals are emptied; the merged resource names it.
-        approve = await integration_client.post(
+        approve = await client.post(
             f"/oil-gas-fields/merge-candidates/{candidate_id}/approve"
         )
         assert approve.status_code == 200, approve.text
-        resp = await integration_client.get("/oil-gas-fields/merge-candidates")
+        resp = await client.get("/oil-gas-fields/merge-candidates")
         (item,) = resp.json()["items"]
         assert item["name"] == "Ghawar"
-        detail = await integration_client.get(
-            f"/oil-gas-fields/merge-candidates/{candidate_id}"
-        )
+        detail = await client.get(f"/oil-gas-fields/merge-candidates/{candidate_id}")
         assert detail.json()["name"] == "Ghawar"
 
     @pytest.mark.anyio
     async def test_names_come_from_the_first_named_resource(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_field_resource_factory,
         source_maker,
     ):
         # Source rank doesn't matter: the first resource names the candidate,
         # though rmi outranks gem.
         id_gem = await _create_resource_with_sources(
-            integration_client,
+            client,
             og_field_resource_factory,
             [source_maker(source="gem", managed=False, name="From GEM")],
         )
         id_rmi = await _create_resource_with_sources(
-            integration_client,
+            client,
             og_field_resource_factory,
             [source_maker(source="rmi", managed=False, name="From RMI")],
         )
-        candidate_id = await _create_candidate(integration_client, [id_gem, id_rmi])
+        candidate_id = await _create_candidate(client, [id_gem, id_rmi])
 
-        resp = await integration_client.get("/oil-gas-fields/merge-candidates")
+        resp = await client.get("/oil-gas-fields/merge-candidates")
         assert resp.status_code == 200, resp.text
         (item,) = resp.json()["items"]
         assert item["name"] == "From GEM"
-        detail = await integration_client.get(
-            f"/oil-gas-fields/merge-candidates/{candidate_id}"
-        )
+        detail = await client.get(f"/oil-gas-fields/merge-candidates/{candidate_id}")
         assert detail.json()["name"] == "From GEM"
 
     @pytest.mark.anyio
@@ -750,22 +698,20 @@ class TestMergeCandidateListIntegration:
     )
     async def test_sorts_by_name_across_pages(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
         sort_order: str,
         expected: list[str],
     ):
         # Created out of name order, so a created-order result can't pass.
         for name in ["Ghawar", "Zubair", "Burgan"]:
-            first = await _create_resource(integration_client, og_create_res_fact, name)
-            second = await _create_resource(
-                integration_client, og_create_res_fact, f"{name} twin"
-            )
-            await _create_candidate(integration_client, [first, second])
+            first = await _create_resource(client, og_create_res_fact, name)
+            second = await _create_resource(client, og_create_res_fact, f"{name} twin")
+            await _create_candidate(client, [first, second])
 
         names = []
         for page in (1, 2):
-            resp = await integration_client.get(
+            resp = await client.get(
                 "/oil-gas-fields/merge-candidates",
                 params={
                     "sort_by": "name",
@@ -790,7 +736,7 @@ class TestMergeCandidateListIntegration:
     )
     async def test_sorts_by_status(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
         sort_order: str,
         expected: list[str],
@@ -798,71 +744,22 @@ class TestMergeCandidateListIntegration:
         ids = {}
         # Created oldest first, so creation order alone can't pass.
         for label in ["approved", "older pending", "denied", "newer pending"]:
-            first = await _create_resource(
-                integration_client, og_create_res_fact, label
-            )
-            second = await _create_resource(
-                integration_client, og_create_res_fact, f"{label} twin"
-            )
-            ids[label] = await _create_candidate(integration_client, [first, second])
+            first = await _create_resource(client, og_create_res_fact, label)
+            second = await _create_resource(client, og_create_res_fact, f"{label} twin")
+            ids[label] = await _create_candidate(client, [first, second])
         for label, action in [("approved", "approve"), ("denied", "deny")]:
-            resp = await integration_client.post(
+            resp = await client.post(
                 f"/oil-gas-fields/merge-candidates/{ids[label]}/{action}"
             )
             assert resp.status_code == 200, resp.text
 
-        resp = await integration_client.get(
+        resp = await client.get(
             "/oil-gas-fields/merge-candidates",
             params={"sort_by": "status", "sort_order": sort_order},
         )
         assert resp.status_code == 200, resp.text
         label_by_id = {candidate_id: label for label, candidate_id in ids.items()}
         assert [label_by_id[item["id"]] for item in resp.json()["items"]] == expected
-
-    @pytest.mark.anyio
-    async def test_refuses_callers_the_read_model_cannot_serve(
-        self,
-        integration_client: AsyncClient,
-        integration_session_factory: async_sessionmaker[AsyncSession],
-        og_create_res_fact: ResourceCreateFactory,
-    ):
-        """Names come from the field list's precomputed rows, which exist only
-        for exact permission profiles, so the queue refuses the same callers
-        the field list does."""
-        id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
-        id_b = await _create_resource(integration_client, og_create_res_fact, "Burgan")
-        candidate_id = await _create_candidate(integration_client, [id_a, id_b])
-
-        # Missing every public source but gem.
-        override_auth(
-            {SOURCE_READ_GEM, MERGE_CANDIDATE_READ}, integration_session_factory
-        )
-        for path in [
-            "/oil-gas-fields/merge-candidates",
-            f"/oil-gas-fields/merge-candidates/{candidate_id}",
-        ]:
-            resp = await integration_client.get(path)
-            assert resp.status_code == 403, resp.text
-            assert "missing read access to public source" in resp.json()["detail"]
-
-    @pytest.mark.anyio
-    @pytest.mark.parametrize(
-        "params",
-        [
-            {"status": "MAYBE"},
-            {"sort_by": "size"},
-            {"sort_order": "sideways"},
-            {"page": 0},
-            {"page_size": 201},
-        ],
-    )
-    async def test_rejects_invalid_params(
-        self, integration_client: AsyncClient, params: dict
-    ):
-        resp = await integration_client.get(
-            "/oil-gas-fields/merge-candidates", params=params
-        )
-        assert resp.status_code == 422, resp.text
 
 
 class TestMergeCandidateSearchIntegration:
@@ -871,9 +768,7 @@ class TestMergeCandidateSearchIntegration:
     names one of those resources."""
 
     @pytest.fixture
-    def make_resource(
-        self, integration_client, og_field_resource_factory, source_maker
-    ):
+    def make_resource(self, client, og_field_resource_factory, source_maker):
         # The searchable fields default to blank, so only what a test sets can
         # match (the factory would otherwise fill them with random text).
         async def _make(*, source: str = "rmi", **fields) -> int:
@@ -884,7 +779,7 @@ class TestMergeCandidateSearchIntegration:
                 "region": None,
             }
             return await _create_resource_with_sources(
-                integration_client,
+                client,
                 og_field_resource_factory,
                 [
                     source_maker(
@@ -902,84 +797,84 @@ class TestMergeCandidateSearchIntegration:
 
     @pytest.mark.anyio
     async def test_matches_either_resource_by_name(
-        self, integration_client: AsyncClient, make_resource
+        self, client: AsyncClient, make_resource
     ):
         first = await make_resource(name="Zubair Main")
         second = await make_resource(name="Zubayr Main")
-        candidate_id = await _create_candidate(integration_client, [first, second])
+        candidate_id = await _create_candidate(client, [first, second])
         other = await _create_candidate(
-            integration_client,
+            client,
             [await make_resource(name="Ghawar"), await make_resource(name="Ghawar")],
         )
 
         # Case-insensitive substring, matching only the second resource.
-        assert await self._search(integration_client, q="zubayr") == [candidate_id]
-        assert await self._search(integration_client, q="Zub") == [candidate_id]
-        assert other not in await self._search(integration_client, q="zub")
+        assert await self._search(client, q="zubayr") == [candidate_id]
+        assert await self._search(client, q="Zub") == [candidate_id]
+        assert other not in await self._search(client, q="zub")
 
     @pytest.mark.anyio
     async def test_matches_the_other_search_fields(
-        self, integration_client: AsyncClient, make_resource
+        self, client: AsyncClient, make_resource
     ):
         candidate_id = await _create_candidate(
-            integration_client,
+            client,
             [
                 await make_resource(name="Alpha", basin="Qwertian Basin"),
                 await make_resource(name="Alpha", region="Middle East"),
             ],
         )
 
-        assert await self._search(integration_client, q="qwertian") == [candidate_id]
+        assert await self._search(client, q="qwertian") == [candidate_id]
 
     @pytest.mark.anyio
     async def test_finds_an_approved_candidate_by_its_merged_resource(
-        self, integration_client: AsyncClient, make_resource
+        self, client: AsyncClient, make_resource
     ):
         original = await make_resource(name="Safaniya")
         candidate_id = await _create_candidate(
-            integration_client,
+            client,
             [original, await make_resource(name="Safaniya")],
         )
-        approve = await integration_client.post(
+        approve = await client.post(
             f"/oil-gas-fields/merge-candidates/{candidate_id}/approve"
         )
         assert approve.status_code == 200, approve.text
 
         # The originals are emptied by the merge; only the merged resource
         # still carries the name.
-        assert await self._search(integration_client, q="safaniya") == [candidate_id]
+        assert await self._search(client, q="safaniya") == [candidate_id]
         # By id, a merged-away original still finds the candidate that merged it.
-        assert await self._search(integration_client, q=str(original)) == [candidate_id]
+        assert await self._search(client, q=str(original)) == [candidate_id]
 
     @pytest.mark.anyio
     async def test_numeric_q_matches_resource_ids(
-        self, integration_client: AsyncClient, make_resource
+        self, client: AsyncClient, make_resource
     ):
         target = await make_resource(name="Unrelated")
         by_id = await _create_candidate(
-            integration_client, [target, await make_resource(name="Unrelated")]
+            client, [target, await make_resource(name="Unrelated")]
         )
         await _create_candidate(
-            integration_client,
+            client,
             [await make_resource(name="Ghawar"), await make_resource(name="Ghawar")],
         )
 
-        assert await self._search(integration_client, q=str(target)) == [by_id]
+        assert await self._search(client, q=str(target)) == [by_id]
         # Candidate ids are not searched: no resource has this id.
-        assert await self._search(integration_client, q="987654321") == []
+        assert await self._search(client, q="987654321") == []
         # Too long to be an id; still searched as text, without erroring.
-        assert await self._search(integration_client, q="9" * 30) == []
+        assert await self._search(client, q="9" * 30) == []
         # Past Python's int-conversion limit (4300 digits).
-        assert await self._search(integration_client, q="9" * 5000) == []
+        assert await self._search(client, q="9" * 5000) == []
         # Non-ASCII digits are text, not ids.
-        assert await self._search(integration_client, q="²") == []
+        assert await self._search(client, q="²") == []
 
     @pytest.mark.anyio
     async def test_numeric_q_also_matches_digits_in_text(
-        self, integration_client: AsyncClient, make_resource
+        self, client: AsyncClient, make_resource
     ):
         by_text = await _create_candidate(
-            integration_client,
+            client,
             [
                 await make_resource(name="Block 990077"),
                 await make_resource(name="Block 990077"),
@@ -987,30 +882,28 @@ class TestMergeCandidateSearchIntegration:
         )
 
         # Far above any resource id here, so only the name can match.
-        assert await self._search(integration_client, q="990077") == [by_text]
+        assert await self._search(client, q="990077") == [by_text]
 
     @pytest.mark.anyio
     async def test_combines_with_status_and_leaves_counts_whole_queue(
-        self, integration_client: AsyncClient, make_resource
+        self, client: AsyncClient, make_resource
     ):
         pending = await _create_candidate(
-            integration_client,
+            client,
             [await make_resource(name="Rumaila"), await make_resource(name="Rumaila")],
         )
         denied = await _create_candidate(
-            integration_client,
+            client,
             [await make_resource(name="Rumaila"), await make_resource(name="Rumaila")],
         )
         await _create_candidate(
-            integration_client,
+            client,
             [await make_resource(name="Ghawar"), await make_resource(name="Ghawar")],
         )
-        resp = await integration_client.post(
-            f"/oil-gas-fields/merge-candidates/{denied}/deny"
-        )
+        resp = await client.post(f"/oil-gas-fields/merge-candidates/{denied}/deny")
         assert resp.status_code == 200, resp.text
 
-        resp = await integration_client.get(
+        resp = await client.get(
             "/oil-gas-fields/merge-candidates",
             params={"q": "rumaila", "status": "PENDING"},
         )
@@ -1020,42 +913,36 @@ class TestMergeCandidateSearchIntegration:
         assert body["status_counts"] == {"PENDING": 2, "APPROVED": 0, "DENIED": 1}
 
     @pytest.mark.anyio
-    async def test_blank_q_is_no_search(
-        self, integration_client: AsyncClient, make_resource
-    ):
+    async def test_blank_q_is_no_search(self, client: AsyncClient, make_resource):
         candidate_id = await _create_candidate(
-            integration_client,
+            client,
             [await make_resource(name="Ghawar"), await make_resource(name="Ghawar")],
         )
 
-        assert await self._search(integration_client, q="   ") == [candidate_id]
+        assert await self._search(client, q="   ") == [candidate_id]
 
     @pytest.mark.anyio
     async def test_ignores_names_from_unlicensed_sources(
-        self,
-        integration_client: AsyncClient,
-        integration_session_factory: async_sessionmaker[AsyncSession],
-        make_resource,
+        self, client: AsyncClient, grant, make_resource
     ):
         candidate_id = await _create_candidate(
-            integration_client,
+            client,
             [
                 await make_resource(source="wm", name="Wmonly Field"),
                 await make_resource(source="wm", name="Wmonly Field"),
             ],
         )
         # With every source, the name matches, so only licensing hides it below.
-        assert await self._search(integration_client, q="wmonly") == [candidate_id]
+        assert await self._search(client, q="wmonly") == [candidate_id]
 
         # Public sources only: the read model serves this profile, without wm.
-        override_auth(
+        grant(
             {RESOURCE_READ, MERGE_CANDIDATE_READ}
             | {f"{SOURCE_READ_PREFIX}{source}" for source in PUBLIC_SOURCES},
-            integration_session_factory,
             sub="test|public-only",
         )
 
-        assert await self._search(integration_client, q="wmonly") == []
+        assert await self._search(client, q="wmonly") == []
 
 
 @pytest.mark.anyio
@@ -1079,7 +966,7 @@ class TestMergeCandidateSearchIntegration:
     ],
 )
 async def test_link_all_counts_and_writes(
-    integration_client: AsyncClient,
+    client: AsyncClient,
     og_create_res_fact: ResourceCreateFactory,
     prior_candidates: tuple[int, ...],
     apply_merges: bool,
@@ -1087,17 +974,17 @@ async def test_link_all_counts_and_writes(
     expected_skipped: int,
 ):
     ids = [
-        await _create_resource(integration_client, og_create_res_fact, f"Field {n}")
+        await _create_resource(client, og_create_res_fact, f"Field {n}")
         for n in range(6)
     ]
     pairs = [(ids[0], ids[1]), (ids[2], ids[3]), (ids[4], ids[5])]
     groups = pairs[:2]
     for index in prior_candidates:
-        await _create_candidate(integration_client, list(pairs[index]))
+        await _create_candidate(client, list(pairs[index]))
 
     with patch.object(link_actions, "match", autospec=True) as match:
         match.return_value = groups
-        resp = await integration_client.post(
+        resp = await client.post(
             "/oil-gas-fields/merge-candidates/link-all",
             params={"apply_merges": apply_merges},
         )
@@ -1114,7 +1001,7 @@ async def test_link_all_counts_and_writes(
     if apply_merges:
         expected_persisted |= {frozenset(group) for group in groups}
 
-    listed = await integration_client.get("/oil-gas-fields/merge-candidates")
+    listed = await client.get("/oil-gas-fields/merge-candidates")
     assert listed.status_code == 200, listed.text
     assert {
         frozenset(candidate["resource_ids"]) for candidate in listed.json()["items"]
@@ -1123,12 +1010,12 @@ async def test_link_all_counts_and_writes(
 
 @pytest.mark.anyio
 async def test_link_all_reports_a_failed_commit_instead_of_success(
-    integration_client: AsyncClient,
+    client: AsyncClient,
     og_create_res_fact: ResourceCreateFactory,
 ):
     """A commit that fails must not surface as a 200 describing writes that rolled back."""
-    id_a = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
-    id_b = await _create_resource(integration_client, og_create_res_fact, "Ghawar")
+    id_a = await _create_resource(client, og_create_res_fact, "Ghawar")
+    id_b = await _create_resource(client, og_create_res_fact, "Ghawar")
 
     async def failing_commit(self):
         raise OperationalError("COMMIT", {}, Exception("connection lost"))
@@ -1138,32 +1025,13 @@ async def test_link_all_reports_a_failed_commit_instead_of_success(
         patch.object(UnitOfWork, "commit", failing_commit),
     ):
         match.return_value = [(id_a, id_b)]
-        resp = await integration_client.post(
+        resp = await client.post(
             "/oil-gas-fields/merge-candidates/link-all?apply_merges=true"
         )
 
     assert resp.status_code == 503, resp.text
     assert resp.json() == {"detail": "Database unavailable."}
 
-    listed = await integration_client.get("/oil-gas-fields/merge-candidates")
+    listed = await client.get("/oil-gas-fields/merge-candidates")
     assert listed.status_code == 200, listed.text
     assert listed.json()["items"] == []
-
-
-@pytest.mark.anyio
-async def test_link_all_matches_only_the_callers_licensed_sources(
-    integration_client: AsyncClient,
-    integration_session_factory: async_sessionmaker[AsyncSession],
-):
-    override_auth(
-        {SOURCE_READ_GEM, MERGE_CANDIDATE_CREATE}, integration_session_factory
-    )
-
-    with patch.object(link_actions, "match", autospec=True) as match:
-        match.return_value = []
-        resp = await integration_client.post(
-            "/oil-gas-fields/merge-candidates/link-all"
-        )
-
-    assert resp.status_code == 200, resp.text
-    assert match.call_args.kwargs["licensed_sources"] == frozenset({"gem"})

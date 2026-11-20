@@ -3,14 +3,20 @@
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from stitch.ogsi.model import GemSource
+from stitch.ogsi.model import GemSource, RMISource
 
 from stitch.api.db import og_field_resource_actions as resource_actions
 from stitch.api.db import og_field_source_actions as source_actions
-from stitch.api.db.errors import SourceIntegrityError
+from stitch.api.db.errors import (
+    ResourceIntegrityError,
+    ResourceNotFoundError,
+    SourceIntegrityError,
+    SourceNotFoundError,
+)
 from stitch.api.db.model import (
     MembershipModel,
     MembershipStatus,
+    OilGasFieldSourceModel,
     ResourceModel,
 )
 from stitch.api.entities import (
@@ -97,6 +103,58 @@ class TestSourceDetailAction:
         assert detail.source_record.producer == "test-producer"
 
 
+class TestSourceLicensing:
+    """Callers only see source rows they are licensed to read."""
+
+    @pytest.fixture
+    async def gem_and_rmi_ids(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ) -> dict[str, int]:
+        session = seeded_integration_session
+        resource = ResourceModel.create(created_by=test_user)
+        session.add(resource)
+        await session.flush()
+        created = await source_actions.create_and_attach_sources(
+            session,
+            test_user,
+            [
+                GemSource(
+                    name="Gem", country="USA", source_record=make_source_record({})
+                ),
+                RMISource(
+                    name="Rmi", country="USA", source_record=make_source_record({})
+                ),
+            ],
+            resource.id,
+        )
+        return {source.source: source.id for source in created}
+
+    @pytest.mark.anyio
+    async def test_query_drops_unlicensed_rows(
+        self, seeded_integration_session: AsyncSession, gem_and_rmi_ids
+    ):
+        items, total = await source_actions.query(
+            seeded_integration_session, _QueryParams(), frozenset({"gem"})
+        )
+        assert [item.id for item in items] == [gem_and_rmi_ids["gem"]]
+        assert total == 1
+
+    @pytest.mark.anyio
+    async def test_get_source_hides_unlicensed_rows(
+        self, seeded_integration_session: AsyncSession, gem_and_rmi_ids
+    ):
+        session = seeded_integration_session
+        licensed = frozenset({"gem"})
+        found = await source_actions.get_source(
+            session, gem_and_rmi_ids["gem"], licensed_sources=licensed
+        )
+        assert found.id == gem_and_rmi_ids["gem"]
+        with pytest.raises(SourceNotFoundError):
+            await source_actions.get_source(
+                session, gem_and_rmi_ids["rmi"], licensed_sources=licensed
+            )
+
+
 class TestCreateAndAttachSources:
     """Integration tests for source_actions.create_and_attach_sources()."""
 
@@ -172,6 +230,32 @@ class TestCreateAndAttachSources:
                 sources=[self._gem_source("Alpha", id=123)],
                 resource_id=resource_id,
             )
+
+    @pytest.mark.anyio
+    async def test_rejects_missing_resource(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        with pytest.raises(ResourceNotFoundError):
+            await source_actions.create_and_attach_sources(
+                seeded_integration_session, test_user, [self._gem_source("A")], 999_999
+            )
+
+    @pytest.mark.anyio
+    async def test_rejects_merged_resource_before_creating_sources(
+        self, seeded_integration_session: AsyncSession, test_user: User
+    ):
+        session = seeded_integration_session
+        canonical_id = await self._seed_empty_resource(session, test_user)
+        merged = ResourceModel.create(created_by=test_user)
+        merged.repointed_id = canonical_id
+        session.add(merged)
+        await session.flush()
+
+        with pytest.raises(ResourceIntegrityError):
+            await source_actions.create_and_attach_sources(
+                session, test_user, [self._gem_source("A")], merged.id
+            )
+        assert (await session.scalars(select(OilGasFieldSourceModel))).all() == []
 
 
 class TestAttachSourcesDedup:

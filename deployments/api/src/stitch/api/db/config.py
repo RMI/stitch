@@ -73,8 +73,13 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     return async_sessionmaker(get_engine(), expire_on_commit=False)
 
 
-async def get_uow() -> AsyncIterator[UnitOfWork]:
-    async with UnitOfWork(get_session_factory()) as uow:
+SessionFactoryDep = Annotated[
+    async_sessionmaker[AsyncSession], Depends(get_session_factory)
+]
+
+
+async def get_uow(session_factory: SessionFactoryDep) -> AsyncIterator[UnitOfWork]:
+    async with UnitOfWork(session_factory) as uow:
         yield uow
 
 
@@ -85,7 +90,4 @@ async def dispose_engine() -> None:
 
 
 EngineDep = Annotated[AsyncEngine, Depends(get_engine)]
-SessionFactoryDep = Annotated[
-    async_sessionmaker[AsyncSession], Depends(get_session_factory)
-]
 UnitOfWorkDep = Annotated[UnitOfWork, Depends(get_uow, scope="function")]

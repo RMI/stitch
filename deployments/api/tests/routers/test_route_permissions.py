@@ -1,165 +1,67 @@
-from unittest.mock import AsyncMock, patch
+"""Every route is wired to exactly the permissions it should require."""
 
-import pytest
-from httpx import AsyncClient
+import inspect
+
+from fastapi.dependencies.models import Dependant
 
 from stitch.api.auth.permissions import (
-    MERGE_CANDIDATE_CREATE,
-    MERGE_CANDIDATE_READ,
-    MERGE_CANDIDATE_REVIEW,
+    MERGE_CANDIDATE_CREATE as MC_CREATE,
+    MERGE_CANDIDATE_READ as MC_READ,
+    MERGE_CANDIDATE_REVIEW as MC_REVIEW,
     RESOURCE_READ,
     RESOURCE_WRITE,
+    SOURCE_READ_ANY,
     SOURCE_READ_PERMISSIONS,
-    SOURCE_READ_PREFIX,
     SOURCE_WRITE,
 )
-from stitch.api.db.config import get_uow
-from stitch.api.entities import MergeCandidatePage, MergeCandidateStatus
-from stitch.api.main import app
-from tests.auth_overrides import override_auth
+from stitch.api.routers import auth, health, oil_gas_field_sources, oil_gas_fields
 
-SOURCE_READ_GEM = f"{SOURCE_READ_PREFIX}gem"
+PUBLIC = None
+
+EXPECTED: dict[tuple[str, str], frozenset[str] | None] = {
+    ("GET", "/health"): PUBLIC,
+    ("GET", "/health/details"): PUBLIC,
+    ("GET", "/auth/me"): frozenset(),
+    ("GET", "/oil-gas-fields/"): {RESOURCE_READ},
+    ("POST", "/oil-gas-fields/"): {RESOURCE_WRITE},
+    ("GET", "/oil-gas-fields/filter-options"): frozenset(),
+    ("GET", "/oil-gas-fields/merge-candidates"): {MC_READ},
+    ("POST", "/oil-gas-fields/merge-candidates"): {MC_CREATE},
+    ("GET", "/oil-gas-fields/merge-candidates/{id}"): {MC_READ},
+    ("POST", "/oil-gas-fields/merge-candidates/link-all"): {MC_CREATE},
+    ("POST", "/oil-gas-fields/merge-candidates/{id}/approve"): {MC_REVIEW},
+    ("POST", "/oil-gas-fields/merge-candidates/{id}/deny"): {MC_REVIEW},
+    ("GET", "/oil-gas-fields/{id}"): {RESOURCE_READ},
+    ("GET", "/oil-gas-fields/{id}/detail"): {RESOURCE_READ},
+    ("GET", "/oil-gas-fields/{id}/fields/{field}/sources"): {RESOURCE_READ},
+    ("PUT", "/oil-gas-fields/{id}/fields/{field}/sources/priority"): {
+        RESOURCE_WRITE,
+        *SOURCE_READ_PERMISSIONS,
+    },
+    ("POST", "/oil-gas-fields/{id}/sources"): {RESOURCE_WRITE, SOURCE_WRITE},
+    ("POST", "/oil-gas-field-sources/"): {SOURCE_WRITE},
+    ("GET", "/oil-gas-field-sources/"): {SOURCE_READ_ANY},
+    ("GET", "/oil-gas-field-sources/{id}"): {SOURCE_READ_ANY},
+    ("GET", "/oil-gas-field-sources/{id}/detail"): {SOURCE_READ_ANY},
+}
 
 
-def _uow_override(mock_uow):
-    async def override_uow():
-        yield mock_uow
+def _required_permissions(dependant: Dependant) -> frozenset[str] | None:
+    for sub in dependant.dependencies:
+        if getattr(sub.call, "__qualname__", "") == "require_auth.<locals>.dependency":
+            return frozenset(inspect.getclosurevars(sub.call).nonlocals["permissions"])
+        found = _required_permissions(sub)
+        if found is not None:
+            return found
+    return None
 
-    return override_uow
 
-
-def _source_payload() -> dict:
-    return {
-        "source": "gem",
-        "name": "Alpha",
-        "country": "USA",
-        "source_record": {
-            "observed_at": "2026-01-01T00:00:00Z",
-            "producer": "test",
-            "payload": {},
-        },
+def test_every_route_requires_its_expected_permissions():
+    actual = {
+        (method, route.path_format): _required_permissions(route.dependant)
+        for module in (auth, health, oil_gas_fields, oil_gas_field_sources)
+        for route in module.router.routes
+        for method in route.methods
     }
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("method", "path", "permissions", "missing_permission", "json_body"),
-    [
-        ("get", "/oil-gas-fields/", (), RESOURCE_READ, None),
-        (
-            "post",
-            "/oil-gas-fields/",
-            (RESOURCE_READ,),
-            RESOURCE_WRITE,
-            {"source_data": []},
-        ),
-        (
-            "get",
-            "/oil-gas-fields/merge-candidates",
-            (RESOURCE_READ,),
-            MERGE_CANDIDATE_READ,
-            None,
-        ),
-        (
-            "post",
-            "/oil-gas-fields/merge-candidates",
-            (MERGE_CANDIDATE_READ,),
-            MERGE_CANDIDATE_CREATE,
-            {"resource_ids": [1, 2]},
-        ),
-        (
-            "post",
-            "/oil-gas-fields/merge-candidates/link-all",
-            (MERGE_CANDIDATE_READ,),
-            MERGE_CANDIDATE_CREATE,
-            None,
-        ),
-        (
-            "post",
-            "/oil-gas-fields/merge-candidates/1/approve",
-            (MERGE_CANDIDATE_READ,),
-            MERGE_CANDIDATE_REVIEW,
-            {},
-        ),
-        (
-            "post",
-            "/oil-gas-field-sources/",
-            (SOURCE_READ_GEM,),
-            SOURCE_WRITE,
-            _source_payload(),
-        ),
-        (
-            "put",
-            "/oil-gas-fields/1/fields/basin/sources/priority",
-            (RESOURCE_READ,),
-            RESOURCE_WRITE,
-            {"ordered_source_pks": [1, 2]},
-        ),
-        # Reordering also requires read access to every source, so holding all but
-        # one still 403s on the missing source-read permission.
-        (
-            "put",
-            "/oil-gas-fields/1/fields/basin/sources/priority",
-            (RESOURCE_WRITE, *(SOURCE_READ_PERMISSIONS - {SOURCE_READ_GEM})),
-            SOURCE_READ_GEM,
-            {"ordered_source_pks": [1, 2]},
-        ),
-        # create-and-attach requires BOTH source:write and resource:write
-        (
-            "post",
-            "/oil-gas-fields/1/sources",
-            (SOURCE_WRITE,),
-            RESOURCE_WRITE,
-            _source_payload(),
-        ),
-        (
-            "post",
-            "/oil-gas-fields/1/sources",
-            (RESOURCE_WRITE,),
-            SOURCE_WRITE,
-            _source_payload(),
-        ),
-    ],
-)
-async def test_route_returns_403_when_required_permission_missing(
-    async_client: AsyncClient,
-    integration_session_factory,
-    mock_uow,
-    method: str,
-    path: str,
-    permissions: tuple[str, ...],
-    missing_permission: str,
-    json_body: dict | None,
-):
-    override_auth(permissions, integration_session_factory)
-    app.dependency_overrides[get_uow] = _uow_override(mock_uow)
-
-    response = await async_client.request(method, path, json=json_body)
-
-    assert response.status_code == 403
-    assert missing_permission in response.json()["detail"]
-
-
-@pytest.mark.anyio
-async def test_merge_candidate_read_permission_allows_list_route(
-    async_client: AsyncClient,
-    integration_session_factory,
-    mock_uow,
-):
-    override_auth({MERGE_CANDIDATE_READ}, integration_session_factory)
-    app.dependency_overrides[get_uow] = _uow_override(mock_uow)
-
-    with patch("stitch.api.routers.oil_gas_fields.merge_candidate_actions") as actions:
-        actions.list_merge_candidates = AsyncMock(
-            return_value=MergeCandidatePage(
-                items=[],
-                total_count=0,
-                page=1,
-                page_size=50,
-                status_counts=dict.fromkeys(MergeCandidateStatus, 0),
-            )
-        )
-        response = await async_client.get("/oil-gas-fields/merge-candidates")
-
-    assert response.status_code == 200
-    assert response.json()["items"] == []
+    expected = {key: None if v is None else frozenset(v) for key, v in EXPECTED.items()}
+    assert actual == expected
