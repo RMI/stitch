@@ -78,7 +78,6 @@ jobs:
       auth-disabled: ${{ steps.export-auth.outputs.auth-disabled }}
       auth-issuer: ${{ steps.export-auth.outputs.auth-issuer }}
       auth-audience: ${{ steps.export-auth.outputs.auth-audience }}
-      auth-jwks-uri: ${{ steps.export-auth.outputs.auth-jwks-uri }}
       auth0-domain: ${{ steps.export-auth.outputs.auth0-domain }}
       auth0-client-id: ${{ steps.export-auth.outputs.auth0-client-id }}
       auth0-audience: ${{ steps.export-auth.outputs.auth0-audience }}
@@ -93,7 +92,6 @@ jobs:
       AUTH_DISABLED: ${{ vars.AUTH_DISABLED }}
       AUTH_ISSUER: ${{ vars.AUTH_ISSUER }}
       AUTH_AUDIENCE: ${{ vars.AUTH_AUDIENCE }}
-      AUTH_JWKS_URI: ${{ vars.AUTH_JWKS_URI }}
       AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
       AUTH0_CLIENT_ID: ${{ vars.AUTH0_CLIENT_ID }}
       STITCH_LLM_AZURE_OPENAI_BASE_URL: ${{ vars.STITCH_LLM_AZURE_OPENAI_BASE_URL }}
@@ -131,19 +129,6 @@ jobs:
               exit 1
               ;;
           esac
-
-          # AUTH_ISSUER and AUTH_JWKS_URI are optional overrides: when unset they
-          # are derived from AUTH0_DOMAIN in the "Export auth config" step below.
-          # To avoid mismatched overrides (common with Auth0 custom domains), require
-          # that they are either both set or both unset.
-          if [ -n "${AUTH_ISSUER:-}" ] && [ -z "${AUTH_JWKS_URI:-}" ]; then
-            echo "AUTH_JWKS_URI must be set when AUTH_ISSUER is set." >&2
-            exit 1
-          fi
-          if [ -z "${AUTH_ISSUER:-}" ] && [ -n "${AUTH_JWKS_URI:-}" ]; then
-            echo "AUTH_ISSUER must be set when AUTH_JWKS_URI is set." >&2
-            exit 1
-          fi
 
           has_llm_base_url=false
           has_llm_model=false
@@ -186,15 +171,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Issuer and JWKS URI derive from the Auth0 tenant domain by default;
-          # an explicit AUTH_ISSUER / AUTH_JWKS_URI variable overrides the derived
-          # value for lanes on an Auth0 custom domain, where the host differs.
           auth_issuer="${AUTH_ISSUER:-https://${AUTH0_DOMAIN}/}"
-          auth_jwks_uri="${AUTH_JWKS_URI:-https://${AUTH0_DOMAIN}/.well-known/jwks.json}"
           echo "auth-disabled=${AUTH_DISABLED}" >> "$GITHUB_OUTPUT"
           echo "auth-issuer=${auth_issuer}" >> "$GITHUB_OUTPUT"
           echo "auth-audience=${AUTH_AUDIENCE}" >> "$GITHUB_OUTPUT"
-          echo "auth-jwks-uri=${auth_jwks_uri}" >> "$GITHUB_OUTPUT"
           echo "auth0-domain=${AUTH0_DOMAIN}" >> "$GITHUB_OUTPUT"
           echo "auth0-client-id=${AUTH0_CLIENT_ID}" >> "$GITHUB_OUTPUT"
           # The frontend's auth0Audience is the same value as the backend audience.
@@ -350,7 +330,6 @@ jobs:
         ENVIRONMENT=${{ needs.resolve-context.outputs.deployment-name }}
         AUTH_ISSUER=${{ needs.lane-config-validate.outputs.auth-issuer }}
         AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
-        AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
         POSTGRES_HOST=${{ needs.deploy-db.outputs.postgres-host }}
         POSTGRES_PORT=${{ needs.deploy-db.outputs.postgres-port }}
         POSTGRES_DB=${{ needs.deploy-db.outputs.postgres-db }}
@@ -383,7 +362,6 @@ jobs:
         DEPLOYMENT_NAME=${{ needs.resolve-context.outputs.deployment-name }}
         AUTH_ISSUER=${{ needs.lane-config-validate.outputs.auth-issuer }}
         AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
-        AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
         STITCH_LLM_API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
         STITCH_LLM_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
         STITCH_LLM_AZURE_OPENAI_BASE_URL=${{ needs.lane-config-validate.outputs.stitch-llm-azure-openai-base-url }}
@@ -425,7 +403,6 @@ jobs:
         AUTH_DISABLED=${{ needs.lane-config-validate.outputs.auth-disabled }}
         AUTH_ISSUER=${{ needs.lane-config-validate.outputs.auth-issuer }}
         AUTH_AUDIENCE=${{ needs.lane-config-validate.outputs.auth-audience }}
-        AUTH_JWKS_URI=${{ needs.lane-config-validate.outputs.auth-jwks-uri }}
         API_BASE_URL=${{ format('{0}/api/v1', needs.deploy-api.outputs.container-app-url) }}
         ETL_FRONTEND_ORIGIN_URL=${{ needs.lane-config-validate.outputs.frontend-origin-url }}
         GEM_FILE_DIR=/mnt/data/gem
