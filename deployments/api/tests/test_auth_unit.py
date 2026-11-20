@@ -38,7 +38,7 @@ def _make_settings(
 
 
 def _make_auth_settings() -> AuthSettings:
-    return AuthSettings(domain="example.us.auth0.com", audience="ex_aud")
+    return AuthSettings(issuer="https://example.us.auth0.com/", audience="ex_aud")
 
 
 def _build_provider(settings: Settings) -> AuthProvider:
@@ -89,6 +89,7 @@ class TestGetAuthProvider:
             provider = _build_provider(settings)
         mock_auth_settings.assert_called_once()
         assert isinstance(provider, Auth0AuthProvider)
+        assert provider.api_client.options.domain == "example.us.auth0.com"
 
     def test_app_starts_when_disabled(self):
         """The app starts and serves requests when auth is disabled."""
@@ -153,7 +154,7 @@ class TestAuth0AuthProvider:
             "scope": f"openid {RESOURCE_WRITE}",
             **permissions_claim,
         }
-        provider = Auth0AuthProvider(**_make_auth_settings().model_dump())
+        provider = Auth0AuthProvider(domain="example.us.auth0.com", audience="ex_aud")
         request = Request(
             {"type": "http", "method": "GET", "path": "/", "headers": [], "app": app}
         )

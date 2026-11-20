@@ -6,6 +6,7 @@ from typing import Annotated, Any, ClassVar
 
 from fastapi import Depends, HTTPException, Request
 from fastapi_plugin import Auth0FastAPI
+from pydantic import HttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import select
 from starlette.status import HTTP_403_FORBIDDEN
@@ -36,13 +37,11 @@ __all__ = [
 
 
 class AuthSettings(BaseSettings):
-    domain: str
+    issuer: HttpUrl
     audience: str
-    client_id: str | None = None
-    client_secret: str | None = None
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
-        env_prefix="STITCH_AUTH_",
+        env_prefix="AUTH_",
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
@@ -106,7 +105,9 @@ def get_auth_provider() -> AuthProvider:
         logger.warning("Auth is disabled; all requests use dev credentials")
         return StaticAuthProvider(DEV_CLAIMS)
     auth_settings = get_auth_settings()
-    return Auth0AuthProvider(**auth_settings.model_dump())
+    return Auth0AuthProvider(
+        domain=auth_settings.issuer.host, audience=auth_settings.audience
+    )
 
 
 AuthProviderDep = Annotated[AuthProvider, Depends(get_auth_provider)]
