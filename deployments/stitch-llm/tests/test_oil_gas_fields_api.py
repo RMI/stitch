@@ -7,10 +7,13 @@ import pytest
 from fastapi.testclient import TestClient
 from stitch.client import StitchAPIError
 
-from stitch.auth import TokenClaims
-from stitch.auth.permissions import SERVICE_LLM_SUGGEST
 from stitch.llm import auth as auth_module
-from stitch.llm.auth import get_current_user, get_token_claims
+from stitch.llm.auth import (
+    SERVICE_LLM_SUGGEST,
+    TokenClaims,
+    get_current_user,
+    get_token_claims,
+)
 from stitch.llm.azure_responses import AzureResponsesResult
 from stitch.llm.entities import User
 from stitch.llm.errors import LLMConfigurationError
