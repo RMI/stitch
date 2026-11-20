@@ -1820,10 +1820,10 @@ name = "stitch-llm"
 version = "0.1.0"
 source = { editable = "deployments/stitch-llm" }
 dependencies = [
+    { name = "auth0-fastapi-api" },
     { name = "fastapi", extra = ["standard-no-fastapi-cloud-cli"] },
     { name = "httpx" },
     { name = "pydantic-settings" },
-    { name = "stitch-auth" },
     { name = "stitch-client" },
     { name = "stitch-observability", extra = ["asgi"] },
     { name = "stitch-ogsi" },
@@ -1838,10 +1838,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "auth0-fastapi-api", specifier = ">=1.0.0b9" },
     { name = "fastapi", extras = ["standard-no-fastapi-cloud-cli"], specifier = ">=0.162.0" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "pydantic-settings", specifier = ">=2.15.0" },
-    { name = "stitch-auth", editable = "packages/stitch-auth" },
     { name = "stitch-client", editable = "packages/stitch-client" },
     { name = "stitch-observability", extras = ["asgi"], editable = "packages/stitch-observability" },
     { name = "stitch-ogsi", editable = "packages/stitch-ogsi" },

@@ -11,9 +11,8 @@ from starlette.status import (
     HTTP_503_SERVICE_UNAVAILABLE,
 )
 from stitch.client import StitchAPIError
-from stitch.auth.permissions import SERVICE_LLM_SUGGEST
 
-from stitch.llm.auth import CurrentUser, require_permissions
+from stitch.llm.auth import SERVICE_LLM_SUGGEST, CurrentUser, require_permissions
 from stitch.llm.azure_responses import AzureResponsesClient, extract_public_citations
 from stitch.llm.client import StitchApiClient
 from stitch.llm.entities import FieldSuggestionResponse
