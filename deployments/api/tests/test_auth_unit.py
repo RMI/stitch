@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 from fastapi import HTTPException
 from fastapi_plugin import Auth0FastAPI
+from starlette.requests import Request
 from starlette.testclient import TestClient
 
 from stitch.api.auth import (
@@ -27,6 +28,10 @@ from stitch.api.auth.permissions import (
 )
 from stitch.api.main import app
 from stitch.api.settings import Settings
+
+_REQUEST_WITH_TOKEN = Request(
+    {"type": "http", "headers": [(b"authorization", b"Bearer token")]}
+)
 
 
 def _build_provider(settings: Settings) -> AuthProvider:
@@ -122,7 +127,7 @@ async def test_auth0_provider_maps_claims(monkeypatch, identity, email):
     }
     provider = _auth0_provider(monkeypatch, raw)
 
-    claims = await provider.authenticate(None)
+    claims = await provider.authenticate(_REQUEST_WITH_TOKEN)
 
     assert claims.permissions == {RESOURCE_READ}
     assert (claims.sub, claims.name, claims.email, claims.raw) == (
@@ -138,7 +143,7 @@ async def test_auth0_provider_maps_claims(monkeypatch, identity, email):
 async def test_auth0_provider_defaults_to_no_permissions(monkeypatch, token):
     provider = _auth0_provider(monkeypatch, {"sub": "auth0|1", **token})
 
-    claims = await provider.authenticate(None)
+    claims = await provider.authenticate(_REQUEST_WITH_TOKEN)
 
     assert claims.permissions == frozenset()
 
@@ -147,7 +152,7 @@ async def test_auth0_provider_defaults_to_no_permissions(monkeypatch, token):
 async def test_require_auth_enforces_permissions(monkeypatch):
     provider = _auth0_provider(monkeypatch, {"sub": "auth0|1"})
     with pytest.raises(HTTPException) as exc_info:
-        await require_auth(RESOURCE_READ)(None, provider)
+        await require_auth(RESOURCE_READ)(_REQUEST_WITH_TOKEN, provider)
     assert exc_info.value.status_code == 403
 
 
