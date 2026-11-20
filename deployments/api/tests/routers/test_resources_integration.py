@@ -13,9 +13,9 @@ class TestResourcesIntegration:
     """Integration tests for resources endpoints with real database."""
 
     @pytest.mark.anyio
-    async def test_get_nonexistent_returns_404(self, integration_client):
+    async def test_get_nonexistent_returns_404(self, client):
         """GET /resources/999 returns 404 status code."""
-        response = await integration_client.get("/oil-gas-fields/999")
+        response = await client.get("/oil-gas-fields/999")
 
         assert response.status_code == 404
         assert "999" in response.json()["detail"]
@@ -23,13 +23,13 @@ class TestResourcesIntegration:
     @pytest.mark.anyio
     async def test_create_resource_returns_resource(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
     ):
         """POST /resources/ returns the created resource."""
         resource_in = og_create_res_fact(name="Integration Test Resource")
 
-        response = await integration_client.post(
+        response = await client.post(
             "/oil-gas-fields/", json=resource_in.model_dump(mode="json")
         )
 
@@ -42,20 +42,20 @@ class TestResourcesIntegration:
     @pytest.mark.anyio
     async def test_create_and_get_resource(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
     ):
         """POST creates resource, GET retrieves it."""
         resource_in = og_create_res_fact(name="Roundtrip Resource")
 
-        create_response = await integration_client.post(
+        create_response = await client.post(
             "/oil-gas-fields/", json=resource_in.model_dump(mode="json")
         )
 
         assert create_response.status_code == 200
         created_id = create_response.json()["id"]
 
-        get_response = await integration_client.get(f"/oil-gas-fields/{created_id}")
+        get_response = await client.get(f"/oil-gas-fields/{created_id}")
 
         assert get_response.status_code == 200
         data = get_response.json()
@@ -65,14 +65,14 @@ class TestResourcesIntegration:
     @pytest.mark.anyio
     async def test_create_persists_to_database(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         integration_session_factory: async_sessionmaker[AsyncSession],
         og_create_res_fact: ResourceCreateFactory,
     ):
         """POST resource is persisted and queryable directly."""
         resource_in = og_create_res_fact(name="Persisted Resource")
 
-        response = await integration_client.post(
+        response = await client.post(
             "/oil-gas-fields/", json=resource_in.model_dump(mode="json")
         )
 
@@ -97,14 +97,14 @@ class TestResourcesIntegration:
     @pytest.mark.anyio
     async def test_create_with_minimal_data(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
         source_maker: SourceFactory,
     ):
         """POST /resources/ works with only required fields (no source data)."""
         resource_in = og_create_res_fact(name="Minimal Name", sources=[])
 
-        response = await integration_client.post(
+        response = await client.post(
             "/oil-gas-fields/", json=resource_in.model_dump(mode="json")
         )
 
@@ -135,17 +135,15 @@ class TestRepointedResourceRedirect:
     @pytest.mark.anyio
     async def test_detail_resolves_to_root_with_flag(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         integration_session_factory: async_sessionmaker[AsyncSession],
         og_create_res_fact: ResourceCreateFactory,
     ):
-        root_id = await self._create(
-            integration_client, og_create_res_fact, "Merged Root"
-        )
-        old_id = await self._create(integration_client, og_create_res_fact, "Old Shell")
+        root_id = await self._create(client, og_create_res_fact, "Merged Root")
+        old_id = await self._create(client, og_create_res_fact, "Old Shell")
         await self._repoint(integration_session_factory, old_id, root_id)
 
-        resp = await integration_client.get(f"/oil-gas-fields/{old_id}/detail")
+        resp = await client.get(f"/oil-gas-fields/{old_id}/detail")
 
         assert resp.status_code == 200, resp.text
         body = resp.json()
@@ -157,17 +155,15 @@ class TestRepointedResourceRedirect:
     @pytest.mark.anyio
     async def test_plain_get_resolves_to_root_with_flag(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         integration_session_factory: async_sessionmaker[AsyncSession],
         og_create_res_fact: ResourceCreateFactory,
     ):
-        root_id = await self._create(
-            integration_client, og_create_res_fact, "Merged Root"
-        )
-        old_id = await self._create(integration_client, og_create_res_fact, "Old Shell")
+        root_id = await self._create(client, og_create_res_fact, "Merged Root")
+        old_id = await self._create(client, og_create_res_fact, "Old Shell")
         await self._repoint(integration_session_factory, old_id, root_id)
 
-        resp = await integration_client.get(f"/oil-gas-fields/{old_id}")
+        resp = await client.get(f"/oil-gas-fields/{old_id}")
 
         assert resp.status_code == 200, resp.text
         body = resp.json()
@@ -178,12 +174,12 @@ class TestRepointedResourceRedirect:
     @pytest.mark.anyio
     async def test_live_resource_has_null_flag(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact: ResourceCreateFactory,
     ):
-        root_id = await self._create(integration_client, og_create_res_fact, "Live")
+        root_id = await self._create(client, og_create_res_fact, "Live")
 
-        resp = await integration_client.get(f"/oil-gas-fields/{root_id}/detail")
+        resp = await client.get(f"/oil-gas-fields/{root_id}/detail")
 
         assert resp.status_code == 200, resp.text
         assert resp.json()["requested_resource_id"] is None

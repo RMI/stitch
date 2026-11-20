@@ -76,18 +76,18 @@ class TestEndpointQueryLabels:
     @pytest.mark.anyio
     async def test_list_endpoint_labels(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact,
         captured_query_events: list[dict],
     ):
-        create = await integration_client.post(
+        create = await client.post(
             "/oil-gas-fields/",
             json=og_create_res_fact(name="Labeled Resource").model_dump(mode="json"),
         )
         assert create.status_code == 200, create.text
 
         captured_query_events.clear()
-        response = await integration_client.get("/oil-gas-fields/")
+        response = await client.get("/oil-gas-fields/")
         assert response.status_code == 200, response.text
 
         # The list reads its page's rows from the precomputed read model in the
@@ -100,11 +100,11 @@ class TestEndpointQueryLabels:
     @pytest.mark.anyio
     async def test_filter_options_endpoint_labels(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         captured_query_events: list[dict],
     ):
         # One DISTINCT per filterable field, all from the read model.
-        response = await integration_client.get("/oil-gas-fields/filter-options")
+        response = await client.get("/oil-gas-fields/filter-options")
         assert response.status_code == 200, response.text
 
         _assert_labels(captured_query_events, {"resources.filter_options"})
@@ -113,11 +113,11 @@ class TestEndpointQueryLabels:
     @pytest.mark.anyio
     async def test_detail_endpoint_labels(
         self,
-        integration_client: AsyncClient,
+        client: AsyncClient,
         og_create_res_fact,
         captured_query_events: list[dict],
     ):
-        create = await integration_client.post(
+        create = await client.post(
             "/oil-gas-fields/",
             json=og_create_res_fact(name="Detail Resource").model_dump(mode="json"),
         )
@@ -125,7 +125,7 @@ class TestEndpointQueryLabels:
         created_id = create.json()["id"]
 
         captured_query_events.clear()
-        response = await integration_client.get(f"/oil-gas-fields/{created_id}")
+        response = await client.get(f"/oil-gas-fields/{created_id}")
         assert response.status_code == 200, response.text
 
         # get_resolved -> resolve_root_id then get; both statements labeled.

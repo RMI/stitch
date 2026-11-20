@@ -522,14 +522,11 @@ named:
   source: feeds both the backend services' `AUTH_AUDIENCE` and the frontend's `auth0Audience`.
 - `AUTH0_DOMAIN` (example: `rmi-spd.us.auth0.com`) — the Auth0 tenant domain. Feeds the
   frontend's `auth0Domain` and, by default, derives the backend `AUTH_ISSUER`
-  (`https://<domain>/`) and `AUTH_JWKS_URI` (`https://<domain>/.well-known/jwks.json`).
+  (`https://<domain>/`).
 - `AUTH0_CLIENT_ID` (example: `<public-client-id>`)
 - `AUTH_ISSUER` (optional; example: `https://rmi-spd.us.auth0.com/`) — override for the value
   derived from `AUTH0_DOMAIN`. Only set on lanes using an Auth0 custom domain whose issuer
   differs from the raw tenant host.
-- `AUTH_JWKS_URI` (optional; example: `https://rmi-spd.us.auth0.com/.well-known/jwks.json`) —
-  override for the value derived from `AUTH0_DOMAIN`. Same custom-domain caveat as
-  `AUTH_ISSUER`.
 - `STITCH_LLM_AZURE_OPENAI_BASE_URL` (example: `https://stitch-foundry-dev.openai.azure.com/openai/v1`)
 - `STITCH_LLM_AZURE_OPENAI_MODEL` (example: `gpt-5.1-chat`)
 - `STITCH_LLM_AZURE_OPENAI_TIMEOUT_SECONDS` (example: `30`)

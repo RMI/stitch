@@ -78,13 +78,6 @@ uv-test-target-exact:
 # UV Packages
 # ---------------------------------------------------------------------
 
-pkg-build-auth:
-	$(UV) build --package stitch-auth
-pkg-test-auth:
-	$(MAKE) uv-test-target PKG=stitch-auth TEST_PATH=packages/stitch-auth
-pkg-test-exact-auth:
-	$(MAKE) uv-test-target-exact PKG=stitch-auth TEST_PATH=packages/stitch-auth
-
 pkg-build-client:
 	$(UV) build --package stitch-client
 pkg-test-client:

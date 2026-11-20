@@ -1,44 +1,55 @@
-import asyncio
 import logging
 from functools import lru_cache
-from typing import Annotated, Literal, NoReturn
+from typing import Annotated, Any, ClassVar
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi_plugin import Auth0FastAPI
+from pydantic import BaseModel, Field, HttpUrl
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_403_FORBIDDEN
-
-from stitch.auth import (
-    ALL_PERMISSIONS,
-    AuthError,
-    InsufficientPermissionsError,
-    JWKSFetchError,
-    JWTValidator,
-    OIDCSettings,
-    TokenClaims,
-    check_permissions,
-)
 
 from stitch.llm.entities import User
 from stitch.llm.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
+SERVICE_LLM_SUGGEST = "service:llm:suggest"
+
+
+class TokenClaims(BaseModel):
+    sub: str
+    email: str | None = None
+    name: str | None = None
+    permissions: frozenset[str] = Field(default_factory=frozenset)
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuthSettings(BaseSettings):
+    issuer: HttpUrl
+    audience: str
+
+    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
+        env_prefix="AUTH_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
 
 @lru_cache
-def get_oidc_settings() -> OIDCSettings:
-    return OIDCSettings()
-
-
-@lru_cache
-def get_jwt_validator() -> JWTValidator:
-    return JWTValidator(get_oidc_settings())
+def get_auth0() -> Auth0FastAPI:
+    auth_settings = AuthSettings()
+    return Auth0FastAPI(
+        domain=auth_settings.issuer.host, audience=auth_settings.audience
+    )
 
 
 _DEV_CLAIMS = TokenClaims(
     sub="dev|local-placeholder",
     email="dev@example.com",
     name="Dev User",
-    permissions=ALL_PERMISSIONS,
+    permissions=frozenset({SERVICE_LLM_SUGGEST}),
     raw={},
 )
 
@@ -55,7 +66,7 @@ def validate_auth_config_at_startup() -> None:
         return
 
     # fail fast if OIDC config is invalid
-    get_oidc_settings()
+    get_auth0()
 
 
 def _claims_to_user(claims: TokenClaims) -> User:
@@ -97,44 +108,26 @@ async def get_token_claims(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    validator = get_jwt_validator()
-    try:
-        return await asyncio.to_thread(validator.validate, token)
-    except JWKSFetchError:
-        logger.error(
-            "JWKS endpoint unreachable or returned invalid data", exc_info=True
-        )
-        raise HTTPException(
-            status_code=HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except AuthError as e:
-        logger.warning("JWT validation failed: %s", e, exc_info=True)
-        raise HTTPException(
-            status_code=HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    raw = await get_auth0().require_auth()(request)
+    return TokenClaims(
+        sub=raw["sub"],
+        name=raw.get("name"),
+        permissions=frozenset(raw.get("permissions") or []),
+        raw=raw,
+    )
 
 
 Claims = Annotated[TokenClaims, Depends(get_token_claims)]
 
 
-def _permission_exception_handler(exc: InsufficientPermissionsError) -> NoReturn:
-    raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail=exc.detail)
-
-
-def require_permissions(
-    *required_permissions: str, check: Literal["all", "any"] = "all"
-):
+def require_permissions(*required_permissions: str):
     async def dependency(claims: Claims) -> None:
-        check_permissions(
-            granted=claims.permissions,
-            required=required_permissions,
-            check=check,
-            exc_handler=_permission_exception_handler,
-        )
+        missing = sorted(set(required_permissions) - claims.permissions)
+        if missing:
+            raise HTTPException(
+                status_code=HTTP_403_FORBIDDEN,
+                detail=f"Missing required permission(s): {', '.join(missing)}",
+            )
 
     return dependency
 
