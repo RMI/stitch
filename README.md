@@ -15,9 +15,8 @@ Stitch is a platform built by [RMI](https://rmi.org) to integrate diverse sector
 - **Serves** curated, source-attributed data through a UI and API, with permission-aware access by source
 
 **See it live:**
-
-- Dev (Deployed from `main` with fake data): <https://stitch-dev.rmi.org/>
-- Production (Deployed from `production` with real data): <https://salmon-bush-05721e11e.6.azurestaticapps.net/>
+- Dev (Deployed from `main` with fake data): https://stitch-dev.rmi.org/
+- Production (Deployed from `production` with real data): https://salmon-bush-05721e11e.6.azurestaticapps.net/
 
 ## Quick start
 
@@ -30,9 +29,9 @@ To wipe local volumes (including the database) and rebuild everything from scrat
 
 Useful URLs:
 
-- Frontend: <http://localhost:3000>
-- API docs (Swagger): <http://localhost:8000/docs>
-- Adminer (DB UI): <http://localhost:8081>
+- Frontend: http://localhost:3000
+- API docs (Swagger): http://localhost:8000/docs
+- Adminer (DB UI): http://localhost:8081
 
 For the full development guide, see [HACKING.md](./HACKING.md).
 
@@ -42,49 +41,49 @@ Most common operations have `make` shortcuts. Run `make <target>` from the repo 
 
 ### Build
 
-| Target                              | Description                                              |
-| ----------------------------------- | -------------------------------------------------------- |
-| `make all`                          | Build all Python packages and the frontend               |
-| `make build-python`                 | Build all discovered Python packages (under `packages/`) |
-| `make build-python PKG=stitch-ogsi` | Build a single package by name                           |
-| `make frontend`                     | Build the frontend                                       |
+| Target | Description |
+|---|---|
+| `make all` | Build all Python packages and the frontend |
+| `make build-python` | Build all discovered Python packages (under `packages/`) |
+| `make build-python PKG=stitch-ogsi` | Build a single package by name |
+| `make frontend` | Build the frontend |
 
 Python package discovery is automatic — any subdirectory of `packages/` with a `pyproject.toml` is included. Builds are incremental via stamp files under `build/`.
 
 ### Check / Lint / Test
 
-| Target              | Description                                           |
-| ------------------- | ----------------------------------------------------- |
-| `make check`        | Run all checks (lint, test, format-check, lock-check) |
-| `make lint`         | Run Python and frontend linters                       |
-| `make test`         | Run Python and frontend tests                         |
-| `make format`       | Auto-format Python and frontend code                  |
-| `make format-check` | Check formatting without modifying files              |
-| `make lock-check`   | Verify `uv.lock` is up to date                        |
+| Target | Description |
+|---|---|
+| `make check` | Run all checks (lint, test, format-check, lock-check) |
+| `make lint` | Run Python and frontend linters |
+| `make test` | Run Python and frontend tests |
+| `make format` | Auto-format Python and frontend code |
+| `make format-check` | Check formatting without modifying files |
+| `make lock-check` | Verify `uv.lock` is up to date |
 
 ### Docker
 
-| Target                     | Description                              |
-| -------------------------- | ---------------------------------------- |
-| `make dev-docker`          | Start the full local-dev stack           |
-| `make prod-docker`         | Start without local-dev overrides        |
-| `make docker-exec SVC=api` | Open a shell in a running container      |
-| `make docker-run SVC=api`  | Spin up a one-off container with a shell |
-| `make docker-logs SVC=api` | Tail logs for a service                  |
-| `make docker-ps`           | List running containers                  |
-| `make stop-docker`         | Stop containers (keep volumes)           |
-| `make clean-docker`        | Stop containers and delete volumes       |
+| Target | Description |
+|---|---|
+| `make dev-docker` | Start the full local-dev stack |
+| `make prod-docker` | Start without local-dev overrides |
+| `make docker-exec SVC=api` | Open a shell in a running container |
+| `make docker-run SVC=api` | Spin up a one-off container with a shell |
+| `make docker-logs SVC=api` | Tail logs for a service |
+| `make docker-ps` | List running containers |
+| `make stop-docker` | Stop containers (keep volumes) |
+| `make clean-docker` | Stop containers and delete volumes |
 
 `SVC` defaults to `api` if omitted.
 
 ### Clean
 
-| Target                | Description                                         |
-| --------------------- | --------------------------------------------------- |
-| `make clean`          | Run all clean targets                               |
-| `make clean-build`    | Remove `build/` and `dist/`                         |
-| `make clean-cache`    | Remove `.ruff_cache` and `.pytest_cache`            |
-| `make clean-docker`   | Stop containers and delete volumes                  |
+| Target | Description |
+|---|---|
+| `make clean` | Run all clean targets |
+| `make clean-build` | Remove `build/` and `dist/` |
+| `make clean-cache` | Remove `.ruff_cache` and `.pytest_cache` |
+| `make clean-docker` | Stop containers and delete volumes |
 | `make frontend-clean` | Remove frontend `dist/`, `node_modules`, and stamps |
 
 ## Documentation
