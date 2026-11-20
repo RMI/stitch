@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="How to find, read, correct and de-duplicate oil and gas field data in Stitch."
+    />
+    <link rel="icon" type="image/png" href="/favicon-32x32.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    />
+    <title>Stitch user guide</title>
+    <!--
+      Standalone page, served as-is from public/ so it can be read without
+      signing in. Colors and fonts mirror the app's theme in src/index.css.
+    -->
+    <style>
+      :root {
+        --canvas: #f4f7f9;
+        --panel: #fbfdfe;
+        --surface: #ecf1f4;
+        --line: #d6dde2;
+        --ink: #1d2328;
+        --ink-muted: #646e77;
+        --bluespruce: #003b63;
+        --bluespruce-hover: #005d7f;
+        --energy: #45cfcc;
+        --energy-100: #b6f2f1;
+        --energy-800: #118280;
+        --font-sans:
+          "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--canvas);
+        color: var(--ink);
+        font-family: var(--font-sans);
+        font-size: 15px;
+        line-height: 1.6;
+      }
+      a {
+        color: var(--energy-800);
+        text-underline-offset: 2px;
+      }
+      a:focus-visible,
+      button:focus-visible {
+        outline: 2px solid var(--energy);
+        outline-offset: 2px;
+      }
+      .wrap {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 0 16px;
+      }
+      header {
+        background: var(--bluespruce);
+        border-bottom: 1px solid var(--energy);
+        color: var(--canvas);
+      }
+      header .wrap {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding-block: 16px;
+      }
+      .brand {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .brand b {
+        font-size: 18px;
+      }
+      .brand span {
+        font-size: 14px;
+        color: var(--energy-100);
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+      }
+      .actions a,
+      .actions button {
+        font: 600 14px/20px var(--font-sans);
+        padding: 7px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--energy-100);
+        background: transparent;
+        color: var(--canvas);
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .actions a:hover,
+      .actions button:hover {
+        background: var(--bluespruce-hover);
+      }
+      .intro {
+        padding-block: 32px 8px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 30px;
+        line-height: 1.2;
+        letter-spacing: -0.01em;
+      }
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 16px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 14px;
+        font-weight: 600;
+      }
+      main section {
+        padding-block: 20px;
+        border-bottom: 1px solid var(--line);
+        scroll-margin-top: 16px;
+      }
+      main section h2:not(:first-child) {
+        margin-top: 24px;
+      }
+      h2 {
+        margin: 0 0 8px;
+        font-size: 20px;
+        line-height: 1.3;
+      }
+      p,
+      ul,
+      ol {
+        margin: 0 0 8px;
+      }
+      li + li {
+        margin-top: 4px;
+      }
+      .muted {
+        color: var(--ink-muted);
+      }
+      .ui {
+        font-weight: 600;
+      }
+      .tips {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 12px 16px;
+      }
+      .priority {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 0;
+        list-style: none;
+        counter-reset: rank;
+      }
+      .priority li {
+        margin: 0;
+        counter-increment: rank;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 10px 3px 8px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        font-size: 13px;
+      }
+      .priority li::before {
+        content: counter(rank);
+        font: 11px var(--font-mono);
+        color: var(--ink-muted);
+      }
+      .priority i {
+        width: 9px;
+        height: 9px;
+        border-radius: 2px;
+      }
+      dl {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 6px 16px;
+        margin: 0;
+      }
+      dt {
+        font-weight: 600;
+      }
+      dd {
+        margin: 0;
+      }
+      footer {
+        padding-block: 24px 48px;
+        font-size: 13px;
+      }
+      @media (max-width: 560px) {
+        dl {
+          grid-template-columns: 1fr;
+        }
+        dd {
+          margin-bottom: 8px;
+        }
+      }
+      @media print {
+        body {
+          background: #fff;
+          font-size: 11pt;
+        }
+        header,
+        nav {
+          display: none;
+        }
+        .intro {
+          padding-top: 0;
+        }
+        main section {
+          break-inside: avoid;
+        }
+        a {
+          color: var(--ink);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap">
+        <div class="brand"><b>Stitch</b><span>User guide</span></div>
+        <div class="actions">
+          <button
+            type="button"
+            id="save-pdf"
+            title="Opens the print dialog. Choose “Save as PDF” as the destination."
+          >
+            Save as PDF
+          </button>
+          <a href="/">Open Stitch</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="wrap">
+      <div class="intro">
+        <h1>Getting started with Stitch</h1>
+        <p class="muted">
+          Stitch brings oil and gas field data from several datasets into one
+          record per field. It shows where each value came from, and lets you
+          correct, enrich and de-duplicate the data, with a record of who did
+          what and why.
+        </p>
+      </div>
+
+      <nav aria-label="Sections">
+        <a href="#access">Access</a>
+        <a href="#find">Find a field</a>
+        <a href="#read">Read a record</a>
+        <a href="#correct">Correct a value</a>
+        <a href="#ai">AI suggestions</a>
+        <a href="#duplicates">Duplicates</a>
+        <a href="#words">Glossary</a>
+      </nav>
+
+      <main>
+        <section id="access">
+          <h2>Signing in and what you can see</h2>
+          <p>
+            <a href="/">Open Stitch</a> and click
+            <span class="ui">Log in to continue</span>. Your account decides
+            what you see:
+          </p>
+          <ul>
+            <li>
+              <strong>Data.</strong> You only see values from datasets you're
+              licensed for. Without a WoodMac licence, WoodMac values never
+              appear for you, on any page.
+            </li>
+            <li>
+              <strong>Tabs.</strong> Everyone gets
+              <span class="ui">Resources</span>. Depending on your role you may
+              also see <span class="ui">Entity linkage</span>,
+              <span class="ui">Merge review</span> and
+              <span class="ui">ETL pipelines</span>.
+            </li>
+            <li>
+              <strong>Actions.</strong> Editing values, AI suggestions and
+              approving merges are switched on per account. If a button you need
+              is missing or gives a permission error, ask the Stitch team.
+            </li>
+          </ul>
+        </section>
+
+        <section id="find">
+          <h2>Find a field</h2>
+          <ul>
+            <li>
+              <strong>Search</strong> looks in name, local name, basin,
+              state/province and region. It doesn't search by country, so use
+              the <span class="ui">Country</span> filter for that. Press Enter
+              to run it.
+            </li>
+            <li>
+              <strong>Filters</strong>: <span class="ui">Country</span>,
+              <span class="ui">Region</span>,
+              <span class="ui">State/Province</span>,
+              <span class="ui">Basin</span>,
+              <span class="ui">Field status</span> and
+              <span class="ui">Primary hydrocarbon group</span>. You can pick
+              several values in each, and the options narrow to match what's
+              already selected.
+            </li>
+            <li>
+              <strong>Sort</strong> by clicking a column header. Change how many
+              rows show at the bottom of the list.
+            </li>
+            <li>
+              The <strong>Data source mix</strong> bar shows how much of each
+              record comes from each dataset. Hover over it for counts.
+            </li>
+            <li>
+              Your search and filters stay in the page address, so you can
+              bookmark or share a filtered list.
+            </li>
+          </ul>
+        </section>
+
+        <section id="read">
+          <h2>Read a record</h2>
+          <p>
+            Click a row to open the record. Values are grouped under
+            <span class="ui">Identity and location</span>,
+            <span class="ui">Organizations</span> and
+            <span class="ui">Production and geology</span>.
+          </p>
+          <ul>
+            <li>
+              Each value shows its <strong>source</strong> as a color and a
+              label underneath.
+            </li>
+            <li>
+              <strong>Click a value</strong> to open
+              <span class="ui">All sources</span>: every dataset's answer for
+              that field, with the one in use at the top. Different answers in
+              this list mean the datasets disagree.
+            </li>
+            <li>
+              The <span class="ui">Sources</span> section at the bottom lists
+              every dataset attached to the record. Click
+              <span class="ui">View</span> to see when it was imported, any
+              curator note, and the original raw record.
+            </li>
+            <li>
+              If you open an old record that has since been merged, Stitch takes
+              you to the merged record and tells you so.
+            </li>
+          </ul>
+          <h2>How Stitch picks the value you see</h2>
+          <p>
+            When datasets disagree, the highest-ranked one with a value wins:
+          </p>
+          <ol class="priority">
+            <li><i style="background: #ffcb00"></i>RMI (your corrections)</li>
+            <li><i style="background: #7b76ad"></i>WoodMac</li>
+            <li><i style="background: #f2994a"></i>C&amp;C Reservoirs</li>
+            <li><i style="background: #27ae60"></i>BC Energy Regulator</li>
+            <li><i style="background: #eb5757"></i>Alberta Energy Regulator</li>
+            <li>
+              <i style="background: #c14ea3"></i>Norwegian Offshore Directorate
+            </li>
+            <li><i style="background: #45cfcc"></i>GEM</li>
+            <li><i style="background: #529cba"></i>LLM (AI suggestions)</li>
+          </ol>
+          <p>
+            So a correction you make always shows, and an AI suggestion only
+            shows where no dataset has a value.
+          </p>
+        </section>
+
+        <section id="correct">
+          <h2>Correct a value</h2>
+          <ol>
+            <li>
+              Click the value to open <span class="ui">All sources</span>, then
+              click <span class="ui">Edit</span>.
+            </li>
+            <li>
+              Click <span class="ui">+</span> and type the
+              <span class="ui">New value</span>, or choose one from the list for
+              fields like status or hydrocarbon group.
+            </li>
+            <li>
+              Add a <span class="ui">Note</span> saying where you found it, such
+              as “Operator annual report 2025, p. 14”. It's optional, but the
+              next person will rely on it.
+            </li>
+            <li>
+              Click <span class="ui">Save</span>. Your value is stored as an RMI
+              source, marked <em>curated</em>, and is used from then on.
+            </li>
+          </ol>
+          <p class="muted">
+            With access to every dataset, you can also use
+            <span class="ui">Edit</span> and the ↑ ↓ arrows to change which
+            dataset wins for that one field.
+          </p>
+        </section>
+
+        <section id="ai">
+          <h2>Ask the AI to fill a gap</h2>
+          <ol>
+            <li>
+              On a record, go to <span class="ui">AI suggestion</span>, choose a
+              <span class="ui">Field</span> and click
+              <span class="ui">Generate suggestion</span>. It can take up to
+              half a minute.
+            </li>
+            <li>
+              Read the reasoning, and
+              <strong>open at least one of the cited sources</strong> to check
+              it.
+            </li>
+            <li>
+              If you agree, click <span class="ui">Add to resource</span>. If
+              not, leave it. Nothing is saved until you add it.
+            </li>
+          </ol>
+          <div class="tips">
+            <p><strong>Getting good results</strong></p>
+            <ul>
+              <li>
+                “No grounded suggestion” is common. The AI won't answer without
+                a citation. Trying again sometimes works.
+              </li>
+              <li>
+                Years (FID, production start), basin and state/province work
+                best. Leave state/province alone for offshore fields.
+              </li>
+              <li>
+                The AI works from the data already on the record plus a web
+                search, so records with little data give it less to go on.
+              </li>
+              <li>
+                <span class="ui">Enrich this resource</span> asks about 14
+                fields at once. Expect several empty results.
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section id="duplicates">
+          <h2>Review possible duplicates</h2>
+          <p>
+            When two records look like the same field, they become a
+            <strong>merge candidate</strong> waiting in
+            <span class="ui">Merge review</span>.
+          </p>
+          <ol>
+            <li>
+              Pick a candidate from the <span class="ui">Queue</span>. Search by
+              name, basin or record ID, and filter by status.
+            </li>
+            <li>
+              Compare the two side by side.
+              <span class="ui">✓ Match</span> and
+              <span class="ui">≠ Differs</span> mark each row, and
+              <span class="ui">Other attributes</span> shows the rest.
+            </li>
+            <li>
+              Check location, operator and dates. The same name in the same
+              country isn't always the same field.
+            </li>
+            <li>
+              Write a <span class="ui">Decision note</span>: what you checked,
+              and anything you're unsure about.
+            </li>
+            <li>
+              Click <span class="ui">Approve merge</span> or
+              <span class="ui">Deny merge</span>. Approving creates one new
+              combined record, and the old records redirect to it. Denying keeps
+              them apart and stops the same pair being proposed again.
+            </li>
+          </ol>
+          <h2>Find duplicates automatically</h2>
+          <p>
+            <span class="ui">Entity linkage</span> scans every record for likely
+            duplicates. Click <span class="ui">Start run</span>. With
+            <span class="ui">Initiate merges</span> ticked, each group it finds
+            is added to <span class="ui">Merge review</span>; untick it to just
+            see what it would find. It currently matches only records with
+            exactly the same name and country, so it misses pairs like “Agbada”
+            and “Agbada Oil and Gas Field (Nigeria)”.
+          </p>
+        </section>
+
+        <section id="words">
+          <h2>Words you'll see</h2>
+          <dl>
+            <dt>Resource</dt>
+            <dd>
+              One oil or gas field in Stitch, combining every dataset attached
+              to it.
+            </dd>
+            <dt>Source</dt>
+            <dd>
+              One dataset's record for that field, such as a WoodMac row or a
+              GEM row. Your corrections and accepted AI suggestions are sources
+              too.
+            </dd>
+            <dt>Data source mix</dt>
+            <dd>
+              The colored bar showing how much of a record each source supplies.
+            </dd>
+            <dt>Curated</dt>
+            <dd>A value a person entered by hand, labelled RMI.</dd>
+            <dt>Merge candidate</dt>
+            <dd>
+              A pair of records that might be the same field, waiting for a
+              person to decide.
+            </dd>
+            <dt>ETL pipeline</dt>
+            <dd>
+              The import job that loads one dataset into Stitch. Most users
+              never need it.
+            </dd>
+          </dl>
+        </section>
+      </main>
+
+      <footer class="muted">
+        Something wrong in the data? Correct it with a note, or send the Stitch
+        team the record ID shown under the record's name. Found a bug or have an
+        idea?
+        <a href="https://github.com/RMI/stitch/issues"
+          >Open an issue on GitHub</a
+        >.
+      </footer>
+    </div>
+
+    <script>
+      document
+        .getElementById("save-pdf")
+        .addEventListener("click", () => window.print());
+    </script>
+  </body>
+</html>

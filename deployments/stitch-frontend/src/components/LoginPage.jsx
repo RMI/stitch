@@ -18,6 +18,12 @@ export default function LoginPage() {
           review, and deliver curated, trustworthy data.
         </p>
         <Button onClick={() => loginWithRedirect()}>Log in to continue</Button>
+        <p className="mt-4 text-sm text-ink-muted">
+          New to Stitch?{" "}
+          <a href="/guide.html" className="text-primary underline">
+            Read the user guide
+          </a>
+        </p>
       </div>
     </div>
   );
