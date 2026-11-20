@@ -73,3 +73,16 @@ def test_openapi_exposes_client_library_contract():
     get_component = _resolve_component_schema(schema, get_schema)
     assert "requested_resource_id" in get_component["properties"]
     assert "requested_resource_id" in detail_component["properties"]
+
+
+def test_openapi_declares_bearer_auth_on_protected_routes():
+    from stitch.api.main import app
+
+    schema = app.openapi()
+    paths = schema["paths"]
+
+    assert schema["components"]["securitySchemes"] == {
+        "HTTPBearer": {"type": "http", "scheme": "bearer"}
+    }
+    assert paths["/api/v1/oil-gas-fields/"]["get"]["security"] == [{"HTTPBearer": []}]
+    assert "security" not in paths["/api/v1/health"]["get"]

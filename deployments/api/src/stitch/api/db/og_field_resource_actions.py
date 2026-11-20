@@ -12,12 +12,12 @@ from stitch.api.db.errors import (
     ResourceIntegrityError,
     ResourceNotFoundError,
 )
-from stitch.api.auth import CurrentUser
 from stitch.api.observability.context import named_query
 from stitch.api.entities import (
     FILTER_OPTION_FIELDS,
     OGFieldFilterParams,
     OGFieldQueryParams,
+    User,
 )
 from stitch.api.db.og_field_source_actions import (
     attach_sources_to_resource,
@@ -282,7 +282,7 @@ async def field_source_values(
 
 async def set_field_source_priority(
     session: AsyncSession,
-    user: CurrentUser,
+    user: User,
     id: int,
     field: str,
     ordered_source_pks: Sequence[int],
@@ -379,7 +379,7 @@ async def set_field_source_priority(
 
 
 async def create(
-    session: AsyncSession, user: CurrentUser, resource: OGFieldResource
+    session: AsyncSession, user: User, resource: OGFieldResource
 ) -> OGFieldResource:
     """
     Here we create a resource either from new source data or existing source data. It's also possible
@@ -411,7 +411,7 @@ async def create(
 
 async def apply_resource_merge(
     session: AsyncSession,
-    user: CurrentUser,
+    user: User,
     resource_ids: Sequence[int],
 ) -> OGFieldResource:
     """Merge ``resource_ids`` into a brand-new resource.
@@ -484,7 +484,7 @@ async def apply_resource_merge(
 
 async def _repoint_memberships(
     session: AsyncSession,
-    user: CurrentUser,
+    user: User,
     to_id: int,
     from_ids: Sequence[int],
 ) -> Sequence[MembershipModel]:

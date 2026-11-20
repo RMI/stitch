@@ -1,14 +1,13 @@
-"""Integration tests for auth module JIT user provisioning."""
+"""Integration tests for JIT user provisioning in require_user."""
 
 import pytest
 from sqlalchemy import select
 
-
-from stitch.auth import TokenClaims
-
-from stitch.api.auth import get_current_user
+from stitch.api.auth import TokenClaims, require_user
 from stitch.api.db.config import UnitOfWork
 from stitch.api.db.model.user import User as UserModel
+
+provision_user = require_user()
 
 
 def _make_claims(
@@ -19,8 +18,8 @@ def _make_claims(
     return TokenClaims(sub=sub, email=email, name=name, raw={})
 
 
-class TestGetCurrentUserJITProvisioning:
-    """Integration tests for get_current_user with real database."""
+class TestRequireUserJITProvisioning:
+    """Integration tests for require_user with real database."""
 
     @pytest.mark.anyio
     async def test_creates_user_on_first_login(
@@ -30,7 +29,7 @@ class TestGetCurrentUserJITProvisioning:
         """New user created in DB on first login."""
         claims = _make_claims(sub="auth0|new-user")
 
-        user = await get_current_user(claims, integration_session_factory)
+        user = await provision_user(claims, integration_session_factory)
 
         assert user.sub == "auth0|new-user"
         assert user.email == "user@example.com"
@@ -63,7 +62,7 @@ class TestGetCurrentUserJITProvisioning:
             sub="auth0|existing", name="Updated", email="new@example.com"
         )
 
-        user = await get_current_user(claims, integration_session_factory)
+        user = await provision_user(claims, integration_session_factory)
 
         assert user.sub == "auth0|existing"
         assert user.name == "Updated"
@@ -87,7 +86,7 @@ class TestGetCurrentUserJITProvisioning:
             sub="auth0|updatable", name="New Name", email="new@example.com"
         )
 
-        await get_current_user(claims, integration_session_factory)
+        await provision_user(claims, integration_session_factory)
 
         async with integration_session_factory() as session:
             row = (
@@ -106,7 +105,7 @@ class TestGetCurrentUserJITProvisioning:
         """User can be JIT-provisioned when name and email claims are absent."""
         claims = _make_claims(sub="auth0|no-claims", email=None, name=None)
 
-        user = await get_current_user(claims, integration_session_factory)
+        user = await provision_user(claims, integration_session_factory)
 
         assert user.sub == "auth0|no-claims"
         assert user.email is None
@@ -129,7 +128,7 @@ class TestGetCurrentUserJITProvisioning:
         """Blank or whitespace-only claims are normalized to null."""
         claims = _make_claims(sub="auth0|blank-claims", email="  ", name="")
 
-        user = await get_current_user(claims, integration_session_factory)
+        user = await provision_user(claims, integration_session_factory)
 
         assert user.sub == "auth0|blank-claims"
         assert user.email is None
@@ -158,7 +157,7 @@ class TestGetCurrentUserJITProvisioning:
             sub="auth0|backfill", name="Filled In", email="filled@example.com"
         )
 
-        user = await get_current_user(claims, integration_session_factory)
+        user = await provision_user(claims, integration_session_factory)
 
         assert user.name == "Filled In"
         assert user.email == "filled@example.com"
@@ -194,7 +193,7 @@ class TestGetCurrentUserJITProvisioning:
             email="",
         )
 
-        user = await get_current_user(claims, integration_session_factory)
+        user = await provision_user(claims, integration_session_factory)
 
         assert user.name == "Existing Name"
         assert user.email == "existing@example.com"
@@ -218,7 +217,7 @@ class TestGetCurrentUserJITProvisioning:
 
         with pytest.raises(RuntimeError):
             async with UnitOfWork(integration_session_factory):
-                await get_current_user(claims, integration_session_factory)
+                await provision_user(claims, integration_session_factory)
                 raise RuntimeError("simulated handler failure")
 
         async with integration_session_factory() as session:
@@ -247,7 +246,7 @@ class TestGetCurrentUserJITProvisioning:
 
         with pytest.raises(RuntimeError):
             async with UnitOfWork(integration_session_factory):
-                await get_current_user(claims, integration_session_factory)
+                await provision_user(claims, integration_session_factory)
                 raise RuntimeError("simulated handler failure")
 
         async with integration_session_factory() as session:

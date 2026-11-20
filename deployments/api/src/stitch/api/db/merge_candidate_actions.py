@@ -8,7 +8,6 @@ from sqlalchemy import ColumnElement, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from stitch.api.auth import CurrentUser
 from stitch.api.db.errors import (
     InvalidActionError,
     ResourceIntegrityError,
@@ -26,6 +25,7 @@ from stitch.api.entities import (
     MergeCandidateStatus,
     MergeCandidateView,
     OGFieldQueryParams,
+    User,
 )
 from stitch.api.observability.context import named_query
 from stitch.ogsi.model import OGFieldSource
@@ -466,7 +466,7 @@ async def get_merge_candidate(
 
 async def create_merge_candidate(
     session: AsyncSession,
-    user: CurrentUser,
+    user: User,
     request: MergeCandidateCreateRequest,
 ) -> MergeCandidateView:
     resource_ids = _normalize_resource_ids(request.resource_ids)
@@ -515,7 +515,7 @@ async def create_merge_candidate(
 
 async def create_merge_candidates_bulk(
     session: AsyncSession,
-    user: CurrentUser,
+    user: User,
     groups: Sequence[Sequence[int]],
 ) -> None:
     with named_query("merge_candidates.bulk_create"):
@@ -542,7 +542,7 @@ async def create_merge_candidates_bulk(
 
 async def _reroute_pending_candidates(
     session: AsyncSession,
-    user: CurrentUser,
+    user: User,
     merged_away_ids: Sequence[int],
     new_id: int,
 ) -> None:
@@ -628,7 +628,7 @@ async def _reroute_pending_candidates(
 
 async def approve_merge_candidate(
     session: AsyncSession,
-    user: CurrentUser,
+    user: User,
     candidate_id: int,
     request: MergeCandidateReviewRequest | None = None,
 ) -> MergeCandidateView:
@@ -672,7 +672,7 @@ async def approve_merge_candidate(
 
 async def deny_merge_candidate(
     session: AsyncSession,
-    user: CurrentUser,
+    user: User,
     candidate_id: int,
     request: MergeCandidateReviewRequest | None = None,
 ) -> MergeCandidateView:

@@ -7,10 +7,8 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from stitch.auth import TokenClaims
-from stitch.auth.permissions import RESOURCE_READ, SOURCE_READ_GEM, SOURCE_READ_PREFIX
-
-from stitch.api.auth import get_current_user, get_token_claims
+from stitch.api.auth import TokenClaims
+from stitch.api.auth.permissions import RESOURCE_READ, SOURCE_READ_PREFIX
 from stitch.api.db.config import UnitOfWork, get_uow
 from stitch.api.db.model import (
     MembershipModel,
@@ -19,12 +17,15 @@ from stitch.api.db.model import (
     ResourceModel,
     UserModel,
 )
-from stitch.api import permissions as api_permissions
+from stitch.api.auth import permissions as auth_permissions
 from stitch.api.db.read_model.permissions import PUBLIC_SOURCES
 from stitch.api.db.read_model.state import refresh_resource_states
 from stitch.api.entities import User
 from stitch.api.main import app
+from tests.auth_overrides import override_auth
 from tests.utils import make_source_model, make_source_record
+
+SOURCE_READ_GEM = f"{SOURCE_READ_PREFIX}gem"
 
 
 def _gem_only_claims() -> TokenClaims:
@@ -69,15 +70,8 @@ async def client_with(
 
     @asynccontextmanager
     async def make(permissions: Collection[str]) -> AsyncIterator[AsyncClient]:
-        claims = TokenClaims(
-            sub="test|user-1",
-            email="test@test.com",
-            name="Test User",
-            permissions=frozenset(permissions),
-        )
         app.dependency_overrides[get_uow] = override_get_uow
-        app.dependency_overrides[get_current_user] = lambda: test_user
-        app.dependency_overrides[get_token_claims] = lambda: claims
+        override_auth(permissions, integration_session_factory)
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test/api/v1"
         ) as ac:
@@ -101,15 +95,8 @@ async def gem_only_client(
         async with UnitOfWork(integration_session_factory) as uow:
             yield uow
 
-    def override_get_current_user() -> User:
-        return test_user
-
-    def override_get_token_claims() -> TokenClaims:
-        return _gem_only_claims()
-
     app.dependency_overrides[get_uow] = override_get_uow
-    app.dependency_overrides[get_current_user] = override_get_current_user
-    app.dependency_overrides[get_token_claims] = override_get_token_claims
+    override_auth(_gem_only_claims().permissions, integration_session_factory)
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -133,15 +120,8 @@ async def resource_only_client(
         async with UnitOfWork(integration_session_factory) as uow:
             yield uow
 
-    def override_get_current_user() -> User:
-        return test_user
-
-    def override_get_token_claims() -> TokenClaims:
-        return _resource_only_claims()
-
     app.dependency_overrides[get_uow] = override_get_uow
-    app.dependency_overrides[get_current_user] = override_get_current_user
-    app.dependency_overrides[get_token_claims] = override_get_token_claims
+    override_auth(_resource_only_claims().permissions, integration_session_factory)
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -346,9 +326,9 @@ class TestOilGasFieldsLicensedSources:
         """A source added to the code but not yet classified as public or
         restricted (``read_model.permissions``) matches no stored profile."""
         monkeypatch.setattr(
-            api_permissions,
-            "_VALID_SOURCES",
-            api_permissions._VALID_SOURCES | {"foo"},
+            auth_permissions,
+            "SOURCE_READ_PERMISSIONS",
+            auth_permissions.SOURCE_READ_PERMISSIONS | {f"{SOURCE_READ_PREFIX}foo"},
         )
         await _seed_resource_with_sources(
             integration_session_factory,

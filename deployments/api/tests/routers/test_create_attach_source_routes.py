@@ -7,17 +7,13 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from stitch.auth import TokenClaims
-from stitch.auth.permissions import (
+from stitch.api.auth import TokenClaims
+from stitch.api.auth.permissions import (
     RESOURCE_READ,
     RESOURCE_WRITE,
-    SOURCE_READ_GEM,
-    SOURCE_READ_LLM,
-    SOURCE_READ_RMI,
+    SOURCE_READ_PREFIX,
     SOURCE_WRITE,
 )
-
-from stitch.api.auth import get_current_user, get_token_claims
 from stitch.api.db.config import UnitOfWork, get_uow
 from stitch.api.db.model import (
     MembershipModel,
@@ -28,7 +24,12 @@ from stitch.api.db.model import (
 )
 from stitch.api.entities import User
 from stitch.api.main import app
+from tests.auth_overrides import override_auth
 from tests.utils import make_source_model, make_source_record
+
+SOURCE_READ_GEM = f"{SOURCE_READ_PREFIX}gem"
+SOURCE_READ_LLM = f"{SOURCE_READ_PREFIX}llm"
+SOURCE_READ_RMI = f"{SOURCE_READ_PREFIX}rmi"
 
 
 def _writer_claims() -> TokenClaims:
@@ -64,15 +65,8 @@ async def writer_client(
         async with UnitOfWork(integration_session_factory) as uow:
             yield uow
 
-    def override_get_current_user() -> User:
-        return test_user
-
-    def override_get_token_claims() -> TokenClaims:
-        return _writer_claims()
-
     app.dependency_overrides[get_uow] = override_get_uow
-    app.dependency_overrides[get_current_user] = override_get_current_user
-    app.dependency_overrides[get_token_claims] = override_get_token_claims
+    override_auth(_writer_claims().permissions, integration_session_factory)
 
     async with AsyncClient(
         transport=ASGITransport(app=app),

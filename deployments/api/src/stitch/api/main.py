@@ -16,7 +16,7 @@ from stitch.observability import (
 )
 from .middleware import register_middlewares
 from .db.config import dispose_engine
-from .auth import validate_auth_config_at_startup
+from .auth import get_auth_provider
 from .settings import Settings, get_settings
 
 from .routers.auth import router as auth_router
@@ -35,7 +35,7 @@ base_router.include_router(ogfield_source_router)
 async def lifespan(app: FastAPI):
     app.state.started_at = datetime.now(UTC)
     app.state.auth_config_validated = False
-    validate_auth_config_at_startup()
+    get_auth_provider()
     app.state.auth_config_validated = True
     yield
     await dispose_engine()
